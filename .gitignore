@@ -1,0 +1,32 @@
+# ===== NUNCA versionar binários proprietários da SoftNyx =====
+# Cliente / engine / dados / launcher
+*.bin
+*.xfs
+*.des
+*.erl
+rakion.exe
+engine*.dll
+entitiesmp*.dll
+gamemp.dll
+uitoolkit.dll
+NyxLauncher*.exe
+risoption.exe
+Replacer.exe
+GameGuard/
+# Executáveis de servidor proprietários
+RakionWorldServ.exe
+BrokerServer.exe
+BrokenServer.exe
+gg*.dll
+*.des
+
+# ===== Lixo de build/OS =====
+__pycache__/
+*.pyc
+_verify.xfs
+*.log
+.DS_Store
+Thumbs.db
+
+# Exceções: configs de exemplo PODEM entrar
+!server/config/*.ini
