@@ -273,8 +273,18 @@ namespace RakionServer.World.Domain
         /// <summary>0x4a FimRound (6B): [4a 00][winnerSide][wins0][wins1][lastWinner].</summary>
         public byte[] Build0x4a() => new byte[] { 0x4a, 0x00, WinnerSide, Wins0, Wins1, LastRoundWinner };
 
-        /// <summary>0x44 FimMatch (2B): [44 00][motivo].</summary>
-        public static byte[] Build0x44(byte reason) => new byte[] { 0x44, 0x00, reason };
+        /// <summary>
+        /// 0x44 FimMatch (formato CAPTURADO do original, _r44 do fluxo solo que FUNCIONA):
+        /// [44 00][reason][00][u32 1][roomName] — a versao curta de 3B era IGNORADA pelo
+        /// cliente (ele nao voltava a sala no fim/saida do match).
+        /// </summary>
+        public byte[] BuildMatchEnd(byte reason)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x44).WriteByte(reason).WriteByte(0).WriteInt32(1);
+            w.WriteBytes(System.Text.Encoding.ASCII.GetBytes(Name));
+            return w.ToArray();
+        }
 
         public ushort RemainingSec()
         {
@@ -317,6 +327,9 @@ namespace RakionServer.World.Domain
             DeadlineMs = Environment.TickCount64 + (RoundDurationSec + 3) * 1000L;
             Warned30 = 0;
             Score0 = 0; Score1 = 0;
+            // reset por ROUND (nao por match): cada round do Golem/Boss comeca com os Master Golens
+            // cheios e o objetivo em aberto de novo.
+            Golem0Hp = 100; Golem1Hp = 100; ObjectiveDecided = false;
             foreach (var r in Slots) if (r.Occupied) { r.Dead = false; if (r.State == 3) r.State = 4; }
             RecomputeMvp();
             Log.Ok("field", "field {0} round {1} iniciado (dur={2}s mode={3})", Id, Round, RoundDurationSec, Mode);
@@ -440,8 +453,9 @@ namespace RakionServer.World.Domain
 
         /// <summary>
         /// Modo GOLEM/BOSS: aplica dano ao Master Golem do time alvo (0/1). Quando a energia zera, o time
-        /// ADVERSARIO vence (objetivo). Dano placeholder (formula/energia exata = RE/balanceamento; broadcast
-        /// de "Master Golem has X%% energy" via opcode proprio = pendente de RE + teste 2-clientes).
+        /// ADVERSARIO vence O ROUND (objetivo) — o match segue ate completar os rounds configurados na
+        /// sala (MaxRounds, do 0x3b); quem fecha o match e' o motor (MatchTick). Dano placeholder
+        /// (formula/energia exata = RE/balanceamento; broadcast de "Master Golem has X%% energy" pendente).
         /// </summary>
         public void DamageGolem(int golemTeam, ushort dmg)
         {
@@ -449,21 +463,22 @@ namespace RakionServer.World.Domain
             if (golemTeam == 0) Golem0Hp = (ushort)Math.Max(0, Golem0Hp - dmg);
             else Golem1Hp = (ushort)Math.Max(0, Golem1Hp - dmg);
             Log.Ok("field", "field {0} Master Golem time{1} energia={2}%", Id, golemTeam, golemTeam == 0 ? Golem0Hp : Golem1Hp);
-            if (Golem0Hp == 0) EndMatchObjective(1);       // golem do time0 destruido -> time1 vence
-            else if (Golem1Hp == 0) EndMatchObjective(0);  // golem do time1 destruido -> time0 vence
+            if (Golem0Hp == 0) EndRoundObjective(1);       // golem do time0 destruido -> time1 vence o round
+            else if (Golem1Hp == 0) EndRoundObjective(0);  // golem do time1 destruido -> time0 vence o round
         }
 
-        /// <summary>Encerra o match por OBJETIVO (Golem/Boss): contabiliza o time vencedor + EndMatch.</summary>
-        public void EndMatchObjective(byte winnerTeam)
+        /// <summary>
+        /// Encerra o ROUND por OBJETIVO (Golem/Boss destruido): credita o round ao time vencedor e
+        /// broadcasta o 0x4a de fim-de-round (mesmo layout dos handlers 0x4a/0x4d). ObjectiveDecided
+        /// trava o re-disparo dentro do round; StartRound o re-arma p/ o proximo.
+        /// </summary>
+        public void EndRoundObjective(byte winnerTeam)
         {
             if (ObjectiveDecided) return;
             ObjectiveDecided = true;
-            WinnerSide = winnerTeam;
-            LastRoundWinner = winnerTeam;
-            if (winnerTeam == 0) Wins0++; else Wins1++;
-            Log.Ok("field", "field {0} OBJETIVO: time{1} venceu (Golem inimigo destruido)", Id, winnerTeam);
-            EndMatch(0);
-            BroadcastLobby(Build0x44(0)); // FimMatch aos clientes (os outros caminhos broadcastam no MatchTick)
+            Log.Ok("field", "field {0} OBJETIVO: time{1} venceu o ROUND {2} (Golem inimigo destruido)", Id, winnerTeam, Round);
+            EndRound(winnerTeam);
+            BroadcastFieldPlaying(0x4a, new byte[] { LastRoundWinner, WinnerSide, Wins0, Wins1 });
         }
     }
 

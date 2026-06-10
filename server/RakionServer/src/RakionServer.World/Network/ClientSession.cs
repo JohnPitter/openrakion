@@ -77,6 +77,7 @@ namespace RakionServer.World.Network
         public byte PendingRoomMap;                          // map do 0x3b (sala criada) -> aplicado ao Field no 0x4b
         public byte PendingRoomMode;                         // mode do 0x3b: 0=stage (client-side), !=0=Battle/PvP (networked)
         public ushort PendingRoomDurationSec;                // duracao do round em SEGUNDOS (u16 do 0x3b, 290..1210)
+        public byte PendingRoomRounds;                       // rounds configurados na sala (byte do 0x3b, <0x16; stage=1)
 
         // estado de combate/field (campos do user[slot] resolvidos por FUN_0040b7d0 e helpers de field)
         public ushort FieldTargetIndex; // user+0x14a0 (indice do field-objeto alvo resolvido por FUN_0040b7d0)
@@ -315,11 +316,18 @@ namespace RakionServer.World.Network
                     // promove a Status=3 via CreateField.)
                     FieldSecondary = true; SecondActive = true; Status = 2; InField = true;
                     ParseRoomCreate(data); // guarda map/mode da sala -> decide stage (client-side) vs Battle (networked)
+                    // nova sala = novo match: rearma o StartGameClock (a trava e' por ENTRADA NO STAGE,
+                    // nao por sessao — sem isto a 2a sala da mesma sessao ficava com o field morto)
+                    System.Threading.Interlocked.Exchange(ref _gameClockStarted, 0);
                     SendEncryptedFrame(_r3b);
                     Log.Ok("lobby", "[{0}] 0x3b sala criada -> room lobby (Status=2, FSec, map={1} mode={2})",
                         Slot, PendingRoomMap, PendingRoomMode);
                     return true;
-                case 0x43: SendEncryptedFrame(_r43); Log.Info("lobby", "[{0}] 0x43 resp", Slot); return true;
+                case 0x43: // engage/start do match: rearma o clock p/ REMATCH na mesma sala
+                    System.Threading.Interlocked.Exchange(ref _gameClockStarted, 0);
+                    SendEncryptedFrame(_r43);
+                    Log.Info("lobby", "[{0}] 0x43 resp (clock rearmado)", Slot);
+                    return true;
                 case 0x48: SendEncryptedFrame(_r48); Log.Info("lobby", "[{0}] 0x48 resp", Slot); return true;
                 case 0x4A: // 0x4A com data[0]=0x02 = StageClear. Combate usa outras 0x4A -> nao intercepta.
                     if (data.Length >= 1 && data[0] == 0x02)
@@ -638,9 +646,13 @@ namespace RakionServer.World.Network
             if (System.Threading.Interlocked.Exchange(ref _gameClockStarted, 1) != 0) return;
             GameSeq = 5;
             var f = _server.EnsureFieldForSession(this);
+            if (f.Settled) f.ResetMatch(); // field reaproveitado de um match concluido: zera Round/Wins/golens
             if (PendingRoomMode != 0) { f.Mode = PendingRoomMode; f.MapId = PendingRoomMap; }
             if (PendingRoomDurationSec != 0) f.RoundDurationSec = PendingRoomDurationSec; // tempo configurado na sala
+            if (PendingRoomRounds != 0) f.MaxRounds = PendingRoomRounds;                  // rounds configurados na sala
             _server.NotifyPlayerReady(f, this);
+            Log.Ok("field", "[{0}] sala aplicada ao field {1}: mode={2} map={3} dur={4}s rounds={5}",
+                Slot, f.Id, f.Mode, f.MapId, f.RoundDurationSec, f.MaxRounds);
             // Sala Battle/PvP (mode != 0) = fluxo NETWORKED: o SERVER inicia o loop UDP com o 1o
             // tick 1583 (mitm_full_113423: o original manda 1583 ANTES do 1o 0040 do cliente; sem
             // ele o input fica congelado). Stage solo (mode 0) fica client-side: sem tick.
@@ -649,9 +661,10 @@ namespace RakionServer.World.Network
         }
 
         /// <summary>
-        /// Parse do 0x3b (FUN_00423580: name\0 senha\0 desc\0 [map][mode][flag][u16 durSec]...):
-        /// guarda map/mode/duracao da sala p/ aplicar ao Field no spawn (0x4b). Mapas Battle
-        /// (200-213) vem com mode 1-4; durSec validado em 0x122..0x4ba (290..1210s) no original.
+        /// Parse do 0x3b (FUN_00423580: name\0 senha\0 desc\0 [map][mode][rounds][u16 durSec]...):
+        /// guarda map/mode/rounds/duracao da sala p/ aplicar ao Field no spawn (0x4b). Mapas Battle
+        /// (200-213) vem com mode 1-4; rounds validado &lt; 0x16 no original (sala de stage = 1);
+        /// durSec validado em 0x122..0x4ba (290..1210s).
         /// </summary>
         private void ParseRoomCreate(byte[] data)
         {
@@ -662,12 +675,13 @@ namespace RakionServer.World.Network
                 if (p.Remaining >= 2) { PendingRoomMap = p.Byte(); PendingRoomMode = p.Byte(); }
                 if (p.Remaining >= 3)
                 {
-                    p.Byte(); // flag (param_3[+2], <0x16)
+                    byte rounds = p.Byte(); // param_3[+2] (<0x16)
+                    if (rounds >= 1 && rounds < 0x16) PendingRoomRounds = rounds;
                     ushort dur = p.UInt16();
                     if (dur >= 0x122 && dur <= 0x4ba) PendingRoomDurationSec = dur;
                 }
             }
-            catch { PendingRoomMap = 0; PendingRoomMode = 0; PendingRoomDurationSec = 0; }
+            catch { PendingRoomMap = 0; PendingRoomMode = 0; PendingRoomDurationSec = 0; PendingRoomRounds = 0; }
         }
 
         /// <summary>

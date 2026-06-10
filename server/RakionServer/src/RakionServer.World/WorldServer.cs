@@ -248,21 +248,23 @@ namespace RakionServer.World
                         f.Round++;
                         if (f.Round > f.MaxRounds)
                         {
-                            f.EndMatch(2); // acabaram os rounds
-                            f.BroadcastLobby(Domain.Field.Build0x44(2));
+                            f.EndMatch(2); // acabaram os rounds (empate em rounds)
+                            f.BroadcastLobby(f.BuildMatchEnd(2));
                             _fieldStatusBeat.TryRemove(f.Id, out _);
                         }
                         else if (f.CountPlaying() == 0)
                         {
                             f.EndMatch(5); // sem jogadores
-                            f.BroadcastLobby(Domain.Field.Build0x44(5));
+                            f.BroadcastLobby(f.BuildMatchEnd(5));
                             _fieldStatusBeat.TryRemove(f.Id, out _);
                         }
                         else
                         {
+                            // PROXIMO ROUND: reinicia o relogio/golens e anuncia (0x49 NovoRound + 0x48).
                             f.StartRound();
                             f.BroadcastLobby(f.Build0x49());
                             f.BroadcastLobby(f.Build0x48());
+                            Log.Ok("field", "field {0} -> round {1}/{2} (w0={3} w1={4})", f.Id, f.Round, f.MaxRounds, f.Wins0, f.Wins1);
                         }
                     }
                     break;

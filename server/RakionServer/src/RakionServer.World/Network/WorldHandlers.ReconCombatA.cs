@@ -236,15 +236,16 @@ namespace RakionServer.World.Network
         }
 
         // ===================================================================
-        // 0x46 HIT / aplicar dano (kill report)  (FUN_00424350)
+        // 0x46 saida/morte de combate do PROPRIO sender  (FUN_00424350)
         // ===================================================================
         /// <summary>
         /// FUN_00424350: gate (0x1460!=0 && 0x14a4!=0 -> DISC 0x7c; Status==3 -> DISC 0x7d);
-        /// FUN_0040b7d0 resolve (fieldSlot,playerSlot); parse param_3[0]=targetSlot (so age se &lt;2).
-        ///   FUN_0041b860 valida alvo (field+8==2 && fase!=0 && alvo state==4 && modo!=0);
-        ///   se valido: ammo = FUN_00405950 (diff de kills); FUN_0040b900 consome cash do atacante;
-        ///   responde FIELD 0xc [u32 secondary][i32 ammo] + LOBBY 0x58 [i32 ammo] ao atacante.
-        ///   Sempre: FUN_00407e00(targetSlot) processa MORTE/respawn/scoring.
+        /// FUN_0040b7d0 resolve (fieldSlot, mySlot) — o slot usado em TUDO e' o do PROPRIO
+        /// sender; param_3[0] e' so um FLAG (&lt;2). O cliente manda 0x46 ao SAIR do stage /
+        /// cair de combate. Se flag&lt;2 e o sender e' valido (FUN_0041b860): ammo (FUN_00405950)
+        /// + consome cash (FUN_0040b900) e responde FIELD 0xc + LOBBY 0x58 AO PROPRIO. Sempre:
+        /// FUN_00407e00(mySlot) processa a morte/saida do sender. SEM broadcast de 0x46 (a 1a
+        /// leitura inventava um targetSlot, dava dano no golem e broadcastava -> crash na saida).
         /// </summary>
         internal static void Op_0x46_Recon(HandlerContext ctx)
         {
@@ -257,47 +258,32 @@ namespace RakionServer.World.Network
             var rec = ReconRec(ctx, out var field);
             if (field == null || rec == null) return;
 
-            byte targetSlot = ctx.P.CanRead(1) ? ctx.P.Byte() : (byte)0xff;
-            if (targetSlot >= 2) return; // FUN_00424350: if (*param_3 < 2)  (alvo valido p/ hit)
-
-            // FUN_0041b860: alvo valido p/ ser atingido?
-            if (Combat_CanHit(field, targetSlot))
+            byte flag = ctx.P.CanRead(1) ? ctx.P.Byte() : (byte)0xff; // *param_3 (<2 = com refund)
+            if (flag < 2 && Combat_CanHit(field, rec.Slot))
             {
-                // ammo/diff = FUN_00405950(field, targetSlot)
-                int ammo = Combat_KillDiff(field, targetSlot);
-                // FUN_0040b900: consome cash do atacante (cost = (cashCost>>1) + ammo*5)
-                ammo = Combat_ConsumeCash(u, (byte)ammo);
-
-                // FIELD 0xc: [u32 secondary=user+0x14a4][i32 ammo] — ao atacante
-                using (var w = new PacketWriter())
-                {
-                    w.WriteInt32(u.FieldSecondaryRaw);
-                    w.WriteInt32(ammo);
-                    u.SendMessage(0x0c, w.ToArray());
-                }
-                // LOBBY 0x58: [i32 ammo] — ao atacante
-                using (var w = new PacketWriter())
-                {
-                    w.WriteInt32(ammo);
-                    u.SendEncryptedFrame(Prefix(0x58, w.ToArray()));
-                }
-                Log.Info("combat", "[{0}] 0x46 hit (field {1} target {2} ammo {3})", u.Slot, field.Id, targetSlot, ammo);
+                // FUN_00405950 + FUN_0040b900: consome o cash do refund (estado server-side).
+                int ammo = Combat_KillDiff(field, rec.Slot);
+                Combat_ConsumeCash(u, (byte)ammo);
+                // NAO enviar os frames de refund por ora: o buffer original do "0xc" e'
+                // [u16 user+0x1488][u16 0x0c][u32 secondary][i32 ammo] — a 1a word NAO e' o
+                // msgType. Mandar [0c 00] na frente fazia o cliente parsear como RESPOSTA DE
+                // LOGIN zerada -> crash na saida do stage. Wire exato = RE pendente de 0x1488.
             }
-
-            // GOLEM/BOSS: target 0/1 = Master Golem do time alvo -> aplica dano ao OBJETIVO (destruir o
-            // Golem inimigo vence o match). DM/TEAMDEATH: as mortes de PLAYER vem pelo 0x4f (Op_0x4F_Recon),
-            // nao aqui — entao mantemos o caminho de morte so p/ os demais modos (legado, inofensivo).
-            if (field.Mode == (byte)GameMode.Golem || field.Mode == (byte)GameMode.Boss)
+            // FUN_00407e00(field, mySlot): morte/saida do proprio sender (sem killer/credito).
+            field.OnPlayerDeath(rec.Slot, killerSeat: -1, cause: 0);
+            // FUN_00407e00 broadcasta FIELD 0x46 [deadSlot] a TODOS os ocupados, INCLUINDO o
+            // proprio sender — e' o eco que o cliente espera p/ concluir a morte/saida (sem ele
+            // o cliente trava "aguardando o world" ao sair do stage).
+            field.BroadcastField(0x46, new[] { (byte)rec.Slot });
+            // 0 vivos -> FUN_00407be0(this, 0): fim de match (o 0x44 devolve os clientes a sala).
+            // No wire, reason=2 — o unico valor comprovadamente aceito pelo cliente (captura _r44
+            // e fim natural de partida); o 0 e' o param interno do FUN_00407be0, nao o byte do 0x44.
+            if (field.CountAlive(0) + field.CountAlive(1) == 0)
             {
-                field.DamageGolem(targetSlot, 10); // dano placeholder por hit (formula exata = RE/balance)
+                field.EndMatch(0);
+                field.BroadcastLobby(field.BuildMatchEnd(2));
             }
-            else
-            {
-                // FUN_00407e00(targetSlot): morte/respawn/scoring (broadcast 0x46/0x3c/0x4a pelo motor).
-                field.OnPlayerDeath(targetSlot, rec.Slot, rec.Cause);
-            }
-            // broadcast do evento 0x46 [seat/golem] a todos os ocupados
-            field.BroadcastField(0x46, new[] { targetSlot });
+            Log.Info("combat", "[{0}] 0x46 saida/morte propria (field {1} seat {2} flag {3})", u.Slot, field.Id, rec.Slot, flag);
         }
 
         // ===================== helpers do grupo combate-A =====================
