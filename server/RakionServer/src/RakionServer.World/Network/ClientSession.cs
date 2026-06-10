@@ -360,20 +360,21 @@ namespace RakionServer.World.Network
                     // tambem no user14a4 do 0x13. (No MEU world a previa do char-select e' vazia => sem "varios armours".)
                     _invReqBody = data;
                     SendInventoryEnterAck(data);
-                    // re-pinta o box ao ABRIR: manda 0x31 de todos os itens. Se o menu ja estiver em loja
-                    // (0x19/1a/1b), FUN_0047d1d0 pinta o grid; se nao, baila (gate intacto, sem crash). O grid
-                    // do box so' renderiza em menu de loja — entao re-mando nos 3 momentos (0x2c/0x2d/compra)
-                    // pra pegar o instante em que o menu esta certo.
+                    // Re-pinta o box ao abrir (0x31 por item). NÃO é fiel ao original (que renderiza o box
+                    // só pelo count2 do 0x13), mas no cliente NO-GG o grid do box só pinta via 0x31
+                    // (FUN_0047d1d0) — sem isto o box fica vazio na abertura. A corrupção de tela na SAÍDA
+                    // (Previous) é teardown client-side (cliente fecha sem mandar pacote — parede no-GG do
+                    // README), NÃO causada por estes 0x31; por isso ficam, para manter o box visível.
                     for (int i = 0; i < BoxItems.Count && i < 0x78; i++) SendBoxAdd(BoxItems[i], (byte)i, 1);
                     return true;
                 case 0x2D: // req lista do inventario (FUN_00420f10) -> 0x13 (popula o grid do Box).
                     SendInventoryList();
                     return true;
-                case 0x53: // GameResultReport pos-clear. Em SOLO PvE o match-engine esta OFF (p/ o combate
-                    // client-side funcionar), entao o handler real (Op_GameResultReport) valida o field-record,
-                    // nao acha e DESCONECTA (DISC 152) — matando a sessao ~11ms apos o Rank (Rank "sumia" +
-                    // "Disconnected"). Consumimos aqui. (No PvP/#6 o 0x53 sera tratado de verdade, gated por Mode.)
-                    Log.Info("lobby", "[{0}] 0x53 GameResultReport consumido (solo PvE; match-engine off)", Slot);
+                case 0x53: // GameResultReport pos-clear (SOLO PvE). O handler real (Op_0x53_Recon) exige o
+                    // field-record do match-engine, que esta OFF no solo (combate client-side) e DESCONECTAVA.
+                    // Consumimos aqui MAS creditamos o exp/gold reportados (FUN_00425010: [idx][cfgA][cfgB]
+                    // [cfgB x u16][exp u32][gold u32]) — antes o stage clear nao dava progresso nenhum.
+                    CreditSoloResult(data);
                     return true;
                 case 0x4b: // SPAWN no stage (72B). Inicia o relogio da partida: um timer incrementa
                     // GameSeq e manda o tick 1583 (o cliente ecoa o seq; seq avancando = timer corre).
@@ -604,10 +605,9 @@ namespace RakionServer.World.Network
             w.WriteByte(0);                                                      // count3 flag = 0 (sem bloco appearance)
             SendEncryptedFrame(w.ToArray());
             Log.Ok("shop", "[{0}] 0x13 inventario enviado: bag={1}, box(count2)={2}", Slot, count1, count2);
-            // SO os DADOS (0x13) aqui — SEM 0x2e visual nem rajada de 0x31. O cliente tambem manda
-            // 0x2d nas TRANSICOES de saida do inventario (corpos com lixo/ponteiro); responder com
-            // render visual nesse momento pintava a UI da loja POR CIMA da tela seguinte (mesma
-            // classe do bug do char select). A pintura do box no OPEN vem dos 0x31 do 0x2c.
+            // FIEL ao original (FUN_00420f10 + FUN_0040bcb0): o 0x2d responde SÓ este 0x13 — o count2
+            // (itens do box) é o que pinta o grid. SEM 0x2e visual nem 0x31 (eram band-aids de quando o
+            // 0x13 estava malformado; agora corrompiam a UI nas transições de tela).
         }
 
         /// <summary>
@@ -658,6 +658,36 @@ namespace RakionServer.World.Network
             // ele o input fica congelado). Stage solo (mode 0) fica client-side: sem tick.
             if (f.Mode != 0 && UdpEndpoint != null) _server.SendGameplayTick(UdpEndpoint, LastInput);
             Log.Ok("field", "[{0}] spawn -> motor da partida (field {1}, seat {2}, mode {3})", Slot, f.Id, FieldSeat, f.Mode);
+        }
+
+        /// <summary>
+        /// Credita o resultado do STAGE SOLO (0x53, FUN_00425010): parse [idx u8][cfgA u8][cfgB u8]
+        /// [cfgB x u16 mapSlots][exp u32][gold u32]. Mesmo teto anti-cheat do caminho PvP (0x50).
+        /// O level-up/persistencia ficam no WorldServer.GrantExp (curva classlevelinfo).
+        /// </summary>
+        private void CreditSoloResult(byte[] data)
+        {
+            try
+            {
+                var p = new PacketReader(data);
+                p.Byte();                      // idx
+                p.Byte();                      // cfgA
+                byte cfgB = p.Byte();          // cfgB = qtde de u16 a pular
+                for (int i = 0; i < cfgB && p.Remaining >= 2; i++) p.UInt16();
+                uint exp = p.CanRead(4) ? p.UInt32() : 0;
+                uint gold = p.CanRead(4) ? p.UInt32() : 0;
+                const uint Max = 1_000_000;    // teto de sanidade (= ValidateGamePoints do 0x50)
+                if (exp > Max || gold > Max)
+                {
+                    Log.Warn("field", "[{0}] 0x53 solo: Wrong Game Point! Exp:{1} Gold:{2} — ignorado", Slot, exp, gold);
+                    return;
+                }
+                Gold += gold;
+                if (gold > 0 && GameInfoId > 0) _ = _server.Db.AddGoldAsync(GameInfoId, (int)gold);
+                _server.GrantExp(this, exp);
+                Log.Ok("field", "[{0}] 0x53 stage clear solo — exp={1} gold={2} creditados", Slot, exp, gold);
+            }
+            catch (Exception ex) { Log.Warn("field", "[{0}] 0x53 solo parse: {1}", Slot, ex.Message); }
         }
 
         /// <summary>
