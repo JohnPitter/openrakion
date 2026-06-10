@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>RakionServer.World</RootNamespace>
+    <AssemblyName>RakionWorldServer</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- CS0219: variaveis que documentam o parse do pacote nos handlers reconstruidos
+         cujo corpo profundo ainda esta sendo desenvolvido (ver WorldHandlers.Generated.cs). -->
+    <NoWarn>$(NoWarn);CS0219</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MySqlConnector" Version="2.3.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RakionServer.Common\RakionServer.Common.csproj" />
+  </ItemGroup>
+
+</Project>

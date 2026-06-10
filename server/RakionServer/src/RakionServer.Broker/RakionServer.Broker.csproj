@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Broker (BrokenServer) — porta do decompile .NET original (rakion-work/broker_src,
+    decompilado do BrokenServer.exe) para net9.0, sem alterar a logica. Roda nativo
+    no Linux (sem Wine), como o resto da solucao.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>BrokenServer</RootNamespace>
+    <AssemblyName>BrokenServer</AssemblyName>
+    <StartupObject>BrokenServer.Program</StartupObject>
+    <!-- avisos do decompile original (codigo portado fielmente, sem alterar logica) -->
+    <NoWarn>$(NoWarn);CS0168;CS0219;CS0162;CS0649;CS0108;CS0169;SYSLIB0014</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Settings.ini + GameServers.ini copiados para o output (lidos do CurrentDirectory) -->
+    <None Include="Settings\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="Settings" />
+  </ItemGroup>
+
+</Project>

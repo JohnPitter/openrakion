@@ -1,0 +1,5 @@
+**/bin/
+**/obj/
+deploy/db/
+deploy/web/
+*.out.txt

@@ -1,0 +1,394 @@
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using MySqlConnector;
+using RakionServer.Common;
+
+namespace RakionServer.World.Database
+{
+    /// <summary>
+    /// Acesso ao MySQL/MariaDB do world (db `rakion`). Toda regra de login/persistencia
+    /// fica aqui (backend). Tabelas reconstruidas do dump v258: user, usergameinfo,
+    /// loguserconnect, usercount.
+    /// </summary>
+    public sealed class WorldDatabase
+    {
+        private readonly string _conn;
+
+        public WorldDatabase(WorldConfig.DbConfig cfg) => _conn = cfg.ConnectionString;
+
+        /// <summary>Testa a conexao e conta tabelas; loga o resultado.</summary>
+        public async Task<bool> PingAsync()
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()", c);
+                long tables = Convert.ToInt64(await cmd.ExecuteScalarAsync());
+                Log.Ok("db", "conectado — {0} tabelas no schema", tables);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("db", "falha ao conectar: {0}", ex.Message);
+                return false;
+            }
+        }
+
+        public sealed class Account
+        {
+            public string Id = "";
+            public int Authority;
+            public int Country;
+            public bool Banned;
+        }
+
+        /// <summary>
+        /// Autentica (id + senha em texto) contra a tabela `user`. Retorna a conta ou null.
+        /// Espelha o login direto do world quando [Authentication] Type=0 (sem auth.asp).
+        /// </summary>
+        public async Task<Account?> AuthenticateAsync(string id, string password)
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "SELECT password, Authority, country FROM user WHERE id=@id", c);
+                cmd.Parameters.AddWithValue("@id", id);
+                await using var r = await cmd.ExecuteReaderAsync();
+                if (!await r.ReadAsync())
+                {
+                    Log.Warn("db", "login: id '{0}' nao existe", id);
+                    return null;
+                }
+                string dbPass = r.GetString(0);
+                if (!string.Equals(dbPass, password, StringComparison.Ordinal))
+                {
+                    Log.Warn("db", "login: senha incorreta para '{0}'", id);
+                    return null;
+                }
+                return new Account
+                {
+                    Id = id,
+                    Authority = r.IsDBNull(1) ? 0 : r.GetInt32(1),
+                    Country = r.IsDBNull(2) ? 0 : r.GetInt32(2),
+                };
+            }
+            catch (Exception ex)
+            {
+                Log.Error("db", "AuthenticateAsync('{0}'): {1}", id, ex.Message);
+                return null;
+            }
+        }
+
+        public sealed class GameInfo
+        {
+            public int Id;
+            public string Name = "";
+            public string CharName = "";
+            public int Gold;
+            public bool Ban;
+            public string BanReason = "";
+        }
+
+        /// <summary>Carrega usergameinfo pela conta (name == id da conta).</summary>
+        public async Task<GameInfo?> LoadGameInfoAsync(string accountName)
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "SELECT id, name, charname, gold, ban, IFNULL(BanReason,'') " +
+                    "FROM usergameinfo WHERE name=@n LIMIT 1", c);
+                cmd.Parameters.AddWithValue("@n", accountName);
+                await using var r = await cmd.ExecuteReaderAsync();
+                if (!await r.ReadAsync())
+                    return null;
+                return new GameInfo
+                {
+                    Id = r.GetInt32(0),
+                    Name = r.GetString(1),
+                    CharName = r.GetString(2),
+                    Gold = r.GetInt32(3),
+                    Ban = r.GetInt32(4) != 0,
+                    BanReason = r.GetString(5),
+                };
+            }
+            catch (Exception ex)
+            {
+                Log.Error("db", "LoadGameInfoAsync('{0}'): {1}", accountName, ex.Message);
+                return null;
+            }
+        }
+
+        /// <summary>Registra a conexao do usuario (tabela loguserconnect).</summary>
+        public async Task LogUserConnectAsync(int userId, string userName, int serverId, string ip)
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "INSERT INTO loguserconnect (userid, username, serverid, RealIP, userip, connecttime) " +
+                    "VALUES (@uid, @uname, @sid, @ip, @ip, NOW())", c);
+                cmd.Parameters.AddWithValue("@uid", userId);
+                cmd.Parameters.AddWithValue("@uname", userName);
+                cmd.Parameters.AddWithValue("@sid", serverId);
+                cmd.Parameters.AddWithValue("@ip", ip);
+                await cmd.ExecuteNonQueryAsync();
+                Log.Debug("db", "loguserconnect: uid={0} '{1}' @ {2}", userId, userName, ip);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("db", "LogUserConnectAsync: {0}", ex.Message);
+            }
+        }
+
+        // ---- repositorio de jogo (personagens, itens, cash, cla) ----
+
+        /// <summary>Personagens de uma conta (characterinfo.userid = usergameinfo.id).</summary>
+        public async Task<List<CharacterInfo>> LoadCharactersAsync(int userId)
+        {
+            var list = new List<CharacterInfo>();
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "SELECT id,userid,name,used,Class,level,win,lose,draw,exp,levelpoint,slot,totalrank,classrank " +
+                    "FROM characterinfo WHERE userid=@u ORDER BY slot", c);
+                cmd.Parameters.AddWithValue("@u", userId);
+                await using var r = await cmd.ExecuteReaderAsync();
+                while (await r.ReadAsync())
+                    list.Add(new CharacterInfo
+                    {
+                        Id = r.GetInt32(0), UserId = r.GetInt32(1), Name = r.GetString(2),
+                        Used = r.GetInt32(3) != 0, Class = (byte)r.GetInt32(4), Level = (byte)r.GetInt32(5),
+                        Win = r.GetInt32(6), Lose = r.GetInt32(7), Draw = r.GetInt32(8), Exp = r.GetInt32(9),
+                        LevelPoint = (byte)r.GetInt32(10), Slot = (byte)r.GetInt32(11),
+                        TotalRank = r.GetInt32(12), ClassRank = r.GetInt32(13),
+                    });
+            }
+            catch (Exception ex) { Log.Error("db", "LoadCharactersAsync({0}): {1}", userId, ex.Message); }
+            return list;
+        }
+
+        /// <summary>Itens de um personagem (useriteminfo.characterid).</summary>
+        public async Task<List<UserItem>> LoadItemsAsync(int characterId)
+        {
+            var list = new List<UserItem>();
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "SELECT id,userid,characterid,itemid,item_sn,sn_type,level,limittime,slot,exp " +
+                    "FROM useriteminfo WHERE characterid=@c", c);
+                cmd.Parameters.AddWithValue("@c", characterId);
+                await using var r = await cmd.ExecuteReaderAsync();
+                while (await r.ReadAsync())
+                    list.Add(new UserItem
+                    {
+                        Id = r.GetInt32(0), UserId = r.GetInt32(1), CharacterId = r.GetInt32(2),
+                        ItemId = r.GetInt32(3), ItemSn = r.GetInt32(4), SnType = (byte)r.GetInt32(5),
+                        Level = (byte)r.GetInt32(6), LimitTime = r.GetInt32(7), Slot = (byte)r.GetInt32(8),
+                        Exp = r.GetInt64(9),
+                    });
+            }
+            catch (Exception ex) { Log.Error("db", "LoadItemsAsync({0}): {1}", characterId, ex.Message); }
+            return list;
+        }
+
+        /// <summary>Cash (pontos pagos) de uma conta (cash.id char(16)).</summary>
+        public async Task<int> GetCashAsync(string accountId)
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand("SELECT cash FROM cash WHERE id=@id", c);
+                cmd.Parameters.AddWithValue("@id", accountId);
+                object? v = await cmd.ExecuteScalarAsync();
+                return v == null || v is DBNull ? 0 : Convert.ToInt32(v);
+            }
+            catch (Exception ex) { Log.Error("db", "GetCashAsync({0}): {1}", accountId, ex.Message); return 0; }
+        }
+
+        /// <summary>Ajusta o gold de uma conta (usergameinfo.id). delta pode ser negativo.</summary>
+        public async Task AddGoldAsync(int usergameinfoId, int delta)
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "UPDATE usergameinfo SET gold=GREATEST(0, gold+@d) WHERE id=@id", c);
+                cmd.Parameters.AddWithValue("@d", delta);
+                cmd.Parameters.AddWithValue("@id", usergameinfoId);
+                await cmd.ExecuteNonQueryAsync();
+            }
+            catch (Exception ex) { Log.Error("db", "AddGoldAsync({0},{1}): {2}", usergameinfoId, delta, ex.Message); }
+        }
+
+        /// <summary>Insere um item comprado no ARMAZEM (itembox), nao no useriteminfo (que e' a aparencia
+        /// equipada e renderiza no corpo -> crash). userId = usergameinfo.id (conta). Retorna o id (0=falha).</summary>
+        public async Task<int> InsertItemBoxAsync(int userId, int itemId, int limitTime = 0)
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "INSERT INTO itembox (userid,itemid,limittime) VALUES (@uid,@iid,@lt); SELECT LAST_INSERT_ID();", c);
+                cmd.Parameters.AddWithValue("@uid", userId);
+                cmd.Parameters.AddWithValue("@iid", itemId);
+                cmd.Parameters.AddWithValue("@lt", limitTime);
+                object? v = await cmd.ExecuteScalarAsync();
+                return v == null ? 0 : Convert.ToInt32(v);
+            }
+            catch (Exception ex) { Log.Error("db", "InsertItemBoxAsync({0},{1}): {2}", userId, itemId, ex.Message); return 0; }
+        }
+
+        /// <summary>Carrega os itens do ARMAZEM (itembox) de uma conta, em ordem (= ordem dos slots do box).</summary>
+        public async Task<System.Collections.Generic.List<int>> LoadItemBoxAsync(int userId)
+        {
+            var list = new System.Collections.Generic.List<int>();
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand("SELECT itemid FROM itembox WHERE userid=@uid ORDER BY id", c);
+                cmd.Parameters.AddWithValue("@uid", userId);
+                await using var r = await cmd.ExecuteReaderAsync();
+                while (await r.ReadAsync()) list.Add(r.GetInt32(0));
+            }
+            catch (Exception ex) { Log.Error("db", "LoadItemBoxAsync({0}): {1}", userId, ex.Message); }
+            return list;
+        }
+
+        /// <summary>Cla por id (claninfo).</summary>
+        public async Task<ClanInfo?> LoadClanAsync(int clanId)
+        {
+            if (clanId <= 0) return null;
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "SELECT id,masterid,IFNULL(mastername,''),IFNULL(name,''),IFNULL(point,0)," +
+                    "IFNULL(members,0),IFNULL(rank,0),IFNULL(country,0) FROM claninfo WHERE id=@id", c);
+                cmd.Parameters.AddWithValue("@id", clanId);
+                await using var r = await cmd.ExecuteReaderAsync();
+                if (!await r.ReadAsync()) return null;
+                return new ClanInfo
+                {
+                    Id = r.GetInt32(0), MasterId = r.GetInt32(1), MasterName = r.GetString(2),
+                    Name = r.GetString(3), Point = r.GetInt32(4), Members = (short)r.GetInt32(5),
+                    Rank = (uint)r.GetInt64(6), Country = (short)r.GetInt32(7),
+                };
+            }
+            catch (Exception ex) { Log.Error("db", "LoadClanAsync({0}): {1}", clanId, ex.Message); return null; }
+        }
+
+        /// <summary>Catalogo de itens (iteminfo) — carregado uma vez no boot.</summary>
+        public async Task<List<ItemDef>> LoadItemDefsAsync()
+        {
+            var list = new List<ItemDef>();
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "SELECT id,type,Class,level,shop,gold,cash,hit1,hit2,hit3,hit4,chit,ap,hp,maxcp,power FROM iteminfo", c);
+                await using var r = await cmd.ExecuteReaderAsync();
+                while (await r.ReadAsync())
+                    list.Add(new ItemDef
+                    {
+                        Id = r.GetInt32(0), Type = (byte)r.GetInt32(1), Class = (byte)r.GetInt32(2),
+                        Level = (byte)r.GetInt32(3), Shop = (byte)r.GetInt32(4), Gold = r.GetInt32(5),
+                        Cash = r.GetInt32(6), Hit1 = r.GetInt32(7), Hit2 = r.GetInt32(8), Hit3 = r.GetInt32(9),
+                        Hit4 = r.GetInt32(10), CHit = r.GetInt32(11), Ap = r.GetInt32(12), Hp = r.GetInt32(13),
+                        MaxCp = r.GetInt32(14), Power = r.GetInt32(15),
+                    });
+            }
+            catch (Exception ex) { Log.Error("db", "LoadItemDefsAsync: {0}", ex.Message); }
+            return list;
+        }
+
+        /// <summary>Insere um item comprado (useriteminfo). Retorna o id gerado (0 = falha).</summary>
+        public async Task<int> InsertUserItemAsync(int userId, int characterId, int itemId,
+                                                   byte level = 1, byte slot = 1, int limitTime = 0,
+                                                   byte snType = 3, int itemSn = 8000, long exp = 0)
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "INSERT INTO useriteminfo (userid,characterid,itemid,item_sn,sn_type,level,limittime,slot,exp) " +
+                    "VALUES (@uid,@cid,@iid,@sn,@snt,@lvl,@lt,@slot,@exp); SELECT LAST_INSERT_ID();", c);
+                cmd.Parameters.AddWithValue("@uid", userId);
+                cmd.Parameters.AddWithValue("@cid", characterId);
+                cmd.Parameters.AddWithValue("@iid", itemId);
+                cmd.Parameters.AddWithValue("@sn", itemSn);
+                cmd.Parameters.AddWithValue("@snt", snType);
+                cmd.Parameters.AddWithValue("@lvl", level);
+                cmd.Parameters.AddWithValue("@lt", limitTime);
+                cmd.Parameters.AddWithValue("@slot", slot);
+                cmd.Parameters.AddWithValue("@exp", exp);
+                object? v = await cmd.ExecuteScalarAsync();
+                int id = v == null || v is DBNull ? 0 : Convert.ToInt32(v);
+                Log.Ok("shop", "InsertUserItem: uid={0} cid={1} item={2} -> id={3}", userId, characterId, itemId, id);
+                return id;
+            }
+            catch (Exception ex) { Log.Error("db", "InsertUserItemAsync(uid={0},item={1}): {2}", userId, itemId, ex.Message); return 0; }
+        }
+
+        /// <summary>Ajusta o cash de uma CONTA (tabela `cash`, id=char(16)=nome da conta). delta pode ser negativo.</summary>
+        public async Task AddCashAsync(string accountId, int delta)
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "INSERT INTO cash (id, cash) VALUES (@id, GREATEST(0,@d)) " +
+                    "ON DUPLICATE KEY UPDATE cash=GREATEST(0, cash+@d)", c);
+                cmd.Parameters.AddWithValue("@id", accountId);
+                cmd.Parameters.AddWithValue("@d", delta);
+                await cmd.ExecuteNonQueryAsync();
+                Log.Debug("db", "AddCash: acct='{0}' delta={1}", accountId, delta);
+            }
+            catch (Exception ex) { Log.Error("db", "AddCashAsync('{0}',{1}): {2}", accountId, delta, ex.Message); }
+        }
+
+        /// <summary>Char ativo da conta (used=1; tiebreak slot). null se nao tem char.</summary>
+        public async Task<CharacterInfo?> LoadActiveCharacterAsync(int userId)
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "SELECT id,userid,name,used,Class,level,win,lose,draw,exp,levelpoint,slot,totalrank,classrank " +
+                    "FROM characterinfo WHERE userid=@u ORDER BY used DESC, slot ASC LIMIT 1", c);
+                cmd.Parameters.AddWithValue("@u", userId);
+                await using var r = await cmd.ExecuteReaderAsync();
+                if (!await r.ReadAsync()) return null;
+                return new CharacterInfo
+                {
+                    Id = r.GetInt32(0), UserId = r.GetInt32(1), Name = r.GetString(2),
+                    Used = r.GetInt32(3) != 0, Class = (byte)r.GetInt32(4), Level = (byte)r.GetInt32(5),
+                    Win = r.GetInt32(6), Lose = r.GetInt32(7), Draw = r.GetInt32(8), Exp = r.GetInt32(9),
+                    LevelPoint = (byte)r.GetInt32(10), Slot = (byte)r.GetInt32(11),
+                    TotalRank = r.GetInt32(12), ClassRank = r.GetInt32(13),
+                };
+            }
+            catch (Exception ex) { Log.Error("db", "LoadActiveCharacterAsync({0}): {1}", userId, ex.Message); return null; }
+        }
+    }
+}

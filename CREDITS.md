@@ -24,7 +24,8 @@ Este projeto **não existiria** sem o trabalho da comunidade Rakion ao longo de 
 
 ## Este repositório (OpenRakion)
 
-- Integração ponta-a-ponta do login completo (diagnóstico do "stuck at login"), análise do GameGuard, setup Docker, e o **repacker XFS2 em Python** (`xfs_repack.py`).
+- **Servidor reescrito do zero em .NET** (broker + world + buddy + common) a partir da engenharia reversa do protocolo: login completo, lobby/salas, seleção de personagem, **inventário + armazém (box) persistente**, **loja com débito de ouro em tempo real**, handshake UDP e motor de partida.
+- Auth web reimplementado em **Python** (`launcher_web.py`), diagnóstico do "stuck at login", análise do GameGuard, e o **repacker XFS2 em Python** (`xfs_repack.py`).
 
 ---
 

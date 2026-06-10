@@ -1,0 +1,3 @@
+# Conteudo proprietario / dados — colocar na VPS antes do build (ver README).
+db/
+web/

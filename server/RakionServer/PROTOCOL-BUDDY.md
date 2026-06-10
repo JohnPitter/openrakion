@@ -1,0 +1,56 @@
+# Rakion/WolfTeam Buddy — Protocolo (reconstruído do `Buddy2.dll`)
+
+Extraído por RE do `Buddy2.dll` (client-side; PDB
+`d:\Project\WolfTeam_Buddy_dll\Buddy3\ReleaseUnicode\Buddy2.pdb` — o módulo de
+buddy do WolfTeam reusado no Rakion). Ghidra: `ghidra-proj/buddy.out.txt`,
+script `ghidra_scripts/BuddyProto.py`.
+
+O servidor de buddy **não vinha** no pacote v258 e é **opcional** (o client tolera
+timeout — `LEIA-ME.md`). Esta é a primeira implementação do lado servidor.
+
+## Arquitetura (no client)
+- `CBuddy2` — fachada (export `CreateBuddy2`).
+- `CCommEngine` — engine TCP para o Buddy Server (FD_CONNECT, `connect`).
+- `CCommP2P` — engine UDP P2P entre clients (`WSAStartup`, `sendto`); mensagens
+  `P2P_SVC_*`/`P2P_RET_*` (add buddy, msg, sms, invitation, gift) — fora do servidor.
+- Portas: BuddyServer **8500**, BuddyCenter **8504** (do `locale.ini`: BuddyIP/BuddyPort).
+
+## Frame (TCP)
+```
+[u16 size][u16 CD][payload]      (little-endian)
+size = tamanho TOTAL do pacote (inclui o campo size)
+```
+Parser do client (`DoProcessStream`/`OnMsg` FUN_10007420): valida `*(u16*)pkt == size`
+e `size < 0x13881`; `CD = *(u16*)(pkt+2)`; payload em `pkt+4`, len = `size-4`.
+
+## Códigos CD (RET_/NTF_ servidor→cliente, do switch do OnMsg)
+| CD | Nome | CD | Nome |
+|----|------|----|------|
+| 0x1001 | RET_PRECREDENTIAL | 0x3001 | RET_ADD_BUDDY |
+| 0x1011 | RET_LOGIN | 0x3003 | RET_REMOVE_BUDDY |
+| 0x101f | NTF_VIP_IPPORT | 0x3005 | RET_GROUP_BUDDY |
+| 0x1ffe | NTF_NOTICE | 0x3007 | RET_RENAME_GROUP |
+| 0x1fff | NTF_CLOSE_CONNECTION | 0x3152 | RET_GROUP_GETLIST |
+| 0x2010 | NTF_SAVE_PACKET | 0x3155 | RET_GROUP_DEL |
+| 0x2021 | NTF_TUNNEL_PACKET | 0x3157 | RET_GROUP_CHG |
+| 0x2031 | RET_SMS_SEND | 0x3fff | NTF_USER_STATE |
+| 0x3151 | RET_SET_NICK | 0x5000 | NTF_NOTICE2 |
+
+Requisições do client (`SVC_`) seguem `SVC = RET & ~1` (req par, ret ímpar):
+`SVC_PRECREDENTIAL=0x1000`, `SVC_LOGIN=0x1010`, `SVC_ADD_BUDDY=0x3000`, etc.
+
+## Handshake de login (reconstruído de FUN_10007420)
+1. Client → `SVC_PRECREDENTIAL (0x1000)`. Server → `RET_PRECREDENTIAL (0x1001)` com o
+   endereço externo do client (`[u32 ip][u16 port]`) — usado pelo client p/ P2P (getsockname).
+2. Client → `SVC_LOGIN (0x1010)`. Server → `RET_LOGIN (0x1011)`:
+   - payload `[u16 result]...`; `result==0` = sucesso. Para o caminho de sucesso o
+     payload precisa ter **> 7 bytes**; `[u16 buddyCount]` (cap 500) seguido de N
+     registros de **148 (0x94) bytes** (nome unicode, guild, ext, IP/port). `buddyCount=0`
+     → lista vazia e o client conclui ("RET_LOGIN END").
+
+## Estado da reconstrução
+Implementado e validado (`BuddyServer`): framing, tabela de CD, e o handshake
+PRECREDENTIAL→LOGIN (login OK com lista vazia → client prossegue). Os demais CDs
+são logados como stub (ADD/REMOVE buddy, grupos, SMS, tunnel) — cada um precisa do
+layout de payload (RE incremental do handler correspondente no OnMsg). O canal P2P
+(UDP, `P2P_SVC_*`) é entre clients e não passa pelo servidor.

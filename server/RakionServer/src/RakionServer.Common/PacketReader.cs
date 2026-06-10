@@ -1,0 +1,89 @@
+using System;
+using System.Text;
+
+namespace RakionServer.Common
+{
+    /// <summary>
+    /// Leitor de pacotes little-endian sobre um byte[]. Equivalente ao
+    /// Systems.PacketReader do broker (Int16/Int32/Byte/Skip), com leitura de
+    /// strings prefixadas e strings C (nul-terminated) usadas pelo world.
+    /// </summary>
+    public sealed class PacketReader
+    {
+        private readonly byte[] _data;
+        private int _pos;
+
+        public PacketReader(byte[] data, int offset = 0)
+        {
+            _data = data;
+            _pos = offset;
+        }
+
+        public int Position => _pos;
+        public int Remaining => _data.Length - _pos;
+        public bool CanRead(int n) => _pos + n <= _data.Length;
+
+        public byte Byte() => _data[_pos++];
+
+        public short Int16()
+        {
+            short v = BitConverter.ToInt16(_data, _pos);
+            _pos += 2;
+            return v;
+        }
+
+        public ushort UInt16()
+        {
+            ushort v = BitConverter.ToUInt16(_data, _pos);
+            _pos += 2;
+            return v;
+        }
+
+        public int Int32()
+        {
+            int v = BitConverter.ToInt32(_data, _pos);
+            _pos += 4;
+            return v;
+        }
+
+        public uint UInt32()
+        {
+            uint v = BitConverter.ToUInt32(_data, _pos);
+            _pos += 4;
+            return v;
+        }
+
+        public void Skip(int n) => _pos += n;
+
+        /// <summary>String prefixada por tamanho (1 byte) + ASCII.</summary>
+        public string String()
+        {
+            int len = _data[_pos++];
+            string s = Encoding.ASCII.GetString(_data, _pos, len);
+            _pos += len;
+            return s;
+        }
+
+        /// <summary>String C terminada em nul; avanca alem do nul.</summary>
+        public string CString(int maxLen = int.MaxValue)
+        {
+            int start = _pos;
+            int end = start;
+            int limit = Math.Min(_data.Length, start + maxLen);
+            while (end < limit && _data[end] != 0)
+                end++;
+            string s = Encoding.ASCII.GetString(_data, start, end - start);
+            // posiciona apos o nul (se houver)
+            _pos = (end < _data.Length && _data[end] == 0) ? end + 1 : end;
+            return s;
+        }
+
+        public byte[] Bytes(int n)
+        {
+            byte[] b = new byte[n];
+            Array.Copy(_data, _pos, b, 0, n);
+            _pos += n;
+            return b;
+        }
+    }
+}
