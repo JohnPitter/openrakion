@@ -114,6 +114,7 @@ namespace RakionServer.World.Network
             if (forcedStart)
             {
                 // LAB_00407ab0: field+8 = 2; todos state 1/2 -> 3; zera contadores de tiro do user.
+                field.ResetMatch(); // zera rounds/wins/placar do match anterior (rematch no field)
                 field.State = 2;
                 foreach (var r in field.Slots)
                 {

@@ -293,7 +293,9 @@ namespace RakionServer.World.Network
                     // pinta do espelho QUANDO E' CONSTRUIDO (igual o equip, carregado no 0x0C). O 0x13 da resposta
                     // ao 0x2d chega DEPOIS do painel construir (corrida) -> box vazio. Mandando o 0x13 aqui (antes
                     // de qualquer abertura do inventario), o espelho ja esta preenchido quando o painel monta.
-                    if (BoxItems.Count > 0) SendInventoryList();
+                    // SO o 0x13 (data/espelho do box) — sem 0x2e/0x31: o render visual fora do menu de
+                    // loja desenhava o grid do shop POR CIMA do char select (o original nao manda no 0x14).
+                    if (BoxItems.Count > 0) SendInventoryList(paintVisual: false);
                     return true;
                 case 0x36: SendEncryptedFrame(_r36); Log.Info("lobby", "[{0}] 0x36 resp", Slot); return true;
                 case 0x3b: // CRIAR SALA: room lobby = Status=2 (FieldLobby) + InField + FieldSecondary. (Era
@@ -535,7 +537,10 @@ namespace RakionServer.World.Network
         /// Popula o Box (FUN_004774e0). Framing REAL via SendMessage ([seq][msgType]); antes ia por
         /// SendLobby (msgType no offset 0) -> o cliente parseava errado e nao populava.
         /// </summary>
-        public void SendInventoryList()
+        /// <param name="paintVisual">false = so o 0x13 (data/espelho), sem 0x2e/0x31 (render visual).
+        /// O render visual fora do menu de loja desenha o grid POR CIMA da tela atual (bug do char
+        /// select); o original so manda 0x13 no 0x14 — o visual fica p/ o open do inventario (0x2d).</param>
+        public void SendInventoryList(bool paintVisual = true)
         {
             // Formato REAL (RE de FUN_00420f10 + FUN_0040bcb0, 2026-06-08): apos [u16 0x13][u16 seq] ->
             // [u32 user+0x14a4][u8 count1][count1*u32 itemId][count1*u8 slot][u8 count2][u8 count3flag].
@@ -574,6 +579,7 @@ namespace RakionServer.World.Network
             // GRID VISUAL do box no OPEN: 0x2e code 0 count=N com os itens persistidos -> FUN_004774e0 chama
             // FUN_0044deb0 (mesmo render do 0x31 que funciona ao vivo). E' o que faltava p/ os itens da sessao
             // anterior aparecerem no open. gold/cash = saldo atual (nao muda nada no HUD).
+            if (!paintVisual) return;
             if (BoxItems.Count > 0) SendBoxVisual();
             // DIAGNOSTICO: tambem manda os 0x31 (FUN_0047d1d0, render SEM gate de menu-state — o caminho que
             // funciona AO VIVO na compra). O frida mostra qual dispara/renderiza no open (0x2e gated vs 0x31).

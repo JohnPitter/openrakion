@@ -27,6 +27,12 @@ _verify.xfs
 *.log
 .DS_Store
 Thumbs.db
+# Output de build .NET
+[Bb]in/
+[Oo]bj/
 
 # Exceções: configs de exemplo PODEM entrar
 !server/config/*.ini
+# Exceção: blobs do replay de login (oraculo 0x0C/0x0D) — SEM eles o login trava
+# em "Logging in." (são respostas de protocolo capturadas, não binários do cliente)
+!server/RakionServer/src/RakionServer.World/oracle_*.bin

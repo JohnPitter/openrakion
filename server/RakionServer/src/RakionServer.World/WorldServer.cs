@@ -160,7 +160,10 @@ namespace RakionServer.World
                     Domain.Field[] snapshot;
                     lock (Fields) snapshot = Fields.ToArray();
                     foreach (var f in snapshot)
+                    {
                         if (f.State == 2) MatchTick(f);
+                        else if (f.State == 1 && !f.Settled) SettleMatch(f);
+                    }
 
                     // O tick 1583 agora e' ECOADO 1:1 a cada 0040 do cliente (UdpGameplay.Process),
                     // fiel a captura original. O timer global de 150ms foi REMOVIDO: ele duplicava o
@@ -172,7 +175,8 @@ namespace RakionServer.World
             }
         }
 
-        private readonly System.Collections.Generic.Dictionary<int, long> _fieldStatusBeat = new();
+        // escrito pelo engine loop E pelos handlers de sessao (NotifyPlayerReady) -> concurrent
+        private readonly ConcurrentDictionary<int, long> _fieldStatusBeat = new();
 
         /// <summary>
         /// Um tick do motor de um field (FUN_00409940). Avanca as fases pelo deadline (field+0x2b8),
@@ -185,12 +189,32 @@ namespace RakionServer.World
             switch (f.Phase)
             {
                 case Domain.MatchPhase.Playing:
-                    // re-broadcast 0x48 a cada ~1s (mantem o timer/HUD do cliente)
-                    // SOLO PvE (time-attack Stage Clear): combate + countdown + clear sao CLIENT-SIDE.
-                    // NAO re-enviar 0x48 (re-envio glitchava o countdown 3->1 e interrompia combos) e NAO
-                    // rodar lógica de round/placar de deathmatch (nao existe nesse modo). O servidor so
-                    // mantem o handshake + a estrutura TCP; o cliente conduz a partida. (Modo PvP/deathmatch
-                    // reusara o motor de round no futuro, gated por field.Mode.)
+                    // SOLO PvE (Mode 0, time-attack Stage Clear): combate + countdown + clear sao
+                    // CLIENT-SIDE. NAO re-enviar 0x48 (re-envio glitchava o countdown 3->1 e
+                    // interrompia combos) e NAO rodar logica de round/placar; o cliente conduz.
+                    if (f.Mode == 0) break;
+
+                    // PvP (GOLEM/DEATHMATCH/TEAMDEATH/BOSS): motor de round servidor-side.
+                    // re-broadcast 0x48 a cada ~1s (mantem o timer/HUD dos clientes em sync)
+                    if (!_fieldStatusBeat.TryGetValue(f.Id, out long beat) || now - beat >= 1000)
+                    {
+                        _fieldStatusBeat[f.Id] = now;
+                        f.BroadcastLobby(f.Build0x48());
+                    }
+                    if (f.Warned30 == 0 && f.RemainingSec() <= 30)
+                    {
+                        f.Warned30 = 1; // field+0x2be (flag aviso de 30s)
+                        Log.Info("field", "field {0} round {1}: 30s restantes", f.Id, f.Round);
+                    }
+                    // tempo esgotado -> fim de round por placar (FUN_00409940 deadline)
+                    if (now >= f.DeadlineMs)
+                    {
+                        f.EndRound(f.DecideRoundWinnerByScore());
+                        // FIELD 0x4a aos playing: body=[cause/2bd][2bf][2c0][2c1] (mesmo layout dos
+                        // handlers 0x4a/0x4d de fim-de-round)
+                        f.BroadcastFieldPlaying(0x4a,
+                            new byte[] { f.LastRoundWinner, f.WinnerSide, f.Wins0, f.Wins1 });
+                    }
                     break;
 
                 case Domain.MatchPhase.RoundEnd:
@@ -201,13 +225,13 @@ namespace RakionServer.World
                         {
                             f.EndMatch(2); // acabaram os rounds
                             f.BroadcastLobby(Domain.Field.Build0x44(2));
-                            _fieldStatusBeat.Remove(f.Id);
+                            _fieldStatusBeat.TryRemove(f.Id, out _);
                         }
                         else if (f.CountPlaying() == 0)
                         {
                             f.EndMatch(5); // sem jogadores
                             f.BroadcastLobby(Domain.Field.Build0x44(5));
-                            _fieldStatusBeat.Remove(f.Id);
+                            _fieldStatusBeat.TryRemove(f.Id, out _);
                         }
                         else
                         {
@@ -221,6 +245,32 @@ namespace RakionServer.World
                 case Domain.MatchPhase.Pre:
                 default:
                     break;
+            }
+        }
+
+        /// <summary>
+        /// Liquida o resultado do MATCH no DB (roda 1x apos EndMatch, field+8==1): incrementa
+        /// win/lose/draw do characterinfo de cada jogador conforme o time vencedor (Wins0 vs
+        /// Wins1; empate = draw p/ todos) e atualiza o overlay em memoria (CharWin/Lose/Draw).
+        /// Mode 0 (solo PvE) nao liquida — o resultado vem do cliente pelos 0x50/0x53.
+        /// </summary>
+        private void SettleMatch(Domain.Field f)
+        {
+            f.Settled = true;
+            if (f.Mode == 0) return;
+            byte winner = f.Wins0 > f.Wins1 ? (byte)0 : f.Wins1 > f.Wins0 ? (byte)1 : (byte)2;
+            foreach (var r in f.Slots)
+            {
+                var s = r.Session;
+                if (s == null || !r.Occupied || s.ActiveCharId <= 0) continue;
+                int win = 0, lose = 0, draw = 0;
+                if (winner == 2) draw = 1;
+                else if (r.Team == winner) win = 1;
+                else lose = 1;
+                s.CharWin += (uint)win; s.CharLose += (uint)lose; s.CharDraw += (uint)draw;
+                _ = _db.AddCharacterResultAsync(s.ActiveCharId, win, lose, draw, exp: 0);
+                Log.Ok("field", "field {0} settle: char {1} seat {2} -> {3} (score {4})",
+                    f.Id, s.ActiveCharId, r.Slot, win != 0 ? "WIN" : lose != 0 ? "LOSE" : "DRAW", r.Score);
             }
         }
 

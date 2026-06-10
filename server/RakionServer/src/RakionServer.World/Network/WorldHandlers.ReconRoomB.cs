@@ -172,6 +172,9 @@ namespace RakionServer.World.Network
             rec.Score += exp;
             field.RecomputeMvp();
             u.Gold = u.Gold + gold;
+            // persiste a transacao (a loja debita do mesmo saldo; sem isto o credito sumia no relogin)
+            if (gold > 0 && u.GameInfoId > 0) _ = ctx.World.Db.AddGoldAsync(u.GameInfoId, (int)gold);
+            if (exp > 0 && u.ActiveCharId > 0) _ = ctx.World.Db.AddCharacterResultAsync(u.ActiveCharId, 0, 0, 0, exp);
 
             // FUN_004038e0 LOBBY 0x51 (level-up) ao proprio — [51][level][u16]
             // (nivel/aux derivados do servidor; aqui propagamos o evento de credito)
@@ -260,6 +263,9 @@ namespace RakionServer.World.Network
             rec.Score += cost;
             u.Gold = u.Gold + gold;
             field.RecomputeMvp();
+            // persiste a transacao (mesmo saldo que a loja debita)
+            if (gold > 0 && u.GameInfoId > 0) _ = ctx.World.Db.AddGoldAsync(u.GameInfoId, (int)gold);
+            if (cost > 0 && u.ActiveCharId > 0) _ = ctx.World.Db.AddCharacterResultAsync(u.ActiveCharId, 0, 0, 0, cost);
             SendLobbyMsg(ctx, 0x51, new byte[] { 0, 0 });
 
             // FIELD 0x52 broadcast (stats/placar) a todos ocupados do field

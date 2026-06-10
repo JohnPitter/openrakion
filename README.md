@@ -26,7 +26,7 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
 | Seleção de personagem, inventário, **armazém (box) entre sessões** | ✅ |
 | **Loja + débito de ouro/cash em tempo real** | ✅ |
 | Handshake UDP + entrada no campo + motor de partida | ✅ |
-| Modos PvP/deathmatch completos | 🟡 em progresso |
+| Modos PvP/deathmatch completos | 🟡 motor de round server-side implementado (timer, fim de round por placar, win/lose/draw persistido); falta validar com 2 clientes |
 | **GameGuard** original | ❌ morto (servidor nProtect offline desde ~2007) — exige client no-GG |
 | Botão **"Previous"** no client no-GG | ❌ crasha (parede de GG-removal estrutural; *workaround:* re-logar) |
 

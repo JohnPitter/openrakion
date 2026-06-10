@@ -252,6 +252,7 @@ do material do tutorial.)
 | Broker não loga "change to online" | world não alcança o broker | confira `GameServers.ini` (ip/ipcport 40708) e firewall |
 | `40708 em uso` | outra instância rodando | mate o processo / mude a porta no `.ini` |
 | Cliente trava antes de conectar | GameGuard | use o cliente sem GG (`rakion.GGp4.exe`) |
+| Cliente preso em **"Logging in."** (world loga `replay oraculo enviado (0x0C 0B ...)` = 0 bytes) | `oracle_0c.bin`/`oracle_0d.bin` ausentes ao lado do exe do world | os blobs vivem em `src/RakionServer.World/` e são copiados ao output pelo build — rebuilde; se rodar o exe de outro lugar, copie-os junto |
 | Porta UDP 40708 conflita | broker IPC + gameplay na mesma porta | é esperado: o BrokerLink é dono da 40708; gameplay extra usa 40709 |
 
 ---

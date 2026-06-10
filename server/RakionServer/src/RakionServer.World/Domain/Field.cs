@@ -87,6 +87,8 @@ namespace RakionServer.World.Domain
         public ushort Golem1Hp = 100;   // energia do Master Golem do time 1
         public bool ObjectiveDecided;   // ja houve vencedor por objetivo (Golem destruido)
 
+        public bool Settled;            // resultado do match ja liquidado no DB (WorldServer.SettleMatch)
+
         /// <summary>Array de 0x14 player-records (field+0x124, stride 0x14).</summary>
         public readonly PlayerRec[] Slots = NewSlots();
 
@@ -320,6 +322,41 @@ namespace RakionServer.World.Domain
             Log.Ok("field", "field {0} round {1} iniciado (dur={2}s mode={3})", Id, Round, RoundDurationSec, Mode);
         }
 
+        /// <summary>
+        /// Reset de inicio de MATCH (LAB_00407ab0 zera os contadores do match no engage 0x43):
+        /// rounds, wins, placar, objetivo e a flag de liquidacao — necessario p/ rematch no
+        /// mesmo field (senao o Round/Wins do match anterior encerram o novo imediatamente).
+        /// </summary>
+        public void ResetMatch()
+        {
+            Round = 0; Wins0 = 0; Wins1 = 0; Score0 = 0; Score1 = 0;
+            WinnerSide = 0; LastRoundWinner = 0; Warned30 = 0;
+            Golem0Hp = 100; Golem1Hp = 100; ObjectiveDecided = false;
+            Settled = false;
+            foreach (var r in Slots) if (r.Occupied) r.Score = 0;
+        }
+
+        /// <summary>
+        /// Vencedor do round quando o TEMPO esgota (deadline do motor, FUN_00409940):
+        /// DEATHMATCH (FFA) = time do jogador com maior Score (empate no topo = 2/empate);
+        /// demais modos = placar por time (Score0 vs Score1; igual = 2/empate).
+        /// </summary>
+        public byte DecideRoundWinnerByScore()
+        {
+            if (Mode == (byte)GameMode.Deathmatch)
+            {
+                uint best = 0; int atBest = 0; byte side = 2;
+                foreach (var r in Slots)
+                {
+                    if (!r.Occupied) continue;
+                    if (atBest == 0 || r.Score > best) { best = r.Score; side = r.Team; atBest = 1; }
+                    else if (r.Score == best) atBest++;
+                }
+                return atBest == 1 ? side : (byte)2;
+            }
+            return Score0 > Score1 ? (byte)0 : Score1 > Score0 ? (byte)1 : (byte)2;
+        }
+
         /// <summary>Recalcula MVP por time (maior Score) — modo 4 / placar.</summary>
         public void RecomputeMvp()
         {
@@ -426,6 +463,7 @@ namespace RakionServer.World.Domain
             if (winnerTeam == 0) Wins0++; else Wins1++;
             Log.Ok("field", "field {0} OBJETIVO: time{1} venceu (Golem inimigo destruido)", Id, winnerTeam);
             EndMatch(0);
+            BroadcastLobby(Build0x44(0)); // FimMatch aos clientes (os outros caminhos broadcastam no MatchTick)
         }
     }
 

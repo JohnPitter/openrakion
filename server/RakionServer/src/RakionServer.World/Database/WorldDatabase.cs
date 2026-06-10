@@ -366,6 +366,29 @@ namespace RakionServer.World.Database
             catch (Exception ex) { Log.Error("db", "AddCashAsync('{0}',{1}): {2}", accountId, delta, ex.Message); }
         }
 
+        /// <summary>
+        /// Credita o resultado de partida no personagem (characterinfo): incrementos de
+        /// win/lose/draw (liquidacao do match) e/ou exp (reporte 0x50/0x53).
+        /// </summary>
+        public async Task AddCharacterResultAsync(int characterId, int win, int lose, int draw, long exp)
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "UPDATE characterinfo SET win=win+@w, lose=lose+@l, draw=draw+@d, exp=exp+@e WHERE id=@id", c);
+                cmd.Parameters.AddWithValue("@w", win);
+                cmd.Parameters.AddWithValue("@l", lose);
+                cmd.Parameters.AddWithValue("@d", draw);
+                cmd.Parameters.AddWithValue("@e", exp);
+                cmd.Parameters.AddWithValue("@id", characterId);
+                await cmd.ExecuteNonQueryAsync();
+                Log.Debug("db", "AddCharacterResult: char={0} w/l/d=+{1}/+{2}/+{3} exp=+{4}", characterId, win, lose, draw, exp);
+            }
+            catch (Exception ex) { Log.Error("db", "AddCharacterResultAsync({0}): {1}", characterId, ex.Message); }
+        }
+
         /// <summary>Char ativo da conta (used=1; tiebreak slot). null se nao tem char.</summary>
         public async Task<CharacterInfo?> LoadActiveCharacterAsync(int userId)
         {
