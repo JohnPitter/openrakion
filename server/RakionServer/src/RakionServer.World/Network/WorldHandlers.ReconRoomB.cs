@@ -146,10 +146,13 @@ namespace RakionServer.World.Network
             }
             int seat = rec.Slot;
 
-            // requer field+0x119!=0 (modo valido) && field+8==2 (em jogo) && field+0x2b4==2 (fim-round)
-            if (!(field.Mode != 0 && field.State == 2 && field.Phase == MatchPhase.RoundEnd))
+            // requer field+0x119!=0 (modo valido) && field+8==2 (em jogo) && field+0x2b4==2 (fim-round).
+            // O original DISC 0x95 aqui; nosso timing de fases difere (EndMatch pode ja ter rodado
+            // quando o reporte chega) -> ignora sem derrubar a sessao.
+            if (!(field.Mode != 0 && (field.State == 2 || field.State == 1)))
             {
-                u.Disconnect(0x95);
+                Log.Debug("field", "[{0}] 0x50 fora de estado (mode={1} state={2} fase={3}) — ignorado",
+                    u.Slot, field.Mode, field.State, field.Phase);
                 return;
             }
 
@@ -174,11 +177,12 @@ namespace RakionServer.World.Network
             u.Gold = u.Gold + gold;
             // persiste a transacao (a loja debita do mesmo saldo; sem isto o credito sumia no relogin)
             if (gold > 0 && u.GameInfoId > 0) _ = ctx.World.Db.AddGoldAsync(u.GameInfoId, (int)gold);
-            if (exp > 0 && u.ActiveCharId > 0) _ = ctx.World.Db.AddCharacterResultAsync(u.ActiveCharId, 0, 0, 0, exp);
+            // exp + level-up server-side (FUN_0040d300, curva classlevelinfo) — persiste exp/nivel.
+            ctx.World.GrantExp(u, exp);
 
-            // FUN_004038e0 LOBBY 0x51 (level-up) ao proprio — [51][level][u16]
-            // (nivel/aux derivados do servidor; aqui propagamos o evento de credito)
-            SendLobbyMsg(ctx, 0x51, new byte[] { 0, 0 });
+            // FUN_004038e0 LOBBY 0x51 (level-up) ao proprio — [51][level][u16 levelPoint]
+            SendLobbyMsg(ctx, 0x51, new byte[] {
+                u.CharLevel, (byte)(u.CharLevelPoint & 0xff), (byte)(u.CharLevelPoint >> 8 & 0xff) });
 
             // FUN_0041b940 FIELD 0x40 (resultado completo) ao proprio — [serverSeq][40][...]
             using var w = new PacketWriter();

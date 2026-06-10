@@ -119,8 +119,9 @@ namespace RakionServer.World.Network
             if (pkt.Length >= 2 && pkt[0] == ClientInputOp0 && pkt[1] == ClientInputOp1)
             {
                 // DESCOBERTA (frida, world real): o combate solo PvE e' CLIENT-SIDE; o world real NAO ecoa
-                // 1583. Ecoar o tick mantinha o cliente em "modo networked" (retransmitindo 0040) -> combate
-                // bugava. Agora so CONSUMIMOS o input (sem eco) p/ o cliente cair em client-side.
+                // 1583 no stage — so CONSUMIMOS o input. Nas salas BATTLE/PvP (Mode != 0) o relogio 1583 e'
+                // DIRIGIDO PELO TIMER do motor (WorldServer, ~150ms, GameSeq INCREMENTANDO — seq fixo congela
+                // o personagem). NAO ecoar 1:1 aqui: eco devolve seq fixo (=val) e vira tempestade de 2ms.
                 if (pkt.Length >= 8)
                 {
                     var gs = _world.GetSessionByIp(from.Address.ToString());

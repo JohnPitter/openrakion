@@ -165,13 +165,41 @@ namespace RakionServer.World
                         else if (f.State == 1 && !f.Settled) SettleMatch(f);
                     }
 
-                    // O tick 1583 agora e' ECOADO 1:1 a cada 0040 do cliente (UdpGameplay.Process),
-                    // fiel a captura original. O timer global de 150ms foi REMOVIDO: ele duplicava o
-                    // 1583 (clock 2x rapido -> cargas terminavam rapido demais) e desacoplava o echo
-                    // do input (combos/troca-de-arma nao completavam).
                 }
                 catch (Exception ex) { Log.Debug("field", "engine tick: {0}", ex.Message); }
                 await Task.Delay(100, ct).ContinueWith(_ => { }, TaskScheduler.Default);
+            }
+        }
+
+        /// <summary>
+        /// Relogio de gameplay 1583 (150ms) APENAS p/ salas BATTLE/PvP (Mode != 0): GameSeq
+        /// INCREMENTA a cada tick — e' o frame/clock da partida; seq fixo congela o personagem e
+        /// cadencia errada deixa o cliente congelado ate o seq alinhar (~2min observados a 200ms).
+        /// Solo stage (Mode 0) e' client-side: sem tick (eco/timer no solo interrompia combos).
+        /// Loop dedicado p/ manter os 150ms (o engine loop dorme 100ms -> tick efetivo de 200ms).
+        /// </summary>
+        private async Task GameClockLoopAsync(CancellationToken ct)
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    Domain.Field[] snapshot;
+                    lock (Fields) snapshot = Fields.ToArray();
+                    foreach (var f in snapshot)
+                    {
+                        if (f.State != 2 || f.Mode == 0) continue;
+                        foreach (var r in f.Slots)
+                        {
+                            var s = r.Session;
+                            if (s == null || !r.Occupied || s.UdpEndpoint == null) continue;
+                            unchecked { s.GameSeq++; }
+                            _udpGame?.SendTick(s.UdpEndpoint, s.GameSeq);
+                        }
+                    }
+                }
+                catch (Exception ex) { Log.Debug("field", "game clock: {0}", ex.Message); }
+                await Task.Delay(150, ct).ContinueWith(_ => { }, TaskScheduler.Default);
             }
         }
 
@@ -195,12 +223,9 @@ namespace RakionServer.World
                     if (f.Mode == 0) break;
 
                     // PvP (GOLEM/DEATHMATCH/TEAMDEATH/BOSS): motor de round servidor-side.
-                    // re-broadcast 0x48 a cada ~1s (mantem o timer/HUD dos clientes em sync)
-                    if (!_fieldStatusBeat.TryGetValue(f.Id, out long beat) || now - beat >= 1000)
-                    {
-                        _fieldStatusBeat[f.Id] = now;
-                        f.BroadcastLobby(f.Build0x48());
-                    }
+                    // SEM re-broadcast periodico de 0x48: o re-envio interrompia combos no solo e a
+                    // captura do room flow (mitm_full_113423) mostra UM 0x48 so na entrada. O cliente
+                    // conta o tempo sozinho a partir dele; cadencia real em PvP = pendente de captura.
                     if (f.Warned30 == 0 && f.RemainingSec() <= 30)
                     {
                         f.Warned30 = 1; // field+0x2be (flag aviso de 30s)
@@ -337,14 +362,50 @@ namespace RakionServer.World
 
             _ = Task.Run(() => AcceptLoopAsync(_cts.Token));
             _ = Task.Run(() => FieldEngineLoopAsync(_cts.Token)); // motor da partida por-field (FUN_00409940)
+            _ = Task.Run(() => GameClockLoopAsync(_cts.Token));   // relogio 1583 (150ms) das salas Battle/PvP
 
             await _db.PingAsync();
             await LoadItemDefsCacheAsync();   // catalogo de itens (iteminfo) p/ a compra 0x2e
+            _levelCurve = await _db.LoadLevelCurveAsync(); // curva de exp por classe (level-up 0x50)
+            Log.Ok("level", "curva de level carregada: {0} entradas (classlevelinfo)", _levelCurve.Count);
             Log.Ok("world", "World Server pronto (ServerId={0})", _cfg.ServerId);
         }
 
         /// <summary>Acesso ao DB para os handlers (compra 0x2e).</summary>
         public WorldDatabase Db => _db;
+
+        private System.Collections.Generic.Dictionary<(byte Cls, byte Level), int> _levelCurve = new();
+
+        /// <summary>Exp TOTAL p/ avancar do nivel atual (classlevelinfo). 0 = sem proximo nivel.</summary>
+        public int NextLevelExp(byte cls, byte level) => _levelCurve.TryGetValue((cls, level), out var e) ? e : 0;
+
+        /// <summary>
+        /// Credita exp ao char ativo e processa level-ups (FUN_0040d300): acumula CharExp,
+        /// sobe CharLevel/CharLevelPoint pela curva classlevelinfo e persiste exp + nivel no
+        /// characterinfo. Devolve quantos niveis subiu (0 = nenhum).
+        /// </summary>
+        public int GrantExp(ClientSession s, uint exp)
+        {
+            if (s.ActiveCharId <= 0 || exp == 0) return 0;
+            s.CharExp += exp;
+            _ = _db.AddCharacterResultAsync(s.ActiveCharId, 0, 0, 0, exp);
+            int ups = 0;
+            while (s.CharLevel < 99)
+            {
+                int next = NextLevelExp(s.CharClass, s.CharLevel);
+                if (next <= 0 || s.CharExp < next) break;
+                s.CharLevel++;
+                s.CharLevelPoint++;
+                ups++;
+            }
+            if (ups > 0)
+            {
+                _ = _db.UpdateCharacterLevelAsync(s.ActiveCharId, s.CharLevel, (byte)Math.Min(s.CharLevelPoint, 255));
+                Log.Ok("level", "[{0}] char {1} LEVEL UP -> {2} (+{3} nivel(is), exp total {4})",
+                    s.Slot, s.ActiveCharId, s.CharLevel, ups, s.CharExp);
+            }
+            return ups;
+        }
 
         private System.Collections.Generic.Dictionary<int, Database.ItemDef> _itemDefs = new();
         /// <summary>Catalogo de itens (iteminfo) carregado no boot. Preco Gold/Cash por itemId.</summary>
@@ -467,6 +528,8 @@ namespace RakionServer.World
             if (ch != null)
             {
                 s.ActiveCharId = ch.Id;                                 // useriteminfo.characterid
+                s.CharClass = ch.Class;                                 // classe -> curva de level (0x50)
+                s.CharExp = ch.Exp < 0 ? 0 : ch.Exp;                    // exp acumulado (level-up server-side)
                 s.CharLevel = ch.Level == 0 ? (byte)1 : ch.Level;       // overlay 0x0C @96 (nivel na tela)
                 s.CharWin = (uint)(ch.Win < 0 ? 0 : ch.Win);            // overlay 0x0C @73
                 s.CharLose = (uint)(ch.Lose < 0 ? 0 : ch.Lose);         // overlay 0x0C @77

@@ -26,7 +26,10 @@ namespace RakionServer.World.Network
             Table[0x36] = new("FieldPlayerList", 0x422c90, Op_FieldPlayerList);
             Table[0x3a] = new("FieldLeaveGame", 0x4234e0, Op_FieldLeaveGame);
             Table[0x3b] = new("RoomCreate", 0x423580, Op_RoomCreate);
-            Table[0x3d] = new("FieldGameAction", 0x423ad0, Op_FieldGameAction);
+            // 0x3d/0x46/0x4d/0x4f: NAO sobrescrever — a tabela base (Build) aponta p/ as versoes
+            // Recon (ReconCombatA/B/RoomB), integradas ao motor de partida (Field/wins/settle).
+            // As versoes geradas da mesma FUN_xxxx nao mexem no estado do match (ex.: o 0x4d
+            // gerado ignorava o golem destruido -> a partida terminava em empate por timeout).
             Table[0x3e] = new("FieldGameReady", 0x423b70, Op_FieldGameReady);
             Table[0x3f] = new("FieldGameStart_3f", 0x423c00, Op_FieldGameStart_3f);
             Table[0x40] = new("FieldSetGameMode", 0x423cc0, Op_FieldSetGameMode);
@@ -34,13 +37,11 @@ namespace RakionServer.World.Network
             Table[0x42] = new("FieldUnitCommand", 0x424100, Op_FieldUnitCommand);
             Table[0x43] = new("FieldUnitStop", 0x424210, Op_FieldUnitStop);
             Table[0x45] = new("FieldUnitByteAction", 0x4242c0, Op_FieldUnitByteAction);
-            Table[0x46] = new("FieldUnitPickup", 0x424350, Op_FieldUnitPickup);
             Table[0x4a] = new("FieldUnitCharAction", 0x4246e0, Op_FieldUnitCharAction);
             Table[0x4b] = new("FieldChatBroadcast", 0x4247b0, Op_FieldChatBroadcast);
             Table[0x4c] = new("FieldTaggedBroadcast", 0x424880, Op_FieldTaggedBroadcast);
-            Table[0x4d] = new("FieldPairUpdate", 0x424980, Op_FieldPairUpdate);
-            Table[0x4f] = new("FieldSlotAction", 0x424a20, Op_FieldSlotAction);
-            Table[0x50] = new("GamePointSettle", 0x424b60, Op_GamePointSettle);
+            // 0x50: NAO sobrescrever — vale Op_0x50_Recon (exp/gold + level-up; o gerado
+            // Op_GamePointSettle desconectava com DISC 0x95 no settle pos-round do PvP).
             Table[0x53] = new("GameResultReport", 0x425010, Op_GameResultReport);
             Table[0x56] = new("GameChat", 0x425620, Op_GameChat);
             Table[0x57] = new("GameVoiceChat", 0x4256d0, Op_GameVoiceChat);

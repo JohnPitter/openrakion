@@ -65,6 +65,8 @@ namespace RakionServer.World.Network
         public System.Collections.Generic.List<int> BoxItems { get; set; } = new(); // itembox (armazem) carregado no login: exibido no box + a contagem = proximo slot da compra
         public System.Collections.Generic.List<RakionServer.World.Database.UserItem> Items { get; set; } = new(); // inventario (useriteminfo) p/ o Box (0x2f)
         public byte CharLevel { get; set; } = 1;             // nivel do char ativo -> overlay 0x0C @96 (offset cravado no diff golden)
+        public byte CharClass { get; set; }                  // classe do char ativo -> curva de level (classlevelinfo)
+        public long CharExp { get; set; }                    // exp TOTAL acumulado do char ativo (level-up 0x50)
         public uint CharWin { get; set; }                    // -> overlay 0x0C @73 (captura-diff)
         public uint CharLose { get; set; }                   // -> overlay 0x0C @77
         public uint CharDraw { get; set; }                   // -> overlay 0x0C @81
@@ -72,6 +74,9 @@ namespace RakionServer.World.Network
         public ushort[] Stats { get; } = new ushort[10];     // stats alocados (this+0x1568+idx*2) p/ a alocacao 0x33
         public string Md5Hash1 { get; set; } = "";           // MD5 do client (modo 0)
         public string Md5Hash2 { get; set; } = "";           // MD5 do client (modo 1)
+        public byte PendingRoomMap;                          // map do 0x3b (sala criada) -> aplicado ao Field no 0x4b
+        public byte PendingRoomMode;                         // mode do 0x3b: 0=stage (client-side), !=0=Battle/PvP (networked)
+        public ushort PendingRoomDurationSec;                // duracao do round em SEGUNDOS (u16 do 0x3b, 290..1210)
 
         // estado de combate/field (campos do user[slot] resolvidos por FUN_0040b7d0 e helpers de field)
         public ushort FieldTargetIndex; // user+0x14a0 (indice do field-objeto alvo resolvido por FUN_0040b7d0)
@@ -92,7 +97,6 @@ namespace RakionServer.World.Network
         public bool ExpBonusActive;     // user+0x236c != 0 (multiplicador de exp x3/2 ativo)
 
         private ushort _clientSeq;   // user+0x146e (ultimo seq recebido)
-        private ushort _serverSeq;   // user+0x1488 (seq de envio)
         private byte[] _invReqBody = System.Array.Empty<byte>();  // body do 0x2c (SlotActive/user14a4 do cliente) p/ ecoar no 0x12/0x13
 
         /// <summary>
@@ -237,6 +241,9 @@ namespace RakionServer.World.Network
         private static readonly byte[] _r1f = Hex("1f000000e7034a500001000000000008e703000000000000"); // ALINHADO real (08)
         private static readonly byte[] _r1e = Hex("1e000001646368616e6e656c3031000000e7034a500001000000000052a15ef61ea2c65b"); // ALINHADO real
         private static readonly byte[] _r36 = Hex("3600000020000000648c0509"); // ALINHADO ao frida do original ([00 00][20000000][handle], = 0x14)
+        // SEGUNDO 0x36 (mitm_full_113423: o original o manda apos o ack UDP 0d03 do cliente; e' ele
+        // que ARMA a lista de games — sem ele o botao Create do channel lobby nao faz nada).
+        private static readonly byte[] _r36b = Hex("3600006a4dcaaf2b4b3d9fa5");
         private static readonly byte[] _r3b = Hex("3b00000000538b003600007f"); // ALINHADO ao world real (frida)
         private static readonly byte[] _r43 = Hex("43000008010142003b000000"); // ALINHADO ao world real (frida)
         private static readonly byte[] _r48 = Hex("480001b3010000141400a00f"); // ALINHADO ao world real (frida)
@@ -293,17 +300,24 @@ namespace RakionServer.World.Network
                     // pinta do espelho QUANDO E' CONSTRUIDO (igual o equip, carregado no 0x0C). O 0x13 da resposta
                     // ao 0x2d chega DEPOIS do painel construir (corrida) -> box vazio. Mandando o 0x13 aqui (antes
                     // de qualquer abertura do inventario), o espelho ja esta preenchido quando o painel monta.
-                    // SO o 0x13 (data/espelho do box) — sem 0x2e/0x31: o render visual fora do menu de
-                    // loja desenhava o grid do shop POR CIMA do char select (o original nao manda no 0x14).
-                    if (BoxItems.Count > 0) SendInventoryList(paintVisual: false);
+                    // NADA alem de 14/1f/1e aqui: o original (mitm_full_113423) nao manda 0x13 nem
+                    // pacotes de loja neste ponto. O box e' (re)pintado no open do inventario (0x2c/0x2d).
                     return true;
-                case 0x36: SendEncryptedFrame(_r36); Log.Info("lobby", "[{0}] 0x36 resp", Slot); return true;
+                case 0x36:
+                    SendEncryptedFrame(_r36);
+                    // o original manda o 2o 0x36 logo apos o ack UDP 0d03 do cliente (~ms depois do
+                    // ack TCP); mandamos em sequencia — e' ele que ARMA a lista de games (botao Create).
+                    SendEncryptedFrame(_r36b);
+                    Log.Info("lobby", "[{0}] 0x36 ack + 0x36b (arma a lista de games)", Slot);
+                    return true;
                 case 0x3b: // CRIAR SALA: room lobby = Status=2 (FieldLobby) + InField + FieldSecondary. (Era
                     // Status=3; 2 e' "sala montada antes do match" -> habilita shop 0x2d/2e/2f. O stage (0x4b)
                     // promove a Status=3 via CreateField.)
                     FieldSecondary = true; SecondActive = true; Status = 2; InField = true;
+                    ParseRoomCreate(data); // guarda map/mode da sala -> decide stage (client-side) vs Battle (networked)
                     SendEncryptedFrame(_r3b);
-                    Log.Ok("lobby", "[{0}] 0x3b sala criada -> room lobby (Status=2, FSec)", Slot);
+                    Log.Ok("lobby", "[{0}] 0x3b sala criada -> room lobby (Status=2, FSec, map={1} mode={2})",
+                        Slot, PendingRoomMap, PendingRoomMode);
                     return true;
                 case 0x43: SendEncryptedFrame(_r43); Log.Info("lobby", "[{0}] 0x43 resp", Slot); return true;
                 case 0x48: SendEncryptedFrame(_r48); Log.Info("lobby", "[{0}] 0x48 resp", Slot); return true;
@@ -366,6 +380,16 @@ namespace RakionServer.World.Network
                     // (Op_RoomRosterSync/Op_GroupMemberInfo/Op_RoomMemberQuery) -> NAO consumir aqui, deixa o
                     // Dispatch rodar (gate passa: channel/room lobby = InField+FSec+Status=2).
                     if (opcode == 0x2d || opcode == 0x2e || opcode == 0x2f || opcode == 0x33) return false;
+                    // Salas BATTLE/PvP (Mode != 0): os opcodes de COMBATE vao aos handlers reais do
+                    // motor de partida — 0x4d (par golem/facing: y==0 = golem inimigo destruido ->
+                    // fim de round), 0x4f (morte), 0x46 (hit), 0x3d (troca de arma), 0x50 (reporte
+                    // de exp/gold do fim de partida -> level-up). No SOLO (Mode 0) continuam
+                    // engolidos: o combate e' client-side e o 0x4d (y==0) encerraria o stage.
+                    if (opcode == 0x4d || opcode == 0x4f || opcode == 0x46 || opcode == 0x3d || opcode == 0x50)
+                    {
+                        var bf = _server.GetField(FieldId);
+                        if (bf != null && bf.Mode != 0) return false; // dispatch -> Op_0xNN_Recon
+                    }
                     // No lobby/stage o cliente manda varios opcodes que o world original so consome
                     // sem responder. Evita DISC enquanto a fase de gameplay nao esta toda portada.
                     if (InField) { Log.Debug("lobby", "[{0}] opcode {1:X2} em campo (sem resp)", Slot, opcode); return true; }
@@ -392,18 +416,19 @@ namespace RakionServer.World.Network
         // ---- envio ----------------------------------------------------------
 
         /// <summary>
-        /// Envia uma mensagem world->client. O conteudo [u16 serverSeq][u16 msgType][data]
-        /// e' CIFRADO (AES 12->16, FUN_004038e0/FUN_00401040) e enquadrado com [u16 size].
-        /// O client decifra tudo apos o size. serverSeq = user+0x1488 (incrementa por msg).
+        /// Envia uma mensagem world->client pelo canal FIELD: [u16 msgType][data], CIFRADO
+        /// (AES 12->16, FUN_004038e0/FUN_00401040) e enquadrado com [u16 size].
         /// </summary>
         public void SendMessage(ushort msgType, byte[] data)
         {
-            byte[] content = new byte[4 + data.Length];
-            BinaryPrimitives.WriteUInt16LittleEndian(content.AsSpan(0), _serverSeq);
-            BinaryPrimitives.WriteUInt16LittleEndian(content.AsSpan(2), msgType);
-            Array.Copy(data, 0, content, 4, data.Length);
-            Log.Debug("tx", "[{0}] FIELD seq={1} msg=0x{2:X2} {3}B: {4}", Slot, _serverSeq, msgType, content.Length, Convert.ToHexString(content));
-            unchecked { _serverSeq++; }
+            // WIRE REAL (mitm_full_113423, TODOS os frames W->C): [u16 msgType][data] — msgType
+            // PRIMEIRO, igual ao canal lobby. (A 1a leitura da RE punha [serverSeq][msgType]; o
+            // cliente lia o serverSeq como opcode — ex.: seq 0x000E virava "OnRecvSuccessUDP,
+            // Unknown error" no fim de round. O serverSeq user+0x1488 e' contador interno.)
+            byte[] content = new byte[2 + data.Length];
+            BinaryPrimitives.WriteUInt16LittleEndian(content.AsSpan(0), msgType);
+            Array.Copy(data, 0, content, 2, data.Length);
+            Log.Debug("tx", "[{0}] FIELD msg=0x{1:X2} {2}B: {3}", Slot, msgType, content.Length, Convert.ToHexString(content));
 
             byte[] body = Crypto.Enabled ? Crypto.Encrypt(content) : content;
             int size = body.Length + 2;
@@ -485,8 +510,6 @@ namespace RakionServer.World.Network
             }
             if (f0c.Length > 0) SendEncryptedFrame(f0c);
             SendEncryptedFrame(f0d);
-            // os frames do replay levam serverSeq 0x0C/0x0D; continuo o contador daqui (0x0E).
-            _serverSeq = 0x0E;
             Log.Ok("login", "[{0}] replay oraculo enviado (0x0C {1}B gold={3} cash={4} + 0x0D {2}B, 0x10 apos UDP)", Slot, f0c.Length, f0d.Length, Gold, Cash);
         }
 
@@ -537,10 +560,7 @@ namespace RakionServer.World.Network
         /// Popula o Box (FUN_004774e0). Framing REAL via SendMessage ([seq][msgType]); antes ia por
         /// SendLobby (msgType no offset 0) -> o cliente parseava errado e nao populava.
         /// </summary>
-        /// <param name="paintVisual">false = so o 0x13 (data/espelho), sem 0x2e/0x31 (render visual).
-        /// O render visual fora do menu de loja desenha o grid POR CIMA da tela atual (bug do char
-        /// select); o original so manda 0x13 no 0x14 — o visual fica p/ o open do inventario (0x2d).</param>
-        public void SendInventoryList(bool paintVisual = true)
+        public void SendInventoryList()
         {
             // Formato REAL (RE de FUN_00420f10 + FUN_0040bcb0, 2026-06-08): apos [u16 0x13][u16 seq] ->
             // [u32 user+0x14a4][u8 count1][count1*u32 itemId][count1*u8 slot][u8 count2][u8 count3flag].
@@ -576,38 +596,10 @@ namespace RakionServer.World.Network
             w.WriteByte(0);                                                      // count3 flag = 0 (sem bloco appearance)
             SendEncryptedFrame(w.ToArray());
             Log.Ok("shop", "[{0}] 0x13 inventario enviado: bag={1}, box(count2)={2}", Slot, count1, count2);
-            // GRID VISUAL do box no OPEN: 0x2e code 0 count=N com os itens persistidos -> FUN_004774e0 chama
-            // FUN_0044deb0 (mesmo render do 0x31 que funciona ao vivo). E' o que faltava p/ os itens da sessao
-            // anterior aparecerem no open. gold/cash = saldo atual (nao muda nada no HUD).
-            if (!paintVisual) return;
-            if (BoxItems.Count > 0) SendBoxVisual();
-            // DIAGNOSTICO: tambem manda os 0x31 (FUN_0047d1d0, render SEM gate de menu-state — o caminho que
-            // funciona AO VIVO na compra). O frida mostra qual dispara/renderiza no open (0x2e gated vs 0x31).
-            for (int i = 0; i < BoxItems.Count && i < 0x78; i++) SendBoxAdd(BoxItems[i], (byte)i, 1);
-        }
-
-        /// <summary>
-        /// Desenha o GRID VISUAL do box (FUN_0044deb0) p/ os itens persistidos do itembox, no OPEN.
-        /// O 0x13 so' popula a data (this+0x21); o grid visual e' renderizado pelo handler 0x2e (FUN_004774e0),
-        /// que e' o MESMO render do 0x31 ao vivo (que funciona). Formato byte-a-byte do sender FUN_00427b10:
-        /// [0x2e][code=0][gold u32][cash u32][count u8][slots c×u8][items c×u16][types c×u8][flag u8].
-        /// EncryptMemory seguro pos-zero-fill (handle=0 -> indice=salt in-bounds; provado pelo 0x31).
-        /// </summary>
-        public void SendBoxVisual()
-        {
-            byte n = (byte)System.Math.Min(BoxItems.Count, 0x78);
-            using var w = new PacketWriter();
-            w.WriteWord(0x2e);                                       // msgType
-            w.WriteByte(0);                                          // code = 0 (sucesso)
-            w.WriteUInt32(Gold);                                     // gold (saldo atual; idempotente no HUD)
-            w.WriteUInt32(Cash);                                     // cash
-            w.WriteByte(n);                                          // count = N itens do box
-            for (int i = 0; i < n; i++) w.WriteByte((byte)i);        // slots (celula = indice)
-            for (int i = 0; i < n; i++) w.WriteWord((ushort)BoxItems[i]); // items u16
-            for (int i = 0; i < n; i++) w.WriteByte(0);             // types (0; icone usa o itemId)
-            w.WriteByte(0);                                          // flag final = 0
-            SendLobby(w.ToArray());
-            Log.Ok("shop", "[{0}] 0x2e box visual: {1} itens (FUN_0044deb0)", Slot, n);
+            // SO os DADOS (0x13) aqui — SEM 0x2e visual nem rajada de 0x31. O cliente tambem manda
+            // 0x2d nas TRANSICOES de saida do inventario (corpos com lixo/ponteiro); responder com
+            // render visual nesse momento pintava a UI da loja POR CIMA da tela seguinte (mesma
+            // classe do bug do char select). A pintura do box no OPEN vem dos 0x31 do 0x2c.
         }
 
         /// <summary>
@@ -646,8 +638,36 @@ namespace RakionServer.World.Network
             if (System.Threading.Interlocked.Exchange(ref _gameClockStarted, 1) != 0) return;
             GameSeq = 5;
             var f = _server.EnsureFieldForSession(this);
+            if (PendingRoomMode != 0) { f.Mode = PendingRoomMode; f.MapId = PendingRoomMap; }
+            if (PendingRoomDurationSec != 0) f.RoundDurationSec = PendingRoomDurationSec; // tempo configurado na sala
             _server.NotifyPlayerReady(f, this);
-            Log.Ok("field", "[{0}] spawn -> motor da partida (field {1}, seat {2})", Slot, f.Id, FieldSeat);
+            // Sala Battle/PvP (mode != 0) = fluxo NETWORKED: o SERVER inicia o loop UDP com o 1o
+            // tick 1583 (mitm_full_113423: o original manda 1583 ANTES do 1o 0040 do cliente; sem
+            // ele o input fica congelado). Stage solo (mode 0) fica client-side: sem tick.
+            if (f.Mode != 0 && UdpEndpoint != null) _server.SendGameplayTick(UdpEndpoint, LastInput);
+            Log.Ok("field", "[{0}] spawn -> motor da partida (field {1}, seat {2}, mode {3})", Slot, f.Id, FieldSeat, f.Mode);
+        }
+
+        /// <summary>
+        /// Parse do 0x3b (FUN_00423580: name\0 senha\0 desc\0 [map][mode][flag][u16 durSec]...):
+        /// guarda map/mode/duracao da sala p/ aplicar ao Field no spawn (0x4b). Mapas Battle
+        /// (200-213) vem com mode 1-4; durSec validado em 0x122..0x4ba (290..1210s) no original.
+        /// </summary>
+        private void ParseRoomCreate(byte[] data)
+        {
+            try
+            {
+                var p = new PacketReader(data);
+                p.CString(0x29); p.CString(9); p.CString(0xc9);
+                if (p.Remaining >= 2) { PendingRoomMap = p.Byte(); PendingRoomMode = p.Byte(); }
+                if (p.Remaining >= 3)
+                {
+                    p.Byte(); // flag (param_3[+2], <0x16)
+                    ushort dur = p.UInt16();
+                    if (dur >= 0x122 && dur <= 0x4ba) PendingRoomDurationSec = dur;
+                }
+            }
+            catch { PendingRoomMap = 0; PendingRoomMode = 0; PendingRoomDurationSec = 0; }
         }
 
         /// <summary>

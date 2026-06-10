@@ -389,6 +389,44 @@ namespace RakionServer.World.Database
             catch (Exception ex) { Log.Error("db", "AddCharacterResultAsync({0}): {1}", characterId, ex.Message); }
         }
 
+        /// <summary>
+        /// Curva de level (classlevelinfo): exp TOTAL necessario p/ avancar de cada nivel,
+        /// chaveada por (classe, nivel). Carregada 1x no boot (como o catalogo de itens).
+        /// </summary>
+        public async Task<Dictionary<(byte Cls, byte Level), int>> LoadLevelCurveAsync()
+        {
+            var map = new Dictionary<(byte, byte), int>();
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand("SELECT Class, level, exp FROM classlevelinfo", c);
+                await using var r = await cmd.ExecuteReaderAsync();
+                while (await r.ReadAsync())
+                    map[((byte)r.GetInt16(0), (byte)r.GetInt16(1))] = r.GetInt32(2);
+            }
+            catch (Exception ex) { Log.Error("db", "LoadLevelCurveAsync: {0}", ex.Message); }
+            return map;
+        }
+
+        /// <summary>Grava nivel/levelpoint do personagem (level-up server-side).</summary>
+        public async Task UpdateCharacterLevelAsync(int characterId, byte level, byte levelPoint)
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "UPDATE characterinfo SET level=@lv, levelpoint=@lp WHERE id=@id", c);
+                cmd.Parameters.AddWithValue("@lv", level);
+                cmd.Parameters.AddWithValue("@lp", levelPoint);
+                cmd.Parameters.AddWithValue("@id", characterId);
+                await cmd.ExecuteNonQueryAsync();
+                Log.Ok("db", "UpdateCharacterLevel: char={0} level={1} levelpoint={2}", characterId, level, levelPoint);
+            }
+            catch (Exception ex) { Log.Error("db", "UpdateCharacterLevelAsync({0}): {1}", characterId, ex.Message); }
+        }
+
         /// <summary>Char ativo da conta (used=1; tiebreak slot). null se nao tem char.</summary>
         public async Task<CharacterInfo?> LoadActiveCharacterAsync(int userId)
         {
