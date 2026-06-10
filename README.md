@@ -44,17 +44,16 @@ openrakion/
 │   │   ├── tools/        OracleDiff (diff de blobs de login)
 │   │   ├── deploy/        worldserver.ini (template)
 │   │   ├── Dockerfile     Container (Linux + .NET)
-│   │   ├── PROTOCOL.md    Protocolo world↔client (opcodes, frames)
-│   │   ├── PROTOCOL-BUDDY.md
+│   │   ├── README.md      Visão geral do solution (origem da RE, estrutura)
 │   │   └── TUTORIAL.md    Setup passo a passo
 │   ├── config/           Templates (Settings.ini, GameServers.ini, worldserver.ini)
 │   └── README.md
 ├── web/
 │   ├── launcher_web.py   Auth web (Python) — login do launcher
 │   └── *.php             Versão PHP de referência (base CarlosX)
-├── tools/                xfs_read/repack (formato XFS2), worldprobe/listprobe (sondas de protocolo)
+├── tools/                xfs_read/repack (XFS2), worldprobe/listprobe (sondas), difftest (teste diferencial)
 ├── database/             Schema do banco (MariaDB)
-├── docs/                 Guias: setup, GameGuard, config.xfs, formato XFS
+├── docs/                 Guias (setup, GameGuard, config.xfs) + protocolo (world/buddy)
 ├── CREDITS.md
 └── NOTICE.md
 ```

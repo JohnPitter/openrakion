@@ -202,7 +202,7 @@ Para confirmar o login + lobby sem precisar do cliente, use o harness incluso:
 
 ```bash
 # com o World rodando na 40708:
-python difftest.py 40708
+python ../../tools/difftest.py 40708
 ```
 Saída esperada (o login carrega a conta real do banco e o lobby responde cifrado):
 ```
@@ -218,7 +218,7 @@ No log do World você verá `login userID='test'` e `'test' logado (char='...', 
 
 O cliente original do Rakion v258 carrega o **GameGuard (nProtect)** — anticheat de
 terceiros cujo servidor de auth está **morto**. Esta reconstrução **não emula** o GameGuard
-(é fora de escopo; ver `PROTOCOL.md`/`README.md`). Implicações:
+(é fora de escopo; ver `../../docs/protocol-world.md`/`README.md`). Implicações:
 
 - O **servidor .NET não exige GameGuard** — ele aceita clientes que não falam GG (diferente
   do servidor nativo original, que gateia a conexão no handshake do GG).
@@ -260,7 +260,7 @@ do material do tutorial.)
 
 - **Build:** `dotnet build RakionServer.sln -c Release`
 - **Publicar:** `dotnet publish src/RakionServer.World/RakionServer.World.csproj -c Release -o out/world`
-- **Protocolo:** `PROTOCOL.md` (world) e `PROTOCOL-BUDDY.md` (buddy)
+- **Protocolo:** `../../docs/protocol-world.md` (world) e `../../docs/protocol-buddy.md` (buddy)
 - **Arquitetura/estado:** `README.md`
 - **Estender (novos handlers):** preencha os métodos em
   `src/RakionServer.World/Network/WorldHandlers*.cs` (cada opcode é um método; o endereço

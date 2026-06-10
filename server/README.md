@@ -40,7 +40,7 @@ Cada serviço em seu processo (ou via Docker — veja [`RakionServer/Dockerfile`
 3. **Broker:** rode o `RakionServer.Broker` (lê `Settings/`).
 4. **World:** rode o `RakionServer.World` (lê `worldserver.ini`).
 
-Passo a passo detalhado: [`RakionServer/TUTORIAL.md`](RakionServer/TUTORIAL.md). Protocolo: [`RakionServer/PROTOCOL.md`](RakionServer/PROTOCOL.md).
+Passo a passo detalhado: [`RakionServer/TUTORIAL.md`](RakionServer/TUTORIAL.md). Protocolo: [`docs/protocol-world.md`](../docs/protocol-world.md).
 
 ## Notas
 

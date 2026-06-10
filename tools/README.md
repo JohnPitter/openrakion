@@ -28,6 +28,14 @@ python xfs_read.py DataSetup.xfs            # lista
 python xfs_read.py DataSetup.xfs locale.ini # tenta extrair (single-block)
 ```
 
+## Sondas de protocolo (servidor)
+
+Clients headless que falam o protocolo do World direto (conectam, cifram/decifram o AES, validam pacotes) — úteis para testar o servidor sem abrir o jogo.
+
+- **`worldprobe.py`** — login + lobby + inventário + loja: valida que o World responde corretamente (conta carrega do banco, box e ouro batem).
+- **`listprobe.py`** — sonda a lista de canais/salas.
+- **`difftest.py`** — **teste diferencial**: dirige um World (nativo OU .NET) pela mesma sequência e compara as respostas. `python difftest.py <porta>` (ex.: `40708`).
+
 ## Outras (de terceiros, não inclusas)
 
 - **GConfig** (gerador de `config.xfs`) e **Md5Check** — do [RakionLauncher do CarlosX](https://github.com/CarlosX/RakionLauncher) (`compiled/`).

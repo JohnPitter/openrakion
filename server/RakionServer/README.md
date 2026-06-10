@@ -13,8 +13,8 @@ originais. Objetivo: réplica fiel em comportamento, *como se fosse o original*.
 | `RakionServer.Buddy` (`BuddyServer`) | `Buddy2.dll` (C++ nativo, client-side) | RE com Ghidra → 1ª impl. do lado servidor |
 | `RakionServer.Common` | — | núcleo compartilhado (pacotes, cifra IPC, INI, log) |
 
-Protocolo documentado em [`PROTOCOL.md`](PROTOCOL.md) (world) e
-[`PROTOCOL-BUDDY.md`](PROTOCOL-BUDDY.md), ancorado nos endereços dos binários.
+Protocolo documentado em [`docs/protocol-world.md`](../../docs/protocol-world.md) (world) e
+[`docs/protocol-buddy.md`](../../docs/protocol-buddy.md), ancorado nos endereços dos binários.
 
 > **Quer subir o servidor?** Passo a passo completo (build, MariaDB, configs, rodar os 3
 > servidores, Docker, cliente/GameGuard) em **[`TUTORIAL.md`](TUTORIAL.md)**.
