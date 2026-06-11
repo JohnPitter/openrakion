@@ -273,23 +273,30 @@ namespace RakionServer.World.Network
             if (u.Status != 0x02) { u.Disconnect(0x44); return; }
             byte statIdx = ctx.P.CanRead(1) ? ctx.P.Byte() : (byte)0;   // *param_3 = qual stat (0..9)
             if (statIdx > 9) { SendAllocResult(u, 5); return; }          // erro 5: indice invalido
-            if (u.CharLevelPoint == 0) { SendAllocResult(u, 3); return; } // erro 3: sem level-points
-            // aloca: stat++ e level-point-- (cap por-classe omitido). Reflete no DISPLAY do char (tela de
-            // status). PERSISTE no characterinfo (coluna hit1..maxcp + levelpoint) — antes era sessao-only e
-            // resetava no relogin (bug: "pontos nao registrados"). O UPDATE e' atomico (so' se ha' levelpoint).
+            // FUN_0040b3d0: precisa de level-point OU PU bonus point (this+0x2370). Sem nenhum -> erro 3.
+            if (u.CharLevelPoint == 0 && u.PowerLevelPoint == 0) { SendAllocResult(u, 3); return; }
+            if (u.Stats[statIdx] >= 50) { SendAllocResult(u, 4); return; } // cap por stat (tela mostra /50)
+            // aloca: stat++ e deduz do LEVEL-POINT primeiro; se zerado, do PU BONUS (powerlevelpoint).
+            // Persiste: level-point em characterinfo.levelpoint; PU bonus em usergameinfo.powerlevelpoint.
             u.Stats[statIdx]++;
-            u.CharLevelPoint--;
-            if (u.ActiveCharId > 0) _ = ctx.World.Db.AllocateStatAsync(u.ActiveCharId, statIdx);
-            // RESPOSTA sucesso (FUN_004229f0, 10B): [0x33][0][levelpoint u16][bonus u16][stat u8][newStat u16]
+            bool fromLevel = u.CharLevelPoint > 0;
+            if (fromLevel) u.CharLevelPoint--; else u.PowerLevelPoint--;
+            if (u.ActiveCharId > 0)
+            {
+                if (fromLevel) _ = ctx.World.Db.AllocateStatAsync(u.ActiveCharId, statIdx);
+                else _ = ctx.World.Db.AllocateStatPuAsync(u.ActiveCharId, u.GameInfoId, statIdx);
+            }
+            // RESPOSTA sucesso (FUN_004229f0, 10B): [0x33][0][levelpoint u16][PU bonus u16][stat u8][newStat u16]
             using var w = new PacketWriter();
             w.WriteWord(0x33);
             w.WriteByte(0);                          // status sucesso
             w.WriteWord((ushort)u.CharLevelPoint);   // levelpoint novo (this+0x1566)
-            w.WriteWord(0);                          // bonus points (this+0x2370) = 0
+            w.WriteWord((ushort)u.PowerLevelPoint);  // PU bonus points novo (this+0x2370)
             w.WriteByte(statIdx);                    // qual stat
             w.WriteWord(u.Stats[statIdx]);           // novo valor do stat alocado
             u.SendLobby(w.ToArray());
-            Log.Ok("shop", "[{0}] 0x33 alloc stat {1} -> {2} (level-points restantes {3})", u.Slot, statIdx, u.Stats[statIdx], u.CharLevelPoint);
+            Log.Ok("shop", "[{0}] 0x33 alloc stat {1} -> {2} ({3}: lvlpts={4} puBonus={5})",
+                u.Slot, statIdx, u.Stats[statIdx], fromLevel ? "level" : "PU", u.CharLevelPoint, u.PowerLevelPoint);
         }
 
         // erro/graceful da alocacao: SendLobby([0x33][err]) (FUN_004229f0 caminho de erro, 3B)

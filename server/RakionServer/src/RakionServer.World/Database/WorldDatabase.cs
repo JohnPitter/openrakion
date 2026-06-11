@@ -92,6 +92,7 @@ namespace RakionServer.World.Database
             public int Gold;
             public bool Ban;
             public string BanReason = "";
+            public int PowerLevelPoint;   // usergameinfo.powerlevelpoint = "Power User Bonus Points" (0x0C @48)
         }
 
         /// <summary>Carrega usergameinfo pela conta (name == id da conta).</summary>
@@ -102,7 +103,7 @@ namespace RakionServer.World.Database
                 await using var c = new MySqlConnection(_conn);
                 await c.OpenAsync();
                 await using var cmd = new MySqlCommand(
-                    "SELECT id, name, charname, gold, ban, IFNULL(BanReason,'') " +
+                    "SELECT id, name, charname, gold, ban, IFNULL(BanReason,''), powerlevelpoint " +
                     "FROM usergameinfo WHERE name=@n LIMIT 1", c);
                 cmd.Parameters.AddWithValue("@n", accountName);
                 await using var r = await cmd.ExecuteReaderAsync();
@@ -116,6 +117,7 @@ namespace RakionServer.World.Database
                     Gold = r.GetInt32(3),
                     Ban = r.GetInt32(4) != 0,
                     BanReason = r.GetString(5),
+                    PowerLevelPoint = r.GetInt32(6),
                 };
             }
             catch (Exception ex)
@@ -447,6 +449,34 @@ namespace RakionServer.World.Database
                 return n;
             }
             catch (Exception ex) { Log.Error("db", "AllocateStatAsync({0},{1}): {2}", characterId, statIdx, ex.Message); return 0; }
+        }
+
+        /// <summary>Persiste a alocacao de 1 ponto de PU BONUS (FUN_0040b3d0, quando levelpoint==0):
+        /// incrementa a coluna do stat (characterinfo) e decrementa usergameinfo.powerlevelpoint.
+        /// col vem de array fixo (sem injecao).</summary>
+        public async Task AllocateStatPuAsync(int characterId, int gameInfoId, int statIdx)
+        {
+            string[] cols = { "hit1", "hit2", "hit3", "hit4", "chit", "hp", "ap", "attackspeed", "speed", "maxcp" };
+            if (statIdx < 0 || statIdx >= cols.Length) return;
+            string col = cols[statIdx];
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using (var cmd1 = new MySqlCommand($"UPDATE characterinfo SET {col}={col}+1 WHERE id=@cid", c))
+                {
+                    cmd1.Parameters.AddWithValue("@cid", characterId);
+                    await cmd1.ExecuteNonQueryAsync();
+                }
+                await using (var cmd2 = new MySqlCommand(
+                    "UPDATE usergameinfo SET powerlevelpoint=powerlevelpoint-1 WHERE id=@gid AND powerlevelpoint>0", c))
+                {
+                    cmd2.Parameters.AddWithValue("@gid", gameInfoId);
+                    await cmd2.ExecuteNonQueryAsync();
+                }
+                Log.Ok("db", "AllocateStatPu: char={0} stat={1} ({2}) gi={3}", characterId, statIdx, col, gameInfoId);
+            }
+            catch (Exception ex) { Log.Error("db", "AllocateStatPuAsync({0},{1}): {2}", characterId, statIdx, ex.Message); }
         }
 
         /// <summary>Char ativo da conta (used=1; tiebreak slot). null se nao tem char.</summary>

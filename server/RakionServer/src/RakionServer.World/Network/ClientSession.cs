@@ -71,6 +71,7 @@ namespace RakionServer.World.Network
         public uint CharLose { get; set; }                   // -> overlay 0x0C @77
         public uint CharDraw { get; set; }                   // -> overlay 0x0C @81
         public uint CharLevelPoint { get; set; }             // pontos de level p/ distribuir -> overlay 0x0C @101
+        public uint PowerLevelPoint { get; set; }            // usergameinfo.powerlevelpoint = PU Bonus Points -> overlay 0x0C @48
         public ushort[] Stats { get; } = new ushort[10];     // stats alocados (this+0x1568+idx*2) p/ a alocacao 0x33
         public string Md5Hash1 { get; set; } = "";           // MD5 do client (modo 0)
         public string Md5Hash2 { get; set; } = "";           // MD5 do client (modo 1)
@@ -529,6 +530,7 @@ namespace RakionServer.World.Network
                 // OVERLAY DINAMICO do estado vivo (DB, carregado em LoadAndLogAsync ANTES deste envio).
                 // Offsets da active record CRAVADOS via captura-diff do worldserv original (setei DB
                 // levelpoint=99/win=88/lose=77/draw=66 e achei os offsets onde apareceram):
+                BinaryPrimitives.WriteUInt16LittleEndian(f0c.AsSpan(48), (ushort)PowerLevelPoint); // PU Bonus Points@48 (u16) — offset CRAVADO via captura (powerlevelpoint=51 -> 33 00)
                 BinaryPrimitives.WriteUInt32LittleEndian(f0c.AsSpan(56), Gold);        // gold@56
                 BinaryPrimitives.WriteUInt32LittleEndian(f0c.AsSpan(60), Cash);        // cash@60
                 BinaryPrimitives.WriteUInt32LittleEndian(f0c.AsSpan(73), CharWin);     // win@73

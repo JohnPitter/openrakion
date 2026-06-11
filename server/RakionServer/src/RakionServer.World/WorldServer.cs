@@ -531,6 +531,7 @@ namespace RakionServer.World
             s.Gold = (uint)(gi.Gold < 0 ? 0 : gi.Gold);
             int cash = await _db.GetCashAsync(userId);                  // cash keyed por account-name
             s.Cash = (uint)(cash < 0 ? 0 : cash);
+            s.PowerLevelPoint = (uint)(gi.PowerLevelPoint < 0 ? 0 : gi.PowerLevelPoint); // PU Bonus Points -> 0x0C @48
             var ch = await _db.LoadActiveCharacterAsync(gi.Id);
             if (ch != null)
             {
