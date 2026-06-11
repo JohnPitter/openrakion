@@ -99,6 +99,24 @@ namespace RakionServer.World.Network
 
         private ushort _clientSeq;   // user+0x146e (ultimo seq recebido)
         private byte[] _invReqBody = System.Array.Empty<byte>();  // body do 0x2c (SlotActive/user14a4 do cliente) p/ ecoar no 0x12/0x13
+        // Maquina de estado do inventario = user+0x144c do worldserv.exe (FUN_0040b000 no 0x2c,
+        // FUN_0040c960 no 0x2d). 0=fechado, 1=aberto (pos-enter, aguardando a 1a list), 2=loja.
+        // O 0x2d so' responde a LISTA (0x13) na 1a chamada (estado 1 -> 0); nas seguintes responde
+        // o ACK curto. Sem isto remandavamos 0x13 a cada 0x2d, e o 2o 0x2d (ao sair) recebia outra
+        // lista em vez do ack -> o cliente reprocessava o grid e caia no CHAR-SELECT no Previous.
+        private byte _invState;
+        // HANDLE de sessao = bytes 13..16 do 0x0C (login). CAPTURA do worldserv ORIGINAL (mitm
+        // inventario→Previous, 2026-06-11): os acks 0x2c/0x2d ECOAM esse handle (8deb863f no
+        // original), NAO o body do cliente. Com o handle errado o cliente nao reconhecia o estado do
+        // inventario e ficava em polling/sobreposto. Default = handle do oraculo (b3c3863f), sobrescrito
+        // do 0x0C real no login.
+        private byte[] _invHandle = new byte[] { 0xb3, 0xc3, 0x86, 0x3f };
+        private bool _r36bSent;   // 0x36b (arma a lista de games) so' 1x; remandar a cada poll travava o cliente
+        // Diagnóstico concluído (2026-06-10): com inventário VAZIO o cliente AINDA crasha no Previous
+        // -> crash é 100% client-side (csComponent::PrevChild, lista de widgets corrompida no teardown),
+        // independente dos dados do servidor. Conserto = patch no uitoolkit.dll (guard de alinhamento).
+        // Flag mantido em false (box volta a aparecer normalmente).
+        private const bool DiagEmptyInventory = false;
 
         /// <summary>
         /// Cifra do canal lobby/field (AES-128, chave/IV reais do worldserv.exe). No original
@@ -239,8 +257,8 @@ namespace RakionServer.World.Network
         private static byte[] Hex(string h) => Convert.FromHexString(h);
         private static readonly byte[] _r10 = Hex("10004e95dd29ce3a55db20b6ad97a65cc01c000000000000"); // GG challenge
         private static readonly byte[] _r14 = Hex("1400000020000000648c0509"); // 0x14 SPAWN: [00 00][20000000][handle]; ALINHADO ao frida do original (arma o scoring/combo)
-        private static readonly byte[] _r1f = Hex("1f000000e7034a500001000000000008e703000000000000"); // ALINHADO real (08)
-        private static readonly byte[] _r1e = Hex("1e000001646368616e6e656c3031000000e7034a500001000000000052a15ef61ea2c65b"); // ALINHADO real
+        private static readonly byte[] _r1f = Hex("1f000000e7034a500001000000000008e703000000000000"); // e703=user id 999 do NOSSO 'test' — o cliente valida (sem ele trava no char-select re-mandando 0x14)
+        private static readonly byte[] _r1e = Hex("1e000001646368616e6e656c3031000000e7034a500001000000000052a15ef61ea2c65b"); // e703=user id 999 do NOSSO 'test' (revertido — cliente valida)
         private static readonly byte[] _r36 = Hex("3600000020000000648c0509"); // ALINHADO ao frida do original ([00 00][20000000][handle], = 0x14)
         // SEGUNDO 0x36 (mitm_full_113423: o original o manda apos o ack UDP 0d03 do cliente; e' ele
         // que ARMA a lista de games — sem ele o botao Create do channel lobby nao faz nada).
@@ -306,10 +324,11 @@ namespace RakionServer.World.Network
                     return true;
                 case 0x36:
                     SendEncryptedFrame(_r36);
-                    // o original manda o 2o 0x36 logo apos o ack UDP 0d03 do cliente (~ms depois do
-                    // ack TCP); mandamos em sequencia — e' ele que ARMA a lista de games (botao Create).
-                    SendEncryptedFrame(_r36b);
-                    Log.Info("lobby", "[{0}] 0x36 ack + 0x36b (arma a lista de games)", Slot);
+                    // 0x36b (arma a lista de games p/ o botao Create) SÓ na 1a vez. A captura do original
+                    // mostra UM 0x36 por request; remandar o 0x36b a cada poll re-armava a game-list e
+                    // mantinha o cliente em polling (telas sobrepostas), travando o Previous.
+                    if (!_r36bSent) { _r36bSent = true; SendEncryptedFrame(_r36b); }
+                    Log.Info("lobby", "[{0}] 0x36 ack{1}", Slot, _r36bSent ? " (+0x36b 1a vez)" : "");
                     return true;
                 case 0x3b: // CRIAR SALA: room lobby = Status=2 (FieldLobby) + InField + FieldSecondary. (Era
                     // Status=3; 2 e' "sala montada antes do match" -> habilita shop 0x2d/2e/2f. O stage (0x4b)
@@ -360,15 +379,16 @@ namespace RakionServer.World.Network
                     // tambem no user14a4 do 0x13. (No MEU world a previa do char-select e' vazia => sem "varios armours".)
                     _invReqBody = data;
                     SendInventoryEnterAck(data);
-                    // Re-pinta o box ao abrir (0x31 por item). NÃO é fiel ao original (que renderiza o box
-                    // só pelo count2 do 0x13), mas no cliente NO-GG o grid do box só pinta via 0x31
-                    // (FUN_0047d1d0) — sem isto o box fica vazio na abertura. A corrupção de tela na SAÍDA
-                    // (Previous) é teardown client-side (cliente fecha sem mandar pacote — parede no-GG do
-                    // README), NÃO causada por estes 0x31; por isso ficam, para manter o box visível.
+                    // Pinta o box na abertura: no cliente no-GG o grid só pinta via 0x31 (FUN_0047d1d0),
+                    // nunca via 0x13. Mandados UMA vez aqui (não a cada poll de 0x2d, que era o que prendia
+                    // o cliente e quebrava o Previous) — a propria compra (0x2e) ja re-pinta com 0x31 sem
+                    // quebrar o Previous, entao 0x31 na abertura tb e' seguro.
                     for (int i = 0; i < BoxItems.Count && i < 0x78; i++) SendBoxAdd(BoxItems[i], (byte)i, 1);
                     return true;
-                case 0x2D: // req lista do inventario (FUN_00420f10) -> 0x13 (popula o grid do Box).
-                    SendInventoryList();
+                case 0x2D: // FIEL à captura: o 0x2d responde SEMPRE o ack curto (handle), NUNCA 0x13.
+                    // O original (test com box vazio) so' manda o ack; mandar 0x13 (lista) prendia o cliente
+                    // re-pedindo 0x2d (telas sobrepostas) e o Previous nao voltava p/ a lista de salas.
+                    SendInventoryAck(1);
                     return true;
                 case 0x53: // GameResultReport pos-clear (SOLO PvE). O handler real (Op_0x53_Recon) exige o
                     // field-record do match-engine, que esta OFF no solo (combate client-side) e DESCONECTAVA.
@@ -517,6 +537,8 @@ namespace RakionServer.World.Network
                 // E' DAQUI que o cliente renderiza o gear 3D + os ICONES do equip (NAO do 0x13, que cai num stub).
                 ApplyEquipAppearance(f0c);
             }
+            // handle de sessao p/ os acks 0x2c/0x2d (bytes 13..16 do 0x0C; ver _invHandle).
+            if (f0c.Length >= 17) _invHandle = new[] { f0c[13], f0c[14], f0c[15], f0c[16] };
             if (f0c.Length > 0) SendEncryptedFrame(f0c);
             SendEncryptedFrame(f0d);
             Log.Ok("login", "[{0}] replay oraculo enviado (0x0C {1}B gold={3} cash={4} + 0x0D {2}B, 0x10 apos UDP)", Slot, f0c.Length, f0d.Length, Gold, Cash);
@@ -549,18 +571,20 @@ namespace RakionServer.World.Network
         /// </summary>
         public void SendInventoryEnterAck(byte[] reqBody)
         {
-            // O cliente manda no 0x2c o SEU [SlotActive:u32][user14a4:u32] (contexto/ponteiro da UI). O 0x12
-            // enter-ack (FUN_00420de0) deve ECOAR esses valores; com (1,1) o cliente nao reconhece e trata
-            // como "char created". Framing [opcode@0][seq@2] (LOBBY, igual 0x0E/0x14/0x1f).
-            // recv-0x12 no cliente = "char created" (confirmado 3x, com (1,1) E com eco dos valores). O ack de
-            // inventory-enter NAO e' 0x12 — e' o ECHO do opcode 0x2c (path "ja entrou" de FUN_00420de0 via
-            // FUN_004038e0). Ecoamos o body do 0x2c p/ o cliente reconhecer o contexto (UI) e mandar o 0x2d.
+            // FORMATO REAL (captura do worldserv ORIGINAL, mitm inventario→Previous 2026-06-11):
+            //   W->C 0x2c = [2c 00][00][handle:4][00 01][00 12][00]  (12B)
+            // O original NAO ecoa o body do cliente — reflete o HANDLE de sessao (bytes 13..16 do 0x0C).
+            // Ecoar o body (FFFFFFFF8F21347C) deixava o cliente sem reconhecer o estado do inventario ->
+            // ficava em polling de 0x2d/0x36 (telas sobrepostas) e o Previous caia no char-select.
             using var w = new PacketWriter();
-            w.WriteWord(0x2c);   // opcode @0 — ECHO (NAO 0x12!)
-            w.WriteWord(0);       // seq @2
-            foreach (byte by in reqBody) w.WriteByte(by);  // ecoa o body do 0x2c
+            w.WriteWord(0x2c);                 // 2c 00
+            w.WriteByte(0);                    // 00
+            w.WriteBytes(_invHandle);          // handle de sessao (4B)
+            w.WriteByte(0); w.WriteByte(1);    // 00 01
+            w.WriteByte(0); w.WriteByte(0x12); // 00 12
+            w.WriteByte(0);                    // 00
             SendEncryptedFrame(w.ToArray());
-            Log.Ok("shop", "[{0}] 0x2c echo enter-ack ({1}B body)", Slot, reqBody.Length);
+            Log.Ok("shop", "[{0}] 0x2c enter-ack (handle {1})", Slot, System.Convert.ToHexString(_invHandle));
         }
 
         /// <summary>
@@ -592,6 +616,10 @@ namespace RakionServer.World.Network
             // e pelo 0x2e (FUN_004774e0). Por isso o item comprado AO VIVO (0x31) aparece, mas os persistidos do
             // itembox (so' no 0x13) NAO apareciam no open. Mando o count2 (data) + um 0x2e count=N (visual) abaixo.
             byte count2 = (byte)System.Math.Min(BoxItems.Count, 0x78);          // box = ate 120 celulas
+            // ===== DIAGNOSTICO (temporario): inventario VAZIO p/ isolar se a corrupcao da lista de
+            // widgets (crash csComponent::PrevChild no Previous) vem dos DADOS de item que mandamos.
+            // Se com count1=count2=0 o Previous AINDA crashar -> bug 100% client-side. Reverter depois. =====
+            if (DiagEmptyInventory) { count1 = 0; count2 = 0; }
             using var w = new PacketWriter();
             w.WriteWord(0x13);                                                   // opcode @0
             w.WriteWord(0);                                                      // seq @2
@@ -608,6 +636,29 @@ namespace RakionServer.World.Network
             // FIEL ao original (FUN_00420f10 + FUN_0040bcb0): o 0x2d responde SÓ este 0x13 — o count2
             // (itens do box) é o que pinta o grid. SEM 0x2e visual nem 0x31 (eram band-aids de quando o
             // 0x13 estava malformado; agora corrompiam a UI nas transições de tela).
+        }
+
+        /// <summary>
+        /// 0x2d ACK curto (FUN_00420f10, path "else": FUN_004038e0 subtype 3 = [0x2d][status]). O
+        /// worldserv original responde ISTO em todo 0x2d que NÃO seja a 1a list (FUN_0040c960 devolve
+        /// 1 quando user+0x144c==0, ou 2 quando ==loja — sem remontar a lista). É o "nada mudou" que o
+        /// cliente espera p/ concluir a saída do inventário e VOLTAR AO LOBBY. Remandar a lista 0x13 aqui
+        /// fazia o cliente reprocessar o grid de widgets e cair no char-select no Previous.
+        /// </summary>
+        public void SendInventoryAck(byte status)
+        {
+            // FORMATO REAL (captura do original): W->C 0x2d = [2d 00][00 00][2c 00 00][handle:4][00] (12B).
+            // Ecoa o handle de sessao (igual ao 0x2c). Antes mandavamos [2d 00][00 00][status] (5B) — o
+            // cliente nao reconhecia, ficava em polling e o Previous nao concluia a saida p/ a lista de salas.
+            using var w = new PacketWriter();
+            w.WriteWord(0x2d);            // 2d 00
+            w.WriteWord(0);              // 00 00
+            w.WriteWord(0x2c);           // 2c 00
+            w.WriteByte(0);              // 00
+            w.WriteBytes(_invHandle);    // handle de sessao (4B)
+            w.WriteByte(0);              // 00
+            SendEncryptedFrame(w.ToArray());
+            Log.Ok("shop", "[{0}] 0x2d ack (handle {1}) — fiel ao original", Slot, System.Convert.ToHexString(_invHandle));
         }
 
         /// <summary>

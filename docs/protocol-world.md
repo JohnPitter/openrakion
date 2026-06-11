@@ -126,3 +126,24 @@ Do broker `BrokenServer` (`Program.OnIPC` + `Network/Servers.cs`):
   [u16 usedSala][u16 maxSlots][u16 usedSlots][u8 crc]` → broker marca "online".
 - broker → world `RequestServerInfo (cmd 0)` / `RequestLogin (cmd 1)`; world responde
   `ResponseLogin (cmd 3)`. CRC = XOR de todos os bytes. Cifra opcional (campo `code`).
+
+## Inventário → Previous (capturado do worldserv ORIGINAL via mitm, 2026-06-11)
+Captura passthrough (cliente ↔ original sob Wine) do fluxo login → inventário → Previous. O cliente
+fica em **char-select** (não na lista de salas) se o servidor não replicar estes acks — antes
+remandávamos `0x13`/`0x31` a cada poll, o cliente reprocessava o grid de widgets, ficava em polling
+(telas sobrepostas) e o Previous caía no char-select. Frames W→C corretos (`ClientSession.cs`):
+
+| Opcode | Resposta do original | Notas |
+|--------|----------------------|-------|
+| `0x2c` (enter) | `[2c 00][00][handle:4][00 01][00 12][00]` | **handle de sessão** = bytes 13..16 do `0x0C` de login. NÃO ecoa o body do cliente. NÃO manda `0x31` aqui. |
+| `0x2d` (list) | `[2d 00][00 00][2c 00 00][handle:4][00]` | SEMPRE este ack — NUNCA a lista `0x13`. Remandar `0x13` a cada poll prende o cliente. |
+| `0x36` | `_r36` + `_r36b` só **1×** | `_r36b` arma a lista de games (botão Create); remandar a cada poll re-arma e mantém o polling. |
+
+- **Box (grid):** no cliente GG-removido o grid só pinta via `0x31` (FUN_0047d1d0), nunca via `0x13`.
+  Mandar `0x31` por item **uma vez** na abertura (handler `0x2c`) pinta o box sem re-quebrar o Previous
+  (a compra `0x2e` já re-pinta com `0x31`). `0x13` sozinho não renderiza.
+- **Handles NÃO são copiáveis** do original: o `e703` (=user id 999 do nosso `test`) em `_r1f`/`_r1e` é
+  VALIDADO pelo cliente — trocar por `0000` (como na captura, onde o `test` do container é id 1) trava
+  o cliente re-mandando `0x14` no char-select. Da captura aproveita-se só a **estrutura**, com handles nossos.
+- Captura do original: imagem `openrakion-server:latest` (container do `rakion-tutorial`, Wine win32 com
+  GG funcionando) + mitm passthrough `41708→40708`. A `rakion-spike:e2e` é a versão quebrada (GG falha).
