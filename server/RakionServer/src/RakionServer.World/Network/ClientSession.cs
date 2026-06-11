@@ -112,6 +112,7 @@ namespace RakionServer.World.Network
         // do 0x0C real no login.
         private byte[] _invHandle = new byte[] { 0xb3, 0xc3, 0x86, 0x3f };
         private bool _r36bSent;   // 0x36b (arma a lista de games) so' 1x; remandar a cada poll travava o cliente
+        private readonly int[] _potionSlot = new int[0x13];   // quickslot de pocao = user+0x1da4 (19 celulas)
         // Diagnóstico concluído (2026-06-10): com inventário VAZIO o cliente AINDA crasha no Previous
         // -> crash é 100% client-side (csComponent::PrevChild, lista de widgets corrompida no teardown),
         // independente dos dados do servidor. Conserto = patch no uitoolkit.dll (guard de alinhamento).
@@ -404,6 +405,12 @@ namespace RakionServer.World.Network
                     return true;
                 case 0x0f: return true; // keepalive do cliente: sem resposta TCP
                 // (0x4b acima inicia o relogio)
+                case 0x31: // potion slot: mover/trocar item entre o BOX e o quickslot de pocao
+                    HandlePotionSlot(data);
+                    return true;
+                case 0x34: // Buy Power User: responder p/ NAO travar o "Buying Power User"
+                    SendPowerUserResponse();
+                    return true;
                 default:
                     // Shop list/loadout (0x2d/0x2f) E buy (0x2e) DEVEM chegar aos handlers reais
                     // (Op_RoomRosterSync/Op_GroupMemberInfo/Op_RoomMemberQuery) -> NAO consumir aqui, deixa o
@@ -684,6 +691,80 @@ namespace RakionServer.World.Network
             w.WriteUInt32(0x00403900);     // val (copiado da captura do 0x31 box-render do original)
             SendEncryptedFrame(w.ToArray());
             Log.Ok("shop", "[{0}] 0x31 box-add: item {1} -> box slot {2}", Slot, itemId, boxSlot);
+        }
+
+        /// <summary>
+        /// 0x31 client->server: mover/trocar item entre o BOX (armazem, user+0x1e2c) e o POTION SLOT
+        /// (quickslot de pocao, user+0x1da4). Handler original FUN_00421870 -> FUN_0040cf10 (swap) e
+        /// responde um 0x31 com os descritores de origem e destino. SEM resposta o cliente trava em
+        /// "Changing slot for item". Faz o swap no modelo da sessao e responde reaproveitando o framing
+        /// do 0x31 box-render (FUN_0047d1d0): descritor = [type:lo][slot:hi], item no campo seguinte.
+        /// </summary>
+        private void HandlePotionSlot(byte[] data)
+        {
+            if (data.Length < 4) return;
+            byte srcType = data[0], srcSlot = data[1], destType = data[2], destSlot = data[3];
+            int srcItem = ReadCell(srcType, srcSlot);
+            int destItem = ReadCell(destType, destSlot);
+            WriteCell(srcType, srcSlot, destItem);   // swap origem <-> destino
+            WriteCell(destType, destSlot, srcItem);
+            SendPotionSlotMove(srcType, srcSlot, destItem, destType, destSlot, srcItem);
+            Log.Ok("shop", "[{0}] 0x31 potion-slot: ({1}:{2}) <-> ({3}:{4}) item={5}",
+                Slot, srcType, srcSlot, destType, destSlot, srcItem);
+        }
+
+        private int ReadCell(byte type, byte slot) =>
+            type == 0 ? (slot < BoxItems.Count ? BoxItems[slot] : 0)
+                      : (slot < _potionSlot.Length ? _potionSlot[slot] : 0);
+
+        private void WriteCell(byte type, byte slot, int item)
+        {
+            if (type == 0) { if (slot < BoxItems.Count) BoxItems[slot] = item; }
+            else if (slot < _potionSlot.Length) _potionSlot[slot] = item;
+        }
+
+        /// <summary>
+        /// Resposta do move (0x31), no mesmo layout do box-render: [u16 0x31][u16 seq][u32 srcDesc =
+        /// slot|type&lt;&lt;8|novoItemOrigem&lt;&lt;16][u32 0][u16 destDesc = type|slot&lt;&lt;8][u16 novoItemDestino]
+        /// [u32 lvl][u32 val]. O cliente grava cada item na celula do seu array (type 0 = box, 1 = potion slot).
+        /// </summary>
+        private void SendPotionSlotMove(byte srcType, byte srcSlot, int newSrcItem, byte destType, byte destSlot, int newDestItem)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x31);
+            w.WriteWord(0);
+            w.WriteUInt32((uint)srcSlot | ((uint)srcType << 8) | ((uint)(ushort)newSrcItem << 16));
+            w.WriteUInt32(0);
+            w.WriteWord((ushort)(destType | (destSlot << 8)));
+            w.WriteWord((ushort)newDestItem);
+            w.WriteUInt32(1);
+            w.WriteUInt32(0x00403900);
+            SendEncryptedFrame(w.ToArray());
+        }
+
+        /// <summary>
+        /// 0x34 Buy Power User. O caminho de SUCESSO do original (FUN_00422b10) concede powertime e responde
+        /// um frame msgType 0x17 (canal field) com valores de sessao (user+0x1460/+0x2370) — pendente. Aqui
+        /// respondemos o frame de RECUSA (canal lobby via FUN_004038e0, como o original fez ao 'test'): o
+        /// cliente so precisa RECEBER um 0x34 p/ destravar o "Buying Power User" e mostrar o dialogo. Estrutura
+        /// da captura do original: [34 00][04][h0][00][h2][h3][00][status][00][17 00] (12B). Conceder de fato
+        /// = setar powertime no DB (o char ja entra com Power User), sem depender do fluxo de compra.
+        /// </summary>
+        private void SendPowerUserResponse()
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x34);
+            w.WriteByte(0x04);
+            w.WriteByte(_invHandle[0]);
+            w.WriteByte(0x00);
+            w.WriteByte(_invHandle[2]);
+            w.WriteByte(_invHandle[3]);
+            w.WriteByte(0x00);
+            w.WriteByte(0x02);   // status (recusa, igual a captura do original)
+            w.WriteByte(0x00);
+            w.WriteWord(0x17);
+            SendEncryptedFrame(w.ToArray());
+            Log.Ok("shop", "[{0}] 0x34 power-user resposta (destrava, recusa)", Slot);
         }
 
         /// <summary>
