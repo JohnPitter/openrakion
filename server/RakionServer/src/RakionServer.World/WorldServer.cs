@@ -424,7 +424,12 @@ namespace RakionServer.World
         public bool IsBoxDisplayable(int itemId)
         {
             var d = FindItemDef(itemId);
-            return d != null && d.Type <= 5;
+            if (d == null) return false;
+            // Gear (0-5) + materiais/consumiveis/cash (6,7,9-14, ex: Mithril 13001 type 13) têm ícone de
+            // box e pintam normalmente. O crash do painel no Previous que motivava o filtro antigo (só
+            // type<=5) JÁ foi resolvido (acks 0x2c/0x2d fiéis ao original). Só o type 8 (transform) fica
+            // fora — não tem ícone de box no cliente GG-removido (renderiza invisível).
+            return d.Type != 8;
         }
 
         /// <summary>Carrega o catalogo de itens uma vez (iteminfo).</summary>

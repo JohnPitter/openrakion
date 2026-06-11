@@ -28,9 +28,9 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
 | Handshake UDP + entrada no campo + motor de partida | ✅ |
 | Modos PvP/deathmatch completos | 🟡 motor de round server-side implementado (timer, fim de round por placar, win/lose/draw persistido); falta validar com 2 clientes |
 | **GameGuard** original | ❌ morto (servidor nProtect offline desde ~2007) — exige client no-GG |
-| Botão **"Previous"** (inventário/loja → lista de salas) | ✅ — o "crash"/destino errado era o **servidor** remandando `0x13` a cada poll (o cliente reprocessava o grid de widgets e caía no char-select); resolvido replicando fielmente os acks `0x2c`/`0x2d` do original (handle de sessão) |
+| Navegação inventário/loja ↔ lista de salas (botão **Previous**) | ✅ |
 
-> O único ❌ é o **GameGuard**: depende do servidor nProtect externo, offline desde ~2007 — não é limitação do nosso servidor. (O botão *Previous*, antes listado aqui como "parede de GG-removal", era na verdade bug do **nosso servidor** — já corrigido.)
+> O único ❌ é o **GameGuard**: depende do servidor nProtect externo, offline desde ~2007 — não é limitação do nosso servidor.
 
 ---
 
