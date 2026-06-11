@@ -536,6 +536,11 @@ namespace RakionServer.World.Network
                 BinaryPrimitives.WriteUInt32LittleEndian(f0c.AsSpan(81), CharDraw);    // draw@81
                 f0c[96] = CharLevel;                                                   // nivel@96 (u8)
                 BinaryPrimitives.WriteUInt32LittleEndian(f0c.AsSpan(101), CharLevelPoint); // levelpoint@101
+                // stats alocados @103 (u16 LE cada, 20 bytes): offset CRAVADO via captura do original com stats
+                // distintivos 41..50 (apareceram como 29 00 2a 00.. no 0x0C). DEPOIS do levelpoint (cujo u32@101
+                // escreve ate 104, sobrepondo o stat[0]@103-104) p/ nao zerar o primeiro stat.
+                for (int i = 0; i < 10 && 103 + i * 2 + 1 < f0c.Length; i++)
+                    BinaryPrimitives.WriteUInt16LittleEndian(f0c.AsSpan(103 + i * 2), Stats[i]);
                 // APARENCIA EQUIPADA: body@119 = 7 itens u16, body@157 = 7 bytes (slot/enhance). CAPTURADO do
                 // servidor ORIGINAL p/ o JP (worldprobe headless vs 40708 + diff contra o oraculo). E' DAQUI que o
                 // cliente renderiza o gear 3D + os ICONES do equip no inventario (NAO do 0x13, que cai num stub).

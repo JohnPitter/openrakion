@@ -274,10 +274,12 @@ namespace RakionServer.World.Network
             byte statIdx = ctx.P.CanRead(1) ? ctx.P.Byte() : (byte)0;   // *param_3 = qual stat (0..9)
             if (statIdx > 9) { SendAllocResult(u, 5); return; }          // erro 5: indice invalido
             if (u.CharLevelPoint == 0) { SendAllocResult(u, 3); return; } // erro 3: sem level-points
-            // aloca: stat++ e level-point-- (cap por-classe omitido). Cosmetico: o stage usa o spawn estatico,
-            // entao reflete no DISPLAY do char (a tela de status), nao no combate. Sessao-only (reseta no relogin).
+            // aloca: stat++ e level-point-- (cap por-classe omitido). Reflete no DISPLAY do char (tela de
+            // status). PERSISTE no characterinfo (coluna hit1..maxcp + levelpoint) — antes era sessao-only e
+            // resetava no relogin (bug: "pontos nao registrados"). O UPDATE e' atomico (so' se ha' levelpoint).
             u.Stats[statIdx]++;
             u.CharLevelPoint--;
+            if (u.ActiveCharId > 0) _ = ctx.World.Db.AllocateStatAsync(u.ActiveCharId, statIdx);
             // RESPOSTA sucesso (FUN_004229f0, 10B): [0x33][0][levelpoint u16][bonus u16][stat u8][newStat u16]
             using var w = new PacketWriter();
             w.WriteWord(0x33);

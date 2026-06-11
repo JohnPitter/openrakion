@@ -427,6 +427,28 @@ namespace RakionServer.World.Database
             catch (Exception ex) { Log.Error("db", "UpdateCharacterLevelAsync({0}): {1}", characterId, ex.Message); }
         }
 
+        /// <summary>Persiste a alocacao de 1 ponto de stat (0x33): incrementa a coluna do stat e decrementa
+        /// levelpoint, atomico e so' enquanto ha' levelpoint. statIdx 0..9 -> hit1..maxcp (ordem da tela de
+        /// status). Retorna o n de linhas afetadas (0 = sem level-point). col vem de array fixo (sem injecao).</summary>
+        public async Task<int> AllocateStatAsync(int characterId, int statIdx)
+        {
+            string[] cols = { "hit1", "hit2", "hit3", "hit4", "chit", "hp", "ap", "attackspeed", "speed", "maxcp" };
+            if (statIdx < 0 || statIdx >= cols.Length) return 0;
+            string col = cols[statIdx];
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    $"UPDATE characterinfo SET {col}={col}+1, levelpoint=levelpoint-1 WHERE id=@id AND levelpoint>0", c);
+                cmd.Parameters.AddWithValue("@id", characterId);
+                int n = await cmd.ExecuteNonQueryAsync();
+                Log.Ok("db", "AllocateStat: char={0} stat={1} ({2}) linhas={3}", characterId, statIdx, col, n);
+                return n;
+            }
+            catch (Exception ex) { Log.Error("db", "AllocateStatAsync({0},{1}): {2}", characterId, statIdx, ex.Message); return 0; }
+        }
+
         /// <summary>Char ativo da conta (used=1; tiebreak slot). null se nao tem char.</summary>
         public async Task<CharacterInfo?> LoadActiveCharacterAsync(int userId)
         {
@@ -435,7 +457,8 @@ namespace RakionServer.World.Database
                 await using var c = new MySqlConnection(_conn);
                 await c.OpenAsync();
                 await using var cmd = new MySqlCommand(
-                    "SELECT id,userid,name,used,Class,level,win,lose,draw,exp,levelpoint,slot,totalrank,classrank " +
+                    "SELECT id,userid,name,used,Class,level,win,lose,draw,exp,levelpoint,slot," +
+                    "hit1,hit2,hit3,hit4,chit,hp,ap,attackspeed,speed,maxcp,totalrank,classrank " +
                     "FROM characterinfo WHERE userid=@u ORDER BY used DESC, slot ASC LIMIT 1", c);
                 cmd.Parameters.AddWithValue("@u", userId);
                 await using var r = await cmd.ExecuteReaderAsync();
@@ -446,7 +469,10 @@ namespace RakionServer.World.Database
                     Used = r.GetInt32(3) != 0, Class = (byte)r.GetInt32(4), Level = (byte)r.GetInt32(5),
                     Win = r.GetInt32(6), Lose = r.GetInt32(7), Draw = r.GetInt32(8), Exp = r.GetInt32(9),
                     LevelPoint = (byte)r.GetInt32(10), Slot = (byte)r.GetInt32(11),
-                    TotalRank = r.GetInt32(12), ClassRank = r.GetInt32(13),
+                    Hit1 = (byte)r.GetInt32(12), Hit2 = (byte)r.GetInt32(13), Hit3 = (byte)r.GetInt32(14),
+                    Hit4 = (byte)r.GetInt32(15), Chit = (byte)r.GetInt32(16), Hp = (byte)r.GetInt32(17),
+                    Ap = (byte)r.GetInt32(18), AttackSpeed = (byte)r.GetInt32(19), Speed = (byte)r.GetInt32(20),
+                    Maxcp = (byte)r.GetInt32(21), TotalRank = r.GetInt32(22), ClassRank = r.GetInt32(23),
                 };
             }
             catch (Exception ex) { Log.Error("db", "LoadActiveCharacterAsync({0}): {1}", userId, ex.Message); return null; }

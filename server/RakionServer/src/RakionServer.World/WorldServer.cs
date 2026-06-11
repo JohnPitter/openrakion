@@ -542,6 +542,10 @@ namespace RakionServer.World
                 s.CharLose = (uint)(ch.Lose < 0 ? 0 : ch.Lose);         // overlay 0x0C @77
                 s.CharDraw = (uint)(ch.Draw < 0 ? 0 : ch.Draw);         // overlay 0x0C @81
                 s.CharLevelPoint = (uint)(ch.LevelPoint);               // pontos de level -> overlay 0x0C @101
+                // stats alocados (hit1..maxcp) -> Stats[0..9], p/ a alocacao 0x33 partir do valor real salvo
+                s.Stats[0] = ch.Hit1; s.Stats[1] = ch.Hit2; s.Stats[2] = ch.Hit3; s.Stats[3] = ch.Hit4;
+                s.Stats[4] = ch.Chit; s.Stats[5] = ch.Hp; s.Stats[6] = ch.Ap; s.Stats[7] = ch.AttackSpeed;
+                s.Stats[8] = ch.Speed; s.Stats[9] = ch.Maxcp;
                 if (s.CharName.Length == 0) s.CharName = ch.Name;
                 s.Items = await _db.LoadItemsAsync(ch.Id);              // inventario do char p/ o Box (0x2f)
                 // armazem (itembox) -> exibido no box + slot da compra. FILTRA p/ só gear (type<=5): itens
