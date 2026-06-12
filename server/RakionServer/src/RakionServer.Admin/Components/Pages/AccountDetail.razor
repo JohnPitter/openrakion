@@ -1,0 +1,120 @@
+@page "/account/{Id}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AdminDb Db
+
+<PageTitle>@Id — OpenRakion Admin</PageTitle>
+<h1><a href="/accounts">Contas</a> › @Id</h1>
+
+@if (_acc is null)
+{
+    <div class="card"><p class="mut">Conta não encontrada.</p></div>
+}
+else
+{
+    @if (_msg is not null) { <div class="toast @_msgKind">@_msg</div> }
+
+    <div class="card">
+        <h2>Saldos</h2>
+        <div class="row">
+            <div><label>Gold</label><input type="number" @bind="_gold" /></div>
+            <button @onclick="SaveGold">Salvar gold</button>
+            <div style="margin-left:20px;"><label>Cash</label><input type="number" @bind="_cash" /></div>
+            <button @onclick="SaveCash">Salvar cash</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Power User <span class="mut">(@(_acc.PuActive ? "ativo" : "inativo"))</span></h2>
+        <div class="row">
+            <div><label>Bônus points</label><input type="number" @bind="_puBonus" /></div>
+            <div><label>Dias</label><input type="number" @bind="_puDays" /></div>
+            <button @onclick="GrantPu">Conceder / renovar</button>
+            <button class="danger" @onclick="ClearPu">Remover PU</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Conta</h2>
+        <div class="row">
+            <div><label>Nova senha</label><input @bind="_pw" /></div>
+            <button @onclick="SavePw">Trocar senha</button>
+            @if (_acc.Ban)
+            {
+                <button class="sec" @onclick="() => SetBan(false)">Desbanir</button>
+            }
+            else
+            {
+                <button class="danger" @onclick="() => SetBan(true)">Banir</button>
+            }
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Inventário (box) — @_box.Count itens</h2>
+        <div class="row">
+            <div style="flex:1;"><label>Adicionar item (busca em iteminfo)</label>
+                <input @bind="_itemTerm" @bind:event="oninput" @onkeyup="OnItemKey" placeholder="nome ou id…" style="width:100%;" /></div>
+            <button class="sec" @onclick="SearchItems">Buscar</button>
+        </div>
+        @if (_itemHits.Count > 0)
+        {
+            <table style="margin-top:10px;">
+                <tbody>
+                    @foreach (var it in _itemHits)
+                    {
+                        <tr><td style="width:90px;">@it.Id</td><td>@it.Name</td>
+                            <td class="right"><button @onclick="() => AddItem(it.Id)">+ adicionar</button></td></tr>
+                    }
+                </tbody>
+            </table>
+        }
+        <table style="margin-top:14px;">
+            <thead><tr><th>box id</th><th>item id</th><th>local</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var b in _box)
+                {
+                    <tr><td>@b.Id</td><td>@b.ItemId</td>
+                        <td>@(b.QSlot == 0 ? "box" : $"quickslot {b.QSlot - 1}")</td>
+                        <td class="right"><button class="danger" @onclick="() => RemoveItem(b.Id)">remover</button></td></tr>
+                }
+            </tbody>
+        </table>
+        @if (_box.Count == 0) { <p class="mut">Box vazio.</p> }
+    </div>
+}
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+    private AccountRow? _acc;
+    private List<BoxItemRow> _box = new();
+    private List<ItemDef> _itemHits = new();
+    private long _gold, _cash;
+    private int _puBonus = 51, _puDays = 30;
+    private string _pw = "", _itemTerm = "";
+    private string? _msg, _msgKind;
+
+    protected override async Task OnParametersSetAsync() => await Reload();
+
+    private async Task Reload()
+    {
+        _acc = await Db.GetAccountAsync(Id);
+        if (_acc is null) return;
+        _gold = _acc.Gold; _cash = _acc.Cash;
+        _box = _acc.GiId > 0 ? await Db.ListBoxAsync(_acc.GiId) : new();
+    }
+
+    private void Ok(string m) { _msg = m; _msgKind = "ok"; }
+    private void Err(string m) { _msg = m; _msgKind = "err"; }
+
+    private async Task SaveGold() { if (_acc!.GiId <= 0) { Err("conta sem perfil de jogo"); return; } await Db.SetGoldAsync(_acc.GiId, _gold); Ok("Gold salvo."); await Reload(); }
+    private async Task SaveCash() { await Db.SetCashAsync(Id, _cash); Ok("Cash salvo."); await Reload(); }
+    private async Task GrantPu() { if (_acc!.GiId <= 0) { Err("conta sem perfil"); return; } await Db.SetPowerUserAsync(_acc.GiId, _puBonus, _puDays); Ok($"PU concedido (+{_puDays}d)."); await Reload(); }
+    private async Task ClearPu() { if (_acc!.GiId > 0) await Db.ClearPowerUserAsync(_acc.GiId); Ok("PU removido."); await Reload(); }
+    private async Task SavePw() { if (string.IsNullOrWhiteSpace(_pw)) { Err("senha vazia"); return; } await Db.SetPasswordAsync(Id, _pw); _pw = ""; Ok("Senha trocada."); }
+    private async Task SetBan(bool b) { await Db.SetBanAsync(Id, b); Ok(b ? "Conta banida." : "Conta desbanida."); await Reload(); }
+    private async Task SearchItems() => _itemHits = await Db.SearchItemsAsync(_itemTerm);
+    private async Task OnItemKey(KeyboardEventArgs e) { if (e.Key == "Enter") await SearchItems(); }
+    private async Task AddItem(int itemId) { if (_acc!.GiId <= 0) { Err("conta sem perfil"); return; } await Db.AddItemBoxAsync(_acc.GiId, itemId); Ok($"Item {itemId} adicionado."); await Reload(); }
+    private async Task RemoveItem(int boxId) { await Db.DeleteBoxItemAsync(boxId); Ok("Item removido."); await Reload(); }
+}

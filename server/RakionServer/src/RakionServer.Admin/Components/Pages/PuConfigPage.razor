@@ -1,0 +1,58 @@
+@page "/poweruser"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AdminDb Db
+
+<PageTitle>Power User — OpenRakion Admin</PageTitle>
+<h1>Power User — configuração</h1>
+
+@if (_msg is not null) { <div class="toast @_msgKind">@_msg</div> }
+
+<div class="card">
+    <h2>Compra</h2>
+    <div class="fields">
+        <div><label>Preço (cash)</label><input type="number" @bind="_f.Price" /></div>
+        <div><label>Bônus points / compra</label><input type="number" @bind="_f.BonusPoints" /></div>
+        <div><label>Duração (dias)</label><input type="number" @bind="_f.DurationDays" /></div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Multiplicadores (PU ativo)</h2>
+    <div class="fields">
+        <div><label>XP ×</label><input type="number" step="0.1" @bind="_f.ExpMult" /></div>
+        <div><label>Gold ×</label><input type="number" step="0.1" @bind="_f.GoldMult" /></div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Promoção</h2>
+    <label style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+        <input type="checkbox" @bind="_f.PromoActive" style="width:auto;" /> Promo ativa
+    </label>
+    <div class="fields">
+        <div><label>XP × (promo)</label><input type="number" step="0.1" @bind="_f.PromoExpMult" /></div>
+        <div><label>Gold × (promo)</label><input type="number" step="0.1" @bind="_f.PromoGoldMult" /></div>
+        <div><label>Início (vazio = aberto)</label><input type="datetime-local" @bind="_f.PromoStart" /></div>
+        <div><label>Fim (vazio = aberto)</label><input type="datetime-local" @bind="_f.PromoEnd" /></div>
+    </div>
+    <p class="mut" style="margin-top:10px;">A promo vale quando <b>ativa</b> e dentro da janela; substitui os multiplicadores normais.</p>
+</div>
+
+<div class="row">
+    <button @onclick="Save">Salvar</button>
+    <span class="mut">O World relê a config no boot — reinicie o World pra aplicar.</span>
+</div>
+
+@code {
+    private PuConfigForm _f = new();
+    private string? _msg, _msgKind;
+
+    protected override async Task OnInitializedAsync() => _f = await Db.LoadPuConfigAsync();
+
+    private async Task Save()
+    {
+        try { await Db.SavePuConfigAsync(_f); _msg = "Config salva. Reinicie o World pra aplicar."; _msgKind = "ok"; }
+        catch (Exception ex) { _msg = "Erro: " + ex.Message; _msgKind = "err"; }
+    }
+}

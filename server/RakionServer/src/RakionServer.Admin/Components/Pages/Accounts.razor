@@ -1,0 +1,70 @@
+@page "/accounts"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AdminDb Db
+
+<PageTitle>Contas — OpenRakion Admin</PageTitle>
+<h1>Contas</h1>
+
+<div class="card">
+    <div class="row">
+        <div style="flex:1;"><label>Buscar conta</label>
+            <input @bind="_search" @bind:event="oninput" @onkeyup="OnKey" placeholder="id da conta…" style="width:100%;" /></div>
+        <button @onclick="Load">Buscar</button>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Criar conta</h2>
+    <div class="row">
+        <div><label>ID (login)</label><input @bind="_newId" /></div>
+        <div><label>Senha</label><input @bind="_newPw" /></div>
+        <button @onclick="Create">Criar</button>
+    </div>
+    @if (_msg is not null) { <div class="toast @_msgKind">@_msg</div> }
+</div>
+
+<div class="card">
+    <table>
+        <thead><tr><th>Conta</th><th>Char</th><th class="right">Gold</th><th class="right">Cash</th><th>PU</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var a in _rows)
+            {
+                <tr>
+                    <td><a href="@($"/account/{a.Id}")">@a.Id</a></td>
+                    <td>@a.CharName</td>
+                    <td class="right">@a.Gold.ToString("N0")</td>
+                    <td class="right">@a.Cash.ToString("N0")</td>
+                    <td>@if (a.PuActive) { <span class="badge on">ativo</span> } else { <span class="badge">—</span> }</td>
+                    <td>@if (a.Ban) { <span class="badge ban">ban</span> } else { <span class="badge on">ok</span> }</td>
+                    <td class="right"><a href="@($"/account/{a.Id}")">editar →</a></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (_rows.Count == 0) { <p class="mut">Nenhuma conta.</p> }
+</div>
+
+@code {
+    private string? _search;
+    private string _newId = "", _newPw = "";
+    private string? _msg, _msgKind;
+    private List<AccountRow> _rows = new();
+
+    protected override async Task OnInitializedAsync() => await Load();
+    private async Task Load() => _rows = await Db.ListAccountsAsync(_search);
+    private async Task OnKey(KeyboardEventArgs e) { if (e.Key == "Enter") await Load(); }
+
+    private async Task Create()
+    {
+        if (string.IsNullOrWhiteSpace(_newId) || string.IsNullOrWhiteSpace(_newPw))
+        { _msg = "Preencha id e senha."; _msgKind = "err"; return; }
+        try
+        {
+            await Db.CreateAccountAsync(_newId.Trim(), _newPw);
+            _msg = $"Conta '{_newId}' criada."; _msgKind = "ok"; _newId = _newPw = "";
+            await Load();
+        }
+        catch (Exception ex) { _msg = "Erro: " + ex.Message; _msgKind = "err"; }
+    }
+}

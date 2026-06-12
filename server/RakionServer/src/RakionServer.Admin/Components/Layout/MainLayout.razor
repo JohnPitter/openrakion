@@ -1,0 +1,18 @@
+@inherits LayoutComponentBase
+
+<div class="layout">
+    <nav class="side">
+        <div class="brand">OpenRakion · Admin</div>
+        <NavLink href="/" Match="NavLinkMatch.All">Dashboard</NavLink>
+        <NavLink href="/accounts">Contas</NavLink>
+        <NavLink href="/poweruser">Power User</NavLink>
+        <form method="post" action="/auth/logout" style="padding:16px 18px;margin-top:14px;border-top:1px solid var(--line);">
+            <button class="ghost" type="submit">Sair</button>
+        </form>
+    </nav>
+    <main class="main">@Body</main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    Ocorreu um erro. <a href="." class="reload">Recarregar</a> <span class="dismiss">🗙</span>
+</div>

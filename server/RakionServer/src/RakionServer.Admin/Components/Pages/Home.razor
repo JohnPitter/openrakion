@@ -1,0 +1,33 @@
+@page "/"
+@attribute [Authorize]
+@inject AdminDb Db
+
+<PageTitle>Dashboard — OpenRakion Admin</PageTitle>
+
+<h1>Dashboard</h1>
+
+<div class="card">
+    <h2>Power User (config atual)</h2>
+    <div class="fields">
+        <div><label>Preço</label><b>@_cfg.Price</b> <span class="mut">cash</span></div>
+        <div><label>Bônus / compra</label><b>@_cfg.BonusPoints</b> <span class="mut">pts</span></div>
+        <div><label>Duração</label><b>@_cfg.DurationDays</b> <span class="mut">dias</span></div>
+        <div><label>XP</label><b>@_cfg.ExpMult.ToString("0.##")×</b></div>
+        <div><label>Gold</label><b>@_cfg.GoldMult.ToString("0.##")×</b></div>
+        <div><label>Promo</label>@(_cfg.PromoActive ? $"ON ({_cfg.PromoExpMult:0.##}× / {_cfg.PromoGoldMult:0.##}×)" : "—")</div>
+    </div>
+    <p class="mut" style="margin-top:14px;">Editável em <a href="/poweruser">Power User</a>. O World relê no boot.</p>
+</div>
+
+<div class="card">
+    <h2>Atalhos</h2>
+    <div class="row">
+        <a href="/accounts"><button class="sec">Contas / gold / cash / itens</button></a>
+        <a href="/poweruser"><button class="sec">Config do Power User</button></a>
+    </div>
+</div>
+
+@code {
+    private PuConfigForm _cfg = new();
+    protected override async Task OnInitializedAsync() => _cfg = await Db.LoadPuConfigAsync();
+}

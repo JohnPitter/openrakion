@@ -1,0 +1,19 @@
+@page "/login"
+@layout EmptyLayout
+@attribute [AllowAnonymous]
+@inject NavigationManager Nav
+
+<PageTitle>Login — OpenRakion Admin</PageTitle>
+
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;">
+    <form method="post" action="/auth/login" class="card" style="width:320px;">
+        <div class="brand" style="padding:0 0 14px;">OpenRakion · Admin</div>
+        @if (Nav.Uri.Contains("e=1"))
+        {
+            <div class="toast err">Senha incorreta.</div>
+        }
+        <label>Senha do painel</label>
+        <input type="password" name="password" autofocus style="width:100%;margin-bottom:14px;" />
+        <button type="submit" style="width:100%;">Entrar</button>
+    </form>
+</div>

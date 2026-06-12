@@ -1,0 +1,5 @@
+@inject NavigationManager Nav
+@code {
+    // Não autorizado -> manda pro login (full reload p/ sair do circuito Blazor).
+    protected override void OnInitialized() => Nav.NavigateTo("/login", forceLoad: true);
+}
