@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <!-- ImplicitUsings ligado (diferente dos projetos console) pois o SDK Web traz os usings de
+         ASP.NET/minimal API; manter desligado exigiria dezenas de usings explicitos sem ganho. -->
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>RakionServer.LauncherWeb</RootNamespace>
+    <AssemblyName>RakionLauncherWeb</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MySqlConnector" Version="2.3.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RakionServer.Common\RakionServer.Common.csproj" />
+  </ItemGroup>
+
+</Project>
