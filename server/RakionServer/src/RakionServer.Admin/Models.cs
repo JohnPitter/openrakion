@@ -31,6 +31,12 @@ public sealed record BoxItemRow(int Id, int ItemId, int QSlot, int Type);
 /// <summary>Definição de item (iteminfo) p/ o seletor de "adicionar item".</summary>
 public sealed record ItemDef(int Id, int Type);
 
+/// <summary>App do auto-update do launcher (fetchapp): versão atual + URLs.</summary>
+public sealed record FetchAppRow(int AppId, string FileUrl, string NoticeUrl, int VerLimit);
+
+/// <summary>Arquivo a empurrar no auto-update (fetchfile). Command M=baixar/instalar, R=remover.</summary>
+public sealed record FetchFileRow(string Command, string FileDir, string FileIns, int FileVer, long FileSize);
+
 /// <summary>Categoria + cor por type do iteminfo (Rakion não tem ícone 2D — os do jogo são
 /// render 3D em runtime; aqui simulamos a grade colorindo por tipo).</summary>
 public static class ItemKind

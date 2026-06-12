@@ -1,0 +1,91 @@
+@page "/updates"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AdminDb Db
+
+<PageTitle>Updates — OpenRakion Admin</PageTitle>
+<h1>Publicar update (auto-update do launcher)</h1>
+
+@if (_msg is not null) { <div class="toast @_msgKind">@_msg</div> }
+
+<div class="card">
+    <h2>App</h2>
+    <div class="row">
+        <div><label>AppId</label><input type="number" @bind="_appId" style="width:90px;" /></div>
+        <button class="sec" @onclick="Load">Carregar</button>
+    </div>
+    <div class="fields" style="margin-top:12px;">
+        <div><label>FileUrl (base dos arquivos)</label><input @bind="_fileUrl" style="width:100%;" /></div>
+        <div><label>NoticeUrl (HTML do banner)</label><input @bind="_noticeUrl" style="width:100%;" /></div>
+        <div><label>VerLimit (versão alvo)</label><input type="number" @bind="_verLimit" /></div>
+    </div>
+    <div class="row" style="margin-top:12px;">
+        <button @onclick="SaveApp">Salvar app</button>
+        <button class="danger" @onclick="DeleteApp">Remover app</button>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Arquivos a empurrar</h2>
+    <table>
+        <thead><tr><th>cmd</th><th>dir</th><th>arquivo</th><th class="right">ver</th><th class="right">tamanho</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var f in _files)
+            {
+                <tr><td>@f.Command</td><td>@f.FileDir</td><td>@f.FileIns</td><td class="right">@f.FileVer</td>
+                    <td class="right">@f.FileSize.ToString("N0")</td>
+                    <td class="right"><button class="danger" @onclick="() => DeleteFile(f)">remover</button></td></tr>
+            }
+        </tbody>
+    </table>
+    @if (_files.Count == 0) { <p class="mut">Nenhum arquivo nesta versão.</p> }
+
+    <h2>Adicionar arquivo</h2>
+    <div class="row">
+        <div><label>Command</label><select @bind="_nCmd"><option value="M">M (instalar)</option><option value="R">R (remover)</option></select></div>
+        <div><label>FileDir</label><input @bind="_nDir" style="width:90px;" /></div>
+        <div><label>Arquivo (FileIns)</label><input @bind="_nIns" placeholder="TexturesSV.xfs" /></div>
+        <div><label>FileVer</label><input type="number" @bind="_nVer" /></div>
+        <div><label>FileSize</label><input type="number" @bind="_nSize" /></div>
+        <button @onclick="AddFile">+ adicionar</button>
+    </div>
+</div>
+
+<div class="card">
+    <h2 class="mut">Como funciona</h2>
+    <p class="mut">O launcher pede a versão atual ao servidor web. Se <b>VerLimit</b> for maior que a versão do cliente,
+        ele baixa de <b>FileUrl</b> cada arquivo com <b>FileVer</b> maior que a do cliente e aplica. Para publicar:
+        hospede o arquivo no host de <b>FileUrl</b>, adicione a linha aqui com o <b>FileVer</b> novo e suba o
+        <b>VerLimit</b> do app. (É por aqui que se empurra uma arte nova, ex.: <code>TexturesSV.xfs</code>.)</p>
+</div>
+
+@code {
+    private int _appId = 1, _verLimit;
+    private string _fileUrl = "", _noticeUrl = "";
+    private List<FetchFileRow> _files = new();
+    private string _nCmd = "M", _nDir = ".\\", _nIns = "";
+    private int _nVer;
+    private long _nSize;
+    private string? _msg, _msgKind;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var app = (await Db.ListFetchAppsAsync()).Find(a => a.AppId == _appId);
+        _fileUrl = app?.FileUrl ?? ""; _noticeUrl = app?.NoticeUrl ?? ""; _verLimit = app?.VerLimit ?? 0;
+        _files = await Db.ListFetchFilesAsync(_appId);
+    }
+    private void Ok(string m) { _msg = m; _msgKind = "ok"; }
+    private void Err(string m) { _msg = m; _msgKind = "err"; }
+
+    private async Task SaveApp() { await Db.SaveFetchAppAsync(_appId, _fileUrl, _noticeUrl, _verLimit); Ok("App salvo."); await Load(); }
+    private async Task DeleteApp() { await Db.DeleteFetchAppAsync(_appId); Ok("App removido."); await Load(); }
+    private async Task AddFile()
+    {
+        if (string.IsNullOrWhiteSpace(_nIns)) { Err("informe o arquivo"); return; }
+        await Db.AddFetchFileAsync(_appId, _nCmd, _nDir, _nIns, _nVer, _nSize);
+        Ok($"Arquivo {_nIns} (v{_nVer}) adicionado."); _nIns = ""; await Load();
+    }
+    private async Task DeleteFile(FetchFileRow f) { await Db.DeleteFetchFileAsync(_appId, f.FileIns, f.FileVer); Ok("Removido."); await Load(); }
+}

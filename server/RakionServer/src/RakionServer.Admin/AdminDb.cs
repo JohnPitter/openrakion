@@ -201,6 +201,48 @@ public sealed class AdminDb(IConfiguration cfg)
             ("@pa", f.PromoActive ? 1 : 0), ("@pe", f.PromoExpMult), ("@pg", f.PromoGoldMult),
             ("@ps", (object?)f.PromoStart ?? DBNull.Value), ("@pen", (object?)f.PromoEnd ?? DBNull.Value));
 
+    // ---- auto-update (launcher fetch) ----
+
+    public async Task<List<FetchAppRow>> ListFetchAppsAsync()
+    {
+        var l = new List<FetchAppRow>();
+        await using var c = await OpenAsync();
+        await using var cmd = new MySqlCommand("SELECT AppId, FileUrl, NoticeUrl, VerLimit FROM fetchapp ORDER BY AppId", c);
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync()) l.Add(new FetchAppRow(r.GetInt32(0), r.GetString(1), r.GetString(2), r.GetInt32(3)));
+        return l;
+    }
+
+    public async Task SaveFetchAppAsync(int appId, string fileUrl, string noticeUrl, int verLimit)
+        => await NonQuery(
+            "INSERT INTO fetchapp (AppId,FileUrl,NoticeUrl,VerLimit) VALUES (@a,@f,@nu,@v) " +
+            "ON DUPLICATE KEY UPDATE FileUrl=@f, NoticeUrl=@nu, VerLimit=@v",
+            ("@a", appId), ("@f", fileUrl), ("@nu", noticeUrl), ("@v", verLimit));
+
+    public async Task DeleteFetchAppAsync(int appId)
+        => await NonQuery("DELETE FROM fetchapp WHERE AppId=@a", ("@a", appId));
+
+    public async Task<List<FetchFileRow>> ListFetchFilesAsync(int appId)
+    {
+        var l = new List<FetchFileRow>();
+        await using var c = await OpenAsync();
+        await using var cmd = new MySqlCommand(
+            "SELECT Command,FileDir,FileIns,FileVer,FileSize FROM fetchfile WHERE AppId=@a ORDER BY FileVer", c);
+        cmd.Parameters.AddWithValue("@a", appId);
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync()) l.Add(new FetchFileRow(r.GetString(0), r.GetString(1), r.GetString(2), r.GetInt32(3), r.GetInt64(4)));
+        return l;
+    }
+
+    public async Task AddFetchFileAsync(int appId, string command, string fileDir, string fileIns, int fileVer, long fileSize)
+        => await NonQuery(
+            "INSERT INTO fetchfile (AppId,Command,FileDir,FileIns,FileVer,FileSize) VALUES (@a,@cmd,@dir,@ins,@v,@sz)",
+            ("@a", appId), ("@cmd", command), ("@dir", fileDir), ("@ins", fileIns), ("@v", fileVer), ("@sz", fileSize));
+
+    public async Task DeleteFetchFileAsync(int appId, string fileIns, int fileVer)
+        => await NonQuery("DELETE FROM fetchfile WHERE AppId=@a AND FileIns=@ins AND FileVer=@v",
+            ("@a", appId), ("@ins", fileIns), ("@v", fileVer));
+
     // ---- helper ----
 
     private async Task NonQuery(string sql, params (string, object)[] ps)
