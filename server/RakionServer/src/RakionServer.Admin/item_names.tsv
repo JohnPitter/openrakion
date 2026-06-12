@@ -11,9 +11,12 @@
 1011	Waclock(8)
 1012	Homen(13)
 1013	Hound(13+)
+1015	Equip Lv29
+1016	Equip Lv36
 1017	Frozen
 1018	Runet(13+)
 1019	Master(16)
+1024	Equip Lv61
 1030	Divinity(16)
 1040	Meteor(H)
 1041	Aqua(H)
@@ -32,9 +35,12 @@
 1111	Waclock(9)
 1112	Homen(11)
 1113	Hound(11+)
+1115	Equip Lv41
+1116	Equip Lv36
 1117	Frozen
 1118	Runet(11+)
 1119	Master(14)
+1124	Equip Lv61
 1130	Divinity(15+)
 1140	Meteor(H)
 1141	Aqua(H)
@@ -53,9 +59,12 @@
 1211	Waclock(4+)
 1212	Homen(7)
 1213	Hound(8+)
+1215	Equip Lv34
+1216	Equip Lv36
 1217	Frozen
 1218	Runet(7+)
 1219	Master(9+)
+1224	Equip Lv61
 1230	Divinity(10)
 1240	Meteor(H)
 1241	Aqua(H)
@@ -74,9 +83,12 @@
 1311	Waclock(4)
 1312	Homen(7)
 1313	Hound(7+)
+1315	Equip Lv41
+1316	Equip Lv36
 1317	Frozen
 1318	Runet(6+)
 1319	Master(8+)
+1324	Equip Lv56
 1330	Divinity(9)
 1340	Meteor(H)
 1341	Aqua(H)
@@ -100,11 +112,15 @@
 1416	Nightmare(9+)
 1418	Homen(10+)
 1419	Runet(9+)
+1420	Equip Lv46
 1422	RedMoon(12)
 1423	Darkmoon(11)
 1424	Master(11+)
 1425	Golden sword(12)
+1426	Equip Lv65
 1430	Divinity(12)
+1433	Equip Lv15
+1434	Equip Lv10
 1435	Frozen Red Sword(9+)
 1436	Frozen Beryl(9+)
 1437	Frozen Sword(12+)
@@ -126,11 +142,17 @@
 1514	DawnKnight(6)
 1515	Homen(4+)
 1516	Nightmare(6)
+1518	Equip Lv41
 1519	Runet(6)
 1520	DarkMoon(6+)
 1521	Master(7)
+1523	Equip Lv45
+1524	Equip Lv55
 1525	Golden dagger(8)
+1526	Equip Lv65
 1530	Divinity(8)
+1533	Equip Lv15
+1534	Equip Lv10
 1535	Frozen Red Dagger(6+)
 1536	Frozen Beryl(6+)
 1537	Frozen Dagger(8+)
@@ -149,9 +171,12 @@
 2011	Waclock(8)
 2012	Homen(13)
 2013	Hound(13+)
+2015	Equip Lv29
+2016	Equip Lv36
 2017	Frozen
 2018	Runet(13+)
 2019	Master(16)
+2024	Equip Lv61
 2030	Divinity(16)
 2040	Meteor(H)
 2041	Aqua(H)
@@ -170,9 +195,12 @@
 2111	Waclock(9)
 2112	Homen(11)
 2113	Hound(11+)
+2115	Equip Lv41
+2116	Equip Lv36
 2117	Frozen
 2118	Runet(11+)
 2119	Master(14)
+2124	Equip Lv61
 2130	Divinity(15+)
 2140	Meteor(H)
 2141	Aqua(H)
@@ -191,9 +219,12 @@
 2211	Waclock(4+)
 2212	Homen(7)
 2213	Hound(8+)
+2215	Equip Lv34
+2216	Equip Lv36
 2217	Frozen
 2218	Runet(7+)
 2219	Master(9+)
+2224	Equip Lv61
 2230	Divinity(10)
 2240	Meteor(H)
 2241	Aqua(H)
@@ -212,9 +243,12 @@
 2311	Waclock(4)
 2312	Homen(7)
 2313	Hound(7+)
+2315	Equip Lv41
+2316	Equip Lv36
 2317	Frozen
 2318	Runet(6+)
 2319	Master(8+)
+2324	Equip Lv56
 2330	Divinity(9)
 2340	Meteor(H)
 2341	Aqua(H)
@@ -236,11 +270,17 @@
 2414	DawnKnight(6)
 2415	Homen(4+)
 2416	Nightmare(6)
+2418	Equip Lv41
 2419	Runet(6)
 2420	DarkMoon(6+)
 2421	Master(7)
+2423	Equip Lv45
+2424	Equip Lv55
 2425	Golden dagger(8)
+2426	Equip Lv65
 2430	Divinity(8)
+2433	Equip Lv15
+2434	Equip Lv10
 2435	Frozen Red Dagger(6+)
 2436	Frozen Beryl(6+)
 2437	Frozen Dagger(8+)
@@ -264,11 +304,15 @@
 2516	Nightmare(9+)
 2518	Homen(10+)
 2519	Runet(9+)
+2520	Equip Lv46
 2522	RedMoon(12)
 2523	Darkmoon(11)
 2524	Master(11+)
 2525	Golden bow(12)
+2526	Equip Lv65
 2530	Divinity(12)
+2533	Equip Lv15
+2534	Equip Lv10
 2535	Frozen Red Bow(9+)
 2536	Frozen Beryl(9+)
 2537	Frozen Bow(12+)
@@ -287,9 +331,12 @@
 3011	Waclock(8)
 3012	Homen(13)
 3013	Hound(13+)
+3015	Equip Lv29
+3016	Equip Lv36
 3017	Frozen
 3018	Runet(13+)
 3019	Master(16)
+3024	Equip Lv61
 3030	Divinity(16)
 3040	Meteor(H)
 3041	Aqua(H)
@@ -308,9 +355,12 @@
 3111	Waclock(9)
 3112	Homen(11)
 3113	Hound(11+)
+3115	Equip Lv41
+3116	Equip Lv36
 3117	Frozen
 3118	Runet(11+)
 3119	Master(14)
+3124	Equip Lv61
 3130	Divinity(15+)
 3140	Meteor(H)
 3141	Aqua(H)
@@ -329,9 +379,12 @@
 3211	Waclock(4+)
 3212	Homen(7)
 3213	Hound(8+)
+3215	Equip Lv34
+3216	Equip Lv36
 3217	Frozen
 3218	Runet(7+)
 3219	Master(9+)
+3224	Equip Lv61
 3230	Divinity(10)
 3240	Meteor(H)
 3241	Aqua(H)
@@ -350,9 +403,12 @@
 3311	Waclock(4)
 3312	Homen(7)
 3313	Hound(7+)
+3315	Equip Lv41
+3316	Equip Lv36
 3317	Frozen
 3318	Runet(6+)
 3319	Master(8+)
+3324	Equip Lv56
 3330	Divinity(9)
 3340	Meteor(H)
 3341	Aqua(H)
@@ -376,11 +432,15 @@
 3416	Nightmare(9+)
 3418	Homen(10+)
 3419	Runet(9+)
+3420	Equip Lv46
 3422	RedMoon(12)
 3423	Darkmoon(11)
 3424	Master(11+)
 3425	Golden hammer(12)
+3426	Equip Lv65
 3430	Divinity(12)
+3433	Equip Lv15
+3434	Equip Lv10
 3435	Frozen Red Hammer(9+)
 3436	Frozen Beryl(9+)
 3437	Frozen Hammer(12+)
@@ -402,11 +462,17 @@
 3514	DawnKnight(6)
 3515	Homen(4+)
 3516	Nightmare(6)
+3518	Equip Lv41
 3519	Runet(6)
 3520	DarkMoon(6+)
 3521	Master(7)
+3523	Equip Lv45
+3524	Equip Lv55
 3525	Golden axe(8)
+3526	Equip Lv65
 3530	Divinity(8)
+3533	Equip Lv15
+3534	Equip Lv10
 3535	Frozen Red axe(6+)
 3536	Frozen Beryl(6+)
 3537	Frozen axe(8+)
@@ -425,9 +491,12 @@
 4011	Waclock(8)
 4012	Homen(13)
 4013	Hound(13+)
+4015	Equip Lv29
+4016	Equip Lv36
 4017	Frozen
 4018	Runet(13+)
 4019	Master(16)
+4024	Equip Lv61
 4030	Divinity(16)
 4040	Meteor(H)
 4041	Aqua(H)
@@ -446,9 +515,12 @@
 4111	Waclock(9)
 4112	Homen(11)
 4113	Hound(11+)
+4115	Equip Lv41
+4116	Equip Lv36
 4117	Frozen
 4118	Runet(11+)
 4119	Master(14)
+4124	Equip Lv61
 4130	Divinity(15+)
 4140	Meteor(H)
 4141	Aqua(H)
@@ -467,9 +539,12 @@
 4211	Waclock(4+)
 4212	Homen(7)
 4213	Hound(8+)
+4215	Equip Lv34
+4216	Equip Lv36
 4217	Frozen
 4218	Runet(7+)
 4219	Master(9+)
+4224	Equip Lv61
 4230	Divinity(10)
 4240	Meteor(H)
 4241	Aqua(H)
@@ -488,9 +563,12 @@
 4311	Waclock(4)
 4312	Homen(7)
 4313	Hound(7+)
+4315	Equip Lv41
+4316	Equip Lv36
 4317	Frozen
 4318	Runet(6+)
 4319	Master(8+)
+4324	Equip Lv56
 4330	Divinity(9)
 4340	Meteor(H)
 4341	Aqua(H)
@@ -515,11 +593,15 @@
 4416	Nightmare(9+)
 4418	Homen(10+)
 4419	Runet(9+)
+4420	Equip Lv46
 4422	RedMoon(12)
 4423	Darkmoon(11)
 4424	Master(11+)
 4425	Golden stick(12)
+4426	Equip Lv65
 4430	Divinity(12)
+4433	Equip Lv15
+4434	Equip Lv10
 4435	Frozen Red stick(9+)
 4436	Frozen Beryl(9+)
 4437	Frozen stick(12+)
@@ -541,11 +623,17 @@
 4514	DawnKnight(6)
 4515	Homen(4+)
 4516	Nightmare(6)
+4518	Equip Lv41
 4519	Runet(6)
 4520	DarkMoon(6+)
 4521	Master(7)
+4523	Equip Lv45
+4524	Equip Lv55
 4525	Golden cane(8)
+4526	Equip Lv65
 4530	Divinity(8)
+4533	Equip Lv15
+4534	Equip Lv10
 4535	Frozen Red cane(6+)
 4536	Frozen Beryl(6+)
 4537	Frozen cane(8+)
@@ -564,9 +652,12 @@
 5011	Waclock(8)
 5012	Homen(13)
 5013	Hound(13+)
+5015	Equip Lv29
+5016	Equip Lv36
 5017	Frozen
 5018	Runet(13+)
 5019	Master(16)
+5024	Equip Lv61
 5030	Divinity(16)
 5040	Meteor(H)
 5041	Aqua(H)
@@ -585,9 +676,12 @@
 5111	Waclock(9)
 5112	Homen(11)
 5113	Hound(11+)
+5115	Equip Lv41
+5116	Equip Lv36
 5117	Frozen
 5118	Runet(11+)
 5119	Master(14)
+5124	Equip Lv61
 5130	Divinity(15+)
 5140	Meteor(H)
 5141	Aqua(H)
@@ -606,9 +700,12 @@
 5211	Waclock(4+)
 5212	Homen(7)
 5213	Hound(8+)
+5215	Equip Lv34
+5216	Equip Lv36
 5217	Frozen
 5218	Runet(7+)
 5219	Master(9+)
+5224	Equip Lv61
 5230	Divinity(10)
 5240	Meteor(H)
 5241	Aqua(H)
@@ -627,9 +724,12 @@
 5311	Waclock(4)
 5312	Homen(7)
 5313	Hound(7+)
+5315	Equip Lv41
+5316	Equip Lv36
 5317	Frozen
 5318	Runet(6+)
 5319	Master(8+)
+5324	Equip Lv56
 5330	Divinity(9)
 5340	Meteor(H)
 5341	Aqua(H)
@@ -653,11 +753,15 @@
 5416	Nightmare(9+)
 5418	homen(10+)
 5419	Runet(9+)
+5420	Equip Lv46
 5422	RedMoon(12)
 5423	Darkmoon(11)
 5424	Master(11+)
 5425	Golden sword(12)
+5426	Equip Lv65
 5430	Divinity(12)
+5433	Equip Lv15
+5434	Equip Lv10
 5435	Frozen Red sword(9+)
 5436	Frozen Beryl(9+)
 5437	Frozen sword(12+)
@@ -679,11 +783,17 @@
 5514	DawnKnight(6)
 5515	Homen(4+)
 5516	Nightmare(6)
+5518	Equip Lv41
 5519	Runet(6)
 5520	DarkMoon(6+)
 5521	Master(7)
+5523	Equip Lv45
+5524	Equip Lv55
 5525	Golden stars(8)
+5526	Equip Lv65
 5530	Divinity(8)
+5533	Equip Lv15
+5534	Equip Lv10
 5535	Frozen Red stars(6+)
 5536	Frozen Beryl(6+)
 5537	Frozen stars(8+)
@@ -728,6 +838,7 @@
 6036	Two Moons(3)
 6037	Two Moons(3+)
 6038	Two Moons(4)
+6039	Equip+
 6040	Insane
 6041	Cell Sword
 6042	Lovely(15)
@@ -767,6 +878,8 @@
 7028	Pain of Cell(3)
 7029	Pain of Cell(3+)
 7030	Pain of Cell(4)
+7031	Equip+
+7032	Equip+
 7033	Eagle Ring
 7034	Illusion
 7035	Sweety(9+)
@@ -796,6 +909,14 @@
 9001	Acute Set
 9002	Hound Set
 9003	Frozen Set
+9004	Arma Lv14
+9005	Arma Lv16
+9006	Arma Lv19
+9007	Arma Lv24
+9008	Arma Lv26
+9009	Arma Lv29
+9010	Arma Lv40
+9011	Arma Lv40
 9012	DarkKnight Set
 9013	DarkKnight Set
 9014	DarkKnight Set
@@ -832,8 +953,15 @@
 10008	Add potion slot4
 10009	Add potion slot5
 10010	Add potion slot6
+10011	Tipo 9
+10012	Tipo 9
 10013	Stage reset(lv.41+)
 10014	Stage unlimits(24h)
+11000	Tipo 11
+11001	Tipo 11
+11002	Tipo 11
+11003	Tipo 11
+11004	Tipo 11
 11891	Master(16)
 12000	HP(10EA)
 12001	HP(30EA)
