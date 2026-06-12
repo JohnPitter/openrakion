@@ -22,6 +22,7 @@ if (!app.Environment.IsDevelopment())
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
+app.UseStaticFiles();   // serve wwwroot/icons/<itemid>.png (biblioteca de ícones capturados)
 app.MapStaticAssets();
 
 // senha única do painel (appsettings Admin:Password). Tool pessoal em localhost.

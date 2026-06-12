@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @rendermode InteractiveServer
 @inject AdminDb Db
+@inject IWebHostEnvironment Env
 
 <PageTitle>@Id — OpenRakion Admin</PageTitle>
 <h1><a href="/accounts">Contas</a> › @Id</h1>
@@ -51,7 +52,7 @@ else
     </div>
 
     <div class="card">
-        <h2>Inventário (simulação)</h2>
+        <h2>Inventário (estilo do jogo)</h2>
         <div class="row">
             <div><label>Adicionar por id</label><input type="number" @bind="_addId" style="width:120px;" /></div>
             <button @onclick="AddById">+ adicionar</button>
@@ -64,7 +65,6 @@ else
                 </select></div>
             <button class="sec" @onclick="SearchItems">Buscar</button>
         </div>
-
         @if (_itemHits.Count > 0)
         {
             <p class="mut" style="margin:14px 0 0;">Clique para adicionar:</p>
@@ -72,33 +72,70 @@ else
                 @foreach (var it in _itemHits)
                 {
                     <div class="cell click" style="background:@ItemKind.Color(it.Type)" @onclick="() => AddItem(it.Id)" title="@($"adicionar item {it.Id}")">
+                        @if (_icons.Contains(it.Id)) { <img src="/icons/@(it.Id).png" class="ico" alt="" /> }
                         <span class="iid">@it.Id</span><span class="ikind">@ItemKind.Label(it.Type)</span>
                     </div>
                 }
             </div>
         }
 
-        <h2>Box (@_box.Count(b => b.QSlot == 0))</h2>
-        <div class="invgrid">
-            @foreach (var b in _box.Where(b => b.QSlot == 0))
-            {
-                <div class="cell" style="background:@ItemKind.Color(b.Type)" title="@($"box id {b.Id} · item {b.ItemId} · type {b.Type}")">
-                    <span class="iid">@b.ItemId</span><span class="ikind">@ItemKind.Label(b.Type)</span>
-                    <button class="x" @onclick="() => RemoveItem(b.Id)">×</button>
+        <div class="invwrap">
+            <div class="gpanel">
+                <div class="gphead"><span>Inventory</span><span class="mut">@(_char?.Name ?? "—")</span></div>
+                <div class="gbody">
+                    @if (_char is not null)
+                    {
+                        <div class="equipcol">
+                            @foreach (var e in _equip.Where(e => e.Slot <= 5).OrderBy(e => e.Slot))
+                            {
+                                <div class="cell" style="background:@ItemKind.Color(e.Type)" title="@($"slot {e.Slot} · item {e.ItemId}")">
+                                    @if (_icons.Contains(e.ItemId)) { <img src="/icons/@(e.ItemId).png" class="ico" alt="" /> }
+                                    <span class="idtag">@e.ItemId</span>
+                                </div>
+                            }
+                            @if (_equip.Count == 0) { <span class="mut" style="grid-column:1/-1;">sem aparência salva</span> }
+                        </div>
+                        <div class="gstats">
+                            <div class="srow"><span>Level @_char.Level · classe @_char.Class</span><b>Level point @_char.LevelPoint</b></div>
+                            @for (int i = 0; i < 10; i++)
+                            {
+                                <div class="srow"><span>@StatNames.Labels[i]</span><b>@_char.Stats[i]</b></div>
+                            }
+                        </div>
+                    }
+                    else { <p class="mut">Conta sem personagem.</p> }
                 </div>
-            }
-        </div>
-        @if (!_box.Any(b => b.QSlot == 0)) { <p class="mut">Box vazio.</p> }
+            </div>
 
-        <h2>Quickslot de poção</h2>
-        <div class="qrow">
-            @foreach (var q in _box.Where(b => b.QSlot > 0).OrderBy(b => b.QSlot))
-            {
-                <div class="qcell" style="background:@ItemKind.Color(q.Type)" title="@($"cell {q.QSlot - 1} · item {q.ItemId}")">
-                    @q.ItemId<button class="x" @onclick="() => RemoveItem(q.Id)">×</button>
+            <div class="gpanel">
+                <div class="gphead"><span>Box</span><span class="mut">@_box.Count(b => b.QSlot == 0) itens</span></div>
+                <div class="gbody">
+                    <div class="invgrid">
+                        @foreach (var b in _box.Where(b => b.QSlot == 0))
+                        {
+                            <div class="cell" style="background:@ItemKind.Color(b.Type)" title="@($"box id {b.Id} · item {b.ItemId} · type {b.Type}")">
+                                @if (_icons.Contains(b.ItemId)) { <img src="/icons/@(b.ItemId).png" class="ico" alt="" /> }
+                                <span class="iid">@b.ItemId</span><span class="ikind">@ItemKind.Label(b.Type)</span>
+                                <button class="x" @onclick="() => RemoveItem(b.Id)">×</button>
+                            </div>
+                        }
+                    </div>
+                    @if (!_box.Any(b => b.QSlot == 0)) { <p class="mut">Box vazio.</p> }
+
+                    <div style="font-size:12px;color:var(--mut);margin:14px 0 4px;">Potion slot</div>
+                    <div class="qrow">
+                        @foreach (var q in _box.Where(b => b.QSlot > 0).OrderBy(b => b.QSlot))
+                        {
+                            <div class="qcell" style="background:@ItemKind.Color(q.Type)" title="@($"cell {q.QSlot - 1} · item {q.ItemId}")">
+                                @if (_icons.Contains(q.ItemId)) { <img src="/icons/@(q.ItemId).png" class="ico" alt="" /> }
+                                <span class="idtag">@q.ItemId</span>
+                                <button class="x" @onclick="() => RemoveItem(q.Id)">×</button>
+                            </div>
+                        }
+                        @if (!_box.Any(b => b.QSlot > 0)) { <span class="mut">— vazio —</span> }
+                    </div>
                 </div>
-            }
-            @if (!_box.Any(b => b.QSlot > 0)) { <span class="mut">— vazio —</span> }
+            </div>
         </div>
     </div>
 }
@@ -106,6 +143,8 @@ else
 @code {
     [Parameter] public string Id { get; set; } = "";
     private AccountRow? _acc;
+    private CharFull? _char;
+    private List<EquipSlot> _equip = new();
     private List<BoxItemRow> _box = new();
     private List<ItemDef> _itemHits = new();
     private long _gold, _cash;
@@ -113,15 +152,35 @@ else
     private string _pw = "", _itemTerm = "", _typeFilter = "";
     private int _addId;
     private string? _msg, _msgKind;
+    private HashSet<int> _icons = new();   // ids com ícone capturado em wwwroot/icons/<id>.png
 
-    protected override async Task OnParametersSetAsync() => await Reload();
+    protected override async Task OnParametersSetAsync() { LoadIcons(); await Reload(); }
+
+    private void LoadIcons()
+    {
+        _icons = new();
+        try
+        {
+            var dir = Path.Combine(Env.WebRootPath, "icons");
+            if (Directory.Exists(dir))
+                foreach (var f in Directory.EnumerateFiles(dir, "*.png"))
+                    if (int.TryParse(Path.GetFileNameWithoutExtension(f), out var id)) _icons.Add(id);
+        }
+        catch { }
+    }
 
     private async Task Reload()
     {
         _acc = await Db.GetAccountAsync(Id);
         if (_acc is null) return;
         _gold = _acc.Gold; _cash = _acc.Cash;
-        _box = _acc.GiId > 0 ? await Db.ListBoxAsync(_acc.GiId) : new();
+        if (_acc.GiId > 0)
+        {
+            _box = await Db.ListBoxAsync(_acc.GiId);
+            _char = await Db.GetActiveCharAsync(_acc.GiId);
+            _equip = _char is not null ? await Db.ListEquipAsync(_char.Id) : new();
+        }
+        else { _box = new(); _char = null; _equip = new(); }
     }
 
     private void Ok(string m) { _msg = m; _msgKind = "ok"; }

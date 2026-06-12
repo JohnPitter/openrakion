@@ -104,6 +104,33 @@ public sealed class AdminDb(IConfiguration cfg)
         return list;
     }
 
+    public async Task<CharFull?> GetActiveCharAsync(int giId)
+    {
+        await using var c = await OpenAsync();
+        await using var cmd = new MySqlCommand(
+            "SELECT id,name,Class,level,levelpoint,hit1,hit2,hit3,hit4,chit,hp,ap,attackspeed,speed,maxcp " +
+            "FROM characterinfo WHERE userid=@id ORDER BY used DESC, slot LIMIT 1", c);
+        cmd.Parameters.AddWithValue("@id", giId);
+        await using var r = await cmd.ExecuteReaderAsync();
+        if (!await r.ReadAsync()) return null;
+        var stats = new int[10];
+        for (int i = 0; i < 10; i++) stats[i] = r.GetInt32(5 + i);
+        return new CharFull(r.GetInt32(0), r.GetString(1), r.GetInt32(2), r.GetInt32(3), r.GetInt32(4), stats);
+    }
+
+    public async Task<List<EquipSlot>> ListEquipAsync(int charId)
+    {
+        var list = new List<EquipSlot>();
+        await using var c = await OpenAsync();
+        await using var cmd = new MySqlCommand(
+            "SELECT ui.slot, ui.itemid, IFNULL(ii.type,-1) FROM useriteminfo ui " +
+            "LEFT JOIN iteminfo ii ON ii.id=ui.itemid WHERE ui.characterid=@c ORDER BY ui.slot", c);
+        cmd.Parameters.AddWithValue("@c", charId);
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync()) list.Add(new EquipSlot(r.GetInt32(0), r.GetInt32(1), r.GetInt32(2)));
+        return list;
+    }
+
     public async Task<List<BoxItemRow>> ListBoxAsync(int giId)
     {
         var list = new List<BoxItemRow>();

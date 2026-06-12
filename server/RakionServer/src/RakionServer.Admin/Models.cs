@@ -9,6 +9,22 @@ public sealed record AccountRow(string Id, int GiId, int Authority, string CharN
 /// <summary>Personagem de uma conta (characterinfo).</summary>
 public sealed record CharRow(int Id, string Name, int Class, int Level, bool Used, int LevelPoint);
 
+/// <summary>Char ativo + stats (p/ o painel "Inventory" no estilo do jogo).</summary>
+public sealed record CharFull(int Id, string Name, int Class, int Level, int LevelPoint, int[] Stats);
+
+/// <summary>Slot equipado (useriteminfo) — a aparência do personagem.</summary>
+public sealed record EquipSlot(int Slot, int ItemId, int Type);
+
+/// <summary>Rótulos dos 10 stats (ordem characterinfo.hit1..maxcp), iguais aos do cliente.</summary>
+public static class StatNames
+{
+    public static readonly string[] Labels =
+    {
+        "Basic attack", "Range attack", "Special attack", "Grip attack", "Cell destruction",
+        "Max energy", "Max armor", "Attack speed", "Move speed", "Max cell point"
+    };
+}
+
 /// <summary>Item no armazém (itembox) + o type do iteminfo (p/ cor/categoria na grade).</summary>
 public sealed record BoxItemRow(int Id, int ItemId, int QSlot, int Type);
 

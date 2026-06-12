@@ -44,6 +44,18 @@
         .cell:hover .x { opacity:1; }
         .qrow { display:flex; gap:7px; margin-top:8px; flex-wrap:wrap; }
         .qcell { position:relative; width:56px; height:56px; border-radius:8px; border:1px solid var(--line); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:13px; }
+        .invwrap { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:12px; }
+        @@media (max-width:780px){ .invwrap { grid-template-columns:1fr; } }
+        .gpanel { background:#13110c; border:1px solid #4a3d22; border-radius:8px; overflow:hidden; }
+        .gphead { display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:#1d1810; border-bottom:1px solid #4a3d22; color:#d9b46a; font-size:13px; font-weight:600; }
+        .gbody { padding:12px; }
+        .gstats { margin-top:12px; border-top:1px solid var(--line); padding-top:10px; }
+        .gstats .srow { display:flex; justify-content:space-between; font-size:12px; padding:2px 0; }
+        .gstats .srow span { color:var(--mut); } .gstats .srow b { color:#e9d8a6; font-weight:600; }
+        .equipcol { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; }
+        .ico { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; padding:4px; }
+        .ico.none { display:none; }
+        .idtag { position:absolute; bottom:2px; right:3px; font-size:10px; color:#fff; background:rgba(0,0,0,.5); border-radius:3px; padding:0 3px; z-index:2; }
     </style>
 </head>
 
