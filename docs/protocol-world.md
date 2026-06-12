@@ -145,5 +145,23 @@ remandávamos `0x13`/`0x31` a cada poll, o cliente reprocessava o grid de widget
 - **Handles NÃO são copiáveis** do original: o `e703` (=user id 999 do nosso `test`) em `_r1f`/`_r1e` é
   VALIDADO pelo cliente — trocar por `0000` (como na captura, onde o `test` do container é id 1) trava
   o cliente re-mandando `0x14` no char-select. Da captura aproveita-se só a **estrutura**, com handles nossos.
+
+### Quickslot de poção (0x31) — persistência e a forma SEGURA do repaint
+O move box↔quickslot (`0x31` C→S) é só estado em memória no original (arrays `user+0x1e2c` box /
+`user+0x1da4` quickslot, persistidos via `UserItemInfo.slot`). No nosso modelo o box é a `itembox`;
+a posição persiste na coluna **`itembox.qslot`** (0 = box, N = célula N−1 do quickslot; provisionada
+no boot por `EnsureSchemaAsync`). Cada move reconcilia por itemId (`SaveQuickslotAsync` — poções do
+mesmo id são fungíveis); no login `LoadQuickslotAsync` repõe o quickslot e o box exclui `qslot>0`.
+
+**Repaint na abertura — regras aprendidas de um crash real** (`rakion.bin+0x407ed`, AV no draw
+`FUN_00440770`, que deref a definição do item SEM null-check):
+1. **A origem do frame 0x31 deve SEMPRE ser type=0 (box)** — o caminho de origem type=1 do handler do
+   cliente (`FUN_0047d1d0`) escreve num array de widgets indexado pela célula **sem bounds-check**
+   (`+0x22c + célula*4`); com as células 13..15 (as que o cliente usa na barra) corrompe widgets
+   vizinhos e o draw seguinte crasha. Repaint correto: origem = 1ª célula VAZIA do box (item 0,
+   no-op visual), destino = célula do quickslot — a MESMA forma do move ao vivo, única validada.
+2. **Nunca pintar célula com item 0** no box (frame nunca observado do original).
+3. **Pintar o quickslot só no 1º `0x2c` da sessão** — nas reentradas o cliente já tem o estado local
+   (ele processou os próprios moves); repintar é redundante.
 - Captura do original: imagem `openrakion-server:latest` (container do `rakion-tutorial`, Wine win32 com
   GG funcionando) + mitm passthrough `41708→40708`. A `rakion-spike:e2e` é a versão quebrada (GG falha).

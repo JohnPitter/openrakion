@@ -37,6 +37,25 @@ namespace RakionServer.World.Database
             }
         }
 
+        /// <summary>
+        /// Provisiona as colunas que o dump v258 nao tem mas o servidor offline usa. Idempotente
+        /// (IF NOT EXISTS) — roda no boot p/ sobreviver a um re-import do dump. `itembox.qslot` marca
+        /// a posicao de um consumivel: 0 = box (armazem), N = celula N-1 do quickslot de pocao.
+        /// </summary>
+        public async Task EnsureSchemaAsync()
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "ALTER TABLE itembox ADD COLUMN IF NOT EXISTS qslot TINYINT NOT NULL DEFAULT 0", c);
+                await cmd.ExecuteNonQueryAsync();
+                Log.Ok("db", "schema verificado (itembox.qslot)");
+            }
+            catch (Exception ex) { Log.Error("db", "EnsureSchemaAsync: {0}", ex.Message); }
+        }
+
         public sealed class Account
         {
             public string Id = "";
@@ -255,7 +274,8 @@ namespace RakionServer.World.Database
             catch (Exception ex) { Log.Error("db", "InsertItemBoxAsync({0},{1}): {2}", userId, itemId, ex.Message); return 0; }
         }
 
-        /// <summary>Carrega os itens do ARMAZEM (itembox) de uma conta, em ordem (= ordem dos slots do box).</summary>
+        /// <summary>Carrega os itens do BOX (itembox, qslot=0) de uma conta, em ordem (= ordem dos slots do box).
+        /// Itens com qslot>0 estao no quickslot de pocao (ver LoadQuickslotAsync) e nao aparecem no box.</summary>
         public async Task<System.Collections.Generic.List<int>> LoadItemBoxAsync(int userId)
         {
             var list = new System.Collections.Generic.List<int>();
@@ -263,13 +283,60 @@ namespace RakionServer.World.Database
             {
                 await using var c = new MySqlConnection(_conn);
                 await c.OpenAsync();
-                await using var cmd = new MySqlCommand("SELECT itemid FROM itembox WHERE userid=@uid ORDER BY id", c);
+                await using var cmd = new MySqlCommand("SELECT itemid FROM itembox WHERE userid=@uid AND qslot=0 ORDER BY id", c);
                 cmd.Parameters.AddWithValue("@uid", userId);
                 await using var r = await cmd.ExecuteReaderAsync();
                 while (await r.ReadAsync()) list.Add(r.GetInt32(0));
             }
             catch (Exception ex) { Log.Error("db", "LoadItemBoxAsync({0}): {1}", userId, ex.Message); }
             return list;
+        }
+
+        /// <summary>Carrega o quickslot de pocao (itembox.qslot>0) de uma conta: (celula = qslot-1, itemId).</summary>
+        public async Task<System.Collections.Generic.List<(int Cell, int ItemId)>> LoadQuickslotAsync(int userId)
+        {
+            var list = new System.Collections.Generic.List<(int, int)>();
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand("SELECT qslot, itemid FROM itembox WHERE userid=@uid AND qslot>0", c);
+                cmd.Parameters.AddWithValue("@uid", userId);
+                await using var r = await cmd.ExecuteReaderAsync();
+                while (await r.ReadAsync()) list.Add((r.GetByte(0) - 1, r.GetInt32(1)));
+            }
+            catch (Exception ex) { Log.Error("db", "LoadQuickslotAsync({0}): {1}", userId, ex.Message); }
+            return list;
+        }
+
+        /// <summary>Persiste o quickslot de pocao reconciliando o itembox pelo itemId (pocoes do mesmo id sao
+        /// fungiveis): zera o qslot da conta e remarca uma linha do box por celula ocupada. O estado vem do
+        /// modelo da sessao (_potionSlot) apos o swap 0x31, entao sempre ha uma linha qslot=0 correspondente.</summary>
+        public async Task SaveQuickslotAsync(int userId, System.Collections.Generic.IReadOnlyList<int> potionSlot)
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using (var reset = new MySqlCommand("UPDATE itembox SET qslot=0 WHERE userid=@uid", c))
+                {
+                    reset.Parameters.AddWithValue("@uid", userId);
+                    await reset.ExecuteNonQueryAsync();
+                }
+                for (int cell = 0; cell < potionSlot.Count; cell++)
+                {
+                    int item = potionSlot[cell];
+                    if (item == 0) continue;
+                    await using var mark = new MySqlCommand(
+                        "UPDATE itembox SET qslot=@q WHERE userid=@uid AND itemid=@it AND qslot=0 ORDER BY id LIMIT 1", c);
+                    mark.Parameters.AddWithValue("@q", cell + 1);
+                    mark.Parameters.AddWithValue("@uid", userId);
+                    mark.Parameters.AddWithValue("@it", item);
+                    await mark.ExecuteNonQueryAsync();
+                }
+                Log.Ok("shop", "quickslot persistido (uid={0})", userId);
+            }
+            catch (Exception ex) { Log.Error("db", "SaveQuickslotAsync({0}): {1}", userId, ex.Message); }
         }
 
         /// <summary>Cla por id (claninfo).</summary>

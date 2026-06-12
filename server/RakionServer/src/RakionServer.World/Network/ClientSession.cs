@@ -114,6 +114,7 @@ namespace RakionServer.World.Network
         private byte[] _invHandle = new byte[] { 0xb3, 0xc3, 0x86, 0x3f };
         private bool _r36bSent;   // 0x36b (arma a lista de games) so' 1x; remandar a cada poll travava o cliente
         private readonly int[] _potionSlot = new int[0x13];   // quickslot de pocao = user+0x1da4 (19 celulas)
+        private bool _potionPainted;  // quickslot persistido pintado so' no 1o open (0x2c) da sessao
         // Diagnóstico concluído (2026-06-10): com inventário VAZIO o cliente AINDA crasha no Previous
         // -> crash é 100% client-side (csComponent::PrevChild, lista de widgets corrompida no teardown),
         // independente dos dados do servidor. Conserto = patch no uitoolkit.dll (guard de alinhamento).
@@ -385,7 +386,18 @@ namespace RakionServer.World.Network
                     // nunca via 0x13. Mandados UMA vez aqui (não a cada poll de 0x2d, que era o que prendia
                     // o cliente e quebrava o Previous) — a propria compra (0x2e) ja re-pinta com 0x31 sem
                     // quebrar o Previous, entao 0x31 na abertura tb e' seguro.
-                    for (int i = 0; i < BoxItems.Count && i < 0x78; i++) SendBoxAdd(BoxItems[i], (byte)i, 1);
+                    // item 0 = celula esvaziada por um move: NAO pintar (frame nunca validado; o cliente
+                    // ja processou o move local e tem o buraco)
+                    for (int i = 0; i < BoxItems.Count && i < 0x78; i++)
+                        if (BoxItems[i] != 0) SendBoxAdd(BoxItems[i], (byte)i, 1);
+                    // quickslot persistido: pinta SO no 1o open da sessao — nas reentradas o estado vive
+                    // nos arrays do cliente (que processou os moves), e repintar era redundante/arriscado
+                    if (!_potionPainted)
+                    {
+                        _potionPainted = true;
+                        for (byte cell = 0; cell < _potionSlot.Length; cell++)
+                            if (_potionSlot[cell] != 0) SendPotionSlotAdd(_potionSlot[cell], cell);
+                    }
                     return true;
                 case 0x2D: // FIEL à captura: o 0x2d responde SEMPRE o ack curto (handle), NUNCA 0x13.
                     // O original (test com box vazio) so' manda o ack; mandar 0x13 (lista) prendia o cliente
@@ -716,6 +728,7 @@ namespace RakionServer.World.Network
             WriteCell(srcType, srcSlot, destItem);   // swap origem <-> destino
             WriteCell(destType, destSlot, srcItem);
             SendPotionSlotMove(srcType, srcSlot, destItem, destType, destSlot, srcItem);
+            if (GameInfoId > 0) _ = _server.Db.SaveQuickslotAsync(GameInfoId, _potionSlot);  // persiste box<->quickslot
             Log.Ok("shop", "[{0}] 0x31 potion-slot: ({1}:{2}) <-> ({3}:{4}) item={5}",
                 Slot, srcType, srcSlot, destType, destSlot, srcItem);
         }
@@ -728,6 +741,26 @@ namespace RakionServer.World.Network
         {
             if (type == 0) { if (slot < BoxItems.Count) BoxItems[slot] = item; }
             else if (slot < _potionSlot.Length) _potionSlot[slot] = item;
+        }
+
+        /// <summary>Popula o quickslot de pocao com o que foi persistido (itembox.qslot) no login.</summary>
+        public void LoadPotionSlot(System.Collections.Generic.IReadOnlyList<(int Cell, int ItemId)> entries)
+        {
+            System.Array.Clear(_potionSlot);
+            foreach (var (cell, itemId) in entries)
+                if (cell >= 0 && cell < _potionSlot.Length) _potionSlot[cell] = itemId;
+        }
+
+        /// <summary>Pinta uma celula do quickslot de pocao na abertura do inventario. A forma do frame
+        /// PRECISA ser a do move ao vivo (origem type=0 box -> destino type=1): o caminho de ORIGEM type=1
+        /// do handler do cliente (FUN_0047d1d0) escreve num array de widgets indexado pela celula SEM
+        /// bounds-check e corrompia widgets -> AV no draw (rakion.bin+0x407ed). Origem = 1a celula VAZIA
+        /// do box (escrita de item 0 = no-op visual), destino = a celula do quickslot.</summary>
+        private void SendPotionSlotAdd(int itemId, byte cell)
+        {
+            if (BoxItems.Count >= 0x78) return;  // box cheio: sem celula vazia p/ usar de origem
+            SendPotionSlotMove(0, (byte)BoxItems.Count, 0, 1, cell, itemId);
+            Log.Ok("shop", "[{0}] 0x31 potion-add: item {1} -> quickslot {2}", Slot, itemId, cell);
         }
 
         /// <summary>

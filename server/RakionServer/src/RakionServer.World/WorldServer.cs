@@ -367,6 +367,7 @@ namespace RakionServer.World
             _ = Task.Run(() => GameClockLoopAsync(_cts.Token));   // relogio 1583 (150ms) das salas Battle/PvP
 
             await _db.PingAsync();
+            await _db.EnsureSchemaAsync();     // provisiona itembox.qslot (quickslot de pocao) se faltar
             await LoadItemDefsCacheAsync();   // catalogo de itens (iteminfo) p/ a compra 0x2e
             _levelCurve = await _db.LoadLevelCurveAsync(); // curva de exp por classe (level-up 0x50)
             Log.Ok("level", "curva de level carregada: {0} entradas (classlevelinfo)", _levelCurve.Count);
@@ -554,6 +555,7 @@ namespace RakionServer.World
                 // invisível e sem crash do painel no "Previous" (ver IsBoxDisplayable).
                 var loadedBox = await _db.LoadItemBoxAsync(gi.Id);
                 s.BoxItems = loadedBox.FindAll(IsBoxDisplayable);
+                s.LoadPotionSlot(await _db.LoadQuickslotAsync(gi.Id));     // quickslot de pocao persistido (itembox.qslot)
                 int boxHidden = loadedBox.Count - s.BoxItems.Count;
                 Log.Ok("login", "[{0}] char ativo='{1}' id={2} class={3} lvl={4} itens={5} box={6}{7}", s.Slot, ch.Name, ch.Id, ch.Class, ch.Level, s.Items.Count, s.BoxItems.Count, boxHidden > 0 ? $" (+{boxHidden} não-gear ocultos)" : "");
             }
