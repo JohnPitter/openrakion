@@ -96,7 +96,17 @@ namespace RakionServer.World.Network
         public ushort FieldTargetB;       // playerRecord +0x2ca (alvo/objetivo, arg0>=10)
         public ushort FieldObjectIndex; // user+0x14a0 (indice deste user no array de field-objects, lido por FUN_0040b7d0)
         public byte FieldSeat;          // user+0x14a2 (byte de seat/owner do user no field, lido por FUN_0040b7d0)
-        public bool ExpBonusActive;     // user+0x236c != 0 (multiplicador de exp x3/2 ativo)
+        public bool ExpBonusActive;     // user+0x236c != 0 (bônus de exp ativo; no nosso server = PU ativo)
+        public bool PuActive;           // PU vigente (usergameinfo.powertimedate futuro)
+
+        /// <summary>Aplica o multiplicador de XP do PU (pu_config, ciente de promoção) quando o bônus está
+        /// ativo. Substitui o ×3/2 fixo do original por um fator configurável.</summary>
+        public uint BonusExp(uint exp) =>
+            ExpBonusActive ? (uint)(exp * _server.PuConfig.EffectiveExpMult(System.DateTime.Now)) : exp;
+
+        /// <summary>Aplica o multiplicador de gold do PU (pu_config, ciente de promoção) quando o PU está ativo.</summary>
+        public uint BonusGold(uint gold) =>
+            PuActive ? (uint)(gold * _server.PuConfig.EffectiveGoldMult(System.DateTime.Now)) : gold;
 
         private ushort _clientSeq;   // user+0x146e (ultimo seq recebido)
         private byte[] _invReqBody = System.Array.Empty<byte>();  // body do 0x2c (SlotActive/user14a4 do cliente) p/ ecoar no 0x12/0x13
@@ -790,19 +800,45 @@ namespace RakionServer.World.Network
         /// </summary>
         private void HandleBuyPowerUser()
         {
-            const uint price = 8000;
-            const int bonus = 51;
+            var cfg = _server.PuConfig;
+            uint price = (uint)cfg.Price;
+            int bonus = cfg.BonusPoints;
+            bool granted = false;
             if (Cash >= price && GameInfoId > 0 && Game != null)
             {
                 Cash -= price;
-                PowerLevelPoint += bonus;
+                PowerLevelPoint += (uint)bonus;
+                PuActive = true; ExpBonusActive = true;   // PU passa a valer já nesta sessão (sem relog)
                 _ = _server.Db.AddCashAsync(Game.Name, -(int)price);
-                _ = _server.Db.GrantPowerUserAsync(GameInfoId, bonus);
-                Log.Ok("shop", "[{0}] Buy Power User: -{1} cash, +{2} PU bonus (total {3})", Slot, price, bonus, PowerLevelPoint);
+                _ = _server.Db.GrantPowerUserAsync(GameInfoId, bonus, cfg.DurationDays);
+                granted = true;
+                Log.Ok("shop", "[{0}] Buy Power User: -{1} cash, +{2} PU bonus (total {3}), +{4}d", Slot, price, bonus, PowerLevelPoint, cfg.DurationDays);
             }
             // status 2 -> o cliente exibe a mensagem 641 do language.txt, que PATCHAMOS no DataSetup.xfs
             // de "...6 months in advance" p/ "Power User purchased! Relog to see your bonus points."
             SendPowerUserResponse(0x02);
+            if (granted) SendPowerUserBonusLive();   // sobe o contador de PU Bonus Points SEM relog
+        }
+
+        /// <summary>
+        /// Empurra ao cliente o novo total de PU Bonus Points logo apos a compra, SEM relog. Reaproveita a
+        /// resposta 0x33 de alocacao (OnRecvInventoryAllocationPoint, FUN_0047dbb0): no status 0 ela grava
+        /// account_info+0x58 = PU bonus (e o levelpoint) INCONDICIONALMENTE, e so' atualiza o widget se a UI
+        /// de inventario estiver aberta (guard menu 0x19/0x1a/0x1b) — mesmo padrao seguro do BuyPowerUser.
+        /// stat=0x0a (fora de 0..9): o switch do handler cai no default e PULA a escrita de stat -> no-op de
+        /// stat; so' o contador de PU/levelpoint sobe. Forma de frame ja validada (a alocacao real a usa).
+        /// </summary>
+        private void SendPowerUserBonusLive()
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x33);
+            w.WriteByte(0);                          // status sucesso
+            w.WriteWord((ushort)CharLevelPoint);     // levelpoint (valor atual = no-op)
+            w.WriteWord((ushort)PowerLevelPoint);    // PU Bonus Points NOVO -> account_info+0x58
+            w.WriteByte(0x0a);                        // stat fora de 0..9 -> default: NAO escreve stat
+            w.WriteWord(0);                          // newStat ignorado no caminho default
+            SendLobby(w.ToArray());
+            Log.Ok("shop", "[{0}] 0x33 push PU bonus live -> {1} (sem relog)", Slot, PowerLevelPoint);
         }
 
         private void SendPowerUserResponse(byte status)
@@ -869,6 +905,7 @@ namespace RakionServer.World.Network
                     Log.Warn("field", "[{0}] 0x53 solo: Wrong Game Point! Exp:{1} Gold:{2} — ignorado", Slot, exp, gold);
                     return;
                 }
+                exp = BonusExp(exp); gold = BonusGold(gold);   // bônus de PU (pu_config) sobre o valor base
                 Gold += gold;
                 if (gold > 0 && GameInfoId > 0) _ = _server.Db.AddGoldAsync(GameInfoId, (int)gold);
                 _server.GrantExp(this, exp);

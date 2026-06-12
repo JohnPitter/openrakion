@@ -119,6 +119,7 @@ namespace RakionServer.World
         }
 
         public bool Locked { get; private set; }                 // this+0x50 (servidor fechado p/ GM)
+        public PuConfig PuConfig { get; private set; } = new();   // pu_config: preço/bônus/multiplicadores do PU (lida no boot)
         public int MaxUser => _cfg.MaxUser;                       // this+0x536c
         public int CurrentUsers => Volatile.Read(ref _currentUsers);
 
@@ -367,7 +368,11 @@ namespace RakionServer.World
             _ = Task.Run(() => GameClockLoopAsync(_cts.Token));   // relogio 1583 (150ms) das salas Battle/PvP
 
             await _db.PingAsync();
-            await _db.EnsureSchemaAsync();     // provisiona itembox.qslot (quickslot de pocao) se faltar
+            await _db.EnsureSchemaAsync();     // provisiona itembox.qslot + pu_config se faltarem
+            PuConfig = await _db.LoadPuConfigAsync();
+            Log.Ok("shop", "pu_config: preço={0} bônus={1} {2}d  xp×{3} gold×{4}{5}", PuConfig.Price,
+                PuConfig.BonusPoints, PuConfig.DurationDays, PuConfig.ExpMult, PuConfig.GoldMult,
+                PuConfig.PromoActive ? " (promo ON)" : "");
             await LoadItemDefsCacheAsync();   // catalogo de itens (iteminfo) p/ a compra 0x2e
             _levelCurve = await _db.LoadLevelCurveAsync(); // curva de exp por classe (level-up 0x50)
             Log.Ok("level", "curva de level carregada: {0} entradas (classlevelinfo)", _levelCurve.Count);
@@ -533,6 +538,10 @@ namespace RakionServer.World
             int cash = await _db.GetCashAsync(userId);                  // cash keyed por account-name
             s.Cash = (uint)(cash < 0 ? 0 : cash);
             s.PowerLevelPoint = (uint)(gi.PowerLevelPoint < 0 ? 0 : gi.PowerLevelPoint); // PU Bonus Points -> 0x0C @48
+            s.PuActive = gi.PuActive;                                   // powertimedate > now -> bônus de XP/gold
+            s.ExpBonusActive = gi.PuActive;                            // flag original do bônus de XP (user+0x236c)
+            if (gi.PuActive) Log.Info("shop", "[{0}] PU ATIVO -> bônus xp×{1} gold×{2}", s.Slot,
+                PuConfig.EffectiveExpMult(DateTime.Now), PuConfig.EffectiveGoldMult(DateTime.Now));
             var ch = await _db.LoadActiveCharacterAsync(gi.Id);
             if (ch != null)
             {

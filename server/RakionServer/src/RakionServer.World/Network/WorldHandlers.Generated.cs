@@ -1355,9 +1355,9 @@ namespace RakionServer.World.Network
                     uint dropC = ctx.P.UInt32();    // local_2094 (param_3+0x11)
                     short tailFlag = ctx.P.Int16(); // *(param_3+0x15)
 
-                    // Bonus: se *(user+0x236c) != 0 entao exp = exp*3/2 e local_20c0|=1 (flag de bonus).
-                    byte bonusFlag = 0;             // (char)local_20c0
-                    if (u.ExpBonusActive) { exp = exp * 3u >> 1; bonusFlag = 1; }
+                    // Bonus de PU (pu_config): exp/gold multiplicados e local_20c0|=1 (flag de bonus).
+                    byte bonusFlag = (byte)(u.ExpBonusActive ? 1 : 0);   // (char)local_20c0
+                    exp = u.BonusExp(exp); gold = u.BonusGold(gold);
 
                     // FUN_0041d0d0(this, slot, fieldObjIdx, bonusFlag, exp, gold, material): preview/log da recompensa.
                     Log.Info($"[GamePointSettle] slot={u.Slot} obj={fieldObjIdx} seat={seat} exp={exp} gold={gold} mat={material} bonus={bonusFlag}");
@@ -1539,8 +1539,8 @@ namespace RakionServer.World.Network
                     // exp/gold do payload em offset (3 + 2*count); cursor ja esta nessa posicao.
                     uint exp = ctx.P.UInt32();    // local_30ec
                     uint gold = ctx.P.UInt32();   // local_30dc
-                    // Bonus: *(user+0x236c) != 0 => exp = exp*3/2.
-                    if (u.ExpBonusActive) { exp = exp * 3u >> 1; }
+                    // Bonus de PU (pu_config): exp/gold multiplicados quando o PU está ativo.
+                    exp = u.BonusExp(exp); gold = u.BonusGold(gold);
 
                     // FUN_0041cf80(this, &slot, &fieldObjIdx, &rank, &exp, &gold): anti-cheat. 0 = ok, !=0 = invalido.
                     int validate = 0;

@@ -38,9 +38,10 @@ namespace RakionServer.World.Database
         }
 
         /// <summary>
-        /// Provisiona as colunas que o dump v258 nao tem mas o servidor offline usa. Idempotente
-        /// (IF NOT EXISTS) — roda no boot p/ sobreviver a um re-import do dump. `itembox.qslot` marca
-        /// a posicao de um consumivel: 0 = box (armazem), N = celula N-1 do quickslot de pocao.
+        /// Provisiona o que o dump v258 nao tem mas o servidor offline usa. Idempotente (IF NOT EXISTS)
+        /// — roda no boot p/ sobreviver a um re-import do dump. `itembox.qslot` marca a posicao de um
+        /// consumivel (0 = box, N = celula N-1 do quickslot); `pu_config` guarda preco/bonus/multiplicadores
+        /// do Power User (linha unica id=1, editavel pelo painel admin).
         /// </summary>
         public async Task EnsureSchemaAsync()
         {
@@ -48,12 +49,60 @@ namespace RakionServer.World.Database
             {
                 await using var c = new MySqlConnection(_conn);
                 await c.OpenAsync();
-                await using var cmd = new MySqlCommand(
-                    "ALTER TABLE itembox ADD COLUMN IF NOT EXISTS qslot TINYINT NOT NULL DEFAULT 0", c);
-                await cmd.ExecuteNonQueryAsync();
-                Log.Ok("db", "schema verificado (itembox.qslot)");
+                await Exec(c, "ALTER TABLE itembox ADD COLUMN IF NOT EXISTS qslot TINYINT NOT NULL DEFAULT 0");
+                await Exec(c,
+                    "CREATE TABLE IF NOT EXISTS pu_config (" +
+                    " id TINYINT NOT NULL PRIMARY KEY," +
+                    " price INT NOT NULL DEFAULT 8000," +
+                    " bonus_points SMALLINT NOT NULL DEFAULT 51," +
+                    " duration_days SMALLINT NOT NULL DEFAULT 30," +
+                    " exp_mult DECIMAL(4,2) NOT NULL DEFAULT 1.50," +
+                    " gold_mult DECIMAL(4,2) NOT NULL DEFAULT 1.50," +
+                    " promo_active TINYINT(1) NOT NULL DEFAULT 0," +
+                    " promo_exp_mult DECIMAL(4,2) NOT NULL DEFAULT 2.00," +
+                    " promo_gold_mult DECIMAL(4,2) NOT NULL DEFAULT 2.00," +
+                    " promo_start DATETIME NULL," +
+                    " promo_end DATETIME NULL)");
+                await Exec(c, "INSERT IGNORE INTO pu_config (id) VALUES (1)");
+                Log.Ok("db", "schema verificado (itembox.qslot, pu_config)");
             }
             catch (Exception ex) { Log.Error("db", "EnsureSchemaAsync: {0}", ex.Message); }
+        }
+
+        private static async Task Exec(MySqlConnection c, string sql)
+        {
+            await using var cmd = new MySqlCommand(sql, c);
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        /// <summary>Carrega a config do Power User (pu_config id=1). Default se a linha faltar.</summary>
+        public async Task<PuConfig> LoadPuConfigAsync()
+        {
+            var cfg = new PuConfig();
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "SELECT price,bonus_points,duration_days,exp_mult,gold_mult,promo_active," +
+                    "promo_exp_mult,promo_gold_mult,promo_start,promo_end FROM pu_config WHERE id=1", c);
+                await using var r = await cmd.ExecuteReaderAsync();
+                if (await r.ReadAsync())
+                {
+                    cfg.Price = r.GetInt32(0);
+                    cfg.BonusPoints = r.GetInt32(1);
+                    cfg.DurationDays = r.GetInt32(2);
+                    cfg.ExpMult = (double)r.GetDecimal(3);
+                    cfg.GoldMult = (double)r.GetDecimal(4);
+                    cfg.PromoActive = r.GetInt32(5) != 0;
+                    cfg.PromoExpMult = (double)r.GetDecimal(6);
+                    cfg.PromoGoldMult = (double)r.GetDecimal(7);
+                    cfg.PromoStart = r.IsDBNull(8) ? null : r.GetDateTime(8);
+                    cfg.PromoEnd = r.IsDBNull(9) ? null : r.GetDateTime(9);
+                }
+            }
+            catch (Exception ex) { Log.Error("db", "LoadPuConfigAsync: {0}", ex.Message); }
+            return cfg;
         }
 
         public sealed class Account
@@ -112,6 +161,7 @@ namespace RakionServer.World.Database
             public bool Ban;
             public string BanReason = "";
             public int PowerLevelPoint;   // usergameinfo.powerlevelpoint = "Power User Bonus Points" (0x0C @48)
+            public bool PuActive;         // powertimedate > now: PU vigente -> bônus de XP/gold
         }
 
         /// <summary>Carrega usergameinfo pela conta (name == id da conta).</summary>
@@ -122,8 +172,8 @@ namespace RakionServer.World.Database
                 await using var c = new MySqlConnection(_conn);
                 await c.OpenAsync();
                 await using var cmd = new MySqlCommand(
-                    "SELECT id, name, charname, gold, ban, IFNULL(BanReason,''), powerlevelpoint " +
-                    "FROM usergameinfo WHERE name=@n LIMIT 1", c);
+                    "SELECT id, name, charname, gold, ban, IFNULL(BanReason,''), powerlevelpoint, " +
+                    "(powertimedate > NOW()) FROM usergameinfo WHERE name=@n LIMIT 1", c);
                 cmd.Parameters.AddWithValue("@n", accountName);
                 await using var r = await cmd.ExecuteReaderAsync();
                 if (!await r.ReadAsync())
@@ -137,6 +187,7 @@ namespace RakionServer.World.Database
                     Ban = r.GetInt32(4) != 0,
                     BanReason = r.GetString(5),
                     PowerLevelPoint = r.GetInt32(6),
+                    PuActive = !r.IsDBNull(7) && r.GetInt32(7) != 0,
                 };
             }
             catch (Exception ex)
@@ -546,10 +597,11 @@ namespace RakionServer.World.Database
             catch (Exception ex) { Log.Error("db", "AllocateStatPuAsync({0},{1}): {2}", characterId, statIdx, ex.Message); }
         }
 
-        /// <summary>Concede Power User (compra do 0x34): soma bonusPoints ao powerlevelpoint e marca o PU
-        /// ativo (powertimedate futuro). O original validava a compra no cash-shop online (offline); aqui o
-        /// servidor pessoal concede direto.</summary>
-        public async Task GrantPowerUserAsync(int gameInfoId, int bonusPoints)
+        /// <summary>Concede Power User (compra do 0x34): soma bonusPoints ao powerlevelpoint e ESTENDE a
+        /// validade por durationDays (a partir de hoje OU do vencimento atual, o que for maior — assim
+        /// comprar de novo acumula). O original validava no cash-shop online (offline); aqui o servidor
+        /// pessoal concede direto. durationDays/bonusPoints vêm da pu_config.</summary>
+        public async Task GrantPowerUserAsync(int gameInfoId, int bonusPoints, int durationDays)
         {
             try
             {
@@ -557,11 +609,13 @@ namespace RakionServer.World.Database
                 await c.OpenAsync();
                 await using var cmd = new MySqlCommand(
                     "UPDATE usergameinfo SET powerlevelpoint=powerlevelpoint+@b, powertime=GREATEST(powertime,1), " +
-                    "powertimedate='2030-01-01 00:00:00' WHERE id=@id", c);
+                    "powertimedate=DATE_ADD(GREATEST(NOW(), IFNULL(powertimedate, NOW())), INTERVAL @d DAY) " +
+                    "WHERE id=@id", c);
                 cmd.Parameters.AddWithValue("@b", bonusPoints);
+                cmd.Parameters.AddWithValue("@d", durationDays);
                 cmd.Parameters.AddWithValue("@id", gameInfoId);
                 await cmd.ExecuteNonQueryAsync();
-                Log.Ok("db", "GrantPowerUser: gi={0} +{1} bonus points", gameInfoId, bonusPoints);
+                Log.Ok("db", "GrantPowerUser: gi={0} +{1} bonus points, +{2}d", gameInfoId, bonusPoints, durationDays);
             }
             catch (Exception ex) { Log.Error("db", "GrantPowerUserAsync({0}): {1}", gameInfoId, ex.Message); }
         }

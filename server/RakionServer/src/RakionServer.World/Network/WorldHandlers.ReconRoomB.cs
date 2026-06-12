@@ -160,16 +160,16 @@ namespace RakionServer.World.Network
             uint gold = ctx.P.CanRead(4) ? ctx.P.UInt32() : 0;  // param_3[1]
             byte flag = ctx.P.CanRead(1) ? ctx.P.Byte() : (byte)0; // *(param_3+2)
 
-            // multiplicador de exp x3/2 (user+0x236c)
-            if (u.ExpBonusActive) exp = exp * 3 >> 1;
-
-            // anti-cheat FUN_0041cf80 — pontos plausiveis? (sanidade basica fiel ao gate do exe)
+            // anti-cheat FUN_0041cf80 — pontos plausiveis? (valida o valor BRUTO reportado pelo cliente)
             if (!ValidateGamePoints(exp, gold))
             {
                 Log.Warn("field", "[{0}] Wrong Game Point! Exp:{1} Gold:{2} -> DISC 0x97", u.Slot, exp, gold);
                 u.Disconnect(0x97);
                 return;
             }
+
+            // bônus de PU (pu_config) aplicado server-side sobre o valor validado (substitui o ×3/2 fixo)
+            exp = u.BonusExp(exp); gold = u.BonusGold(gold);
 
             // credita: FUN_004061c0 (score no player-record) + FUN_0040d300 (level-up).
             rec.Score += exp;
@@ -249,16 +249,16 @@ namespace RakionServer.World.Network
             uint cost = ctx.P.CanRead(4) ? ctx.P.UInt32() : 0;  // @uVar8
             uint gold = ctx.P.CanRead(4) ? ctx.P.UInt32() : 0;  // @uVar8+4
 
-            // multiplicador de exp x3/2 (user+0x236c)
-            if (u.ExpBonusActive) cost = cost * 3 >> 1;
-
-            // anti-cheat FUN_0041cf80 ("Wrong Game Point" -> DISC 0xa0)
+            // anti-cheat FUN_0041cf80 ("Wrong Game Point" -> DISC 0xa0) — valida o valor BRUTO do cliente
             if (!ValidateGamePoints(cost, gold))
             {
                 Log.Warn("field", "[{0}] Wrong Game Point! Exp:{1} Gold:{2} -> DISC 0xa0", u.Slot, cost, gold);
                 u.Disconnect(0xa0);
                 return;
             }
+
+            // bônus de PU (pu_config) sobre o valor validado (cost = exp deste caminho)
+            cost = u.BonusExp(cost); gold = u.BonusGold(gold);
 
             // ack de reserva: LOBBY 0x53 [53][result]; result 0 = OK (FUN_0040bae0 == 0)
             SendLobbyMsg(ctx, 0x53, BuildResult53(0, idx, cfgA, mapSlots));
