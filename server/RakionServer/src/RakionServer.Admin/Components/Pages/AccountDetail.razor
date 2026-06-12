@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @inject AdminDb Db
 @inject IWebHostEnvironment Env
+@inject ItemNames Names
 
 <PageTitle>@Id — OpenRakion Admin</PageTitle>
 <h1><a href="/accounts">Contas</a> › @Id</h1>
@@ -73,7 +74,8 @@ else
                 {
                     <div class="cell click" style="background:@ItemKind.Color(it.Type)" @onclick="() => AddItem(it.Id)" title="@($"adicionar item {it.Id}")">
                         @if (_icons.Contains(it.Id)) { <img src="/icons/@(it.Id).png" class="ico" alt="" /> }
-                        <span class="iid">@it.Id</span><span class="ikind">@ItemKind.Label(it.Type)</span>
+                        <span class="iname">@(Names.Get(it.Id) ?? ("#" + it.Id))</span>
+                        <span class="ikind">@it.Id · @ItemKind.Label(it.Type)</span>
                     </div>
                 }
             </div>
@@ -88,8 +90,9 @@ else
                         <div class="equipcol">
                             @foreach (var e in _equip.Where(e => e.Slot <= 5).OrderBy(e => e.Slot))
                             {
-                                <div class="cell" style="background:@ItemKind.Color(e.Type)" title="@($"slot {e.Slot} · item {e.ItemId}")">
+                                <div class="cell" style="background:@ItemKind.Color(e.Type)" title="@($"slot {e.Slot} · {Names.Get(e.ItemId) ?? e.ItemId.ToString()}")">
                                     @if (_icons.Contains(e.ItemId)) { <img src="/icons/@(e.ItemId).png" class="ico" alt="" /> }
+                                    <span class="iname">@(Names.Get(e.ItemId) ?? ("#" + e.ItemId))</span>
                                     <span class="idtag">@e.ItemId</span>
                                 </div>
                             }
@@ -113,9 +116,10 @@ else
                     <div class="invgrid">
                         @foreach (var b in _box.Where(b => b.QSlot == 0))
                         {
-                            <div class="cell" style="background:@ItemKind.Color(b.Type)" title="@($"box id {b.Id} · item {b.ItemId} · type {b.Type}")">
+                            <div class="cell" style="background:@ItemKind.Color(b.Type)" title="@($"box id {b.Id} · {Names.Get(b.ItemId) ?? b.ItemId.ToString()} · type {b.Type}")">
                                 @if (_icons.Contains(b.ItemId)) { <img src="/icons/@(b.ItemId).png" class="ico" alt="" /> }
-                                <span class="iid">@b.ItemId</span><span class="ikind">@ItemKind.Label(b.Type)</span>
+                                <span class="iname">@(Names.Get(b.ItemId) ?? ("#" + b.ItemId))</span>
+                                <span class="ikind">@b.ItemId · @ItemKind.Label(b.Type)</span>
                                 <button class="x" @onclick="() => RemoveItem(b.Id)">×</button>
                             </div>
                         }
@@ -126,9 +130,9 @@ else
                     <div class="qrow">
                         @foreach (var q in _box.Where(b => b.QSlot > 0).OrderBy(b => b.QSlot))
                         {
-                            <div class="qcell" style="background:@ItemKind.Color(q.Type)" title="@($"cell {q.QSlot - 1} · item {q.ItemId}")">
+                            <div class="qcell" style="background:@ItemKind.Color(q.Type)" title="@($"cell {q.QSlot - 1} · {Names.Get(q.ItemId) ?? q.ItemId.ToString()}")">
                                 @if (_icons.Contains(q.ItemId)) { <img src="/icons/@(q.ItemId).png" class="ico" alt="" /> }
-                                <span class="idtag">@q.ItemId</span>
+                                <span class="iname">@(Names.Get(q.ItemId) ?? ("#" + q.ItemId))</span>
                                 <button class="x" @onclick="() => RemoveItem(q.Id)">×</button>
                             </div>
                         }

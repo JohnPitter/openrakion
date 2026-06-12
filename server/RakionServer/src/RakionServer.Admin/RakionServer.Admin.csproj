@@ -17,4 +17,8 @@
     <ProjectReference Include="..\RakionServer.Common\RakionServer.Common.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="item_names.tsv" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

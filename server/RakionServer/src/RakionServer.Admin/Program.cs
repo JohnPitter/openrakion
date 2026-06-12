@@ -10,6 +10,7 @@ builder.WebHost.UseUrls("http://0.0.0.0:8080");
 
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddScoped<AdminDb>();
+builder.Services.AddSingleton<ItemNames>();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(o => { o.LoginPath = "/login"; o.ExpireTimeSpan = TimeSpan.FromHours(8); });
 builder.Services.AddAuthorization();
