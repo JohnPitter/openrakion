@@ -28,7 +28,7 @@ reconstruída em .NET (**broker + world + buddy**). É a reconstrução nativa L
                                                           ▼
    cliente ──► BUDDY  TCP 8500 / 8504 (amigos)      ┌──────────┐
                                                     │ MariaDB  │  db `rakion`
-   auth web (PHP) ──► :80  (login do launcher)      └──────────┘
+   LauncherWeb ──► :80 (login)  Admin ──► :8080     └──────────┘
 ```
 
 | Componente | Porta(s) | Projeto .NET | Binário |
@@ -36,8 +36,9 @@ reconstruída em .NET (**broker + world + buddy**). É a reconstrução nativa L
 | Broker (lista de mundos) | TCP+UDP **40706** | `RakionServer.Broker` | `BrokenServer.dll` |
 | World (jogo) | TCP **40708**, UDP **40708/40709** | `RakionServer.World` | `RakionWorldServer.dll` |
 | Buddy (amigos) | TCP **8500** e **8504** | `RakionServer.Buddy` | `BuddyServer.dll` |
+| LauncherWeb (auth do launcher) | TCP **80** | `RakionServer.LauncherWeb` | `RakionLauncherWeb.dll` |
+| Admin (painel web) | TCP **8080** | `RakionServer.Admin` | `RakionAdmin.dll` |
 | MariaDB/MySQL | **3306** | — | db `rakion` |
-| Auth web (opcional) | **80** | — (PHP) | só p/ login via launcher |
 
 ---
 
@@ -149,9 +150,10 @@ Name=rakion
 
 ---
 
-## 5. Rodar a stack (3 servidores)
+## 5. Rodar a stack
 
-Abra **3 terminais** (a ordem importa: broker primeiro):
+No Windows, `./start-stack.ps1` sobe os 4 serviços de uma vez (e exporta `DOTNET_ROOT`, que os web
+apps precisam quando o .NET é user-local). Ou rode cada um (a ordem importa: broker primeiro):
 
 ```bash
 # Terminal 1 — Broker
@@ -162,6 +164,12 @@ dotnet run --project src/RakionServer.World -c Release -- deploy/worldserver.ini
 
 # Terminal 3 — Buddy
 dotnet run --project src/RakionServer.Buddy -c Release
+
+# Terminal 4 — LauncherWeb (auth do launcher, :80)
+dotnet run --project src/RakionServer.LauncherWeb -c Release
+
+# Terminal 5 — Admin (painel web, http://localhost:8080)  [opcional]
+dotnet run --project src/RakionServer.Admin -c Release
 ```
 
 **Sinais de que está tudo OK:**
@@ -232,14 +240,14 @@ terceiros cujo servidor de auth está **morto**. Esta reconstrução **não emul
 
 ## 9. Criar contas
 
-Para uso pessoal, insira direto no banco:
+A forma fácil é o **painel admin** em **http://localhost:8080** (senha de amostra `rakion`, em
+`src/RakionServer.Admin/appsettings.json` → `Admin:Password`): aba **Contas** → criar/editar conta,
+trocar senha, ajustar **gold/cash** e **adicionar itens** ao inventário. Ou direto no banco:
 ```sql
 USE rakion;
 INSERT INTO user (id,password) VALUES ('meunick','minhasenha');
 INSERT INTO usergameinfo (id,name,gold) VALUES (2,'meunick',10000);
 ```
-(Se usar a auth web/launcher, há um fluxo de criação de conta via PHP — ver `docs/ADMIN.md`
-do material do tutorial.)
 
 ---
 
