@@ -10,12 +10,13 @@ Servidor privado **open source** para **Rakion** (SoftNyx, versão *XfsVer258*) 
 
 Servidores privados de Rakion existiam há mais de uma década, mas dependiam dos **binários de servidor da SoftNyx** (rodando sob Wine) e quase sempre travavam no **"stuck at login"**. O OpenRakion agora vai muito além:
 
-- 🟢 **Servidor 100% próprio em .NET** (não usa os executáveis da SoftNyx). Três serviços:
+- 🟢 **Servidor 100% próprio em .NET** (não usa os executáveis da SoftNyx). Serviços:
   - **Broker** (`RakionServer.Broker`) — lista de servidores/canais, anuncia o world (advertised IP) e faz a ponte de login.
-  - **World** (`RakionServer.World`) — login completo, lobby, lista de canais/salas, seleção de personagem, **inventário + armazém (box) persistente**, **loja com débito de ouro em tempo real**, chat, handshake **UDP de gameplay** e motor de partida.
+  - **World** (`RakionServer.World`) — login completo, lobby, lista de canais/salas, seleção de personagem, **inventário + armazém (box) persistente**, **loja com débito de ouro em tempo real**, **Power User** (compra + bônus configurável de XP/gold), chat, handshake **UDP de gameplay** e motor de partida.
   - **Buddy** (`RakionServer.Buddy`) — lista de amigos/mensageiro.
+  - **LauncherWeb** (`RakionServer.LauncherWeb`) — auth web do launcher (login + auto-update `fetch`) em ASP.NET; **aposentou** o `web/launcher_web.py` (mantido só como referência).
+  - **Admin** (`RakionServer.Admin`) — painel web (Blazor) pra gerenciar **contas, gold/cash, itens no inventário** (visual estilo jogo, com nomes), a **config do Power User** (preço/bônus/multiplicadores/promoção) e **publicar updates** do launcher.
 - 🟢 **Login resolvido** — a peça que travava a comunidade. A conta loga, o world aceita, o banco carrega personagem e itens.
-- 🟢 **Auth web em Python** (`web/launcher_web.py`) — reimplementação fiel das páginas PHP de login do launcher (sem precisar de PHP).
 
 ## Status honesto (o que funciona / o que não)
 
@@ -26,6 +27,8 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
 | Seleção de personagem, inventário, **armazém (box) entre sessões** | ✅ |
 | **Loja + débito de ouro/cash em tempo real** | ✅ |
 | Handshake UDP + entrada no campo + motor de partida | ✅ |
+| **Power User** (compra + bônus de XP/gold configurável + bonus points) | ✅ |
+| **Painel admin** (contas, gold/cash, itens, config do PU, updates) | ✅ |
 | Modos PvP/deathmatch completos | 🟡 motor de round server-side implementado (timer, fim de round por placar, win/lose/draw persistido); falta validar com 2 clientes |
 | **GameGuard** original | ❌ morto (servidor nProtect offline desde ~2007) — exige client no-GG |
 | Navegação inventário/loja ↔ lista de salas (botão **Previous**) | ✅ |
@@ -39,18 +42,16 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
 ```
 openrakion/
 ├── server/
-│   ├── RakionServer/     Servidor .NET (broker + world + buddy + common) — código-fonte
-│   │   ├── src/          Os 4 projetos (.Broker, .World, .Buddy, .Common)
+│   ├── RakionServer/     Servidor .NET — código-fonte
+│   │   ├── src/          .Broker, .World, .Buddy, .Common, .LauncherWeb (auth :80), .Admin (painel :8080)
 │   │   ├── tools/        OracleDiff (diff de blobs de login)
 │   │   ├── deploy/        worldserver.ini (template)
+│   │   ├── start-stack.ps1  Sobe os 4 serviços .NET de uma vez
 │   │   ├── Dockerfile     Container (Linux + .NET)
-│   │   ├── README.md      Visão geral do solution (origem da RE, estrutura)
 │   │   └── TUTORIAL.md    Setup passo a passo
 │   ├── config/           Templates (Settings.ini, GameServers.ini, worldserver.ini)
 │   └── README.md
-├── web/
-│   ├── launcher_web.py   Auth web (Python) — login do launcher
-│   └── *.php             Versão PHP de referência (base CarlosX)
+├── web/                  (legado) launcher_web.py + *.php — referência; substituídos pelo .LauncherWeb .NET
 ├── tools/                xfs_read/repack (XFS2), worldprobe/listprobe (sondas), difftest (teste diferencial)
 ├── database/             Schema do banco (MariaDB)
 ├── docs/                 Guias (setup, GameGuard, config.xfs) + protocolo (world/buddy)
@@ -72,14 +73,34 @@ dotnet build -c Release RakionServer.sln
 
 # 3) configs: ajuste IPs/credenciais em deploy/worldserver.ini e src/RakionServer.Broker/Settings/
 
-# 4) rodar (cada um em seu processo)
-#    - auth web:  python web/launcher_web.py              (porta 80)
-#    - broker:    RakionServer.Broker (BrokenServer)      (porta 40706)
-#    - world:     RakionServer.World  (RakionWorldServer) (TCP 40708 / UDP 40708-40709)
-#    - buddy:     RakionServer.Buddy  (opcional)
+# 4) rodar — tudo de uma vez (Windows):
+cd server/RakionServer && ./start-stack.ps1
+#    ou cada serviço em seu processo:
+#    - launcher web: RakionServer.LauncherWeb (RakionLauncherWeb)  porta 80
+#    - broker:       RakionServer.Broker      (BrokenServer)       porta 40706
+#    - world:        RakionServer.World       (RakionWorldServer)  TCP 40708 / UDP 40708-40709
+#    - admin:        RakionServer.Admin       (RakionAdmin)        porta 8080
+#    - buddy:        RakionServer.Buddy       (opcional)
 ```
 
-> **Credenciais:** os templates usam MariaDB local `root` / `123456` (senha de desenvolvimento, documentada no tutorial). **Troque para produção** e nunca exponha a porta 3306 publicamente.
+> Os **web apps** (LauncherWeb/Admin) usam o runtime ASP.NET. Se o .NET for user-local (fora de
+> `C:\Program Files\dotnet`), exporte `DOTNET_ROOT` — o `start-stack.ps1` já cuida disso.
+
+### Credenciais de amostra (open source — troque se precisar)
+
+Tudo abaixo é **dev default**, deixado **à mostra de propósito** para facilitar rodar local. Quem for usar muda se quiser — em especial antes de expor à rede:
+
+| Onde | Valor de amostra | Arquivo |
+|---|---|---|
+| MariaDB | `root` / `123456` | `deploy/worldserver.ini`, `src/*/appsettings.json` |
+| Painel admin | senha `rakion` | `src/RakionServer.Admin/appsettings.json` → `Admin:Password` |
+| Conta de teste | crie a sua (no painel admin ou direto no DB) | — |
+
+Não exponha as portas **3306** (DB) e **8080** (admin) publicamente sem trocar essas senhas.
+
+### Painel admin
+
+Sobe junto com o stack em **http://localhost:8080** (login com a senha `Admin:Password`). Dali dá pra criar/editar **contas**, ajustar **gold/cash**, **adicionar itens** ao inventário (grade visual estilo jogo, com os nomes dos itens), configurar o **Power User** (preço, bônus, multiplicadores de XP/gold, promoção) e **publicar updates** do cliente pelo auto-update do launcher.
 
 ## O cliente (proprietário)
 
@@ -96,6 +117,7 @@ O GameGuard (nProtect, 2007) **não inicializa mais**: o GameMon requisita o ser
 
 - **`tools/xfs_repack.py`** / **`xfs_read.py`** — leitor/repacker do formato **XFS2** da SoftNyx (Python puro). Edita arquivos dentro de `DataSetup.xfs` (ex.: renomear o servidor no `locale.ini`) sem o iXFS. Round-trip validado.
 - **`tools/worldprobe.py`** / **`listprobe.py`** — sondas headless do protocolo do world (login, inventário, loja) — conectam, decifram o AES e validam os pacotes sem abrir o jogo.
+- **`tools/extract_item_names.py`** / **`finalize_item_names.py`** — extraem o nome de cada item dos labels do `items.dat` (o `iteminfo` do DB não tem nome) e geram um fallback "categoria+nível" para os ausentes; saída usada pelo painel admin (`item_names.tsv`).
 
 ## Créditos
 
