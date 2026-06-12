@@ -51,3 +51,29 @@ python tools/xfs_repack.py rename "Meu Servidor" 0 DataSetup_novo.xfs
 ```
 
 Depois copie `DataSetup_novo.xfs` por cima do `client/DataSetup.xfs` (faça backup antes).
+
+## Patch de mensagem (language.txt) — ex.: compra do Power User
+
+As mensagens de UI ficam em `datasetup\language.txt` dentro do `DataSetup.xfs` (formato `id\ttexto`, CRLF).
+A compra do Power User (`0x34`) NÃO tem como mostrar o popup de sucesso *limpo*: o frame de sucesso real
+(`0x17`, canal **field**) dependia do cash-server online (offline) e é irreplicável. O servidor .NET
+CONCEDE o PU na compra (debita cash + soma `powerlevelpoint`, ver `HandleBuyPowerUser`), mas o cliente
+sempre exibe a mensagem do status. Solução: **trocar a string de erro por uma de sucesso**. A msg `641`
+("You can not purchase Power User for 6 months in advance", exibida no **status 2**) foi patchada p/
+"Power User purchased! Relog to see your bonus points." — e o handler manda status 2.
+
+Repack (round-trip valida 87/88; só `language.txt` muda):
+```python
+import zlib, struct; import xfs_repack as X
+OLD='You can not purchase Power User for 6 months in advance'
+NEW='Power User purchased! Relog to see your bonus points.'
+d,ver,cnt,val,tail,files=X.parse('DataSetup.xfs')
+for f in files:
+    if f[0].split(b'\x00')[0].lower().endswith(b'language.txt'):
+        txt=zlib.decompress(d[f[1]+8:f[1]+f[4]]).decode('latin-1').replace(OLD,NEW,1)
+        np=txt.encode('latin-1'); zc=zlib.compress(np,6)
+        block=struct.pack('<H',len(np)&0xffff)+b'\x80'+len(zc).to_bytes(3,'little')+b'\x00\x00'+zc
+        f[3]=len(np); f[4]=len(block); f.append(block); break
+open('DataSetup.xfs','wb').write(X.build(d,ver,val,tail,files))
+```
+Copie por cima do `client/DataSetup.xfs` (backup antes) e reinicie o cliente p/ recarregar o XFS.

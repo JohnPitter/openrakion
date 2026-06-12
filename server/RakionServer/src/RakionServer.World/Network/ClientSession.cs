@@ -409,8 +409,8 @@ namespace RakionServer.World.Network
                 case 0x31: // potion slot: mover/trocar item entre o BOX e o quickslot de pocao
                     HandlePotionSlot(data);
                     return true;
-                case 0x34: // Buy Power User: responder p/ NAO travar o "Buying Power User"
-                    SendPowerUserResponse();
+                case 0x34: // Buy Power User: concede o PU + destrava o popup (testando status=0 p/ sem erro)
+                    HandleBuyPowerUser();
                     return true;
                 default:
                     // Shop list/loadout (0x2d/0x2f) E buy (0x2e) DEVEM chegar aos handlers reais
@@ -750,14 +750,29 @@ namespace RakionServer.World.Network
         }
 
         /// <summary>
-        /// 0x34 Buy Power User. O caminho de SUCESSO do original (FUN_00422b10) concede powertime e responde
-        /// um frame msgType 0x17 (canal field) com valores de sessao (user+0x1460/+0x2370) — pendente. Aqui
-        /// respondemos o frame de RECUSA (canal lobby via FUN_004038e0, como o original fez ao 'test'): o
-        /// cliente so precisa RECEBER um 0x34 p/ destravar o "Buying Power User" e mostrar o dialogo. Estrutura
-        /// da captura do original: [34 00][04][h0][00][h2][h3][00][status][00][17 00] (12B). Conceder de fato
-        /// = setar powertime no DB (o char ja entra com Power User), sem depender do fluxo de compra.
+        /// 0x34 Buy Power User: CONCEDE o PU (o original validava no cash-shop online, offline) e responde o
+        /// frame que DESTRAVA o popup "Buying Power User". O frame de sucesso real e' 0x17 no canal field
+        /// (irreplicavel sem o serverSeq do cash-server). Usamos o frame [34 00][04][handle][00][status][00][17 00]
+        /// — a estrutura destrava; a MENSAGEM depende do status (2 = "6 meses"). status=0 -> tenta fechar sem erro.
         /// </summary>
-        private void SendPowerUserResponse()
+        private void HandleBuyPowerUser()
+        {
+            const uint price = 8000;
+            const int bonus = 51;
+            if (Cash >= price && GameInfoId > 0 && Game != null)
+            {
+                Cash -= price;
+                PowerLevelPoint += bonus;
+                _ = _server.Db.AddCashAsync(Game.Name, -(int)price);
+                _ = _server.Db.GrantPowerUserAsync(GameInfoId, bonus);
+                Log.Ok("shop", "[{0}] Buy Power User: -{1} cash, +{2} PU bonus (total {3})", Slot, price, bonus, PowerLevelPoint);
+            }
+            // status 2 -> o cliente exibe a mensagem 641 do language.txt, que PATCHAMOS no DataSetup.xfs
+            // de "...6 months in advance" p/ "Power User purchased! Relog to see your bonus points."
+            SendPowerUserResponse(0x02);
+        }
+
+        private void SendPowerUserResponse(byte status)
         {
             using var w = new PacketWriter();
             w.WriteWord(0x34);
@@ -767,11 +782,11 @@ namespace RakionServer.World.Network
             w.WriteByte(_invHandle[2]);
             w.WriteByte(_invHandle[3]);
             w.WriteByte(0x00);
-            w.WriteByte(0x02);   // status (recusa, igual a captura do original)
+            w.WriteByte(status);  // 2 = "6 meses"; 0 = tentativa de fechar sem erro
             w.WriteByte(0x00);
             w.WriteWord(0x17);
             SendEncryptedFrame(w.ToArray());
-            Log.Ok("shop", "[{0}] 0x34 power-user resposta (destrava, recusa)", Slot);
+            Log.Ok("shop", "[{0}] 0x34 power-user resposta (status={1})", Slot, status);
         }
 
         /// <summary>

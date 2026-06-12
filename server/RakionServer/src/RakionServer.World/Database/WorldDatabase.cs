@@ -479,6 +479,26 @@ namespace RakionServer.World.Database
             catch (Exception ex) { Log.Error("db", "AllocateStatPuAsync({0},{1}): {2}", characterId, statIdx, ex.Message); }
         }
 
+        /// <summary>Concede Power User (compra do 0x34): soma bonusPoints ao powerlevelpoint e marca o PU
+        /// ativo (powertimedate futuro). O original validava a compra no cash-shop online (offline); aqui o
+        /// servidor pessoal concede direto.</summary>
+        public async Task GrantPowerUserAsync(int gameInfoId, int bonusPoints)
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "UPDATE usergameinfo SET powerlevelpoint=powerlevelpoint+@b, powertime=GREATEST(powertime,1), " +
+                    "powertimedate='2030-01-01 00:00:00' WHERE id=@id", c);
+                cmd.Parameters.AddWithValue("@b", bonusPoints);
+                cmd.Parameters.AddWithValue("@id", gameInfoId);
+                await cmd.ExecuteNonQueryAsync();
+                Log.Ok("db", "GrantPowerUser: gi={0} +{1} bonus points", gameInfoId, bonusPoints);
+            }
+            catch (Exception ex) { Log.Error("db", "GrantPowerUserAsync({0}): {1}", gameInfoId, ex.Message); }
+        }
+
         /// <summary>Char ativo da conta (used=1; tiebreak slot). null se nao tem char.</summary>
         public async Task<CharacterInfo?> LoadActiveCharacterAsync(int userId)
         {
