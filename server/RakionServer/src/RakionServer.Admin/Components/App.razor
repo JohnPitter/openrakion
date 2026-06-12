@@ -36,6 +36,14 @@
         .toast { padding:9px 12px; border-radius:6px; margin-bottom:12px; }
         .toast.ok { background:rgba(57,210,127,.12); color:var(--ok); } .toast.err { background:rgba(255,93,108,.12); color:var(--err); }
         .row { display:flex; gap:10px; align-items:end; flex-wrap:wrap; } .mut { color:var(--mut); } .right { text-align:right; }
+        .invgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(76px,1fr)); gap:8px; margin-top:10px; }
+        .cell { position:relative; aspect-ratio:1; border-radius:8px; border:1px solid var(--line); display:flex; flex-direction:column; align-items:center; justify-content:center; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.55); }
+        .cell.click { cursor:pointer; } .cell.click:hover { outline:2px solid var(--acc); }
+        .cell .iid { font-weight:700; font-size:15px; } .cell .ikind { font-size:10px; opacity:.85; }
+        .cell .x { position:absolute; top:3px; right:3px; width:18px; height:18px; padding:0; line-height:16px; border-radius:50%; background:rgba(0,0,0,.5); border:0; opacity:0; font-size:13px; cursor:pointer; }
+        .cell:hover .x { opacity:1; }
+        .qrow { display:flex; gap:7px; margin-top:8px; flex-wrap:wrap; }
+        .qcell { position:relative; width:56px; height:56px; border-radius:8px; border:1px solid var(--line); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:13px; }
     </style>
 </head>
 

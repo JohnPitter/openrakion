@@ -108,11 +108,13 @@ public sealed class AdminDb(IConfiguration cfg)
     {
         var list = new List<BoxItemRow>();
         await using var c = await OpenAsync();
-        await using var cmd = new MySqlCommand("SELECT id, itemid, qslot FROM itembox WHERE userid=@id ORDER BY id", c);
+        await using var cmd = new MySqlCommand(
+            "SELECT ib.id, ib.itemid, ib.qslot, IFNULL(ii.type,-1) FROM itembox ib " +
+            "LEFT JOIN iteminfo ii ON ii.id=ib.itemid WHERE ib.userid=@id ORDER BY ib.id", c);
         cmd.Parameters.AddWithValue("@id", giId);
         await using var r = await cmd.ExecuteReaderAsync();
         while (await r.ReadAsync())
-            list.Add(new BoxItemRow(r.GetInt32(0), r.GetInt32(1), r.GetInt32(2)));
+            list.Add(new BoxItemRow(r.GetInt32(0), r.GetInt32(1), r.GetInt32(2), r.GetInt32(3)));
         return list;
     }
 
@@ -123,22 +125,23 @@ public sealed class AdminDb(IConfiguration cfg)
     public async Task DeleteBoxItemAsync(int itemboxId)
         => await NonQuery("DELETE FROM itembox WHERE id=@id", ("@id", itemboxId));
 
-    public async Task<List<ItemDef>> SearchItemsAsync(string? term, int limit = 30)
+    // iteminfo NÃO tem nome (os nomes vivem no items.dat do cliente). Busca por id (substring) e/ou type.
+    public async Task<List<ItemDef>> SearchItemsAsync(string? term, int? type, int limit = 60)
     {
         var list = new List<ItemDef>();
         await using var c = await OpenAsync();
-        var sql = "SELECT id, IFNULL(name,'') FROM iteminfo " +
-                  (string.IsNullOrWhiteSpace(term) ? "" : "WHERE name LIKE @t OR id=@idt ") +
+        var where = new List<string>();
+        if (!string.IsNullOrWhiteSpace(term)) where.Add("CAST(id AS CHAR) LIKE @t");
+        if (type is not null) where.Add("type=@ty");
+        var sql = "SELECT id, type FROM iteminfo " +
+                  (where.Count > 0 ? "WHERE " + string.Join(" AND ", where) + " " : "") +
                   "ORDER BY id LIMIT @lim";
         await using var cmd = new MySqlCommand(sql, c);
-        if (!string.IsNullOrWhiteSpace(term))
-        {
-            cmd.Parameters.AddWithValue("@t", "%" + term + "%");
-            cmd.Parameters.AddWithValue("@idt", int.TryParse(term, out var n) ? n : -1);
-        }
+        if (!string.IsNullOrWhiteSpace(term)) cmd.Parameters.AddWithValue("@t", "%" + term + "%");
+        if (type is not null) cmd.Parameters.AddWithValue("@ty", type);
         cmd.Parameters.AddWithValue("@lim", limit);
         await using var r = await cmd.ExecuteReaderAsync();
-        while (await r.ReadAsync()) list.Add(new ItemDef(r.GetInt32(0), r.GetString(1)));
+        while (await r.ReadAsync()) list.Add(new ItemDef(r.GetInt32(0), r.GetInt32(1)));
         return list;
     }
 

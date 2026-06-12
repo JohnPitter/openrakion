@@ -51,36 +51,55 @@ else
     </div>
 
     <div class="card">
-        <h2>Inventário (box) — @_box.Count itens</h2>
+        <h2>Inventário (simulação)</h2>
         <div class="row">
-            <div style="flex:1;"><label>Adicionar item (busca em iteminfo)</label>
-                <input @bind="_itemTerm" @bind:event="oninput" @onkeyup="OnItemKey" placeholder="nome ou id…" style="width:100%;" /></div>
+            <div><label>Adicionar por id</label><input type="number" @bind="_addId" style="width:120px;" /></div>
+            <button @onclick="AddById">+ adicionar</button>
+            <div style="margin-left:18px;"><label>Procurar id</label>
+                <input @bind="_itemTerm" @bind:event="oninput" @onkeyup="OnItemKey" placeholder="ex.: 130" style="width:120px;" /></div>
+            <div><label>Categoria</label>
+                <select @bind="_typeFilter">
+                    <option value="">todas</option>
+                    @for (int t = 0; t <= 14; t++) { <option value="@t">@t · @ItemKind.Label(t)</option> }
+                </select></div>
             <button class="sec" @onclick="SearchItems">Buscar</button>
         </div>
+
         @if (_itemHits.Count > 0)
         {
-            <table style="margin-top:10px;">
-                <tbody>
-                    @foreach (var it in _itemHits)
-                    {
-                        <tr><td style="width:90px;">@it.Id</td><td>@it.Name</td>
-                            <td class="right"><button @onclick="() => AddItem(it.Id)">+ adicionar</button></td></tr>
-                    }
-                </tbody>
-            </table>
-        }
-        <table style="margin-top:14px;">
-            <thead><tr><th>box id</th><th>item id</th><th>local</th><th></th></tr></thead>
-            <tbody>
-                @foreach (var b in _box)
+            <p class="mut" style="margin:14px 0 0;">Clique para adicionar:</p>
+            <div class="invgrid">
+                @foreach (var it in _itemHits)
                 {
-                    <tr><td>@b.Id</td><td>@b.ItemId</td>
-                        <td>@(b.QSlot == 0 ? "box" : $"quickslot {b.QSlot - 1}")</td>
-                        <td class="right"><button class="danger" @onclick="() => RemoveItem(b.Id)">remover</button></td></tr>
+                    <div class="cell click" style="background:@ItemKind.Color(it.Type)" @onclick="() => AddItem(it.Id)" title="@($"adicionar item {it.Id}")">
+                        <span class="iid">@it.Id</span><span class="ikind">@ItemKind.Label(it.Type)</span>
+                    </div>
                 }
-            </tbody>
-        </table>
-        @if (_box.Count == 0) { <p class="mut">Box vazio.</p> }
+            </div>
+        }
+
+        <h2>Box (@_box.Count(b => b.QSlot == 0))</h2>
+        <div class="invgrid">
+            @foreach (var b in _box.Where(b => b.QSlot == 0))
+            {
+                <div class="cell" style="background:@ItemKind.Color(b.Type)" title="@($"box id {b.Id} · item {b.ItemId} · type {b.Type}")">
+                    <span class="iid">@b.ItemId</span><span class="ikind">@ItemKind.Label(b.Type)</span>
+                    <button class="x" @onclick="() => RemoveItem(b.Id)">×</button>
+                </div>
+            }
+        </div>
+        @if (!_box.Any(b => b.QSlot == 0)) { <p class="mut">Box vazio.</p> }
+
+        <h2>Quickslot de poção</h2>
+        <div class="qrow">
+            @foreach (var q in _box.Where(b => b.QSlot > 0).OrderBy(b => b.QSlot))
+            {
+                <div class="qcell" style="background:@ItemKind.Color(q.Type)" title="@($"cell {q.QSlot - 1} · item {q.ItemId}")">
+                    @q.ItemId<button class="x" @onclick="() => RemoveItem(q.Id)">×</button>
+                </div>
+            }
+            @if (!_box.Any(b => b.QSlot > 0)) { <span class="mut">— vazio —</span> }
+        </div>
     </div>
 }
 
@@ -91,7 +110,8 @@ else
     private List<ItemDef> _itemHits = new();
     private long _gold, _cash;
     private int _puBonus = 51, _puDays = 30;
-    private string _pw = "", _itemTerm = "";
+    private string _pw = "", _itemTerm = "", _typeFilter = "";
+    private int _addId;
     private string? _msg, _msgKind;
 
     protected override async Task OnParametersSetAsync() => await Reload();
@@ -113,8 +133,13 @@ else
     private async Task ClearPu() { if (_acc!.GiId > 0) await Db.ClearPowerUserAsync(_acc.GiId); Ok("PU removido."); await Reload(); }
     private async Task SavePw() { if (string.IsNullOrWhiteSpace(_pw)) { Err("senha vazia"); return; } await Db.SetPasswordAsync(Id, _pw); _pw = ""; Ok("Senha trocada."); }
     private async Task SetBan(bool b) { await Db.SetBanAsync(Id, b); Ok(b ? "Conta banida." : "Conta desbanida."); await Reload(); }
-    private async Task SearchItems() => _itemHits = await Db.SearchItemsAsync(_itemTerm);
+    private async Task SearchItems()
+    {
+        int? type = int.TryParse(_typeFilter, out var t) ? t : null;
+        _itemHits = await Db.SearchItemsAsync(_itemTerm, type);
+    }
     private async Task OnItemKey(KeyboardEventArgs e) { if (e.Key == "Enter") await SearchItems(); }
+    private async Task AddById() { if (_addId > 0) await AddItem(_addId); }
     private async Task AddItem(int itemId) { if (_acc!.GiId <= 0) { Err("conta sem perfil"); return; } await Db.AddItemBoxAsync(_acc.GiId, itemId); Ok($"Item {itemId} adicionado."); await Reload(); }
     private async Task RemoveItem(int boxId) { await Db.DeleteBoxItemAsync(boxId); Ok("Item removido."); await Reload(); }
 }
