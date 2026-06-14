@@ -146,6 +146,14 @@ namespace RakionServer.Buddy
         private void Dispatch(Socket sock, string ip, ushort cd, byte[] payload)
         {
             Log.Debug("buddy", "[{0}] RECV CD=0x{1:x4} ({2}) len={3}", ip, cd, BuddyProtocol.Name(cd), payload.Length);
+            // DIAG (RE da venda): dump dos nomes que o cliente manda no LOGIN/SET_NICK p/ entender o
+            // check do messenger ("Character's name for messenger has changed").
+            if (cd == BuddyProtocol.SVC_LOGIN || cd == 0x3100 || cd == 0x3104 || cd == 0x3150)
+            {
+                var sb = new System.Text.StringBuilder();
+                foreach (var b in payload) sb.Append(b >= 32 && b < 127 ? (char)b : '.');
+                Log.Info("buddy", "[{0}] CD 0x{1:x4} ascii='{2}'", ip, cd, sb.ToString());
+            }
             switch (cd)
             {
                 case BuddyProtocol.SVC_PRECREDENTIAL:
@@ -169,6 +177,15 @@ namespace RakionServer.Buddy
                 case BuddyProtocol.SVC_GROUP_CHG:    ReplyOk(sock, ip, BuddyProtocol.RET_GROUP_CHG); break;
                 case BuddyProtocol.SVC_SMS_SEND:     ReplyOk(sock, ip, BuddyProtocol.RET_SMS_SEND); break;
 
+                // Comandos que o cliente manda APÓS o login (CDs do switch OnMsg do Buddy2.dll). SEM a
+                // confirmação destes o jogo trava a VENDA no shop com "Character's name for messenger has
+                // changed": o SET_NICK (0x3100) sincroniza o nick do messenger com o nome do personagem, e
+                // o jogo só vende depois do RET_SET_NICK (0x3101, wRtc=0). Mapeamento do decompile:
+                //   0x3100 SET_NICK -> 0x3101 | 0x3104 SET_EXTUSER -> 0x3105 | 0x3150 GROUP_GETLIST -> 0x3151
+                case 0x3100: ReplyOk(sock, ip, 0x3101); break;
+                case 0x3104: ReplyOk(sock, ip, 0x3105); break;
+                case 0x3150: SendGroupListEmpty(sock, ip); break;
+
                 default:
                     Log.Debug("buddy", "[{0}] CD 0x{1:x4} ({2}) — handler nao reconstruido (stub)", ip, cd, BuddyProtocol.Name(cd));
                     break;
@@ -180,10 +197,13 @@ namespace RakionServer.Buddy
             var ep = sock.RemoteEndPoint as IPEndPoint;
             using var p = new PacketWriter();
             uint addr = ep != null ? BitConverter.ToUInt32(ep.Address.MapToIPv4().GetAddressBytes(), 0) : 0;
+            // O cliente (Buddy2.dll OnMsg, RET_PRECREDENTIAL) EXIGE payload de exatamente 8 bytes
+            // (`if (len == 8)`), senão NÃO manda o SVC_LOGIN e o messenger nunca loga — o que trava
+            // a venda no shop ("Character's name for messenger has changed"). Layout: [u32 ip][u32 port].
             p.WriteUInt32(addr);
-            p.WriteWord(ep?.Port ?? 0);
+            p.WriteUInt32((uint)(ep?.Port ?? 0));
             Send(sock, BuddyProtocol.RET_PRECREDENTIAL, p.ToArray());
-            Log.Info("buddy", "[{0}] RET_PRECREDENTIAL enviado", ip);
+            Log.Info("buddy", "[{0}] RET_PRECREDENTIAL enviado (8B)", ip);
         }
 
         private static void SendLoginOk(Socket sock, string ip)
@@ -195,6 +215,16 @@ namespace RakionServer.Buddy
             p.WriteWord(0); // padding (payload > 7 bytes p/ entrar no caminho de sucesso)
             Send(sock, BuddyProtocol.RET_LOGIN, p.ToArray());
             Log.Ok("buddy", "[{0}] RET_LOGIN OK (0 amigos)", ip);
+        }
+
+        /// <summary>RET_GROUP_GETLIST (0x3151): [u16 wRtc=0][u16 count=0] — lista de grupos vazia.</summary>
+        private static void SendGroupListEmpty(Socket sock, string ip)
+        {
+            using var p = new PacketWriter();
+            p.WriteWord(0); // wRtc = 0 (sucesso)
+            p.WriteWord(0); // count = 0 (sem grupos)
+            Send(sock, 0x3151, p.ToArray());
+            Log.Debug("buddy", "[{0}] RET_GROUP_GETLIST (vazio)", ip);
         }
 
         /// <summary>Resposta generica de sucesso: RET com [u16 wRtc=0] (o client trata !=0 como falha).</summary>
