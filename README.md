@@ -14,7 +14,7 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
   - **Broker** (`RakionServer.Broker`) — lista de servidores/canais, anuncia o world (advertised IP) e faz a ponte de login.
   - **World** (`RakionServer.World`) — login completo, lobby, lista de canais/salas, seleção de personagem, **inventário + armazém (box) persistente**, **loja com débito de ouro em tempo real**, **Power User** (compra + bônus configurável de XP/gold), chat, handshake **UDP de gameplay** e motor de partida.
   - **Buddy** (`RakionServer.Buddy`) — lista de amigos/mensageiro.
-  - **LauncherWeb** (`RakionServer.LauncherWeb`) — auth web do launcher (login + auto-update `fetch`) em ASP.NET; **aposentou** o `web/launcher_web.py` (mantido só como referência).
+  - **LauncherWeb** (`RakionServer.LauncherWeb`) — auth web do launcher (login + auto-update `fetch`) em ASP.NET; **substituiu** o antigo `web/launcher_web.py` (Python; removido — preservado no histórico do git).
   - **Admin** (`RakionServer.Admin`) — painel web (Blazor) pra gerenciar **contas, gold/cash, itens no inventário** (visual estilo jogo, com nomes), a **config do Power User** (preço/bônus/multiplicadores/promoção) e **publicar updates** do launcher.
 - 🟢 **Login resolvido** — a peça que travava a comunidade. A conta loga, o world aceita, o banco carrega personagem e itens.
 
@@ -51,7 +51,7 @@ openrakion/
 │   │   └── TUTORIAL.md    Setup passo a passo
 │   ├── config/           Templates (Settings.ini, GameServers.ini, worldserver.ini)
 │   └── README.md
-├── web/                  (legado) launcher_web.py + *.php — referência; substituídos pelo .LauncherWeb .NET
+├── web/                  (legado) *.php do launcher original — referência (o launcher_web.py foi substituído pelo .LauncherWeb .NET)
 ├── tools/                xfs_read/repack (XFS2), worldprobe/listprobe (sondas), difftest (teste diferencial)
 ├── database/             Schema do banco (MariaDB)
 ├── docs/                 Guias (setup, GameGuard, config.xfs) + protocolo (world/buddy)
