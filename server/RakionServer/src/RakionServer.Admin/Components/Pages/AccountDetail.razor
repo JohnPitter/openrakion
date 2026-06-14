@@ -57,8 +57,8 @@ else
         <div class="row">
             <div><label>Adicionar por id</label><input type="number" @bind="_addId" style="width:120px;" /></div>
             <button @onclick="AddById">+ adicionar</button>
-            <div style="margin-left:18px;"><label>Procurar id</label>
-                <input @bind="_itemTerm" @bind:event="oninput" @onkeyup="OnItemKey" placeholder="ex.: 130" style="width:120px;" /></div>
+            <div style="margin-left:18px;"><label>Procurar (nome ou id)</label>
+                <input @bind="_itemTerm" @bind:event="oninput" @onkeyup="OnItemKey" placeholder="ex.: Mithril, Knight, 130" style="width:200px;" /></div>
             <div><label>Categoria</label>
                 <select @bind="_typeFilter">
                     <option value="">todas</option>
@@ -199,7 +199,8 @@ else
     private async Task SearchItems()
     {
         int? type = int.TryParse(_typeFilter, out var t) ? t : null;
-        _itemHits = await Db.SearchItemsAsync(_itemTerm, type);
+        var nameIds = Names.Search(_itemTerm);   // ids cujo NOME casa o termo (busca por nome)
+        _itemHits = await Db.SearchItemsAsync(_itemTerm, type, nameIds);
     }
     private async Task OnItemKey(KeyboardEventArgs e) { if (e.Key == "Enter") await SearchItems(); }
     private async Task AddById() { if (_addId > 0) await AddItem(_addId); }

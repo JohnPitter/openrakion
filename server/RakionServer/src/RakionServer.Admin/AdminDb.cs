@@ -152,13 +152,19 @@ public sealed class AdminDb(IConfiguration cfg)
     public async Task DeleteBoxItemAsync(int itemboxId)
         => await NonQuery("DELETE FROM itembox WHERE id=@id", ("@id", itemboxId));
 
-    // iteminfo NÃO tem nome (os nomes vivem no items.dat do cliente). Busca por id (substring) e/ou type.
-    public async Task<List<ItemDef>> SearchItemsAsync(string? term, int? type, int limit = 60)
+    // iteminfo NÃO tem nome (os nomes vivem no items.dat do cliente). Busca por nome (ids casados pelo
+    // ItemNames, passados em nameIds), por id (substring) e/ou type. nameIds vêm do nosso mapa (ints),
+    // então inliná-los no IN é seguro (sem input cru do usuário).
+    public async Task<List<ItemDef>> SearchItemsAsync(string? term, int? type,
+        IReadOnlyCollection<int>? nameIds = null, int limit = 60)
     {
         var list = new List<ItemDef>();
         await using var c = await OpenAsync();
         var where = new List<string>();
-        if (!string.IsNullOrWhiteSpace(term)) where.Add("CAST(id AS CHAR) LIKE @t");
+        var termClauses = new List<string>();
+        if (!string.IsNullOrWhiteSpace(term)) termClauses.Add("CAST(id AS CHAR) LIKE @t");
+        if (nameIds is { Count: > 0 }) termClauses.Add("id IN (" + string.Join(",", nameIds) + ")");
+        if (termClauses.Count > 0) where.Add("(" + string.Join(" OR ", termClauses) + ")");
         if (type is not null) where.Add("type=@ty");
         var sql = "SELECT id, type FROM iteminfo " +
                   (where.Count > 0 ? "WHERE " + string.Join(" AND ", where) + " " : "") +

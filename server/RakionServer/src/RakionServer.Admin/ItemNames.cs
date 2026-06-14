@@ -26,4 +26,20 @@ public sealed class ItemNames
 
     public string? Get(int id) => _map.TryGetValue(id, out var v) ? v : null;
     public int Count => _map.Count;
+
+    /// <summary>Ids cujo nome contém <paramref name="term"/> (case-insensitive). Vazio se term vazio.</summary>
+    public IReadOnlyList<int> Search(string? term, int limit = 200)
+    {
+        var hits = new List<int>();
+        if (string.IsNullOrWhiteSpace(term)) return hits;
+        foreach (var kv in _map)
+        {
+            if (kv.Value.Contains(term, StringComparison.OrdinalIgnoreCase))
+            {
+                hits.Add(kv.Key);
+                if (hits.Count >= limit) break;
+            }
+        }
+        return hits;
+    }
 }
