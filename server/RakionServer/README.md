@@ -28,7 +28,7 @@ src/
                          BrokerLink (IPC), WorldDatabase (MySQL), Protocol (dispatcher/opcodes)
   RakionServer.Broker/   BrokenServer portado (broker IPC UDP + lista de mundos)
   RakionServer.Buddy/    BuddyServer (:8500/:8504), BuddyProtocol (tabela CD)
-  RakionServer.LauncherWeb/  Auth web do launcher (ASP.NET, :80) — porta fiel do launcher_web.py + fetch
+  RakionServer.LauncherWeb/  Auth web do launcher (ASP.NET, :80) — porta fiel do antigo launcher_web.py + fetch
   RakionServer.Admin/        Painel admin (Blazor, :8080) — contas/gold/cash/itens/Power User/updates
 ```
 

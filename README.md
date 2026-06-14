@@ -1,6 +1,6 @@
 # OpenRakion
 
-Servidor privado **open source** para **Rakion** (SoftNyx, versão *XfsVer258*) — com um **servidor reescrito do zero em .NET**: broker, world (lobby/salas/partida) e buddy, mais o backend de autenticação. Você loga, entra no lobby, abre o inventário/armazém, compra na loja e entra em partida — **sem precisar dos executáveis de servidor proprietários da SoftNyx**.
+Servidor privado **open source** para **Rakion** (SoftNyx, versão *XfsVer258*) — com um **servidor reescrito do zero em .NET**: broker, world (lobby/salas/partida) e buddy, mais o backend de autenticação. Você loga, entra no lobby, abre o inventário/armazém, **compra e vende** na loja e entra em partida — **sem precisar dos executáveis de servidor proprietários da SoftNyx**. Roda nativo em **Windows, Linux e Mac** (.NET 9, sem Wine).
 
 > ⚠️ **Legal:** Este repositório **NÃO contém** os arquivos proprietários do **cliente** Rakion (`rakion.bin`/`rakion.exe`, `engine.dll`, `*.xfs`, `NyxLauncher`, GameGuard). Esses são **copyright da SoftNyx** — obtenha de uma cópia legítima do jogo. Aqui está apenas **trabalho original** (servidor .NET, auth web, tools, docs) e componentes open source de terceiros. Veja [NOTICE.md](NOTICE.md).
 
@@ -12,7 +12,7 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
 
 - 🟢 **Servidor 100% próprio em .NET** (não usa os executáveis da SoftNyx). Serviços:
   - **Broker** (`RakionServer.Broker`) — lista de servidores/canais, anuncia o world (advertised IP) e faz a ponte de login.
-  - **World** (`RakionServer.World`) — login completo, lobby, lista de canais/salas, seleção de personagem, **inventário + armazém (box) persistente**, **loja com débito de ouro em tempo real**, **Power User** (compra + bônus configurável de XP/gold), chat, handshake **UDP de gameplay** e motor de partida.
+  - **World** (`RakionServer.World`) — login completo, lobby, lista de canais/salas, seleção de personagem, **inventário + armazém (box) persistente**, **loja (compra e venda) com saldo em tempo real**, **Power User** (compra + bônus configurável de XP/gold), chat, handshake **UDP de gameplay** e motor de partida.
   - **Buddy** (`RakionServer.Buddy`) — lista de amigos/mensageiro.
   - **LauncherWeb** (`RakionServer.LauncherWeb`) — auth web do launcher (login + auto-update `fetch`) em ASP.NET; **substituiu** o antigo `web/launcher_web.py` (Python; removido — preservado no histórico do git).
   - **Admin** (`RakionServer.Admin`) — painel web (Blazor) pra gerenciar **contas, gold/cash, itens no inventário** (visual estilo jogo, com nomes), a **config do Power User** (preço/bônus/multiplicadores/promoção) e **publicar updates** do launcher.
@@ -25,10 +25,11 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
 | Login completo (broker → world → DB) | ✅ funciona |
 | Lobby, canais, lista de salas | ✅ |
 | Seleção de personagem, inventário, **armazém (box) entre sessões** | ✅ |
-| **Loja + débito de ouro/cash em tempo real** | ✅ |
+| **Loja: compra e venda**, com saldo de ouro/cash em tempo real | ✅ |
 | Handshake UDP + entrada no campo + motor de partida | ✅ |
 | **Power User** (compra + bônus de XP/gold configurável + bonus points) | ✅ |
 | **Painel admin** (contas, gold/cash, itens, config do PU, updates) | ✅ |
+| **Stack roda nativo em Windows/Linux/Mac** (.NET 9, sem Wine/P-Invoke) | ✅ |
 | Modos PvP/deathmatch completos | 🟡 motor de round server-side implementado (timer, fim de round por placar, win/lose/draw persistido); falta validar com 2 clientes |
 | **GameGuard** original | ❌ morto (servidor nProtect offline desde ~2007) — exige client no-GG |
 | Navegação inventário/loja ↔ lista de salas (botão **Previous**) | ✅ |
@@ -54,7 +55,7 @@ openrakion/
 ├── web/                  (legado) *.php do launcher original — referência (o launcher_web.py foi substituído pelo .LauncherWeb .NET)
 ├── tools/                xfs_read/repack (XFS2), worldprobe/listprobe (sondas), difftest (teste diferencial)
 ├── database/             Schema do banco (MariaDB)
-├── docs/                 Guias (setup, GameGuard, config.xfs) + protocolo (world/buddy)
+├── docs/                 Guias (setup, GameGuard, config.xfs) + protocolo (world/buddy) + auditoria (CODE_AUDIT.md)
 ├── CREDITS.md
 └── NOTICE.md
 ```
