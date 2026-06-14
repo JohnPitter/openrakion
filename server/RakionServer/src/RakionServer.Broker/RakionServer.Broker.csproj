@@ -23,4 +23,9 @@
     <None Include="Settings\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="Settings" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- IniFile cross-platform (substitui o Systems.Ini que usava P/Invoke do kernel32) -->
+    <ProjectReference Include="..\RakionServer.Common\RakionServer.Common.csproj" />
+  </ItemGroup>
+
 </Project>

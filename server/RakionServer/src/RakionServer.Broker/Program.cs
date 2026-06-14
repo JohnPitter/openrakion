@@ -8,6 +8,7 @@ using System.Threading;
 using BrokenServer.Definitions;
 using BrokenServer.Global;
 using BrokenServer.Network;
+using RakionServer.Common;
 
 namespace BrokenServer
 {
@@ -25,14 +26,15 @@ namespace BrokenServer
 			string text2 = "192.168.1.5";
 			try
 			{
-				if (File.Exists(Environment.CurrentDirectory + "\\Settings\\Settings.ini"))
+				string settingsPath = Path.Combine(Environment.CurrentDirectory, "Settings", "Settings.ini");
+				if (File.Exists(settingsPath))
 				{
-					Systems.Ini ini = new Systems.Ini(Environment.CurrentDirectory + "\\Settings\\Settings.ini");
-					num = Convert.ToInt32(ini.GetValue("Server", "port", 40706));
-					text = ini.GetValue("Server", "ip", "192.168.1.5").ToString();
-					num2 = Convert.ToInt32(ini.GetValue("IPC", "port", 40706));
-					text2 = ini.GetValue("IPC", "ip", "192.168.1.5").ToString();
-					Program.debug = ini.GetValue("CONSOLE", "debug", "0").ToString();
+					IniFile ini = new IniFile(settingsPath);
+					num = ini.GetValue("Server", "port", 40706);
+					text = ini.GetValue("Server", "ip", "192.168.1.5");
+					num2 = ini.GetValue("IPC", "port", 40706);
+					text2 = ini.GetValue("IPC", "ip", "192.168.1.5");
+					Program.debug = ini.GetValue("CONSOLE", "debug", "0");
 					LogConsole.Show("Has loaded your ip settings successfully");
 				}
 				else
@@ -43,14 +45,6 @@ namespace BrokenServer
 			catch (Exception)
 			{
 				return;
-			}
-			if (args.Length > 0 && args[0] == "extip")
-			{
-				HttpWebRequest httpWebRequest = (HttpWebRequest)WebRequest.Create("http://checkip.dyndns.org/");
-				httpWebRequest.Method = "GET";
-				WebResponse response = httpWebRequest.GetResponse();
-				StreamReader streamReader = new StreamReader(response.GetResponseStream(), Encoding.UTF8);
-				streamReader.ReadToEnd();
 			}
 			Global.Network.multihomed = false;
 			if (Global.Network.LocalIP == "")
