@@ -148,7 +148,8 @@ namespace RakionServer.Buddy
             Log.Debug("buddy", "[{0}] RECV CD=0x{1:x4} ({2}) len={3}", ip, cd, BuddyProtocol.Name(cd), payload.Length);
             // DIAG (RE da venda): dump dos nomes que o cliente manda no LOGIN/SET_NICK p/ entender o
             // check do messenger ("Character's name for messenger has changed").
-            if (cd == BuddyProtocol.SVC_LOGIN || cd == 0x3100 || cd == 0x3104 || cd == 0x3150)
+            if (cd == BuddyProtocol.SVC_LOGIN || cd == BuddyProtocol.SVC_SET_NICK ||
+                cd == BuddyProtocol.SVC_SET_EXTUSER || cd == BuddyProtocol.SVC_GROUP_GETLIST)
             {
                 var sb = new System.Text.StringBuilder();
                 foreach (var b in payload) sb.Append(b >= 32 && b < 127 ? (char)b : '.');
@@ -182,9 +183,9 @@ namespace RakionServer.Buddy
                 // changed": o SET_NICK (0x3100) sincroniza o nick do messenger com o nome do personagem, e
                 // o jogo só vende depois do RET_SET_NICK (0x3101, wRtc=0). Mapeamento do decompile:
                 //   0x3100 SET_NICK -> 0x3101 | 0x3104 SET_EXTUSER -> 0x3105 | 0x3150 GROUP_GETLIST -> 0x3151
-                case 0x3100: ReplyOk(sock, ip, 0x3101); break;
-                case 0x3104: ReplyOk(sock, ip, 0x3105); break;
-                case 0x3150: SendGroupListEmpty(sock, ip); break;
+                case BuddyProtocol.SVC_SET_NICK:      ReplyOk(sock, ip, BuddyProtocol.RET_SET_NICK); break;
+                case BuddyProtocol.SVC_SET_EXTUSER:   ReplyOk(sock, ip, BuddyProtocol.RET_SET_EXTUSER); break;
+                case BuddyProtocol.SVC_GROUP_GETLIST: SendGroupListEmpty(sock, ip); break;
 
                 default:
                     Log.Debug("buddy", "[{0}] CD 0x{1:x4} ({2}) — handler nao reconstruido (stub)", ip, cd, BuddyProtocol.Name(cd));
@@ -223,7 +224,7 @@ namespace RakionServer.Buddy
             using var p = new PacketWriter();
             p.WriteWord(0); // wRtc = 0 (sucesso)
             p.WriteWord(0); // count = 0 (sem grupos)
-            Send(sock, 0x3151, p.ToArray());
+            Send(sock, BuddyProtocol.RET_GROUP_GETLIST, p.ToArray());
             Log.Debug("buddy", "[{0}] RET_GROUP_GETLIST (vazio)", ip);
         }
 

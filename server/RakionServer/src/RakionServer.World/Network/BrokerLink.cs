@@ -103,7 +103,7 @@ namespace RakionServer.World.Network
 
                 // O cliente manda gameplay UDP (port1, marker 0x0201) NESTA porta tambem
                 // (40708). Roteia p/ echo de gameplay (result byte 0 = port1) antes do IPC.
-                if (data.Length >= 21 && data[0] == 0x01 && data[1] == 0x02)
+                if (data.Length >= 23 && data[0] == 0x01 && data[1] == 0x02)
                 {
                     EchoGameplayUdp(data, (IPEndPoint)res.RemoteEndPoint, 0);
                     continue;

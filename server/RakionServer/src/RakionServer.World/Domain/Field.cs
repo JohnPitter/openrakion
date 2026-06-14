@@ -270,8 +270,9 @@ namespace RakionServer.World.Domain
         /// <summary>0x49 NovoRound (5B): [49 00][round][mvp0][mvp1].</summary>
         public byte[] Build0x49() => new byte[] { 0x49, 0x00, Round, Mvp0, Mvp1 };
 
-        /// <summary>0x4a FimRound (6B): [4a 00][winnerSide][wins0][wins1][lastWinner].</summary>
-        public byte[] Build0x4a() => new byte[] { 0x4a, 0x00, WinnerSide, Wins0, Wins1, LastRoundWinner };
+        /// <summary>0x4a FimRound — corpo (4B) p/ BroadcastFieldPlaying(0x4a, ...): [lastWinner][winnerSide][wins0][wins1].
+        /// layout fiel ao caminho validado in-game (Golem War); modos 2-clientes precisam re-teste.</summary>
+        public byte[] Build0x4a() => new byte[] { LastRoundWinner, WinnerSide, Wins0, Wins1 };
 
         /// <summary>
         /// 0x44 FimMatch (formato CAPTURADO do original, _r44 do fluxo solo que FUNCIONA):
@@ -478,7 +479,7 @@ namespace RakionServer.World.Domain
             ObjectiveDecided = true;
             Log.Ok("field", "field {0} OBJETIVO: time{1} venceu o ROUND {2} (Golem inimigo destruido)", Id, winnerTeam, Round);
             EndRound(winnerTeam);
-            BroadcastFieldPlaying(0x4a, new byte[] { LastRoundWinner, WinnerSide, Wins0, Wins1 });
+            BroadcastFieldPlaying(0x4a, Build0x4a());
         }
     }
 

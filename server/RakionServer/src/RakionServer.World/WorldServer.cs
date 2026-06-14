@@ -63,7 +63,9 @@ namespace RakionServer.World
                     Name = name,
                     Mode = mode,
                     MapId = mapId,
-                    MaxPlayers = (byte)(capacity == 0 ? 8 : capacity),
+                    // capacity e ushort (ate ~0x4ba=1210 nas salas ranqueadas); o cast cru truncava >255.
+                    // Clamp: 0 -> default 8; acima de 255 satura em byte.MaxValue (sem wrap).
+                    MaxPlayers = capacity == 0 ? (byte)8 : (byte)System.Math.Min((int)capacity, byte.MaxValue),
                     Master = master,
                     MasterSlot = master.Slot,
                     State = 1, // ocupado (field+8 != 0)

@@ -33,10 +33,12 @@ namespace RakionServer.Buddy
         public const ushort RET_REMOVE_BUDDY    = 0x3003;
         public const ushort RET_GROUP_BUDDY     = 0x3005;
         public const ushort RET_RENAME_GROUP    = 0x3007;
-        public const ushort RET_SET_NICK        = 0x3151;
-        public const ushort RET_SET_GUILD       = 0x3153;
-        public const ushort RET_GROUP_GETLIST   = 0x3152;
-        public const ushort RET_GROUP_ADD       = 0x3156;
+        public const ushort RET_SET_NICK        = 0x3101;   // corrigido p/ OnMsg FUN_10007e10 (validado in-game); SVC 0x3100
+        public const ushort RET_SET_EXTUSER     = 0x3105;   // SVC 0x3104
+        public const ushort RET_SET_GUILD       = 0x3103;
+        public const ushort RET_SET_EXTLIST     = 0x3111;
+        public const ushort RET_GROUP_GETLIST   = 0x3151;   // SVC 0x3150
+        public const ushort RET_GROUP_ADD       = 0x3153;   // SVC 0x3152
         public const ushort RET_GROUP_DEL       = 0x3155;
         public const ushort RET_GROUP_CHG       = 0x3157;
         public const ushort NTF_USER_STATE      = 0x3fff;
@@ -49,6 +51,10 @@ namespace RakionServer.Buddy
         public const ushort SVC_REMOVE_BUDDY    = 0x3002;
         public const ushort SVC_GROUP_BUDDY     = 0x3004;
         public const ushort SVC_RENAME_GROUP    = 0x3006;
+        public const ushort SVC_SET_NICK        = 0x3100;
+        public const ushort SVC_SET_EXTUSER     = 0x3104;
+        public const ushort SVC_GROUP_GETLIST   = 0x3150;
+        public const ushort SVC_GROUP_ADD       = 0x3152;
         public const ushort SVC_GROUP_DEL       = 0x3154;
         public const ushort SVC_GROUP_CHG       = 0x3156;
         public const ushort SVC_SMS_SEND        = 0x2030;
@@ -67,6 +73,8 @@ namespace RakionServer.Buddy
             [RET_GROUP_GETLIST] = "RET_GROUP_GETLIST", [RET_GROUP_ADD] = "RET_GROUP_ADD",
             [RET_GROUP_DEL] = "RET_GROUP_DEL", [RET_GROUP_CHG] = "RET_GROUP_CHG",
             [RET_SET_NICK] = "RET_SET_NICK", [RET_SET_GUILD] = "RET_SET_GUILD",
+            [RET_SET_EXTUSER] = "RET_SET_EXTUSER", [SVC_SET_NICK] = "SVC_SET_NICK",
+            [SVC_SET_EXTUSER] = "SVC_SET_EXTUSER", [SVC_GROUP_GETLIST] = "SVC_GROUP_GETLIST",
             [NTF_USER_STATE] = "NTF_USER_STATE", [NTF_NOTICE2] = "NTF_NOTICE2",
         };
 

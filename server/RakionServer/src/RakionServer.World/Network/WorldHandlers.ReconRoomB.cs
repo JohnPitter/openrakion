@@ -117,8 +117,9 @@ namespace RakionServer.World.Network
                 u.Slot, seat, cause, killer, field.Score0, field.Score1);
 
             // frag-limit atingido -> OnPlayerDeath ja chamou EndRound; emite 0x4a (fim de round).
+            // golden source / layout validado em Field.Build0x4a() (antes este sitio invertia a ordem).
             if (field.Phase == MatchPhase.RoundEnd)
-                field.BroadcastFieldPlaying(0x4a, new byte[] { field.WinnerSide, field.Wins0, field.Wins1, field.LastRoundWinner });
+                field.BroadcastFieldPlaying(0x4a, field.Build0x4a());
         }
 
         /// <summary>

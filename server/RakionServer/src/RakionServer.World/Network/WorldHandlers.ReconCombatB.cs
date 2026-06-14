@@ -395,9 +395,8 @@ namespace RakionServer.World.Network
             field.Phase = MatchPhase.RoundEnd; // +0x2b4 = 2
             field.DeadlineMs = Environment.TickCount64 + 15000;
 
-            // body = [lastWinner/2bd][winnerSide/2bf][wins0/2c0][wins1/2c1]
-            byte[] body = { field.LastRoundWinner, field.WinnerSide, field.Wins0, field.Wins1 };
-            field.BroadcastFieldPlaying(0x4a, body);
+            // corpo [lastWinner/2bd][winnerSide/2bf][wins0/2c0][wins1/2c1] — golden source em Field.Build0x4a()
+            field.BroadcastFieldPlaying(0x4a, field.Build0x4a());
             Log.Ok("field", "[{0}] charge dir={1} (w0={2} w1={3})", u.Slot, dir, field.Wins0, field.Wins1);
         }
 
