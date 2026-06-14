@@ -325,6 +325,23 @@ namespace RakionServer.World.Database
             catch (Exception ex) { Log.Error("db", "InsertItemBoxAsync({0},{1}): {2}", userId, itemId, ex.Message); return 0; }
         }
 
+        /// <summary>Remove UMA linha do ARMAZEM (itembox, qslot=0) com o itemId dado — a VENDA de um item do
+        /// box. Itens sao fungiveis por itemId, entao apaga a 1a linha (ORDER BY id) com esse id.</summary>
+        public async Task DeleteItemBoxByItemAsync(int userId, int itemId)
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "DELETE FROM itembox WHERE userid=@uid AND itemid=@iid AND qslot=0 ORDER BY id LIMIT 1", c);
+                cmd.Parameters.AddWithValue("@uid", userId);
+                cmd.Parameters.AddWithValue("@iid", itemId);
+                await cmd.ExecuteNonQueryAsync();
+            }
+            catch (Exception ex) { Log.Error("db", "DeleteItemBoxByItemAsync({0},{1}): {2}", userId, itemId, ex.Message); }
+        }
+
         /// <summary>Carrega os itens do BOX (itembox, qslot=0) de uma conta, em ordem (= ordem dos slots do box).
         /// Itens com qslot>0 estao no quickslot de pocao (ver LoadQuickslotAsync) e nao aparecem no box.</summary>
         public async Task<System.Collections.Generic.List<int>> LoadItemBoxAsync(int userId)

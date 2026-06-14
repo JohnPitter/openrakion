@@ -437,7 +437,7 @@ namespace RakionServer.World.Network
             u.SendLobby(fw.ToArray());
         }
 
-        private static void Op_GroupMemberInfo(HandlerContext ctx)
+        private static void Op_GroupMemberInfo(HandlerContext ctx) // 0x2f = SendInventorySell([u8 slot]) (engine 0x361917c0)
         {
             var u = ctx.User;
             // Guard: precisa estar no field e com field secundario ativo (this_00+0x1460 != 0 && this_00+0x14a4 != 0)
@@ -445,10 +445,62 @@ namespace RakionServer.World.Network
             // Guard: status precisa ser '\x02' (room)
             if (u.Status != 0x02) { u.Disconnect(0x3a); return; }
 
-            // payload: [byte slotArg]  (= *param_3 = bVar2)
+            // payload: [byte slot]. O 0x2f e' SEMPRE a VENDA do slot do box: o engine SendInventorySell
+            // (0x361917c0) manda [0x2f][slot] e o worldserv (FUN_004215a0->FUN_0040cd70) vende. Antes o servidor
+            // so' reenviava a lista (0x15) e NUNCA tirava o item nem creditava gold ("vendi e nada aconteceu").
             byte slotArg = ctx.P.Byte();
             if (slotArg >= 0x78) { u.Disconnect(0x3b); return; }
 
+            if (slotArg < u.BoxItems.Count && u.BoxItems[slotArg] != 0) { SellBoxSlot(ctx, slotArg); return; }
+            SendInventoryList(ctx, slotArg);   // slot vazio/fora do box -> so' a lista (sem vender)
+        }
+
+        /// <summary>VENDA de um item do box (0x2f): credita o preco de venda em gold, remove o item do armazem
+        /// e repinta o box sem ele + saldo ao vivo. Espelha o handler de COMPRA (Op_RoomMemberQuery), invertido.</summary>
+        private static void SellBoxSlot(HandlerContext ctx, byte slot)
+        {
+            var u = ctx.User;
+            int itemId = u.BoxItems[slot];
+            int sellGold = SellPriceOf(ctx.World.FindItemDef(itemId), itemId);   // preco fiel ao iteminfo
+
+            u.BoxItems.RemoveAt(slot);                             // remove do modelo (fonte da resposta imediata)
+            uint prev = u.Gold; u.Gold = prev + (uint)sellGold;
+            Log.Ok("shop", "[{0}] SELL slot {1} item {2} por {3} gold (saldo {4}->{5})", u.Slot, slot, itemId, sellGold, prev, u.Gold);
+
+            // persiste em background: credita gold + remove UMA linha do itembox com esse itemId
+            int gameInfoId = u.GameInfoId; var db = ctx.World.Db; int g = sellGold; int iid = itemId; int uslot = u.Slot;
+            System.Threading.Tasks.Task.Run(async () =>
+            {
+                try { if (gameInfoId > 0) { await db.AddGoldAsync(gameInfoId, g); await db.DeleteItemBoxByItemAsync(gameInfoId, iid); } }
+                catch (System.Exception ex) { Log.Error("shop", "[{0}] persist SELL item {1}: {2}", uslot, iid, ex.Message); }
+            });
+
+            // repinta o box sem o item (0x31 das celulas deslocadas a partir do slot) + limpa a celula que sobrou
+            int n = u.BoxItems.Count;
+            for (int i = slot; i < n && i < 0x78; i++) u.SendBoxAdd(u.BoxItems[i], (byte)i, 1);
+            if (n < 0x78) u.SendBoxAdd(0, (byte)n, 1);
+
+            // saldo ao vivo (0x2e count=0) -> HUD de gold (igual a compra; FUN_004774e0 grava AccountInfo+0x64)
+            using var gw = new PacketWriter();
+            gw.WriteWord(0x2e); gw.WriteByte(0);
+            gw.WriteUInt32(u.Gold); gw.WriteUInt32(u.Cash);
+            gw.WriteByte(0); gw.WriteByte(0);
+            u.SendLobby(gw.ToArray());
+        }
+
+        /// <summary>Preco de venda (gold) fiel ao worldserv (FUN_0040cd70 -> FUN_0040a810 -> round FUN_004365a8):
+        /// o preco do item na MOEDA DA LOJA (shop=1 -> gold; shop=2 -> cash creditado como gold), arredondado;
+        /// 0 p/ pocoes (12xxx, zerado no FUN_0040cd70) e itens fora de loja (shop=0).</summary>
+        private static int SellPriceOf(RakionServer.World.Database.ItemDef? def, int itemId)
+        {
+            if (def == null || (itemId >= 12000 && itemId <= 12999)) return 0;
+            return def.Shop == 1 ? def.Gold : def.Shop == 2 ? def.Cash : 0;
+        }
+
+        /// <summary>Lista do inventario (0x15) — fallback do 0x2f quando o slot esta vazio/fora do box.</summary>
+        private static void SendInventoryList(HandlerContext ctx, byte slotArg)
+        {
+            var u = ctx.User;
             var items = u.Items ?? new System.Collections.Generic.List<RakionServer.World.Database.UserItem>();
             // escalares do slot consultado (FUN_0040cd70): se o slot nao casa, ficam 0 (UI tolera)
             ushort groupId = 0; uint field1 = 0; uint field2 = 0; uint field3 = 0; byte b1 = 0;
@@ -457,24 +509,17 @@ namespace RakionServer.World.Network
                 if (it.Slot != slotArg) continue;
                 groupId = (ushort)it.ItemSn; field2 = (uint)it.ItemId; b1 = it.Level; field3 = (uint)it.LimitTime; break;
             }
-            // BLOCO2 = inventario: count2*u32 (itemId) ++ count2*u8 (slot index) PARALELOS (disasm FUN_0040bcb0 loop2).
-            // Usa o INDICE i como slot do Box (posicoes distintas) — os itens no DB tem slot=1 (a compra usava
-            // invSlot=1) e sobreporiam no mesmo lugar; o indice espalha cada item numa celula propria.
             byte count2 = (byte)System.Math.Min(items.Count, 0x77);
             using var blk2 = new PacketWriter();
             for (int i = 0; i < count2; i++) blk2.WriteUInt32((uint)items[i].ItemId);
             for (int i = 0; i < count2; i++) blk2.WriteByte((byte)i);
             byte[] block2 = blk2.ToArray();
-            byte count1 = 0; byte[] block1 = System.Array.Empty<byte>(); // loadout equipado: vazio (sem char-select)
 
-            // RESPOSTA msgType 0x15 via SendLobby (msgType-first; SendMessage poria serverSeq 1o -> cliente erraria o dispatch).
-            byte[] payload = BuildGroupMemberInfo(u, slotArg, groupId, field1, field2, field3, b1, count1, count2, block1, block2);
+            byte[] payload = BuildGroupMemberInfo(u, slotArg, groupId, field1, field2, field3, b1, 0, count2, System.Array.Empty<byte>(), block2);
             using var fw = new PacketWriter();
-            fw.WriteWord(0x15);  // msgType (1o u16 = dispatch do cliente)
-            fw.WriteWord(0);     // aux (posicao do serverSeq; 0)
-            fw.WriteBytes(payload);
+            fw.WriteWord(0x15); fw.WriteWord(0); fw.WriteBytes(payload);
             u.SendLobby(fw.ToArray());
-            Log.Ok("shop", "[{0}] 0x2f inventario (0x15) enviado: {1} itens -> Box", u.Slot, count2);
+            Log.Ok("shop", "[{0}] 0x2f lista (0x15): {1} itens (slot {2} vazio, sem venda)", u.Slot, count2, slotArg);
         }
 
         // Monta o payload (apos seq+subtype) do 0x15 na ordem real dos offsets a partir de &local_1010.

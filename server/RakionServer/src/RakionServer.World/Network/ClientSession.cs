@@ -547,7 +547,7 @@ namespace RakionServer.World.Network
             byte[] f0c = ReadOracle("oracle_0c.bin");
             byte[] f0d = ReadOracle("oracle_0d.bin");
             if (f0d.Length == 0) { f0d = new byte[1332]; f0d[0] = 0x0d; f0d[3] = 0x01; } // fallback gerado
-            if (f0c.Length >= 105)
+            if (f0c.Length == 816)   // overlays só no oracle ORIGINAL (816B); re-pack do buddyname (≠816) vai verbatim
             {
                 // OVERLAY DINAMICO do estado vivo (DB, carregado em LoadAndLogAsync ANTES deste envio).
                 // Offsets da active record CRAVADOS via captura-diff do worldserv original (setei DB
@@ -733,6 +733,16 @@ namespace RakionServer.World.Network
         {
             if (data.Length < 4) return;
             byte srcType = data[0], srcSlot = data[1], destType = data[2], destSlot = data[3];
+            // O 0x31 é o MOVE genérico de item; só sabemos reconciliar box(0) <-> quickslot(1).
+            // Qualquer outro descritor (ex.: arrastar um item do box para a LOJA = venda) NÃO pode
+            // tocar o modelo do box/quickslot nem persistir — antes corrompia itembox.qslot e
+            // "sumia" o item sem creditar gold. Loga o frame cru (p/ RE do destino real) e ignora.
+            if (srcType > 1 || destType > 1)
+            {
+                Log.Warn("shop", "[{0}] 0x31 move fora de box/quickslot (src {1}:{2} dest {3}:{4}) — ignorado. raw={5}",
+                    Slot, srcType, srcSlot, destType, destSlot, System.Convert.ToHexString(data));
+                return;
+            }
             int srcItem = ReadCell(srcType, srcSlot);
             int destItem = ReadCell(destType, destSlot);
             WriteCell(srcType, srcSlot, destItem);   // swap origem <-> destino
