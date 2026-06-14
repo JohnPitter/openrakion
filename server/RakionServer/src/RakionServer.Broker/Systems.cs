@@ -1,12 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
-using System.Runtime.InteropServices;
 using System.Text;
 using BrokenServer.Global;
 using RakionServer.Common;
@@ -28,11 +25,6 @@ namespace BrokenServer
 				}
 			}
 			return srx_Serverinfo;
-		}
-
-		// Token: 0x06000022 RID: 34 RVA: 0x000021B5 File Offset: 0x000003B5
-		public static void CheckServerExpired(int seconds)
-		{
 		}
 
 		// Token: 0x06000023 RID: 35 RVA: 0x00002E74 File Offset: 0x00001074
@@ -261,12 +253,6 @@ namespace BrokenServer
 
 		// Token: 0x0400000F RID: 15
 		public static Dictionary<int, Systems.SRX_Serverinfo> GSList = new Dictionary<int, Systems.SRX_Serverinfo>();
-
-		// Token: 0x04000010 RID: 16
-		public static string DownloadServer = "";
-
-		// Token: 0x04000011 RID: 17
-		public static short DownloadPort = 15000;
 
 		// Token: 0x04000012 RID: 18
 		internal Systems.Client client;

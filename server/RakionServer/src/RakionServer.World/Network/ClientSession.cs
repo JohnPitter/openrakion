@@ -87,10 +87,6 @@ namespace RakionServer.World.Network
         public byte FieldCashCost;     // user+0x1531 (custo base usado por FUN_0040b900: cost = (this+0x1531>>1) + slot*5)
         public short FieldPairA;          // playerRecord (field+0xe4 + slot*0x3c0) +0x2c4
         public short FieldPairB;          // playerRecord +0x2c6
-        public byte FieldDirFlag;         // playerRecord +0x2bf
-        public byte FieldDirCount;        // playerRecord +0x2c0
-        public byte FieldRespawnCount;    // playerRecord +0x2c1
-        public byte FieldPlayState = 1;   // playerRecord +0x2b4 (1=jogando, 2=derrotado/respawn)
         public byte FieldRecordState;     // playerRecord +0x8 (estado do registro; 2 = inativo p/ acao)
         public ushort FieldTargetA;       // playerRecord +0x2c8 (alvo/objetivo, arg0<10)
         public ushort FieldTargetB;       // playerRecord +0x2ca (alvo/objetivo, arg0>=10)
@@ -125,11 +121,6 @@ namespace RakionServer.World.Network
         private bool _r36bSent;   // 0x36b (arma a lista de games) so' 1x; remandar a cada poll travava o cliente
         private readonly int[] _potionSlot = new int[0x13];   // quickslot de pocao = user+0x1da4 (19 celulas)
         private bool _potionPainted;  // quickslot persistido pintado so' no 1o open (0x2c) da sessao
-        // Diagnóstico concluído (2026-06-10): com inventário VAZIO o cliente AINDA crasha no Previous
-        // -> crash é 100% client-side (csComponent::PrevChild, lista de widgets corrompida no teardown),
-        // independente dos dados do servidor. Conserto = patch no uitoolkit.dll (guard de alinhamento).
-        // Flag mantido em false (box volta a aparecer normalmente).
-        private const bool DiagEmptyInventory = false;
 
         /// <summary>
         /// Cifra do canal lobby/field (AES-128, chave/IV reais do worldserv.exe). No original
@@ -624,57 +615,6 @@ namespace RakionServer.World.Network
         }
 
         /// <summary>
-        /// 0x13 lista de inventario (FUN_00420f10). Apos [u16 seq][u16 0x13] (SendMessage):
-        /// [u32 user+0x14a4][u8 count1][count1*u32 itemId][count1*u8 slot][u8 count2=0][u8 flag=0].
-        /// Popula o Box (FUN_004774e0). Framing REAL via SendMessage ([seq][msgType]); antes ia por
-        /// SendLobby (msgType no offset 0) -> o cliente parseava errado e nao populava.
-        /// </summary>
-        public void SendInventoryList()
-        {
-            // Formato REAL (RE de FUN_00420f10 + FUN_0040bcb0, 2026-06-08): apos [u16 0x13][u16 seq] ->
-            // [u32 user+0x14a4][u8 count1][count1*u32 itemId][count1*u8 slot][u8 count2][u8 count3flag].
-            // Framing [opcode@0][seq@2] CONFIRMADO pela captura do servidor ORIGINAL (op=0x0c/0x0d/0x10 @off0).
-            // Inventario = protocolo de DIFF; 1a vez = lista cheia. itemValue = itemId. TESTE de formato com
-            // armas (1001/1002/1008 Swordman) — sem capacete, p/ evitar o bone 'Helmet_D' se o grid renderizar 3D.
-            var inv = Items ?? new System.Collections.Generic.List<RakionServer.World.Database.UserItem>();
-            // BAG/box (0x13) = SO itens NAO-equipados (slot >= 7). Os equipados (slots 0-6) vao na aparencia
-            // 0x0C @119 e NAO podem entrar aqui: o handler de COMPRA do cliente le este bag e crasha ao clicar
-            // Buy se ele contiver os equipados (bag malformado). Char todo-equipado -> bag vazio (count1=0).
-            var bag = new System.Collections.Generic.List<RakionServer.World.Database.UserItem>();
-            foreach (var it in inv) if (it.Slot >= 7) bag.Add(it);
-            byte count1 = (byte)System.Math.Min(bag.Count, 19);       // bag = 19 slots (0x13)
-            // user+0x14a4 = o mesmo valor que o cliente mandou no 0x2c (2o u32 do body) — ecoado tb aqui.
-            uint secondActive = (_invReqBody != null && _invReqBody.Length >= 8)
-                ? BinaryPrimitives.ReadUInt32LittleEndian(_invReqBody.AsSpan(4))
-                : (FieldSecondaryRaw != 0 ? (uint)FieldSecondaryRaw : 1u);
-            // count2 = ARMAZEM (itembox). FUN_0047e6f0 (handler 0x13) copia count2 itens p/ this+0x21 (a DATA do
-            // box). POREM isso NAO desenha o grid VISUAL — o grid e' o FUN_0044deb0, chamado pelo 0x31 (ao vivo)
-            // e pelo 0x2e (FUN_004774e0). Por isso o item comprado AO VIVO (0x31) aparece, mas os persistidos do
-            // itembox (so' no 0x13) NAO apareciam no open. Mando o count2 (data) + um 0x2e count=N (visual) abaixo.
-            byte count2 = (byte)System.Math.Min(BoxItems.Count, 0x78);          // box = ate 120 celulas
-            // ===== DIAGNOSTICO (temporario): inventario VAZIO p/ isolar se a corrupcao da lista de
-            // widgets (crash csComponent::PrevChild no Previous) vem dos DADOS de item que mandamos.
-            // Se com count1=count2=0 o Previous AINDA crashar -> bug 100% client-side. Reverter depois. =====
-            if (DiagEmptyInventory) { count1 = 0; count2 = 0; }
-            using var w = new PacketWriter();
-            w.WriteWord(0x13);                                                   // opcode @0
-            w.WriteWord(0);                                                      // seq @2
-            w.WriteUInt32(secondActive);                                        // user+0x14a4
-            w.WriteByte(count1);                                                 // count1 = bag (nao-equipados)
-            for (int i = 0; i < count1; i++) w.WriteUInt32((uint)bag[i].ItemId); // itemValue u32 = itemId real
-            for (int i = 0; i < count1; i++) w.WriteByte((byte)(bag[i].Slot - 7)); // posicao no bag grid (slot-7)
-            w.WriteByte(count2);                                                 // count2 = box (itembox) -> DATA this+0x21
-            for (int i = 0; i < count2; i++) w.WriteUInt32((uint)BoxItems[i]);   // itemId u32 por celula
-            for (int i = 0; i < count2; i++) w.WriteByte((byte)i);               // slot = indice da celula (0..)
-            w.WriteByte(0);                                                      // count3 flag = 0 (sem bloco appearance)
-            SendEncryptedFrame(w.ToArray());
-            Log.Ok("shop", "[{0}] 0x13 inventario enviado: bag={1}, box(count2)={2}", Slot, count1, count2);
-            // FIEL ao original (FUN_00420f10 + FUN_0040bcb0): o 0x2d responde SÓ este 0x13 — o count2
-            // (itens do box) é o que pinta o grid. SEM 0x2e visual nem 0x31 (eram band-aids de quando o
-            // 0x13 estava malformado; agora corrompiam a UI nas transições de tela).
-        }
-
-        /// <summary>
         /// 0x2d ACK curto (FUN_00420f10, path "else": FUN_004038e0 subtype 3 = [0x2d][status]). O
         /// worldserv original responde ISTO em todo 0x2d que NÃO seja a 1a list (FUN_0040c960 devolve
         /// 1 quando user+0x144c==0, ou 2 quando ==loja — sem remontar a lista). É o "nada mudou" que o
@@ -816,13 +756,29 @@ namespace RakionServer.World.Network
             bool granted = false;
             if (Cash >= price && GameInfoId > 0 && Game != null)
             {
+                // estado anterior p/ rollback se a persistencia falhar (espelha a compra em Op_RoomMemberQuery)
+                uint prevCash = Cash; uint prevPoints = PowerLevelPoint;
+                bool prevPu = PuActive; bool prevExpBonus = ExpBonusActive;
                 Cash -= price;
                 PowerLevelPoint += (uint)bonus;
                 PuActive = true; ExpBonusActive = true;   // PU passa a valer já nesta sessão (sem relog)
-                _ = _server.Db.AddCashAsync(Game.Name, -(int)price);
-                _ = _server.Db.GrantPowerUserAsync(GameInfoId, bonus, cfg.DurationDays);
                 granted = true;
                 Log.Ok("shop", "[{0}] Buy Power User: -{1} cash, +{2} PU bonus (total {3}), +{4}d", Slot, price, bonus, PowerLevelPoint, cfg.DurationDays);
+
+                // PERSISTE em background com rollback: se cash OU power-user falharem, reverte o estado em memoria.
+                string acct = Game.Name; int gi = GameInfoId; int dur = cfg.DurationDays; int b = bonus;
+                var db = _server.Db;
+                System.Threading.Tasks.Task.Run(async () =>
+                {
+                    bool ok = true;
+                    try { await db.AddCashAsync(acct, -(int)price); await db.GrantPowerUserAsync(gi, b, dur); }
+                    catch (Exception ex) { ok = false; Log.Error("shop", "[{0}] persist Buy Power User: {1}", Slot, ex.Message); }
+                    if (!ok)
+                    {
+                        Cash = prevCash; PowerLevelPoint = prevPoints; PuActive = prevPu; ExpBonusActive = prevExpBonus;
+                        Log.Warn("shop", "[{0}] persist Buy Power User FALHOU -> estado revertido (cash/pontos/PU)", Slot);
+                    }
+                });
             }
             // status 2 -> o cliente exibe a mensagem 641 do language.txt, que PATCHAMOS no DataSetup.xfs
             // de "...6 months in advance" p/ "Power User purchased! Relog to see your bonus points."
