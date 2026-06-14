@@ -46,7 +46,8 @@ ANTES de adicionar mais código. Auditoria viva e dívida priorizada em
 - Dívida de tamanho **QUITADA** (2026-06-14): os god-files foram fatiados em `partial class`
   por domínio — `WorldHandlers.Generated.cs` (2692→125 + 6 partials), `Broker/Systems.cs`
   (1797→270 + tipos aninhados em arquivos próprios), `ClientSession.cs` (1032→357 + OracleReplay
-  + Inventory). Borderline a vigiar: `WorldHandlers.Generated.Field.cs` (853, combate coeso).
+  + Inventory). O domínio Field foi ainda fatiado em lifecycle (`.Field.cs` 459) × combate
+  (`.FieldCombat.cs` 401). Maior arquivo agora: `.Room.cs` (514, abaixo de 600).
 
 **Golden source / sem código morto**
 - UMA implementação por comportamento. Proibido manter versões paralelas (ex.: handler
