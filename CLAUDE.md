@@ -43,8 +43,10 @@ ANTES de adicionar mais código. Auditoria viva e dívida priorizada em
   (`WorldHandlers.<Domínio>.cs`) — a convenção já existe no repo.
 - Parâmetros: ≤4; acima, agrupe num DTO/record.
 - Aninhamento: ≤3 níveis; prefira early return.
-- Dívida atual a QUITAR (não aumentar): `WorldHandlers.Generated.cs` (2692),
-  `Broker/Systems.cs` (1797), `ClientSession.cs` (1032).
+- Dívida de tamanho **QUITADA** (2026-06-14): os god-files foram fatiados em `partial class`
+  por domínio — `WorldHandlers.Generated.cs` (2692→125 + 6 partials), `Broker/Systems.cs`
+  (1797→270 + tipos aninhados em arquivos próprios), `ClientSession.cs` (1032→357 + OracleReplay
+  + Inventory). Borderline a vigiar: `WorldHandlers.Generated.Field.cs` (853, combate coeso).
 
 **Golden source / sem código morto**
 - UMA implementação por comportamento. Proibido manter versões paralelas (ex.: handler
