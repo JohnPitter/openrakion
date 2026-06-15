@@ -227,12 +227,18 @@ namespace RakionServer.World.Network
         }
 
         /// <summary>Preco de venda (gold) fiel ao worldserv (FUN_0040cd70 -> FUN_0040a810 -> round FUN_004365a8):
-        /// o preco do item na MOEDA DA LOJA (shop=1 -> gold; shop=2 -> cash creditado como gold), arredondado;
-        /// 0 p/ pocoes (12xxx, zerado no FUN_0040cd70) e itens fora de loja (shop=0).</summary>
+        /// o item devolve uma FRACAO do preco de loja, ARREDONDADA — nao o preco cheio. Constantes (double)
+        /// lidas do binario worldserv.exe: loja de GOLD (shop=1) devolve round(gold * 0.4) [@0x447678];
+        /// loja de CASH (shop=2) devolve round(cash * 1.5) creditado em gold [@0x447670]. Pocoes (12xxx,
+        /// zeradas no FUN_0040cd70) e itens fora de loja (shop=0) devolvem 0.
+        /// (Os dados reais sempre dao multiplos exatos -> empate .5 nao ocorre; round e' so' por fidelidade.)</summary>
         private static int SellPriceOf(RakionServer.World.Database.ItemDef? def, int itemId)
         {
             if (def == null || (itemId >= 12000 && itemId <= 12999)) return 0;
-            return def.Shop == 1 ? def.Gold : def.Shop == 2 ? def.Cash : 0;
+            double price = def.Shop == 1 ? def.Gold * 0.4
+                         : def.Shop == 2 ? def.Cash * 1.5
+                         : 0.0;
+            return (int)System.Math.Round(price, System.MidpointRounding.AwayFromZero);
         }
 
         /// <summary>Lista do inventario (0x15) — fallback do 0x2f quando o slot esta vazio/fora do box.</summary>
