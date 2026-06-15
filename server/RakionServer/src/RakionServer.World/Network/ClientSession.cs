@@ -62,7 +62,7 @@ namespace RakionServer.World.Network
         public int ActiveCharId { get; set; } = -1;          // characterinfo.id do char ativo -> useriteminfo.characterid
         public int GameInfoId { get; set; } = -1;            // usergameinfo.id -> AddGoldAsync / useriteminfo.userid
         public volatile bool ShopBuyInProgress;              // espelha user+0x144c==2 (anti-duplo-clique)
-        public System.Collections.Generic.List<int> BoxItems { get; set; } = new(); // itembox (armazem) carregado no login: exibido no box + a contagem = proximo slot da compra
+        public System.Collections.Generic.List<int> BoxItems { get; set; } = new(new int[0x78]); // grade do box: 120 celulas FIXAS (0=vazia). Esparsa p/ casar com a grade do cliente — mover item p/ celula vazia nao pode "sumir"
         public System.Collections.Generic.List<RakionServer.World.Database.UserItem> Items { get; set; } = new(); // inventario (useriteminfo) p/ o Box (0x2f)
         public byte CharLevel { get; set; } = 1;             // nivel do char ativo -> overlay 0x0C @96 (offset cravado no diff golden)
         public byte CharClass { get; set; }                  // classe do char ativo -> curva de level (classlevelinfo)

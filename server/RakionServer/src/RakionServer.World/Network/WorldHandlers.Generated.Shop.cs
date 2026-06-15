@@ -83,13 +83,15 @@ namespace RakionServer.World.Network
             uint newBalance = balance - (uint)price;
             if (payGold) u.Gold = newBalance; else u.Cash = newBalance;
             u.ShopBuyInProgress = true;
-            // slot do box = contagem atual do armazem (cada compra vai pra proxima celula livre, sem sobrescrever).
-            byte invSlot = (byte)(u.BoxItems.Count & 0x77);
+            // slot do box = 1a celula VAZIA da grade (grade esparsa de 120, 0=vazia). Casa com o grid do cliente
+            // e preenche buracos deixados por venda/move (em vez de sempre no fim).
+            int freeSlot = u.BoxItems.IndexOf(0);
             // Só GEAR (type<=5) entra no display do box: não-gear (transform/especial) renderiza invisível e
             // crasha o painel. Ele ainda é comprado (debita) e persiste no itembox (DB) abaixo — só não pinta
             // no grid. Assim BoxItems = sempre gear -> todos os loops de paint (0x13/0x2e/0x31) ficam limpos.
-            if (ctx.World.IsBoxDisplayable(itemId))
-                u.BoxItems.Add(itemId);   // persiste no estado da sessao -> exibido no proximo 0x2d + slot incrementa
+            if (ctx.World.IsBoxDisplayable(itemId) && freeSlot >= 0)
+                u.BoxItems[freeSlot] = itemId;   // ocupa a celula vazia -> exibido no proximo paint
+            byte invSlot = (byte)(freeSlot >= 0 ? freeSlot : 0);
             // NAO adiciona em u.Items (= useriteminfo/APARENCIA equipada): o item de box NUNCA vai pro corpo 3D (crash).
 
             Log.Ok("shop", "[{0}] BUY item {1} type={2} por {3} {4} (saldo {5}->{6}) char={7} slot={8}",
@@ -146,7 +148,7 @@ namespace RakionServer.World.Network
             // (0x31 de cada item, slot=indice), nao so' o comprado. Assim os itens PERSISTIDOS do itembox (que
             // foram mandados antes em menu errado e ficaram invisiveis) aparecem junto com o novo. (Log provou:
             // o comprado ia pro slot N=BoxItems.Count e so' ele pintava; os 0..N-1 ficavam invisiveis.)
-            for (int i = 0; i < u.BoxItems.Count && i < 0x78; i++) u.SendBoxAdd(u.BoxItems[i], (byte)i, 1);
+            for (int i = 0; i < u.BoxItems.Count && i < 0x78; i++) if (u.BoxItems[i] != 0) u.SendBoxAdd(u.BoxItems[i], (byte)i, 1);
 
             // --- SALDO EM TEMPO REAL (msgType 0x2e, code 0) ---
             // RE do cliente: o HUD le gold em AccountInfo+0x64 e cash +0x68 (engine.dll). O handler 0x2e
@@ -201,7 +203,7 @@ namespace RakionServer.World.Network
             int itemId = u.BoxItems[slot];
             int sellGold = SellPriceOf(ctx.World.FindItemDef(itemId), itemId);   // preco fiel ao iteminfo
 
-            u.BoxItems.RemoveAt(slot);                             // remove do modelo (fonte da resposta imediata)
+            u.BoxItems[slot] = 0;                                  // esvazia a celula (grade esparsa; SEM shift -> nao desloca as outras)
             uint prev = u.Gold; u.Gold = prev + (uint)sellGold;
             Log.Ok("shop", "[{0}] SELL slot {1} item {2} por {3} gold (saldo {4}->{5})", u.Slot, slot, itemId, sellGold, prev, u.Gold);
 
@@ -213,10 +215,8 @@ namespace RakionServer.World.Network
                 catch (System.Exception ex) { Log.Error("shop", "[{0}] persist SELL item {1}: {2}", uslot, iid, ex.Message); }
             });
 
-            // repinta o box sem o item (0x31 das celulas deslocadas a partir do slot) + limpa a celula que sobrou
-            int n = u.BoxItems.Count;
-            for (int i = slot; i < n && i < 0x78; i++) u.SendBoxAdd(u.BoxItems[i], (byte)i, 1);
-            if (n < 0x78) u.SendBoxAdd(0, (byte)n, 1);
+            // repinta: limpa SO' a celula vendida (grade esparsa -> as outras nao mudam de lugar)
+            u.SendBoxAdd(0, slot, 1);
 
             // saldo ao vivo (0x2e count=0) -> HUD de gold (igual a compra; FUN_004774e0 grava AccountInfo+0x64)
             using var gw = new PacketWriter();

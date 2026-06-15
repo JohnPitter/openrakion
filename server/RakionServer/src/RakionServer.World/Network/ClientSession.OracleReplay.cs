@@ -175,6 +175,10 @@ namespace RakionServer.World.Network
                 case 0x31: // potion slot: mover/trocar item entre o BOX e o quickslot de pocao
                     HandlePotionSlot(data);
                     return true;
+                case 0x73: // mudar slot de item no BOX (empilhar pocoes iguais). Sem isso o cliente
+                    // trava em "Changing item slot" (caia no catch-all 'em campo (sem resp)' abaixo).
+                    HandleItemSlotChange(data);
+                    return true;
                 case 0x34: // Buy Power User: concede o PU + destrava o popup (testando status=0 p/ sem erro)
                     HandleBuyPowerUser();
                     return true;

@@ -101,6 +101,12 @@ namespace RakionServer.World.Network
             int destItem = ReadCell(destType, destSlot);
             WriteCell(srcType, srcSlot, destItem);   // swap origem <-> destino
             WriteCell(destType, destSlot, srcItem);
+            // Eco do move no FORMATO FIEL (21B, = FUN_00421870). O srcType cai no offset certo (param_3 do
+            // FUN_0047d1d0): srcType=1 ativa o caminho do QUICKSLOT no cliente (-> FUN_004264a0), que limpa
+            // /pinta o widget de pocao correto (array +0xa74). Antes mandavamos 24B desalinhados -> o cliente
+            // lia srcType=0 SEMPRE (nunca tirava do quickslot) e os campos viravam lixo -> id corrompido no
+            // FUN_00402cf0 -> AV no draw. Agora cobre os 4 casos: box<->box, box->quickslot, quickslot->box
+            // (TIRAR a pocao) e quickslot<->quickslot.
             SendPotionSlotMove(srcType, srcSlot, destItem, destType, destSlot, srcItem);
             if (GameInfoId > 0) _ = _server.Db.SaveQuickslotAsync(GameInfoId, _potionSlot);  // persiste box<->quickslot
             Log.Ok("shop", "[{0}] 0x31 potion-slot: ({1}:{2}) <-> ({3}:{4}) item={5}",
@@ -132,28 +138,112 @@ namespace RakionServer.World.Network
         /// do box (escrita de item 0 = no-op visual), destino = a celula do quickslot.</summary>
         private void SendPotionSlotAdd(int itemId, byte cell)
         {
-            if (BoxItems.Count >= 0x78) return;  // box cheio: sem celula vazia p/ usar de origem
-            SendPotionSlotMove(0, (byte)BoxItems.Count, 0, 1, cell, itemId);
+            int empty = BoxItems.IndexOf(0);     // 1a celula vazia do box p/ usar de origem (escrita de 0 = no-op visual)
+            if (empty < 0) return;               // box cheio: sem celula vazia
+            SendPotionSlotMove(0, (byte)empty, 0, 1, cell, itemId);
             Log.Ok("shop", "[{0}] 0x31 potion-add: item {1} -> quickslot {2}", Slot, itemId, cell);
         }
 
         /// <summary>
-        /// Resposta do move (0x31), no mesmo layout do box-render: [u16 0x31][u16 seq][u32 srcDesc =
-        /// slot|type&lt;&lt;8|novoItemOrigem&lt;&lt;16][u32 0][u16 destDesc = type|slot&lt;&lt;8][u16 novoItemDestino]
-        /// [u32 lvl][u32 val]. O cliente grava cada item na celula do seu array (type 0 = box, 1 = potion slot).
+        /// Resposta do move 0x31, FIEL ao layout que o handler do cliente FUN_0047d1d0 espera (= o que o
+        /// worldserv original FUN_00421870 manda, 21 bytes), confirmado pela assinatura do FUN_0047d1d0:
+        ///   [u16 0x31][u8 status=0][u8 srcType][u8 srcSlot][u16 newSrcItem][u8 b1][u32 v1]
+        ///            [u8 destType][u8 destSlot][u16 newDestItem][u8 b2][u32 v2]
+        /// O srcType no offset 3 (param_3) DECIDE o ramo: srcType=1 -> caminho do QUICKSLOT, que limpa/pinta
+        /// o widget de pocao certo (array +0xa74 via FUN_004264a0). O formato antigo (24B, estilo box-render)
+        /// punha [seq=00 00] nos offsets 2-3 -> o cliente lia srcType=0 SEMPRE (nunca tocava o quickslot) e os
+        /// campos desalinhavam -> "duplicou" e id corrompido -> AV no draw. b1/v1/b2/v2 = level/exp (0 p/ pocao).
         /// </summary>
         private void SendPotionSlotMove(byte srcType, byte srcSlot, int newSrcItem, byte destType, byte destSlot, int newDestItem)
         {
             using var w = new PacketWriter();
-            w.WriteWord(0x31);
-            w.WriteWord(0);
-            w.WriteUInt32((uint)srcSlot | ((uint)srcType << 8) | ((uint)(ushort)newSrcItem << 16));
-            w.WriteUInt32(0);
-            w.WriteWord((ushort)(destType | (destSlot << 8)));
-            w.WriteWord((ushort)newDestItem);
-            w.WriteUInt32(1);
-            w.WriteUInt32(0x00403900);
+            w.WriteWord(0x31);                  // off0  msgType (dispatch do cliente)
+            w.WriteByte(0);                     // off2  status = 0 (sucesso; != 0 mostraria erro)
+            w.WriteByte(srcType);               // off3  srcType (0=box, 1=quickslot) — DECIDE o ramo
+            w.WriteByte(srcSlot);               // off4  srcSlot
+            w.WriteWord((ushort)newSrcItem);    // off5  novo item na origem (0 = celula esvaziada)
+            w.WriteByte(0);                     // off7  b1 (level)
+            w.WriteUInt32(0);                   // off8  v1 (exp/limit)
+            w.WriteByte(destType);              // off12 destType
+            w.WriteByte(destSlot);              // off13 destSlot
+            w.WriteWord((ushort)newDestItem);   // off14 novo item no destino
+            w.WriteByte(0);                     // off16 b2 (level)
+            w.WriteUInt32(0);                   // off17 v2 (exp/limit)
             SendEncryptedFrame(w.ToArray());
+        }
+
+        /// <summary>
+        /// 0x73 = mudar slot de item no BOX (worldserv FUN_00421a50 -> FUN_0040c140): EMPILHAR pocoes
+        /// iguais. Valida que origem e destino sao pocoes (12000-12999) e responde a lista do box
+        /// (subtype 0x27); senao responde o erro curto [0x73][status]. FUN_0040c140 NAO muta o box (so'
+        /// le + computa campos que p/ pocao sao 0: deltas e soma de exp@0x1f94) — entao tambem nao
+        /// mexemos no modelo: o cliente no-GG ja fez a juncao local e so' espera o ack p/ tirar o aviso
+        /// "Changing item slot". Sem resposta o 0x73 caia no catch-all 'em campo (sem resp)' e travava.
+        /// payload: [u8 srcSlot][u8 destSlot] (o resto e' widget do cliente, ignorado como no original).
+        /// </summary>
+        private void HandleItemSlotChange(byte[] data)
+        {
+            if (data.Length < 2) { SendItemSlotError(3); return; }            // frame curto -> destrava com erro
+            byte srcSlot = data[0], destSlot = data[1];
+            if (srcSlot >= 0x78 || destSlot >= 0x78) { SendItemSlotError(3); return; } // bounds (orig DISC 0xe0/0xe1)
+
+            int srcItem  = srcSlot  < BoxItems.Count ? BoxItems[srcSlot]  : 0;
+            int destItem = destSlot < BoxItems.Count ? BoxItems[destSlot] : 0;
+            // FUN_0040c140: sucesso so' quando origem e destino sao pocoes (12000-12999) da mesma categoria.
+            bool stackablePotions = srcItem != 0 && destItem != 0
+                && srcItem >= 12000 && srcItem <= 12999 && destItem >= 12000 && destItem <= 12999;
+            if (!stackablePotions)
+            {
+                SendItemSlotError(3);   // nao-empilhavel -> aviso some com "erro" (fiel ao retorno 3/4 do original)
+                Log.Ok("shop", "[{0}] 0x73 item-slot {1}<-{2} nao-empilhavel (src={3} dest={4}) -> erro 3",
+                    Slot, destSlot, srcSlot, srcItem, destItem);
+                return;
+            }
+            // NAO mutamos o box: FUN_0040c140 tambem nao muta (so' valida + computa) e ESTE cliente NAO junta
+            // as pocoes ao receber o ack — mantem as DUAS celulas. Esvaziar a origem aqui descasava do cliente
+            // (ele seguia mostrando a pocao na origem) -> a pocao "sumia" no nosso modelo. So' valida e confirma.
+            SendItemSlotStackAck(srcSlot, destSlot);
+            Log.Ok("shop", "[{0}] 0x73 slot {1}<->{2} (pocao {3}) -> ack 0x27 (sem merge, mantem as 2)", Slot, destSlot, srcSlot, srcItem);
+        }
+
+        /// <summary>Erro curto do 0x73 (FUN_004038e0, len 3): [u16 0x73][u8 status]. Destrava o aviso do cliente.</summary>
+        private void SendItemSlotError(byte status)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x73);
+            w.WriteByte(status);
+            SendLobby(w.ToArray());
+        }
+
+        /// <summary>
+        /// Ack de sucesso do 0x73 (FUN_00421a50 -> subtype 0x27): cabecalho do move + a lista atual do box
+        /// (mesma forma do 0x15: count1=0 + count2 = itens do box). P/ pocao os campos delta/soma sao 0.
+        /// Forma de lista que o cliente ja conhece -> tira o aviso e mantem a juncao local que ele fez.
+        /// </summary>
+        private void SendItemSlotStackAck(byte srcSlot, byte destSlot)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x27);              // subtype (dispatch do cliente)
+            w.WriteWord(0);                 // seq
+            w.WriteUInt32((uint)FieldId);   // off4  fieldId (*(0x1460))
+            w.WriteByte(srcSlot);           // off8
+            w.WriteByte(destSlot);          // off9
+            w.WriteUInt32(0);               // off10 srcDelta  (user+0x1bc4; 0 p/ pocao)
+            w.WriteUInt32(0);               // off14 destDelta (0x1bc4)
+            w.WriteUInt32(0);               // off18 mergedExp (soma de 0x1f94; 0 p/ pocao)
+            w.WriteUInt32(0);               // off22 fsecHandle (0x14a4; 0 como na lista 0x15)
+            w.WriteByte(0);                 // off26 count1 (delta de loadout) = 0
+            // count2 = itens atuais do box (ids u32 + slots u8), igual ao bloco2 do 0x15
+            byte n = 0;
+            using var ids = new PacketWriter();
+            using var slots = new PacketWriter();
+            for (int i = 0; i < BoxItems.Count && i < 0x78; i++)
+                if (BoxItems[i] != 0) { ids.WriteUInt32((uint)BoxItems[i]); slots.WriteByte((byte)i); n++; }
+            w.WriteByte(n);                 // count2
+            w.WriteBytes(ids.ToArray());    // count2 x u32 (itemIds)
+            w.WriteBytes(slots.ToArray());  // count2 x u8  (slots)
+            w.WriteByte(0);                 // tail
+            SendLobby(w.ToArray());
         }
 
         /// <summary>
