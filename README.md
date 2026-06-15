@@ -34,7 +34,7 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
 | **GameGuard** original | ❌ morto (servidor nProtect offline desde ~2007) — exige client no-GG |
 | Navegação inventário/loja ↔ lista de salas (botão **Previous**) | ✅ |
 
-> O único ❌ é o **GameGuard**: depende do servidor nProtect externo, offline desde ~2007 — não é limitação do nosso servidor.
+> O único ❌ é o **GameGuard** — não é limitação do nosso servidor, e sim de um serviço externo da nProtect offline há anos ([detalhe](#gameguard-veredito-honesto)).
 
 ---
 
@@ -52,7 +52,7 @@ openrakion/
 │   │   └── TUTORIAL.md    Setup passo a passo
 │   ├── config/           Templates (Settings.ini, GameServers.ini, worldserver.ini)
 │   └── README.md
-├── web/                  (legado) *.php do launcher original — referência (o launcher_web.py foi substituído pelo .LauncherWeb .NET)
+├── web/                  (legado) *.php do launcher original — referência histórica
 ├── tools/                xfs_read/repack (XFS2), worldprobe/listprobe (sondas), difftest (teste diferencial)
 ├── database/             Schema do banco (MariaDB)
 ├── docs/                 Guias (setup, GameGuard, config.xfs) + protocolo (world/buddy) + auditoria (CODE_AUDIT.md)
