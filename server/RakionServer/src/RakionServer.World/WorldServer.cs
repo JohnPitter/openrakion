@@ -391,8 +391,10 @@ namespace RakionServer.World
 
         /// <summary>
         /// Credita exp ao char ativo e processa level-ups (FUN_0040d300): acumula CharExp,
-        /// sobe CharLevel/CharLevelPoint pela curva classlevelinfo e persiste exp + nivel no
-        /// characterinfo. Devolve quantos niveis subiu (0 = nenhum).
+        /// sobe CharLevel/CharLevelPoint e persiste exp + nivel no characterinfo. O threshold de cada
+        /// nivel e' o MEIO do intervalo da curva classlevelinfo ((curva[L-1]+curva[L])/2) — house-rule
+        /// p/ "barra cheia = upa" exato (o cliente desenha o cheio no meio do span; ver loop).
+        /// Devolve quantos niveis subiu (0 = nenhum).
         /// </summary>
         public int GrantExp(ClientSession s, uint exp)
         {
@@ -402,8 +404,14 @@ namespace RakionServer.World
             int ups = 0;
             while (s.CharLevel < 99)
             {
-                int next = NextLevelExp(s.CharClass, s.CharLevel);
-                if (next <= 0 || s.CharExp < next) break;
+                int full = NextLevelExp(s.CharClass, s.CharLevel);              // curva ORIGINAL: exp p/ o proximo nivel (curva[L])
+                if (full <= 0) break;                                           // teto da curva (sem proximo nivel)
+                // HOUSE-RULE (desvio consciente da curva oficial; o DB fica intacto): o cliente desenha a barra
+                // "cheia" no MEIO do intervalo do nivel — denom = (curva[L-1]+curva[L])/2 (confirmado in-game:
+                // nv3 = 287 == (188+386)/2). Subimos no MESMO ponto p/ "barra cheia = upa" exato. Custo: leveling
+                // ~1.5-2x mais rapido que o original.
+                int next = (NextLevelExp(s.CharClass, (byte)(s.CharLevel - 1)) + full) / 2;
+                if (s.CharExp < next) break;
                 s.CharLevel++;
                 s.CharLevelPoint++;
                 ups++;

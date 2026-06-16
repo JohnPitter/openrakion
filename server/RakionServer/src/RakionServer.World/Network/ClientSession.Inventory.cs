@@ -364,10 +364,24 @@ namespace RakionServer.World.Network
                 exp = BonusExp(exp); gold = BonusGold(gold);   // bônus de PU (pu_config) sobre o valor base
                 Gold += gold;
                 if (gold > 0 && GameInfoId > 0) _ = _server.Db.AddGoldAsync(GameInfoId, (int)gold);
-                _server.GrantExp(this, exp);
-                Log.Ok("field", "[{0}] 0x53 stage clear solo — exp={1} gold={2} creditados", Slot, exp, gold);
+                int ups = _server.GrantExp(this, exp);
+                if (ups > 0) SendLevelUp();                    // 0x51 ao cliente: o PvP (Op_0x50_Recon) manda apos o GrantExp;
+                                                               // sem ele o solo sobe o nivel so' no DB (aparece no relog), nunca na tela -> barra presa
+                Log.Ok("field", "[{0}] 0x53 stage clear solo — exp={1} gold={2}{3} creditados", Slot, exp, gold,
+                    ups > 0 ? $" (+{ups} nivel -> {CharLevel})" : "");
             }
             catch (Exception ex) { Log.Warn("field", "[{0}] 0x53 solo parse: {1}", Slot, ex.Message); }
+        }
+
+        /// <summary>LOBBY 0x51 (level-up) ao proprio: [51 00][level][u16 levelPoint]. MESMO frame que o
+        /// caminho PvP (Op_0x50_Recon) manda apos o GrantExp; sem ele o solo sobe o nivel server-side mas o
+        /// cliente fica preso no nivel antigo (barra travada, ex.: 188/133) ate um relog.</summary>
+        private void SendLevelUp()
+        {
+            byte[] f = { 0x51, 0x00, CharLevel,
+                         (byte)(CharLevelPoint & 0xff), (byte)(CharLevelPoint >> 8 & 0xff) };
+            SendEncryptedFrame(f);
+            Log.Ok("level", "[{0}] 0x51 level-up -> nivel {1} (levelPoint {2}) ao cliente", Slot, CharLevel, CharLevelPoint);
         }
     }
 }
