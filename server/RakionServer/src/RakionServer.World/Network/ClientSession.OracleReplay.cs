@@ -182,6 +182,22 @@ namespace RakionServer.World.Network
                 case 0x34: // Buy Power User: concede o PU + destrava o popup (testando status=0 p/ sem erro)
                     HandleBuyPowerUser();
                     return true;
+                case 0x46: // o cliente manda 0x46 ao SAIR/dar giveup no stage. Sem o eco FIELD 0x46 [seat]
+                    // (+ 0x44 fim) ele trava "waiting for world" — MESMO motivo documentado no Op_0x46_Recon
+                    // (PvP). Em SOLO o opcode caía no catch-all e era ENGOLIDO -> o "sair do stage" não voltava.
+                    {
+                        var fld = _server.GetField(FieldId);
+                        if (fld == null || fld.Mode != 0) return false;   // PvP/sem field -> dispatch real (Op_0x46_Recon)
+                        fld.BroadcastField(0x46, new[] { FieldSeat });    // eco que destrava o "waiting for world"
+                        fld.OnPlayerDeath(FieldSeat, killerSeat: -1, cause: 0);
+                        if (fld.CountAlive(0) + fld.CountAlive(1) == 0)
+                        {
+                            fld.EndMatch(0);
+                            fld.BroadcastLobby(fld.BuildMatchEnd(2));      // 0x44 -> volta ao game room (= fim do clear)
+                        }
+                        Log.Ok("lobby", "[{0}] 0x46 saída do stage solo -> eco FIELD 0x46 + 0x44 (destrava waiting-world)", Slot);
+                        return true;
+                    }
                 default:
                     // Shop list/loadout (0x2d/0x2f) E buy (0x2e) DEVEM chegar aos handlers reais
                     // (Op_RoomRosterSync/Op_GroupMemberInfo/Op_RoomMemberQuery) -> NAO consumir aqui, deixa o
@@ -189,10 +205,10 @@ namespace RakionServer.World.Network
                     if (opcode == 0x2d || opcode == 0x2e || opcode == 0x2f || opcode == 0x33) return false;
                     // Salas BATTLE/PvP (Mode != 0): os opcodes de COMBATE vao aos handlers reais do
                     // motor de partida — 0x4d (par golem/facing: y==0 = golem inimigo destruido ->
-                    // fim de round), 0x4f (morte), 0x46 (hit), 0x3d (troca de arma), 0x50 (reporte
-                    // de exp/gold do fim de partida -> level-up). No SOLO (Mode 0) continuam
-                    // engolidos: o combate e' client-side e o 0x4d (y==0) encerraria o stage.
-                    if (opcode == 0x4d || opcode == 0x4f || opcode == 0x46 || opcode == 0x3d || opcode == 0x50)
+                    // fim de round), 0x4f (morte), 0x3d (troca de arma), 0x50 (reporte de exp/gold do
+                    // fim de partida -> level-up). No SOLO (Mode 0) continuam engolidos: o combate e'
+                    // client-side e o 0x4d (y==0) encerraria o stage. (0x46 tem case próprio acima — solo tb.)
+                    if (opcode == 0x4d || opcode == 0x4f || opcode == 0x3d || opcode == 0x50)
                     {
                         var bf = _server.GetField(FieldId);
                         if (bf != null && bf.Mode != 0) return false; // dispatch -> Op_0xNN_Recon
@@ -251,6 +267,7 @@ namespace RakionServer.World.Network
                 BinaryPrimitives.WriteUInt32LittleEndian(f0c.AsSpan(77), CharLose);    // lose@77
                 BinaryPrimitives.WriteUInt32LittleEndian(f0c.AsSpan(81), CharDraw);    // draw@81
                 f0c[96] = CharLevel;                                                   // nivel@96 (u8)
+                BinaryPrimitives.WriteUInt32LittleEndian(f0c.AsSpan(97), (uint)CharExp);    // exp@97 (u32) — CONFIRMADO (oraculo: 49 = char lvl 1, <70). Sem isto o relog mostrava a exp FIXA do oraculo -> o ganho de exp do stage "sumia" da conta
                 BinaryPrimitives.WriteUInt32LittleEndian(f0c.AsSpan(101), CharLevelPoint); // levelpoint@101
                 // stats alocados @103 (u16 LE cada, 20 bytes): offset CRAVADO via captura do original com stats
                 // distintivos 41..50 (apareceram como 29 00 2a 00.. no 0x0C). DEPOIS do levelpoint (cujo u32@101
@@ -321,7 +338,7 @@ namespace RakionServer.World.Network
         /// Parse do 0x3b (FUN_00423580: name\0 senha\0 desc\0 [map][mode][rounds][u16 durSec]...):
         /// guarda map/mode/rounds/duracao da sala p/ aplicar ao Field no spawn (0x4b). Mapas Battle
         /// (200-213) vem com mode 1-4; rounds validado &lt; 0x16 no original (sala de stage = 1);
-        /// durSec validado em 0x122..0x4ba (290..1210s).
+        /// durSec validado em 0x1e..0xE10 (30..3600s; alargado do RE 290..1210 que travava stages curtos = 288s).
         /// </summary>
         private void ParseRoomCreate(byte[] data)
         {
@@ -335,7 +352,12 @@ namespace RakionServer.World.Network
                     byte rounds = p.Byte(); // param_3[+2] (<0x16)
                     if (rounds >= 1 && rounds < 0x16) PendingRoomRounds = rounds;
                     ushort dur = p.UInt16();
-                    if (dur >= 0x122 && dur <= 0x4ba) PendingRoomDurationSec = dur;
+                    // RANGE ALARGADO p/ aceitar QUALQUER stage (30s..1h). O cliente é autoritativo da duração
+                    // do stage (combate client-side); rejeitar a dur faz o field cair no default 432 -> o 0x48
+                    // (RemainingSec = dur+3) anuncia o tempo ERRADO -> o cliente TRAVA o stage (esperava o tempo
+                    // do mapa). Era esse o bug do Stage 3 (288s = 0x120, rejeitado pelo floor antigo de 290) —
+                    // Stage 2 (432s) passava no range antigo e por isso só ele funcionava. Floor 30s = anti-lixo.
+                    if (dur >= 0x1e && dur <= 0xE10) PendingRoomDurationSec = dur;
                 }
             }
             catch { PendingRoomMap = 0; PendingRoomMode = 0; PendingRoomDurationSec = 0; PendingRoomRounds = 0; }

@@ -191,7 +191,7 @@ namespace RakionServer.World
                     lock (Fields) snapshot = Fields.ToArray();
                     foreach (var f in snapshot)
                     {
-                        if (f.State != 2 || f.Mode == 0) continue;
+                        if (f.State != 2) continue;   // solo E PvP — sem o clock o cliente solo nao manda input (trava no briefing)
                         foreach (var r in f.Slots)
                         {
                             var s = r.Session;

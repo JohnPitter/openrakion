@@ -7,7 +7,7 @@ $bin = "bin\Release\net9.0"
 
 function Start-Svc([string]$proc, [string]$exe, [string]$argline) {
     if (Get-Process -Name $proc -ErrorAction SilentlyContinue) { Write-Host "= $proc já rodando"; return }
-    if (-not (Test-Path $exe)) { Write-Host "! $proc: build ausente ($exe) — rode 'dotnet build -c Release'"; return }
+    if (-not (Test-Path $exe)) { Write-Host "! ${proc}: build ausente ($exe) — rode 'dotnet build -c Release'"; return }
     Start-Process -FilePath $exe -ArgumentList $argline -WorkingDirectory (Split-Path $exe) -WindowStyle Hidden
     Write-Host "+ $proc iniciado"
 }

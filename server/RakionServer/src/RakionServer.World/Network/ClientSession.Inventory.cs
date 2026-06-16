@@ -52,26 +52,25 @@ namespace RakionServer.World.Network
         }
 
         /// <summary>
-        /// 0x31 box-add: exibe um item no grid do BOX. O handler do cliente (FUN_0047d1d0) e' um MOVE com
-        /// descritor de ORIGEM e de DESTINO, cada um escrevendo na celula = slot do descritor:
-        ///   origem  (srcType==0 box): grava srcItem  na celula srcSlot   (call 0x47d3c9)
-        ///   destino (destType==0 box): grava destItem na celula destSlot (call 0x47d740)
-        /// Layout apos [u16 0x31][u16 seq]: [u32 srcDesc][u32 destDesc][u16 srcItem][u16 destItem][u32 lvl][u32 val].
-        /// Descritor = slot no byte baixo, type no byte 1 (0 = box; slot &lt; 256 mantem type=0). Confirmado via frida.
-        /// FIX overwrite: destDesc deve ser boxSlot (estava 0 -> jogava todo item na celula 0). srcItem=0 limpa a
-        /// celula srcSlot=boxSlot, e logo em seguida o destino grava destItem=itemId na MESMA celula boxSlot.
+        /// 0x31 box-add: exibe um item no grid do BOX como um "move" da celula p/ ela mesma (srcItem=0 limpa,
+        /// destItem=itemId grava). Formato de 24B CAPTURADO do box-render original (forma que o cliente ja' viu)
+        /// — mantido byte-a-byte; so' o CONTADOR (v2, off17) carrega 1 p/ pocao e 0 p/ gear. Gear -> frame
+        /// identico ao comprovado (v2 ja' era 0); pocao -> mostra a quantidade no box (antes vinha 0). O
+        /// contador NAO causa o freeze do stage (cliente novo + contador 0 ainda travava, teste 15/06).
         /// </summary>
         public void SendBoxAdd(int itemId, byte boxSlot, byte level)
         {
             using var w = new PacketWriter();
             w.WriteWord(0x31);             // opcode @0
             w.WriteWord(0);                // seq @2
-            w.WriteUInt32(boxSlot);        // F1 (confirmado -> srcSlot)
-            w.WriteUInt32(0);              // F2 (confirmado -> param_7; revertido p/ 0)
-            w.WriteWord((ushort)(boxSlot << 8)); // F3 = [destType:lo=0 (box)][destSlot:hi=boxSlot] -- byte baixo era destType
-            w.WriteWord((ushort)itemId);   // F4 (confirmado -> destItem)
-            w.WriteUInt32(level == 0 ? 1u : level); // level
-            w.WriteUInt32(0x00403900);     // val (copiado da captura do 0x31 box-render do original)
+            w.WriteUInt32(boxSlot);        // F1 -> srcSlot
+            w.WriteUInt32(0);              // F2
+            w.WriteWord((ushort)(boxSlot << 8)); // F3 (off12) = [destType=0][destSlot=boxSlot]
+            w.WriteWord((ushort)itemId);   // F4 (off14) -> destItem
+            // off16..23 byte-fiel ao box-render capturado, EXCETO o contador (v2, off17):
+            w.WriteByte(level == 0 ? (byte)1 : level);   // off16 b2 (level; callers passam 1)
+            w.WriteUInt32(IsPotion(itemId) ? 1u : 0u);   // off17 v2 = CONTADOR da poção (gear=0 -> frame inalterado)
+            w.WriteByte(0x39); w.WriteByte(0x40); w.WriteByte(0); // off21..23 trailing do val 0x403900 (parse real ignora)
             SendEncryptedFrame(w.ToArray());
             Log.Ok("shop", "[{0}] 0x31 box-add: item {1} -> box slot {2}", Slot, itemId, boxSlot);
         }
@@ -123,6 +122,10 @@ namespace RakionServer.World.Network
             else if (slot < _potionSlot.Length) _potionSlot[slot] = item;
         }
 
+        /// <summary>Poção empilhável/contável (faixa de item-id 12000–12999, fiel ao FUN_0040c140/FUN_0040cd70).
+        /// Único ponto de verdade da faixa de poção neste domínio.</summary>
+        private static bool IsPotion(int itemId) => itemId >= 12000 && itemId <= 12999;
+
         /// <summary>Popula o quickslot de pocao com o que foi persistido (itembox.qslot) no login.</summary>
         public void LoadPotionSlot(System.Collections.Generic.IReadOnlyList<(int Cell, int ItemId)> entries)
         {
@@ -152,10 +155,19 @@ namespace RakionServer.World.Network
         /// O srcType no offset 3 (param_3) DECIDE o ramo: srcType=1 -> caminho do QUICKSLOT, que limpa/pinta
         /// o widget de pocao certo (array +0xa74 via FUN_004264a0). O formato antigo (24B, estilo box-render)
         /// punha [seq=00 00] nos offsets 2-3 -> o cliente lia srcType=0 SEMPRE (nunca tocava o quickslot) e os
-        /// campos desalinhavam -> "duplicou" e id corrompido -> AV no draw. b1/v1/b2/v2 = level/exp (0 p/ pocao).
+        /// campos desalinhavam -> "duplicou" e id corrompido -> AV no draw. b = level; **v = CONTADOR da
+        /// poção** (widget+0x194, lido cifrado pelo FUN_00440430) — o cliente EXIGE > 0 p/ deixar usar a poção
+        /// no jogo; cada célula = 1 poção no nosso modelo -> poção manda 1, não-poção 0 (campo vira exp/limit).
         /// </summary>
         private void SendPotionSlotMove(byte srcType, byte srcSlot, int newSrcItem, byte destType, byte destSlot, int newDestItem)
         {
+            // CONTADOR (v) = widget+0x194: > 0 deixa a poção visível/utilizável; 0 a deixa "zerada"/inerte.
+            // Cada célula = 1 poção no nosso modelo -> poção manda 1, não-poção 0 (lá o campo é exp/limit).
+            // NÃO causa o freeze do stage: com a build limpa (contador 0) e cliente NOVO o stage AINDA travava
+            // (teste in-game 15/06) -> o freeze é independente do contador (estado do cliente no-GG / pacote
+            // de entrada-no-stage, RE pendente). Por isso o contador volta — poção utilizável de novo.
+            uint srcCount  = IsPotion(newSrcItem)  ? 1u : 0u;
+            uint destCount = IsPotion(newDestItem) ? 1u : 0u;
             using var w = new PacketWriter();
             w.WriteWord(0x31);                  // off0  msgType (dispatch do cliente)
             w.WriteByte(0);                     // off2  status = 0 (sucesso; != 0 mostraria erro)
@@ -163,12 +175,12 @@ namespace RakionServer.World.Network
             w.WriteByte(srcSlot);               // off4  srcSlot
             w.WriteWord((ushort)newSrcItem);    // off5  novo item na origem (0 = celula esvaziada)
             w.WriteByte(0);                     // off7  b1 (level)
-            w.WriteUInt32(0);                   // off8  v1 (exp/limit)
+            w.WriteUInt32(srcCount);            // off8  v1 = CONTADOR da poção na origem (widget+0x194)
             w.WriteByte(destType);              // off12 destType
             w.WriteByte(destSlot);              // off13 destSlot
             w.WriteWord((ushort)newDestItem);   // off14 novo item no destino
             w.WriteByte(0);                     // off16 b2 (level)
-            w.WriteUInt32(0);                   // off17 v2 (exp/limit)
+            w.WriteUInt32(destCount);           // off17 v2 = CONTADOR da poção no destino (widget+0x194)
             SendEncryptedFrame(w.ToArray());
         }
 
@@ -190,8 +202,7 @@ namespace RakionServer.World.Network
             int srcItem  = srcSlot  < BoxItems.Count ? BoxItems[srcSlot]  : 0;
             int destItem = destSlot < BoxItems.Count ? BoxItems[destSlot] : 0;
             // FUN_0040c140: sucesso so' quando origem e destino sao pocoes (12000-12999) da mesma categoria.
-            bool stackablePotions = srcItem != 0 && destItem != 0
-                && srcItem >= 12000 && srcItem <= 12999 && destItem >= 12000 && destItem <= 12999;
+            bool stackablePotions = IsPotion(srcItem) && IsPotion(destItem);
             if (!stackablePotions)
             {
                 SendItemSlotError(3);   // nao-empilhavel -> aviso some com "erro" (fiel ao retorno 3/4 do original)
