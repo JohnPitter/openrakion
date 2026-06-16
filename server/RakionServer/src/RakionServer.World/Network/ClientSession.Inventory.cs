@@ -147,6 +147,16 @@ namespace RakionServer.World.Network
             Log.Ok("shop", "[{0}] 0x31 potion-add: item {1} -> quickslot {2}", Slot, itemId, cell);
         }
 
+        /// <summary>Pinta todas as células ocupadas do quickslot de poção (0x31 box->quickslot). Chamado na
+        /// ENTRADA DO LOBBY (0x14, guard _potionLoginPainted) p/ a poção AUTO-RENDERIZAR no relog SEM abrir o
+        /// inventário — o widget do potion-bar persiste no cliente entre lobby↔char-select. O 0x2c reusa este
+        /// mesmo paint como fallback (guard _potionPainted próprio) caso o widget ainda não exista na hora do 0x14.</summary>
+        public void PaintQuickslot()
+        {
+            for (byte cell = 0; cell < _potionSlot.Length; cell++)
+                if (_potionSlot[cell] != 0) SendPotionSlotAdd(_potionSlot[cell], cell);
+        }
+
         /// <summary>
         /// Resposta do move 0x31, FIEL ao layout que o handler do cliente FUN_0047d1d0 espera (= o que o
         /// worldserv original FUN_00421870 manda, 21 bytes), confirmado pela assinatura do FUN_0047d1d0:

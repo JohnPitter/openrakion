@@ -63,6 +63,12 @@ namespace RakionServer.World.Network
                     SendEncryptedFrame(BuildEndpoints0e());
                     SendEncryptedFrame(_r10);
                     Log.Ok("lobby", "[{0}] 0x0e (endpoints 40708/40709) + 0x10 enviados", Slot);
+                    // RE/DEAD-END (auto-render da poção no char-select): pintar o quickslot aqui NÃO renderiza.
+                    // Testado in-game no ato do 0x0e (~0.36s) E com delay (~1.2s e ~3s, ainda na fase de char-
+                    // select): o 0x31 é enviado (confirmado no log) mas nada aparece — logo NÃO é timing de
+                    // construção do widget, é o ESTADO DE MENU (o char-select não processa o 0x31 do quickslot;
+                    // só o lobby processa). A poção aparece no char-select só DEPOIS da 1a ida ao lobby (widget
+                    // compartilhado, persiste). O 1o char-select pós-login exigiria capturar o frame do original.
                     return true;
                 case 0x14: // -> ack + info sessao (0x1f) + LISTA DE CANAIS (0x1e). Tb marca o "channel lobby":
                     // InField/FieldSecondary/Status=2 (FieldLobby) p/ os opcodes de sala/shop (0x2d/2e/2f) passarem
@@ -78,6 +84,10 @@ namespace RakionServer.World.Network
                     // de qualquer abertura do inventario), o espelho ja esta preenchido quando o painel monta.
                     // NADA alem de 14/1f/1e aqui: o original (mitm_full_113423) nao manda 0x13 nem
                     // pacotes de loja neste ponto. O box e' (re)pintado no open do inventario (0x2c/0x2d).
+                    // AUTO-RENDER da poção: pinta o quickslot persistido JA aqui, p/ aparecer no relog SEM abrir
+                    // o shop. Guard próprio (_potionLoginPainted) NÃO suprime o fallback do 0x2c — se o widget do
+                    // potion-bar ainda não existir neste ponto, o 1o open do inventário repinta.
+                    if (!_potionLoginPainted) { _potionLoginPainted = true; PaintQuickslot(); }
                     return true;
                 case 0x36:
                     SendEncryptedFrame(_r36);
@@ -144,14 +154,10 @@ namespace RakionServer.World.Network
                     // ja processou o move local e tem o buraco)
                     for (int i = 0; i < BoxItems.Count && i < 0x78; i++)
                         if (BoxItems[i] != 0) SendBoxAdd(BoxItems[i], (byte)i, 1);
-                    // quickslot persistido: pinta SO no 1o open da sessao — nas reentradas o estado vive
-                    // nos arrays do cliente (que processou os moves), e repintar era redundante/arriscado
-                    if (!_potionPainted)
-                    {
-                        _potionPainted = true;
-                        for (byte cell = 0; cell < _potionSlot.Length; cell++)
-                            if (_potionSlot[cell] != 0) SendPotionSlotAdd(_potionSlot[cell], cell);
-                    }
+                    // quickslot: FALLBACK do auto-render. Se a pintura na entrada do lobby (0x14) ainda não
+                    // pegou (widget do potion-bar não construído na hora), pinta aqui no 1o open. Guard
+                    // próprio (_potionPainted) -> não repinta nas reentradas.
+                    if (!_potionPainted) { _potionPainted = true; PaintQuickslot(); }
                     return true;
                 case 0x2D: // FIEL à captura: o 0x2d responde SEMPRE o ack curto (handle), NUNCA 0x13.
                     // O original (test com box vazio) so' manda o ack; mandar 0x13 (lista) prendia o cliente

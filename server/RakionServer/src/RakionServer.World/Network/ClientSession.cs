@@ -121,7 +121,8 @@ namespace RakionServer.World.Network
         private byte[] _invHandle = new byte[] { 0xb3, 0xc3, 0x86, 0x3f };
         private bool _r36bSent;   // 0x36b (arma a lista de games) so' 1x; remandar a cada poll travava o cliente
         private readonly int[] _potionSlot = new int[0x13];   // quickslot de pocao = user+0x1da4 (19 celulas)
-        private bool _potionPainted;  // quickslot persistido pintado so' no 1o open (0x2c) da sessao
+        private bool _potionPainted;          // quickslot pintado no 1o open (0x2c) da sessao — fallback do auto-render
+        private bool _potionLoginPainted;     // quickslot pintado na entrada do lobby (0x14) — auto-render no relog (CONFIRMADO)
 
         /// <summary>
         /// Cifra do canal lobby/field (AES-128, chave/IV reais do worldserv.exe). No original
