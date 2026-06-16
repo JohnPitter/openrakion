@@ -448,6 +448,23 @@ namespace RakionServer.World
             return d.Type != 8;
         }
 
+        /// <summary>Item é um SET (type 10) — um BUNDLE de peças, não uma peça equipável direta.</summary>
+        public bool IsSet(int itemId) => FindItemDef(itemId)?.Type == 10;
+
+        /// <summary>Composição de um SET (type 10): as colunas hit1-4/chit/ap do iteminfo guardam os itemIds
+        /// dos membros (1 por slot de gear, faixa 0-5) — confirmado: 9012 -> 1009/1109/1209/1309/1409/1509.
+        /// Fonte ÚNICA da composição. Só retorna membros que são itens válidos do catálogo (um valor que não
+        /// resolve em item é stat, não membro -> filtrado). Vazio se não for set ou sem membros válidos.</summary>
+        public System.Collections.Generic.IReadOnlyList<int> ExpandSetMembers(int setItemId)
+        {
+            var d = FindItemDef(setItemId);
+            if (d == null || d.Type != 10) return System.Array.Empty<int>();
+            var members = new System.Collections.Generic.List<int>(6);
+            foreach (var m in new[] { d.Hit1, d.Hit2, d.Hit3, d.Hit4, d.CHit, d.Ap })
+                if (m > 0 && FindItemDef(m) != null) members.Add(m);
+            return members;
+        }
+
         /// <summary>Carrega o catalogo de itens uma vez (iteminfo).</summary>
         public async Task LoadItemDefsCacheAsync()
         {
@@ -573,6 +590,17 @@ namespace RakionServer.World
                 // não-gear (transform/especial/lotto) ficam no DB mas NÃO carregam no box -> sem célula
                 // invisível e sem crash do painel no "Previous" (ver IsBoxDisplayable).
                 var loadedBox = await _db.LoadItemBoxAsync(gi.Id);
+                // SETS (type 10) são BUNDLES de peças de gear (iteminfo hit1-4/chit/ap = itemIds dos membros).
+                // Desempacota no armazem (troca o set pelas peças) — o cliente não tem ação de "usar set", então
+                // sem isto o set fica inerte no box. Idempotente: após desempacotar não resta set p/ desempacotar.
+                var setsInBox = loadedBox.FindAll(IsSet);
+                if (setsInBox.Count > 0)
+                {
+                    foreach (var setId in setsInBox)
+                        await _db.UnpackSetInBoxAsync(gi.Id, setId, ExpandSetMembers(setId));
+                    loadedBox = await _db.LoadItemBoxAsync(gi.Id);          // recarrega já desempacotado
+                    Log.Ok("login", "[{0}] {1} set(s) type-10 desempacotado(s) no armazem", s.Slot, setsInBox.Count);
+                }
                 var boxGear = loadedBox.FindAll(IsBoxDisplayable);          // só gear entra no grid
                 s.BoxItems = new System.Collections.Generic.List<int>(new int[0x78]); // grade esparsa de 120 celulas (0=vazia)
                 for (int bi = 0; bi < boxGear.Count && bi < 0x78; bi++) s.BoxItems[bi] = boxGear[bi]; // carrega sequencial (itembox nao guarda posicao)

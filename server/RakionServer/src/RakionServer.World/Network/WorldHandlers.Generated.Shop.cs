@@ -83,19 +83,24 @@ namespace RakionServer.World.Network
             uint newBalance = balance - (uint)price;
             if (payGold) u.Gold = newBalance; else u.Cash = newBalance;
             u.ShopBuyInProgress = true;
-            // slot do box = 1a celula VAZIA da grade (grade esparsa de 120, 0=vazia). Casa com o grid do cliente
-            // e preenche buracos deixados por venda/move (em vez de sempre no fim).
-            int freeSlot = u.BoxItems.IndexOf(0);
-            // Só GEAR (type<=5) entra no display do box: não-gear (transform/especial) renderiza invisível e
-            // crasha o painel. Ele ainda é comprado (debita) e persiste no itembox (DB) abaixo — só não pinta
-            // no grid. Assim BoxItems = sempre gear -> todos os loops de paint (0x13/0x2e/0x31) ficam limpos.
-            if (ctx.World.IsBoxDisplayable(itemId) && freeSlot >= 0)
-                u.BoxItems[freeSlot] = itemId;   // ocupa a celula vazia -> exibido no proximo paint
-            byte invSlot = (byte)(freeSlot >= 0 ? freeSlot : 0);
+            // SET (type 10) = bundle: a COMPRA entrega as 6 peças de gear (membros), NÃO o item-bundle. Demais
+            // itens: concede o próprio. (O mesmo desempacote roda no login como rede de segurança.)
+            var grantItems = ctx.World.ExpandSetMembers(itemId);
+            if (grantItems.Count == 0) grantItems = new System.Collections.Generic.List<int> { itemId };
+            // ocupa a 1a célula VAZIA da grade esparsa (120, 0=vazia) p/ CADA item concedido; registra (item,slot)
+            // p/ o delta da resposta. Só GEAR (displayable) entra no grid; não-gear persiste mas não pinta.
+            var granted = new System.Collections.Generic.List<(int Item, byte Slot)>(grantItems.Count);
+            foreach (var it in grantItems)
+            {
+                int freeSlot = u.BoxItems.IndexOf(0);
+                if (ctx.World.IsBoxDisplayable(it) && freeSlot >= 0) u.BoxItems[freeSlot] = it; // ocupa -> exibido no próximo paint
+                granted.Add((it, (byte)(freeSlot >= 0 ? freeSlot : 0)));
+            }
             // NAO adiciona em u.Items (= useriteminfo/APARENCIA equipada): o item de box NUNCA vai pro corpo 3D (crash).
 
-            Log.Ok("shop", "[{0}] BUY item {1} type={2} por {3} {4} (saldo {5}->{6}) char={7} slot={8}",
-                u.Slot, itemId, def.Type, price, payGold ? "GOLD" : "CASH", balance, newBalance, u.ActiveCharId, invSlot);
+            Log.Ok("shop", "[{0}] BUY item {1} type={2} por {3} {4} (saldo {5}->{6}) char={7} -> {8} peça(s){9}",
+                u.Slot, itemId, def.Type, price, payGold ? "GOLD" : "CASH", balance, newBalance, u.ActiveCharId,
+                granted.Count, grantItems.Count > 1 ? $" (set {itemId} desempacotado na compra)" : "");
 
             // PERSISTE em background (handler e sync; DB e async). Reverte saldo em memoria se falhar.
             int gameInfoId = u.GameInfoId; string acct = u.UserId;
@@ -108,7 +113,7 @@ namespace RakionServer.World.Network
                     if (gold) { if (gameInfoId > 0) await db.AddGoldAsync(gameInfoId, -p); else ok = false; }
                     else { if (!string.IsNullOrEmpty(acct)) await db.AddCashAsync(acct, -p); else ok = false; }
                     if (ok && gameInfoId > 0)
-                        ok = await db.InsertItemBoxAsync(gameInfoId, itemId, 0) > 0; // BOX (itembox), nao useriteminfo
+                        foreach (var it in grantItems) { if (await db.InsertItemBoxAsync(gameInfoId, it, 0) <= 0) { ok = false; break; } } // BOX (itembox)
                     else ok = false;
                 }
                 catch (System.Exception ex) { ok = false; Log.Error("shop", "[{0}] persist BUY item {1}: {2}", u.Slot, itemId, ex.Message); }
@@ -137,11 +142,11 @@ namespace RakionServer.World.Network
             if (cVar1 == 0x01) { w.WriteUInt32(0); w.WriteUInt32(0); w.WriteUInt32(0); w.WriteWord(off4); }
             // DELTA do inventario: c2=1 com o item novo (+0x1bc4). Sem isso o cliente fecha o dialog mas NAO
             // adiciona o item nem desconta o gold ("nada aconteceu"). Bloco c2 = c2*u32(itemId) ++ c2*u8(slot).
-            w.WriteByte(0);                  // c1 = 0 (sem delta de loadout +0x1b78)
-            w.WriteByte(1);                  // c2 = 1 (1 item novo no inventario)
-            w.WriteUInt32((uint)itemId);     // block2a: itemId (c2*u32)
-            w.WriteByte(invSlot);            // block2b: slot/celula do Box (c2*u8)
-            w.WriteByte(0);                  // c3 = 0
+            w.WriteByte(0);                          // c1 = 0 (sem delta de loadout +0x1b78)
+            w.WriteByte((byte)granted.Count);        // c2 = nº de itens novos (set = 6 peças; senão 1)
+            foreach (var g in granted) w.WriteUInt32((uint)g.Item);  // block2a: itemIds (c2*u32)
+            foreach (var g in granted) w.WriteByte(g.Slot);          // block2b: slots (c2*u8)
+            w.WriteByte(0);                          // c3 = 0
             u.SendLobby(w.ToArray());
             // BOX render: o grid so' pinta em menu de loja (FUN_0047d1d0/FUN_004774e0 gate 0x19/1a/1b). A COMPRA
             // acontece com o menu garantidamente em loja — UNICO momento confiavel. Entao re-pinto TODO o box

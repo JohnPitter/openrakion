@@ -298,6 +298,48 @@ namespace RakionServer.World.Database
             catch (Exception ex) { Log.Error("db", "InsertItemBoxAsync({0},{1}): {2}", userId, itemId, ex.Message); return 0; }
         }
 
+        /// <summary>Desempacota UM set (type 10) do ARMAZEM: numa transação, remove a linha do set (qslot=0) e
+        /// insere as peças membros com o MESMO limittime. Atômico (rollback em falha); só insere se o set
+        /// existia -> idempotente, sem duplicar. Retorna o nº de peças inseridas (0 = set ausente/já feito).</summary>
+        public async Task<int> UnpackSetInBoxAsync(int userId, int setItemId, IReadOnlyList<int> members)
+        {
+            if (members.Count == 0) return 0;
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var tx = await c.BeginTransactionAsync();
+                int rowId, limit;
+                await using (var sel = new MySqlCommand(
+                    "SELECT id,limittime FROM itembox WHERE userid=@uid AND itemid=@iid AND qslot=0 ORDER BY id LIMIT 1", c, tx))
+                {
+                    sel.Parameters.AddWithValue("@uid", userId);
+                    sel.Parameters.AddWithValue("@iid", setItemId);
+                    await using var r = await sel.ExecuteReaderAsync();
+                    if (!await r.ReadAsync()) return 0;            // set ausente -> tx (await using) faz rollback
+                    rowId = r.GetInt32(0); limit = r.GetInt32(1);
+                }
+                await using (var del = new MySqlCommand("DELETE FROM itembox WHERE id=@id", c, tx))
+                {
+                    del.Parameters.AddWithValue("@id", rowId);
+                    await del.ExecuteNonQueryAsync();
+                }
+                foreach (var m in members)
+                {
+                    await using var ins = new MySqlCommand(
+                        "INSERT INTO itembox (userid,itemid,limittime,qslot) VALUES (@uid,@iid,@lt,0)", c, tx);
+                    ins.Parameters.AddWithValue("@uid", userId);
+                    ins.Parameters.AddWithValue("@iid", m);
+                    ins.Parameters.AddWithValue("@lt", limit);
+                    await ins.ExecuteNonQueryAsync();
+                }
+                await tx.CommitAsync();
+                Log.Ok("shop", "set {0} desempacotado (user {1}): {2} peças, limittime {3}", setItemId, userId, members.Count, limit);
+                return members.Count;
+            }
+            catch (Exception ex) { Log.Error("db", "UnpackSetInBoxAsync({0},{1}): {2}", userId, setItemId, ex.Message); return 0; }
+        }
+
         /// <summary>Remove UMA linha do ARMAZEM (itembox, qslot=0) com o itemId dado — a VENDA de um item do
         /// box. Itens sao fungiveis por itemId, entao apaga a 1a linha (ORDER BY id) com esse id.</summary>
         public async Task DeleteItemBoxByItemAsync(int userId, int itemId)
