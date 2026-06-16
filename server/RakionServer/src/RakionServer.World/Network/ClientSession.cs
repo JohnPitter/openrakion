@@ -67,6 +67,7 @@ namespace RakionServer.World.Network
         public byte CharLevel { get; set; } = 1;             // nivel do char ativo -> overlay 0x0C @96 (offset cravado no diff golden)
         public byte CharClass { get; set; }                  // classe do char ativo -> curva de level (classlevelinfo)
         public long CharExp { get; set; }                    // exp TOTAL acumulado do char ativo (level-up 0x50)
+        public byte[]? StageRanks { get; set; }              // ranks de stage (userstageinfo) -> overlay 0x0C @333 (RANK X CLEAR na seleção)
         public uint CharWin { get; set; }                    // -> overlay 0x0C @73 (captura-diff)
         public uint CharLose { get; set; }                   // -> overlay 0x0C @77
         public uint CharDraw { get; set; }                   // -> overlay 0x0C @81

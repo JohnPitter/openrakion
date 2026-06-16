@@ -349,9 +349,9 @@ namespace RakionServer.World.Network
             try
             {
                 var p = new PacketReader(data);
-                p.Byte();                      // idx
-                p.Byte();                      // cfgA
-                byte cfgB = p.Byte();          // cfgB = qtde de u16 a pular
+                byte stage = p.Byte();         // b0 (<100) = stage id (confirmado in-game: idx=3 = Stage 3)
+                byte rank = p.Byte();          // b1 (<6) = grade do rank (confirmado: 4 = Rank A; 0=nenhum, 1=D, 2=C, 3=B, 4=A, 5=S)
+                byte cfgB = p.Byte();          // count (<5) = qtde de u16 (map slots) a pular
                 for (int i = 0; i < cfgB && p.Remaining >= 2; i++) p.UInt16();
                 uint exp = p.CanRead(4) ? p.UInt32() : 0;
                 uint gold = p.CanRead(4) ? p.UInt32() : 0;
@@ -364,10 +364,11 @@ namespace RakionServer.World.Network
                 exp = BonusExp(exp); gold = BonusGold(gold);   // bônus de PU (pu_config) sobre o valor base
                 Gold += gold;
                 if (gold > 0 && GameInfoId > 0) _ = _server.Db.AddGoldAsync(GameInfoId, (int)gold);
+                if (rank > 0 && ActiveCharId > 0) _ = _server.Db.SaveStageRankAsync(ActiveCharId, stage, rank); // melhor rank por stage (userstageinfo)
                 int ups = _server.GrantExp(this, exp);
                 if (ups > 0) SendLevelUp();                    // 0x51 ao cliente: o PvP (Op_0x50_Recon) manda apos o GrantExp;
                                                                // sem ele o solo sobe o nivel so' no DB (aparece no relog), nunca na tela -> barra presa
-                Log.Ok("field", "[{0}] 0x53 stage clear solo — exp={1} gold={2}{3} creditados", Slot, exp, gold,
+                Log.Ok("field", "[{0}] 0x53 stage clear solo — stage={1} rank={2} exp={3} gold={4}{5}", Slot, stage, rank, exp, gold,
                     ups > 0 ? $" (+{ups} nivel -> {CharLevel})" : "");
             }
             catch (Exception ex) { Log.Warn("field", "[{0}] 0x53 solo parse: {1}", Slot, ex.Message); }

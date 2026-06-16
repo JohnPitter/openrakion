@@ -281,6 +281,10 @@ namespace RakionServer.World.Network
                 // APARENCIA EQUIPADA (body@119 = itens u16, body@157 = enhance): montada do DB (session.Items).
                 // E' DAQUI que o cliente renderiza o gear 3D + os ICONES do equip (NAO do 0x13, que cai num stub).
                 ApplyEquipAppearance(f0c);
+                // RANKS DE STAGE @333 (1 byte/stage, stage N -> @332+N; 0=sem rank, 1=D, 2=C, 3=B, 4=A, 5=S). CAPTURADO
+                // do original (plantei ranks distintos na userstageinfo -> apareceram byte-a-byte em 0x0C@333). Sobrescreve
+                // o array do oraculo (rank do char do oraculo) com os do player -> "RANK X CLEAR"/Last Rank na seleção.
+                if (StageRanks != null) Array.Copy(StageRanks, 1, f0c, 333, Math.Min(99, StageRanks.Length - 1));
             }
             // handle de sessao p/ os acks 0x2c/0x2d (bytes 13..16 do 0x0C; ver _invHandle).
             if (f0c.Length >= 17) _invHandle = new[] { f0c[13], f0c[14], f0c[15], f0c[16] };

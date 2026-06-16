@@ -446,6 +446,55 @@ namespace RakionServer.World.Database
             catch (Exception ex) { Log.Error("db", "AddCharacterResultAsync({0}): {1}", characterId, ex.Message); }
         }
 
+        /// <summary>Persiste o MELHOR rank do char num stage (userstageinfo). rank = grade do 0x53 (cfgA):
+        /// 0=nenhum, 1=D, 2=C, 3=B, 4=A, 5=S (maior = melhor). UPDATE-then-INSERT (sem depender de unique key).</summary>
+        public async Task SaveStageRankAsync(int characterId, byte stage, int rank)
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var up = new MySqlCommand(
+                    "UPDATE userstageinfo SET `rank`=GREATEST(`rank`,@r), updatetime=NOW() WHERE characterid=@cid AND stage=@st", c);
+                up.Parameters.AddWithValue("@r", rank);
+                up.Parameters.AddWithValue("@cid", characterId);
+                up.Parameters.AddWithValue("@st", stage);
+                if (await up.ExecuteNonQueryAsync() == 0)
+                {
+                    await using var ins = new MySqlCommand(
+                        "INSERT INTO userstageinfo (characterid,stage,`rank`,updatetime) VALUES (@cid,@st,@r,NOW())", c);
+                    ins.Parameters.AddWithValue("@cid", characterId);
+                    ins.Parameters.AddWithValue("@st", stage);
+                    ins.Parameters.AddWithValue("@r", rank);
+                    await ins.ExecuteNonQueryAsync();
+                }
+                Log.Ok("db", "userstageinfo: char {0} stage {1} rank {2} (melhor)", characterId, stage, rank);
+            }
+            catch (Exception ex) { Log.Error("db", "SaveStageRankAsync({0},{1}): {2}", characterId, stage, ex.Message); }
+        }
+
+        /// <summary>Carrega os ranks de stage do char (userstageinfo) num array indexado por stage (0=sem rank,
+        /// 1=D..5=S). Vai no overlay do 0x0C@333 (1 byte/stage) -> "RANK X CLEAR"/Last Rank na seleção de stages.</summary>
+        public async Task<byte[]> LoadStageRanksAsync(int characterId)
+        {
+            var arr = new byte[100];
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand("SELECT stage,`rank` FROM userstageinfo WHERE characterid=@cid", c);
+                cmd.Parameters.AddWithValue("@cid", characterId);
+                await using var r = await cmd.ExecuteReaderAsync();
+                while (await r.ReadAsync())
+                {
+                    int stage = r.GetByte(0);
+                    if (stage >= 1 && stage < arr.Length) arr[stage] = (byte)Math.Clamp(r.GetInt32(1), 0, 255);
+                }
+            }
+            catch (Exception ex) { Log.Error("db", "LoadStageRanksAsync({0}): {1}", characterId, ex.Message); }
+            return arr;
+        }
+
         /// <summary>
         /// Curva de level (classlevelinfo): exp TOTAL necessario p/ avancar de cada nivel,
         /// chaveada por (classe, nivel). Carregada 1x no boot (como o catalogo de itens).

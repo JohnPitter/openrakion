@@ -577,6 +577,7 @@ namespace RakionServer.World
                 s.BoxItems = new System.Collections.Generic.List<int>(new int[0x78]); // grade esparsa de 120 celulas (0=vazia)
                 for (int bi = 0; bi < boxGear.Count && bi < 0x78; bi++) s.BoxItems[bi] = boxGear[bi]; // carrega sequencial (itembox nao guarda posicao)
                 s.LoadPotionSlot(await _db.LoadQuickslotAsync(gi.Id));     // quickslot de pocao persistido (itembox.qslot)
+                s.StageRanks = await _db.LoadStageRanksAsync(ch.Id);       // ranks de stage -> overlay 0x0C@333 (RANK X CLEAR na seleção)
                 int boxHidden = loadedBox.Count - boxGear.Count;
                 Log.Ok("login", "[{0}] char ativo='{1}' id={2} class={3} lvl={4} itens={5} box={6}{7}", s.Slot, ch.Name, ch.Id, ch.Class, ch.Level, s.Items.Count, boxGear.Count, boxHidden > 0 ? $" (+{boxHidden} não-gear ocultos)" : "");
             }
