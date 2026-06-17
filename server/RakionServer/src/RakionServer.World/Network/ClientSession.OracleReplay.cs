@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Net;
 using System.Threading.Tasks;
 using RakionServer.Common;
+using RakionServer.World.CharSelect;
 
 namespace RakionServer.World.Network
 {
@@ -63,12 +64,14 @@ namespace RakionServer.World.Network
                     SendEncryptedFrame(BuildEndpoints0e());
                     SendEncryptedFrame(_r10);
                     Log.Ok("lobby", "[{0}] 0x0e (endpoints 40708/40709) + 0x10 enviados", Slot);
-                    // RE/DEAD-END (auto-render da poção no char-select): pintar o quickslot aqui NÃO renderiza.
-                    // Testado in-game no ato do 0x0e (~0.36s) E com delay (~1.2s e ~3s, ainda na fase de char-
-                    // select): o 0x31 é enviado (confirmado no log) mas nada aparece — logo NÃO é timing de
-                    // construção do widget, é o ESTADO DE MENU (o char-select não processa o 0x31 do quickslot;
-                    // só o lobby processa). A poção aparece no char-select só DEPOIS da 1a ida ao lobby (widget
-                    // compartilhado, persiste). O 1o char-select pós-login exigiria capturar o frame do original.
+                    // DEAD-END FINAL (auto-render da poção no char-select — NÃO re-tentar): o paint do quickslot
+                    // (0x31 -> FUN_0047d1d0) é gated por menu-state (só 0x19/1a/1b; char-select=0x16 sai cedo em
+                    // rakion.bin@0x47d21d). Patch trocando `cmp 0x1b`->`cmp 0x16` (off 0x7c61c) CRASHA (AV in-game,
+                    // testado): após o gate o handler escreve num WIDGET via FUN_0044deb0(*(DAT_004feed0+0x17c)) que
+                    // assume o painel do INVENTÁRIO — no char-select é outro painel -> AV. E mesmo "pulando o
+                    // widget" não renderiza: o char-select pinta o quickslot do AccountInfo no BUILD do painel
+                    // (logo após o 0x0c), quando ainda está VAZIO (o 0x0c não carrega quickslot; o 0x31 chega
+                    // depois). Teto = render no LOBBY (0x14 + fallback 0x2c), que persiste pro char-select depois.
                     return true;
                 case 0x14: // -> ack + info sessao (0x1f) + LISTA DE CANAIS (0x1e). Tb marca o "channel lobby":
                     // InField/FieldSecondary/Status=2 (FieldLobby) p/ os opcodes de sala/shop (0x2d/2e/2f) passarem
@@ -239,84 +242,22 @@ namespace RakionServer.World.Network
             Log.Ok("login", "[{0}] LoginComplete enviado (field2='{1}')", Slot, field2);
         }
 
-        // ---- REPLAY do oraculo (RakionWorldServ.exe ORIGINAL, capturado via MITM) -------------
-        // Resposta REAL de login = 3 frames: 0x0C (lista de chars), 0x0D (tabela zerada, 1332B),
-        // 0x10 (GameGuard challenge, enviado SO depois do handshake UDP — ver NotifyUdpReady).
-        // Usamos os BYTES EXATOS que o cliente real aceitou (e jogou): oracle_0c.bin (816B, 2
-        // chars JP+Maguinhooo = estado real da conta 'test') + oracle_0d.bin (1332B). O 0x10
-        // e' PULADO aqui (vai apos o ping UDP). Antes usavamos um 0x0C de 456B (1 char, captura
-        // velha) que CRASHAVA o cliente real — por isso a troca p/ os 816B do MITM.
-        private static byte[] ReadOracle(string name)
-        {
-            try
-            {
-                string p = System.IO.Path.Combine(AppContext.BaseDirectory, name);
-                return System.IO.File.Exists(p) ? System.IO.File.ReadAllBytes(p) : Array.Empty<byte>();
-            }
-            catch { return Array.Empty<byte>(); }
-        }
-
-        public void SendLoginResponseReplay()
-        {
-            byte[] f0c = ReadOracle("oracle_0c.bin");
-            byte[] f0d = ReadOracle("oracle_0d.bin");
-            if (f0d.Length == 0) { f0d = new byte[1332]; f0d[0] = 0x0d; f0d[3] = 0x01; } // fallback gerado
-            if (f0c.Length == 816)   // overlays só no oracle ORIGINAL (816B); re-pack do buddyname (≠816) vai verbatim
-            {
-                // OVERLAY DINAMICO do estado vivo (DB, carregado em LoadAndLogAsync ANTES deste envio).
-                // Offsets da active record CRAVADOS via captura-diff do worldserv original (setei DB
-                // levelpoint=99/win=88/lose=77/draw=66 e achei os offsets onde apareceram):
-                BinaryPrimitives.WriteUInt16LittleEndian(f0c.AsSpan(48), (ushort)PowerLevelPoint); // PU Bonus Points@48 (u16) — offset CRAVADO via captura (powerlevelpoint=51 -> 33 00)
-                BinaryPrimitives.WriteUInt32LittleEndian(f0c.AsSpan(56), Gold);        // gold@56
-                BinaryPrimitives.WriteUInt32LittleEndian(f0c.AsSpan(60), Cash);        // cash@60
-                BinaryPrimitives.WriteUInt32LittleEndian(f0c.AsSpan(73), CharWin);     // win@73
-                BinaryPrimitives.WriteUInt32LittleEndian(f0c.AsSpan(77), CharLose);    // lose@77
-                BinaryPrimitives.WriteUInt32LittleEndian(f0c.AsSpan(81), CharDraw);    // draw@81
-                f0c[96] = CharLevel;                                                   // nivel@96 (u8)
-                BinaryPrimitives.WriteUInt32LittleEndian(f0c.AsSpan(97), (uint)CharExp);    // exp@97 (u32) — CONFIRMADO (oraculo: 49 = char lvl 1, <70). Sem isto o relog mostrava a exp FIXA do oraculo -> o ganho de exp do stage "sumia" da conta
-                BinaryPrimitives.WriteUInt32LittleEndian(f0c.AsSpan(101), CharLevelPoint); // levelpoint@101
-                // stats alocados @103 (u16 LE cada, 20 bytes): offset CRAVADO via captura do original com stats
-                // distintivos 41..50 (apareceram como 29 00 2a 00.. no 0x0C). DEPOIS do levelpoint (cujo u32@101
-                // escreve ate 104, sobrepondo o stat[0]@103-104) p/ nao zerar o primeiro stat.
-                for (int i = 0; i < 10 && 103 + i * 2 + 1 < f0c.Length; i++)
-                    BinaryPrimitives.WriteUInt16LittleEndian(f0c.AsSpan(103 + i * 2), Stats[i]);
-                // APARENCIA EQUIPADA: body@119 = 7 itens u16, body@157 = 7 bytes (slot/enhance). CAPTURADO do
-                // servidor ORIGINAL p/ o JP (worldprobe headless vs 40708 + diff contra o oraculo). E' DAQUI que o
-                // cliente renderiza o gear 3D + os ICONES do equip no inventario (NAO do 0x13, que cai num stub).
-                // Antes zeravamos por crash de bone; com o cliente PATCHEADO (this+0x174=0) + itens nao-Helmet_D ok.
-                // APARENCIA EQUIPADA (body@119 = itens u16, body@157 = enhance): montada do DB (session.Items).
-                // E' DAQUI que o cliente renderiza o gear 3D + os ICONES do equip (NAO do 0x13, que cai num stub).
-                ApplyEquipAppearance(f0c);
-                // RANKS DE STAGE @333 (1 byte/stage, stage N -> @332+N; 0=sem rank, 1=D, 2=C, 3=B, 4=A, 5=S). CAPTURADO
-                // do original (plantei ranks distintos na userstageinfo -> apareceram byte-a-byte em 0x0C@333). Sobrescreve
-                // o array do oraculo (rank do char do oraculo) com os do player -> "RANK X CLEAR"/Last Rank na seleção.
-                if (StageRanks != null) Array.Copy(StageRanks, 1, f0c, 333, Math.Min(99, StageRanks.Length - 1));
-            }
-            // handle de sessao p/ os acks 0x2c/0x2d (bytes 13..16 do 0x0C; ver _invHandle).
-            if (f0c.Length >= 17) _invHandle = new[] { f0c[13], f0c[14], f0c[15], f0c[16] };
-            if (f0c.Length > 0) SendEncryptedFrame(f0c);
-            SendEncryptedFrame(f0d);
-            Log.Ok("login", "[{0}] replay oraculo enviado (0x0C {1}B gold={3} cash={4} + 0x0D {2}B, 0x10 apos UDP)", Slot, f0c.Length, f0d.Length, Gold, Cash);
-        }
-
+        // ---- Resposta de login: 0x0C (lista de chars do char-select) + 0x0D (tabela zerada) ----
         /// <summary>
-        /// Monta a APARENCIA EQUIPADA no 0x0C a partir do DB (session.Items). O @119 e' POSICIONAL por TYPE:
-        /// pos = type do item = itemId/100 - 10 (type0->pos0, type1->pos1 ... type5->pos5). CAPTURADO do servidor
-        /// ORIGINAL com um set balanceado (1 item/type). body@157[pos] = nivel/enhance do item. 1 item por type (dedup).
-        /// E' DAQUI que o cliente renderiza o gear 3D + os ICONES do equip (NAO do 0x13, stub no cliente GG-removido).
-        /// Item no slot errado (type != pos) faz o cliente buscar o bone errado -> crash fatal (ex: 'Helmet_D').
+        /// Envia a resposta de login SINTETIZADA de raiz: 0x0C (char-select, serializado de
+        /// <see cref="LoginCharList"/> pelo <see cref="LoginCharListWriter"/>) + 0x0D (tabela zerada, 1332B).
+        /// Sem replay de captura. O 0x10 (GameGuard) vai SÓ após o handshake UDP (ver NotifyUdpReady). O handle
+        /// de sessão (@13 do 0x0C) é o _invHandle, ecoado nos acks 0x2c/0x2d.
         /// </summary>
-        private void ApplyEquipAppearance(byte[] f0c)
+        public void SendLoginResponse()
         {
-            if (f0c.Length < 168) return;  // precisa de body@157 + 7 slots (= file 161..167)
-            var used = new System.Collections.Generic.HashSet<int>();
-            foreach (var it in Items)
-            {
-                int pos = it.ItemId / 100 - 10;  // type -> posicao do slot
-                if (pos < 0 || pos > 6 || !used.Add(pos)) continue;  // fora do equip (transforms 8xxx) ou type ja preenchido
-                BinaryPrimitives.WriteUInt16LittleEndian(f0c.AsSpan(123 + pos * 2), (ushort)it.ItemId); // body@119
-                f0c[161 + pos] = it.Level;                                                               // body@157 = enhance
-            }
+            var list = (LoginCharList ?? new CharList()) with { SessionHandle = _invHandle };
+            byte[] f0c = LoginCharListWriter.Build(list);
+            SendEncryptedFrame(f0c);
+            byte[] f0d = new byte[1332]; f0d[0] = 0x0d; f0d[3] = 0x01;   // 0x0D = tabela zerada (sintetizada)
+            SendEncryptedFrame(f0d);
+            Log.Ok("login", "[{0}] login sintetizado: 0x0C {1}B ({2} chars) + 0x0D {3}B (0x10 após o UDP)",
+                Slot, f0c.Length, list.Chars.Count, f0d.Length);
         }
 
         /// <summary>

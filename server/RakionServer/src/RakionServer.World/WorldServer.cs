@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using RakionServer.Common;
 using RakionServer.World.Database;
 using RakionServer.World.Network;
+using RakionServer.World.CharSelect;
 
 namespace RakionServer.World
 {
@@ -548,7 +549,7 @@ namespace RakionServer.World
             // Carrega gold/cash/level/itens do DB ANTES do 0x0C: o replay sobrepoe gold/cash do estado vivo
             // (o display reflete a compra). Sincrono p/ garantir s.Gold/s.Cash setados quando o 0x0C sai.
             await LoadAndLogAsync(s, s.UserId);
-            s.SendLoginResponseReplay();   // replay do oraculo (0x0C com overlay gold/cash + 0x0D, pula 0x10/GG)
+            s.SendLoginResponse();   // 0x0C sintetizado (lista de chars) + 0x0D — 0x10 vai apos o handshake UDP
         }
 
         private async Task LoadAndLogAsync(ClientSession s, string userId)
@@ -610,9 +611,50 @@ namespace RakionServer.World
                 Log.Ok("login", "[{0}] char ativo='{1}' id={2} class={3} lvl={4} itens={5} box={6}{7}", s.Slot, ch.Name, ch.Id, ch.Class, ch.Level, s.Items.Count, boxGear.Count, boxHidden > 0 ? $" (+{boxHidden} não-gear ocultos)" : "");
             }
             else { Log.Warn("login", "[{0}] '{1}' sem char ativo (characterinfo.used=1 ausente)", s.Slot, userId); }
+            s.LoginCharList = await BuildLoginCharListAsync(s);   // lista de chars do char-select (0x0C), sintetizada do DB
             await _db.LogUserConnectAsync(gi.Id, userId, _cfg.ServerId, s.RemoteIp);
             Log.Ok("login", "[{0}] '{1}' logado (char='{2}', gold={3}, cash={4}) — {5}/{6} online",
                 s.Slot, userId, gi.CharName, s.Gold, s.Cash, CurrentUsers, MaxUser);
+        }
+
+        /// <summary>Monta a lista de chars do char-select (0x0C) a partir do DB — síntese de raiz, sem replay.</summary>
+        private async Task<CharList> BuildLoginCharListAsync(ClientSession s)
+        {
+            var chars = await _db.LoadCharactersAsync(s.GameInfoId);
+            var quickslot = await _db.LoadQuickslotAsync(s.GameInfoId);   // account-level (itembox.qslot)
+            var summaries = new List<CharSummary>(chars.Count);
+            foreach (var ch in chars)
+            {
+                var ranks = await _db.LoadStageRanksAsync(ch.Id);
+                summaries.Add(BuildCharSummary(ch, ranks, ch.Id == s.ActiveCharId ? quickslot : null));
+            }
+            return new CharList
+            {
+                AccountName = chars.Count > 0 ? chars[0].Name : s.CharName,   // @41 (truncado a 2 chars no writer)
+                UserId = (uint)s.GameInfoId,
+                Gold = s.Gold,
+                PowerLevelPoint = (ushort)Math.Min(s.PowerLevelPoint, (uint)ushort.MaxValue),
+                Chars = summaries,
+            };
+        }
+
+        private static CharSummary BuildCharSummary(CharacterInfo ch, byte[] ranks,
+            List<(int Cell, int ItemId)>? quickslot)
+        {
+            // Equip NÃO entra no char-select: o preview 3D veste o gear no modelo da classe e crasha em classes
+            // sem o bone da arma ('Weapon01_ON_R'). TODO: reabilitar (só armadura, ou tratar o bone por classe).
+            var qs = new ushort[6];
+            if (quickslot != null)
+                foreach (var (cell, itemId) in quickslot)
+                    if (cell is >= 13 and <= 18) qs[cell - 13] = (ushort)itemId;
+            return new CharSummary
+            {
+                Name = ch.Name, Slot = ch.Slot, Class = ch.Class,
+                Level = ch.Level == 0 ? (byte)1 : ch.Level, Exp = (uint)Math.Max(0, ch.Exp), LevelPoint = ch.LevelPoint,
+                Win = (uint)Math.Max(0, ch.Win), Lose = (uint)Math.Max(0, ch.Lose), Draw = (uint)Math.Max(0, ch.Draw),
+                Stats = new ushort[] { ch.Hit1, ch.Hit2, ch.Hit3, ch.Hit4, ch.Chit, ch.Hp, ch.Ap, ch.AttackSpeed, ch.Speed, ch.Maxcp },
+                Quickslot = qs, StageRanks = ranks ?? System.Array.Empty<byte>(),
+            };
         }
 
         public async Task RemoveSessionAsync(ClientSession s)

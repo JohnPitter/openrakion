@@ -22,11 +22,4 @@
     <ProjectReference Include="..\RakionServer.Common\RakionServer.Common.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!-- Blobs do replay de login (oraculo): respostas 0x0C/0x0D capturadas do worldserv original
-         via MITM. SEM eles o cliente trava em "Logging in." (ClientSession.ReadOracle le do
-         diretorio do exe). Copiados ao output no build. -->
-    <None Include="oracle_*.bin" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
 </Project>

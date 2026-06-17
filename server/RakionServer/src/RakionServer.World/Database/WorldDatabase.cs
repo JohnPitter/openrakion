@@ -648,6 +648,23 @@ namespace RakionServer.World.Database
             catch (Exception ex) { Log.Error("db", "GrantPowerUserAsync({0}): {1}", gameInfoId, ex.Message); }
         }
 
+        // Colunas do char p/ o char-select (0x0C) — UMA fonte (ordem = índices em MapCharacter).
+        private const string CharSelectColumns =
+            "id,userid,name,used,Class,level,win,lose,draw,exp,levelpoint,slot," +
+            "hit1,hit2,hit3,hit4,chit,hp,ap,attackspeed,speed,maxcp,totalrank,classrank";
+
+        private static CharacterInfo MapCharacter(System.Data.Common.DbDataReader r) => new CharacterInfo
+        {
+            Id = r.GetInt32(0), UserId = r.GetInt32(1), Name = r.GetString(2),
+            Used = r.GetInt32(3) != 0, Class = (byte)r.GetInt32(4), Level = (byte)r.GetInt32(5),
+            Win = r.GetInt32(6), Lose = r.GetInt32(7), Draw = r.GetInt32(8), Exp = r.GetInt32(9),
+            LevelPoint = (byte)r.GetInt32(10), Slot = (byte)r.GetInt32(11),
+            Hit1 = (byte)r.GetInt32(12), Hit2 = (byte)r.GetInt32(13), Hit3 = (byte)r.GetInt32(14),
+            Hit4 = (byte)r.GetInt32(15), Chit = (byte)r.GetInt32(16), Hp = (byte)r.GetInt32(17),
+            Ap = (byte)r.GetInt32(18), AttackSpeed = (byte)r.GetInt32(19), Speed = (byte)r.GetInt32(20),
+            Maxcp = (byte)r.GetInt32(21), TotalRank = r.GetInt32(22), ClassRank = r.GetInt32(23),
+        };
+
         /// <summary>Char ativo da conta (used=1; tiebreak slot). null se nao tem char.</summary>
         public async Task<CharacterInfo?> LoadActiveCharacterAsync(int userId)
         {
@@ -656,25 +673,30 @@ namespace RakionServer.World.Database
                 await using var c = new MySqlConnection(_conn);
                 await c.OpenAsync();
                 await using var cmd = new MySqlCommand(
-                    "SELECT id,userid,name,used,Class,level,win,lose,draw,exp,levelpoint,slot," +
-                    "hit1,hit2,hit3,hit4,chit,hp,ap,attackspeed,speed,maxcp,totalrank,classrank " +
-                    "FROM characterinfo WHERE userid=@u ORDER BY used DESC, slot ASC LIMIT 1", c);
+                    "SELECT " + CharSelectColumns + " FROM characterinfo WHERE userid=@u ORDER BY used DESC, slot ASC LIMIT 1", c);
                 cmd.Parameters.AddWithValue("@u", userId);
                 await using var r = await cmd.ExecuteReaderAsync();
-                if (!await r.ReadAsync()) return null;
-                return new CharacterInfo
-                {
-                    Id = r.GetInt32(0), UserId = r.GetInt32(1), Name = r.GetString(2),
-                    Used = r.GetInt32(3) != 0, Class = (byte)r.GetInt32(4), Level = (byte)r.GetInt32(5),
-                    Win = r.GetInt32(6), Lose = r.GetInt32(7), Draw = r.GetInt32(8), Exp = r.GetInt32(9),
-                    LevelPoint = (byte)r.GetInt32(10), Slot = (byte)r.GetInt32(11),
-                    Hit1 = (byte)r.GetInt32(12), Hit2 = (byte)r.GetInt32(13), Hit3 = (byte)r.GetInt32(14),
-                    Hit4 = (byte)r.GetInt32(15), Chit = (byte)r.GetInt32(16), Hp = (byte)r.GetInt32(17),
-                    Ap = (byte)r.GetInt32(18), AttackSpeed = (byte)r.GetInt32(19), Speed = (byte)r.GetInt32(20),
-                    Maxcp = (byte)r.GetInt32(21), TotalRank = r.GetInt32(22), ClassRank = r.GetInt32(23),
-                };
+                return await r.ReadAsync() ? MapCharacter(r) : null;
             }
             catch (Exception ex) { Log.Error("db", "LoadActiveCharacterAsync({0}): {1}", userId, ex.Message); return null; }
+        }
+
+        /// <summary>Todos os chars criados da conta (ordem de slot) — p/ a lista do char-select (0x0C).</summary>
+        public async Task<List<CharacterInfo>> LoadCharactersAsync(int userId)
+        {
+            var list = new List<CharacterInfo>();
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "SELECT " + CharSelectColumns + " FROM characterinfo WHERE userid=@u AND used<>0 ORDER BY slot ASC", c);
+                cmd.Parameters.AddWithValue("@u", userId);
+                await using var r = await cmd.ExecuteReaderAsync();
+                while (await r.ReadAsync()) list.Add(MapCharacter(r));
+            }
+            catch (Exception ex) { Log.Error("db", "LoadCharactersAsync({0}): {1}", userId, ex.Message); }
+            return list;
         }
     }
 }

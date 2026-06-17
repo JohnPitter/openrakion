@@ -57,6 +57,14 @@ ANTES de adicionar mais código. Auditoria viva e dívida priorizada em
   diagnóstico fixas em `false` nem ramos inalcançáveis.
 - Constante/mapa de protocolo tem uma só fonte (sem `const` + literal divergentes).
 
+**Implementação de raiz, não replay**
+- Comportamento do servidor é **sintetizado do domínio** (estado → DTO → bytes), **não** replay de blob capturado.
+  Frame de resposta é montado do estado — ex.: o `0x0C` do char-select é serializado do char list (formato wire na
+  memória `0c-login-frame-format`), **não** overlay sobre `oracle_0c.bin`. Captura/MITM/oracle servem só de
+  **research e golden test** (validar a síntese byte-a-byte), nunca como a implementação shippada.
+- Replays legados (`oracle_*.bin`, frames hex fixos em `OracleReplay.cs`) são **dívida** a migrar p/ síntese;
+  **não adicione novos**. É um projeto open source sério — a origem do dado tem que ser o domínio, não um dump.
+
 **Domínio isolado de I/O**
 - Regra de negócio (economia/loja, motor de partida, progressão/exp) mora em serviço de
   domínio — **não** em handler de rede, classe de socket/sessão, nem dentro do DB. O

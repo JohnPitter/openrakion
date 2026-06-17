@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using RakionServer.Common;
 using RakionServer.World.Handlers;
+using RakionServer.World.CharSelect;
 
 namespace RakionServer.World.Network
 {
@@ -74,6 +75,7 @@ namespace RakionServer.World.Network
         public uint CharLevelPoint { get; set; }             // pontos de level p/ distribuir -> overlay 0x0C @101
         public uint PowerLevelPoint { get; set; }            // usergameinfo.powerlevelpoint = PU Bonus Points -> overlay 0x0C @48
         public ushort[] Stats { get; } = new ushort[10];     // stats alocados (this+0x1568+idx*2) p/ a alocacao 0x33
+        public CharList? LoginCharList { get; set; }         // lista de chars (char-select) sintetizada p/ o 0x0C
         public string Md5Hash1 { get; set; } = "";           // MD5 do client (modo 0)
         public string Md5Hash2 { get; set; } = "";           // MD5 do client (modo 1)
         public byte PendingRoomMap;                          // map do 0x3b (sala criada) -> aplicado ao Field no 0x4b
