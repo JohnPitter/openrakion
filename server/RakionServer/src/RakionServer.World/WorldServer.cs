@@ -402,16 +402,25 @@ namespace RakionServer.World
             if (s.ActiveCharId <= 0 || exp == 0) return 0;
             s.CharExp += exp;
             _ = _db.AddCharacterResultAsync(s.ActiveCharId, 0, 0, 0, exp);
+            return SettleLevels(s);
+        }
+
+        /// <summary>Sobe os niveis PENDENTES pela curva (sem creditar exp) e persiste. Chamado ao GANHAR exp
+        /// (<see cref="GrantExp"/>) E no LOAD do char — um char carregado JÁ acima do limiar upa na hora, sem
+        /// precisar ganhar exp de novo. Devolve quantos niveis subiu (0 = nenhum).</summary>
+        public int SettleLevels(ClientSession s)
+        {
+            if (s.ActiveCharId <= 0) return 0;
             int ups = 0;
             while (s.CharLevel < 99)
             {
-                int full = NextLevelExp(s.CharClass, s.CharLevel);              // curva ORIGINAL: exp p/ o proximo nivel (curva[L])
+                int full = NextLevelExp(s.CharClass, s.CharLevel);              // curva ORIGINAL: exp do proximo nivel (curva[L])
                 if (full <= 0) break;                                           // teto da curva (sem proximo nivel)
-                // HOUSE-RULE (desvio consciente da curva oficial; o DB fica intacto): o cliente desenha a barra
-                // "cheia" no MEIO do intervalo do nivel — denom = (curva[L-1]+curva[L])/2 (confirmado in-game:
-                // nv3 = 287 == (188+386)/2). Subimos no MESMO ponto p/ "barra cheia = upa" exato. Custo: leveling
-                // ~1.5-2x mais rapido que o original.
-                int next = (NextLevelExp(s.CharClass, (byte)(s.CharLevel - 1)) + full) / 2;
+                int floor = NextLevelExp(s.CharClass, (byte)(s.CharLevel - 1)); // exp do nivel atual (curva[L-1])
+                // HOUSE-RULE (desvio consciente; o DB fica intacto): o cliente desenha a barra "cheia" a ~2/5 do
+                // span do nivel (display nv4 = 496 ~ 386 + (658-386)*2/5 = 494). O meio-a-meio antigo (522)
+                // deixava a barra visualmente cheia SEM upar. Subimos nesse ponto p/ "barra cheia = upa".
+                int next = floor + (full - floor) * 2 / 5;
                 if (s.CharExp < next) break;
                 s.CharLevel++;
                 s.CharLevelPoint++;
@@ -546,8 +555,8 @@ namespace RakionServer.World
             s.GroupId = Channels.Count > 0 ? Channels[0].Id : 0;   // canal default (origem real: locale/IDC do client)
             Interlocked.Increment(ref _currentUsers);
 
-            // Carrega gold/cash/level/itens do DB ANTES do 0x0C: o replay sobrepoe gold/cash do estado vivo
-            // (o display reflete a compra). Sincrono p/ garantir s.Gold/s.Cash setados quando o 0x0C sai.
+            // Carrega gold/cash/level/itens do DB ANTES do 0x0C: a síntese do 0x0C serializa gold/cash do
+            // estado vivo (o display reflete a compra). Sincrono p/ garantir s.Gold/s.Cash setados no 0x0C.
             await LoadAndLogAsync(s, s.UserId);
             s.SendLoginResponse();   // 0x0C sintetizado (lista de chars) + 0x0D — 0x10 vai apos o handshake UDP
         }
@@ -581,6 +590,7 @@ namespace RakionServer.World
                 s.CharLose = (uint)(ch.Lose < 0 ? 0 : ch.Lose);         // overlay 0x0C @77
                 s.CharDraw = (uint)(ch.Draw < 0 ? 0 : ch.Draw);         // overlay 0x0C @81
                 s.CharLevelPoint = (uint)(ch.LevelPoint);               // pontos de level -> overlay 0x0C @101
+                SettleLevels(s);                                        // upa niveis pendentes JÁ no load (barra cheia do relog)
                 // stats alocados (hit1..maxcp) -> Stats[0..9], p/ a alocacao 0x33 partir do valor real salvo
                 s.Stats[0] = ch.Hit1; s.Stats[1] = ch.Hit2; s.Stats[2] = ch.Hit3; s.Stats[3] = ch.Hit4;
                 s.Stats[4] = ch.Chit; s.Stats[5] = ch.Hp; s.Stats[6] = ch.Ap; s.Stats[7] = ch.AttackSpeed;
