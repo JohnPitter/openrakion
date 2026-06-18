@@ -117,12 +117,24 @@ namespace RakionServer.World.Network
         // o ACK curto. Sem isto remandavamos 0x13 a cada 0x2d, e o 2o 0x2d (ao sair) recebia outra
         // lista em vez do ack -> o cliente reprocessava o grid e caia no CHAR-SELECT no Previous.
         private byte _invState;
-        // HANDLE de sessao = bytes 13..16 do 0x0C (login). CAPTURA do worldserv ORIGINAL (mitm
-        // inventario→Previous, 2026-06-11): os acks 0x2c/0x2d ECOAM esse handle (8deb863f no
-        // original), NAO o body do cliente. Com o handle errado o cliente nao reconhecia o estado do
-        // inventario e ficava em polling/sobreposto. Default = handle do oraculo (b3c3863f), sobrescrito
-        // do 0x0C real no login.
-        private byte[] _invHandle = new byte[] { 0xb3, 0xc3, 0x86, 0x3f };
+        // HANDLE de sessao (0x0C@13, ecoado nos acks 0x2c/0x2d/0x34) e HANDLE de campo (0x14/0x36 + regiões
+        // de token da cadeia de lobby, via LobbyFrames). São PONTEIROS autorais do servidor: no worldserv
+        // original variavam por conexão (0x0C@13 = 8deb863f/b3c3863f/700e873f ~ 0x3f86xxxx; 0x14 = 648c0509/
+        // 648ce806/3c8c5607 ~ 0x07xxxxxx) e o cliente apenas os ECOA, nunca dereferencia (é memória de outro
+        // processo). Por isso GERADOS por sessão — NÃO copiados de captura: o cliente aceita qualquer valor
+        // estável na sessão (provado pelo diff de 3 sessões reais). É a "origem do dado no domínio".
+        private readonly byte[] _invHandle = NewHandle();
+        private readonly byte[] _fieldHandle = NewHandle();
+
+        /// <summary>Gera um handle autoral do servidor (4B não-zero), único por sessão. O cliente só o ecoa,
+        /// então o valor é arbitrário — só precisa ser estável dentro da sessão e diferente de zero.</summary>
+        private static byte[] NewHandle()
+        {
+            byte[] h = new byte[4];
+            System.Random.Shared.NextBytes(h);
+            h[0] |= 0x01;   // garante != 0
+            return h;
+        }
         private bool _r36bSent;   // 0x36b (arma a lista de games) so' 1x; remandar a cada poll travava o cliente
         private readonly int[] _potionSlot = new int[0x13];   // quickslot de pocao = user+0x1da4 (19 celulas)
         private readonly int[] _potionCount = new int[0x13];  // quantidade empilhada por celula (contador 'v' do 0x31)
@@ -305,7 +317,8 @@ namespace RakionServer.World.Network
 
         /// <summary>
         /// Envia um frame world->client com o PLAINTEXT ja pronto ([u16 opcode][u16 seq][data]):
-        /// cifra (AES 12->16) e enquadra com [u16 size]. Usado pelo replay do oraculo.
+        /// cifra (AES 12->16) e enquadra com [u16 size]. Usado pela síntese dos frames de
+        /// lobby/canal/sala/stage (LobbyFrames) e dos acks de inventário/loja.
         /// </summary>
         public void SendEncryptedFrame(byte[] plaintext)
         {

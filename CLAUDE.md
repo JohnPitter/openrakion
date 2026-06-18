@@ -45,8 +45,8 @@ ANTES de adicionar mais código. Auditoria viva e dívida priorizada em
 - Aninhamento: ≤3 níveis; prefira early return.
 - Dívida de tamanho **QUITADA** (2026-06-14): os god-files foram fatiados em `partial class`
   por domínio — `WorldHandlers.Generated.cs` (2692→125 + 6 partials), `Broker/Systems.cs`
-  (1797→270 + tipos aninhados em arquivos próprios), `ClientSession.cs` (1032→357 + OracleReplay
-  + Inventory). O domínio Field foi ainda fatiado em lifecycle (`.Field.cs` 459) × combate
+  (1797→270 + tipos aninhados em arquivos próprios), `ClientSession.cs` (1032→357 + LobbyFlow
+  + LobbyFrames + Inventory). O domínio Field foi ainda fatiado em lifecycle (`.Field.cs` 459) × combate
   (`.FieldCombat.cs` 401). Maior arquivo agora: `.Room.cs` (514, abaixo de 600).
 
 **Golden source / sem código morto**
@@ -62,8 +62,10 @@ ANTES de adicionar mais código. Auditoria viva e dívida priorizada em
   Frame de resposta é montado do estado — ex.: o `0x0C` do char-select é serializado do char list (formato wire na
   memória `0c-login-frame-format`), **não** overlay sobre `oracle_0c.bin`. Captura/MITM/oracle servem só de
   **research e golden test** (validar a síntese byte-a-byte), nunca como a implementação shippada.
-- Replays legados (`oracle_*.bin`, frames hex fixos em `OracleReplay.cs`) são **dívida** a migrar p/ síntese;
-  **não adicione novos**. É um projeto open source sério — a origem do dado tem que ser o domínio, não um dump.
+- Replays legados **MIGRADOS** (2026-06-17): o `oracle_*.bin` (login 0x0C/0x0D) e TODOS os frames hex fixos da
+  cadeia lobby→canal→sala→stage viraram síntese pura (`LoginCharListWriter` + `LobbyFrames`), com golden tests
+  byte-a-byte contra a captura. **Não adicione novos** — a origem do dado é o domínio + constantes de protocolo
+  nomeadas, nunca um dump. É um projeto open source sério.
 
 **Domínio isolado de I/O**
 - Regra de negócio (economia/loja, motor de partida, progressão/exp) mora em serviço de

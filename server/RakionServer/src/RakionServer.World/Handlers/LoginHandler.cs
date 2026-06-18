@@ -62,7 +62,7 @@ namespace RakionServer.World.Handlers
             // que o STATUS.md patchou no RakionWorldServ.exe @0x41f8c9). O cliente GG-removido,
             // quando lancado direto, manda o caminho do exe nesse campo (longo). Aceitamos e
             // apenas CLAMPamos p/ caber no objeto do usuario; o login nao valida esses campos
-            // (auth real foi no broker/web). Mantemos o fluxo (replay do 0x0C cuida da resposta).
+            // (auth real foi no broker/web). Mantemos o fluxo (a síntese do 0x0C cuida da resposta).
             string field2 = r.CString(Protocol.LoginLimits.Field2Max + 2);
             if (field2.Length > Protocol.LoginLimits.Field2Max)
             {

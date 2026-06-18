@@ -1,5 +1,4 @@
 using System;
-using System.Buffers.Binary;
 using System.Net;
 using System.Threading.Tasks;
 using RakionServer.Common;
@@ -10,88 +9,23 @@ namespace RakionServer.World.Network
     public sealed partial class ClientSession
     {
         // --- ENTRADA NO LOBBY/CAMPO (síntese do protocolo de canal/sala/stage) ------------------
-        // Após o char-select, o cliente faz o handshake UDP (echo 0x0201) e manda esta cadeia TCP; o
-        // world responde levando-o à LISTA DE CANAIS (0x1e "dchannel01") e à sala/stage. CLASSIFICAÇÃO:
-        //  (1) DADO DE SESSÃO sintetizado do domínio — userid/nome (0x1f/0x1e via BuildSessionFrame),
-        //      nome da sala (0x44 via Build44). Hardcodá-los = o bug do userid 999 (cliente cross-valida).
-        //  (2) CONSTANTES DE PROTOCOLO — acks de formato fixo que o cliente espera, SEM dado por-sessão
-        //      (verificado: o valor estático do capture serviu p/ contas reais distintas). Bytes ainda
-        //      não decodados (handles 648c0509, tokens) são constante a refinar por RE — NÃO mudar às cegas.
-        private static byte[] Hex(string h) => Convert.FromHexString(h);
-        private static readonly byte[] _r10 = Hex("10004e95dd29ce3a55db20b6ad97a65cc01c000000000000"); // GG challenge
-        private static readonly byte[] _r14 = Hex("1400000020000000648c0509"); // 0x14 SPAWN: [00 00][20000000][handle]; ALINHADO ao frida do original (arma o scoring/combo)
-        // TEMPLATES do channel-lobby de ENTRADA. O USERID (@4/@16 do 1f, @17 do 1e) e o NOME (2 chars) sao
-        // PATCHED do dominio em BuildSessionFrame — devem casar com o 0x0C (userid @7, account-name @41),
-        // senao o cliente rejeita e TRAVA no char-select re-mandando 0x14. Resto: capture (a sintetizar).
-        private static readonly byte[] _r1fTpl = Hex("1f000000e7034a500001000000000008e703000000000000");
-        private static readonly byte[] _r1eTpl = Hex("1e000001646368616e6e656c3031000000e7034a500001000000000052a15ef61ea2c65b");
-        private static readonly byte[] _r36 = Hex("3600000020000000648c0509"); // ALINHADO ao frida do original ([00 00][20000000][handle], = 0x14)
-        // SEGUNDO 0x36 (mitm_full_113423: o original o manda apos o ack UDP 0d03 do cliente; e' ele
-        // que ARMA a lista de games — sem ele o botao Create do channel lobby nao faz nada).
-        private static readonly byte[] _r36b = Hex("3600006a4dcaaf2b4b3d9fa5");
-        private static readonly byte[] _r3b = Hex("3b00000000538b003600007f"); // ALINHADO ao world real (frida)
-        private static readonly byte[] _r43 = Hex("43000008010142003b000000"); // ALINHADO ao world real (frida)
-        private static readonly byte[] _r48 = Hex("480001b3010000141400a00f"); // ALINHADO ao world real (frida)
-        // CONCLUSAO DO STAGE (capturado via frida no world original): cliente manda 0x4A data[0]=0x02
-        // (StageClear) -> world responde 0x4A (resultado) + 0x44 (fim de partida -> volta ao lobby).
-        private static readonly byte[] _r4a = Hex("4a0002010100737624007c04");      // 0x4A resultado do clear
-        // 0x44 (match-end pós-clear) sintetizado em Build44 — o nome da sala vem do domínio (era "asdd").
-        // REFRESH do lobby PÓS-CLEAR (capturado do world ORIGINAL via frida — versões DIFERENTES das de
-        // entrada _r1fTpl/_r1eTpl/_r36). O original manda estas APÓS o 0x44; reusar as de entrada pulava o Rank.
-        // Mesmo patch de userid/nome (BuildSessionFrame): o 1f_clear tem userid so' @4; o 1e_clear @17 e @32.
-        private static readonly byte[] _r1fClearTpl = Hex("1f000000e7034a50000100000000000200cae202598fdc71");
-        private static readonly byte[] _r1eClearTpl = Hex("1e000001646368616e6e656c3031000000e7034a500001000000000030002503e7030000");
-        private static readonly byte[] _r36_clear = Hex("36000022be9a400002000000");
+        // Após o char-select, o cliente faz o handshake UDP (echo 0x0201) e manda esta cadeia TCP; o world
+        // responde levando-o à LISTA DE CANAIS (0x1e "dchannel01") e à sala/stage. Cada frame é MONTADO do
+        // estado por <see cref="LobbyFrames"/> (síntese pura, sem blob de captura): o userid/nome vêm do
+        // domínio e casam com o 0x0C (senão o cliente trava re-mandando 0x14), o nome da sala vem do 0x3b,
+        // o tempo do stage da duração da sala. Os tokens/handles autorais do servidor são constantes
+        // nomeadas em LobbyFrames. A captura original vive só no golden test (LobbyFrameGoldenTests).
+        private ushort LobbyUid => (ushort)GameInfoId;
+        private string LobbyName => LoginCharList?.AccountName ?? CharName ?? "";
 
-        /// <summary>
-        /// 0x0e = OnRecvSuccessUDP. ALINHADO ao frida do world ORIGINAL: ecoa o ENDPOINT DO CLIENTE
-        /// (IP+porta que o cliente mandou no ping UDP, 127.0.0.1:2301=08fd big-endian) nos DOIS slots +
-        /// trailer ZEROS. Antes mandavamos as portas do SERVER (9f04/9f05) + um "key" inventado -> hipotese:
-        /// isso punha o cliente em modo server-authoritative e SUPRIMIA o combo HIT×N (client-side). Ecoar
-        /// o endpoint do cliente (como o original) = modo local-scored. Usa o UdpEndpoint aprendido; cai
-        /// p/ 2301 se ainda nao conhecido. Formato: [0e 00 00][IP1 4][port1 BE 2][IP2 4][port2 BE 2][9x00].
-        /// </summary>
-        private byte[] BuildEndpoints0e()
+        /// <summary>0x0e OnRecvSuccessUDP: resolve o endpoint UDP aprendido do cliente (cai p/ 127.0.0.1:2301
+        /// se ainda não conhecido) e delega a montagem do frame a <see cref="LobbyFrames.Endpoints"/>.</summary>
+        private byte[] Endpoints0e()
         {
             var ep = UdpEndpoint;
             byte[] ip = ep != null ? ep.Address.MapToIPv4().GetAddressBytes() : new byte[] { 127, 0, 0, 1 };
             ushort port = (ushort)(ep != null ? ep.Port : 2301);
-            byte portHi = (byte)(port >> 8), portLo = (byte)(port & 0xff); // big-endian (08 fd p/ 2301)
-            byte[] f = new byte[24];
-            f[0] = 0x0e; f[1] = 0x00; f[2] = 0x00;
-            System.Array.Copy(ip, 0, f, 3, 4); f[7] = portHi; f[8] = portLo;   // endpoint 1 = cliente
-            System.Array.Copy(ip, 0, f, 9, 4); f[13] = portHi; f[14] = portLo; // endpoint 2 = cliente
-            // f[15..23] = 0 (trailer zeros, igual ao original)
-            return f;
-        }
-
-        /// <summary>
-        /// Patcha um template de frame do channel-lobby (0x1f/0x1e) com o USERID e o NOME (2 chars) do
-        /// dominio — devem casar com o 0x0C (userid @7, account-name @41). Sem isso o cliente rejeita e
-        /// trava re-mandando 0x14. Passo da remocao do replay: os campos validados vem do dominio; o resto
-        /// do frame ainda e' do capture (a sintetizar).
-        /// </summary>
-        private byte[] BuildSessionFrame(byte[] tpl, int nameAt, params int[] uidAt)
-        {
-            byte[] f = (byte[])tpl.Clone();
-            ushort uid = (ushort)GameInfoId;
-            foreach (int o in uidAt) BinaryPrimitives.WriteUInt16LittleEndian(f.AsSpan(o), uid);
-            byte[] nb = System.Text.Encoding.ASCII.GetBytes(LoginCharList?.AccountName ?? CharName ?? "");
-            f[nameAt] = nb.Length > 0 ? nb[0] : (byte)0;
-            f[nameAt + 1] = nb.Length > 1 ? nb[1] : (byte)0;
-            return f;
-        }
-
-        /// <summary>0x44 match-end (volta ao game room pós-clear): [44 00][reason 00][01 00 00 00][nome da
-        /// sala]. O nome vem do domínio (PendingRoomName, do 0x3b) — era "asdd" hardcoded do capture. É o
-        /// ÚLTIMO campo do frame (lido até o fim), então tamanho variável é seguro.</summary>
-        private byte[] Build44(byte reason)
-        {
-            byte[] nb = System.Text.Encoding.ASCII.GetBytes(PendingRoomName.Length > 0 ? PendingRoomName : "asdd");
-            byte[] f = new byte[8 + nb.Length];
-            f[0] = 0x44; f[2] = reason; f[4] = 0x01;
-            System.Array.Copy(nb, 0, f, 8, nb.Length);
-            return f;
+            return LobbyFrames.Endpoints(ip, port);
         }
 
         private bool TryHandleLobbyEntry(ushort opcode, byte[] data)
@@ -99,8 +33,8 @@ namespace RakionServer.World.Network
             switch (opcode)
             {
                 case 0x0e: // pedido de UDP-success -> endpoints + GG
-                    SendEncryptedFrame(BuildEndpoints0e());
-                    SendEncryptedFrame(_r10);
+                    SendEncryptedFrame(Endpoints0e());
+                    SendEncryptedFrame(LobbyFrames.GameGuard());
                     Log.Ok("lobby", "[{0}] 0x0e (endpoints 40708/40709) + 0x10 enviados", Slot);
                     // DEAD-END FINAL (auto-render da poção no char-select — NÃO re-tentar): o paint do quickslot
                     // (0x31 -> FUN_0047d1d0) é gated por menu-state (só 0x19/1a/1b; char-select=0x16 sai cedo em
@@ -115,9 +49,9 @@ namespace RakionServer.World.Network
                     // InField/FieldSecondary/Status=2 (FieldLobby) p/ os opcodes de sala/shop (0x2d/2e/2f) passarem
                     // o gate a partir do Game List (Roomstate Fase A — habilita o inventario/shop).
                     InField = true; FieldSecondary = true; SecondActive = true; Status = 2;
-                    SendEncryptedFrame(_r14);
-                    SendEncryptedFrame(BuildSessionFrame(_r1fTpl, 6, 4, 16));
-                    SendEncryptedFrame(BuildSessionFrame(_r1eTpl, 19, 17));
+                    SendEncryptedFrame(LobbyFrames.SpawnAck(_fieldHandle));
+                    SendEncryptedFrame(LobbyFrames.SessionInfo(LobbyUid, LobbyName, _fieldHandle, clear: false));
+                    SendEncryptedFrame(LobbyFrames.ChannelList(LobbyUid, LobbyName, _fieldHandle, clear: false));
                     Log.Ok("lobby", "[{0}] 0x14 + 0x1f + 0x1e (canais) + channel-lobby (Status=2)", Slot);
                     // POPULA o espelho do box (AccountInfo+0x78) JA no login — o painel do box no lobby (menu 0x14)
                     // pinta do espelho QUANDO E' CONSTRUIDO (igual o equip, carregado no 0x0C). O 0x13 da resposta
@@ -131,11 +65,11 @@ namespace RakionServer.World.Network
                     if (!_potionLoginPainted) { _potionLoginPainted = true; PaintQuickslot(); }
                     return true;
                 case 0x36:
-                    SendEncryptedFrame(_r36);
+                    SendEncryptedFrame(LobbyFrames.GameListArm(_fieldHandle));
                     // 0x36b (arma a lista de games p/ o botao Create) SÓ na 1a vez. A captura do original
                     // mostra UM 0x36 por request; remandar o 0x36b a cada poll re-armava a game-list e
                     // mantinha o cliente em polling (telas sobrepostas), travando o Previous.
-                    if (!_r36bSent) { _r36bSent = true; SendEncryptedFrame(_r36b); }
+                    if (!_r36bSent) { _r36bSent = true; SendEncryptedFrame(LobbyFrames.GameListArmExtra()); }
                     Log.Info("lobby", "[{0}] 0x36 ack{1}", Slot, _r36bSent ? " (+0x36b 1a vez)" : "");
                     return true;
                 case 0x3b: // CRIAR SALA: room lobby = Status=2 (FieldLobby) + InField + FieldSecondary. (Era
@@ -146,16 +80,20 @@ namespace RakionServer.World.Network
                     // nova sala = novo match: rearma o StartGameClock (a trava e' por ENTRADA NO STAGE,
                     // nao por sessao — sem isto a 2a sala da mesma sessao ficava com o field morto)
                     System.Threading.Interlocked.Exchange(ref _gameClockStarted, 0);
-                    SendEncryptedFrame(_r3b);
+                    SendEncryptedFrame(LobbyFrames.RoomCreateAck(_fieldHandle));
                     Log.Ok("lobby", "[{0}] 0x3b sala criada -> room lobby (Status=2, FSec, map={1} mode={2})",
                         Slot, PendingRoomMap, PendingRoomMode);
                     return true;
                 case 0x43: // engage/start do match: rearma o clock p/ REMATCH na mesma sala
                     System.Threading.Interlocked.Exchange(ref _gameClockStarted, 0);
-                    SendEncryptedFrame(_r43);
+                    SendEncryptedFrame(LobbyFrames.MatchStartAck(_fieldHandle));
                     Log.Info("lobby", "[{0}] 0x43 resp (clock rearmado)", Slot);
                     return true;
-                case 0x48: SendEncryptedFrame(_r48); Log.Info("lobby", "[{0}] 0x48 resp", Slot); return true;
+                case 0x48: // tempo restante do stage = duração da sala (+3); cai p/ 432s se a sala não definiu
+                    int durSec = PendingRoomDurationSec > 0 ? PendingRoomDurationSec : 432;
+                    SendEncryptedFrame(LobbyFrames.RemainingTime(durSec));
+                    Log.Info("lobby", "[{0}] 0x48 resp (RemainingSec={1}s)", Slot, durSec + 3);
+                    return true;
                 case 0x4A: // 0x4A com data[0]=0x02 = StageClear. Combate usa outras 0x4A -> nao intercepta.
                     if (data.Length >= 1 && data[0] == 0x02)
                     {
@@ -163,7 +101,7 @@ namespace RakionServer.World.Network
                         // pequeno DELAY p/ o overlay de Rank ter tempo de aparecer. (Mandar tudo junto, ou
                         // disparar no 0x53, fazia o Rank sumir.) O 0x53 GameResultReport que o cliente manda
                         // logo apos e' CONSUMIDO (case 0x53) p/ nao cair no handler que desconecta em solo.
-                        SendEncryptedFrame(_r4a);        // tela de RANK
+                        SendEncryptedFrame(LobbyFrames.StageClearResult(_fieldHandle));  // tela de RANK
                         Log.Ok("lobby", "[{0}] 0x4A StageClear -> Rank (0x44+refresh do lobby em ~5s)", Slot);
                         _ = ScheduleLobbyReturnAfterRankAsync();
                         return true;
@@ -174,9 +112,9 @@ namespace RakionServer.World.Network
                     // estado do solo nao satisfaz apos o stage). Tratamos aqui: reset + refresh da lista
                     // (1f/1e/36, os MESMOS frames capturados do original APOS o 0x44 = o "voltar pra lista").
                     InField = true; FieldSecondary = true; SecondActive = true; Status = 2; // volta ao channel lobby (shop segue ok)
-                    SendEncryptedFrame(BuildSessionFrame(_r1fClearTpl, 6, 4));
-                    SendEncryptedFrame(BuildSessionFrame(_r1eClearTpl, 19, 17, 32));
-                    SendEncryptedFrame(_r36_clear);
+                    SendEncryptedFrame(LobbyFrames.SessionInfo(LobbyUid, LobbyName, _fieldHandle, clear: true));
+                    SendEncryptedFrame(LobbyFrames.ChannelList(LobbyUid, LobbyName, _fieldHandle, clear: true));
+                    SendEncryptedFrame(LobbyFrames.GameListRefresh(_fieldHandle));
                     Log.Ok("lobby", "[{0}] 0x3A FieldLeaveGame -> lista de games (channel lobby Status=2)", Slot);
                     return true;
                 // 0x2E (Shop Buy) NAO e' mais interceptado aqui -> cai no WorldHandlers.Dispatch (Op_RoomMemberQuery
@@ -370,7 +308,7 @@ namespace RakionServer.World.Network
             // cliente pra LISTA DE GAMES em vez do room (o original volta pro room apos o stage).
             // Volta ao room lobby (Status=2, InField/FSec) -> shop continua disponivel no room pos-stage.
             InField = true; FieldSecondary = true; SecondActive = true; Status = 2;
-            SendEncryptedFrame(Build44(2));   // reason=2 (match-end pós-clear); nome da sala do domínio
+            SendEncryptedFrame(LobbyFrames.MatchEnd(2, PendingRoomName.Length > 0 ? PendingRoomName : "asdd"));  // reason=2; nome da sala do domínio
             Log.Ok("lobby", "[{0}] pos-Rank (delay) -> 0x44 match-end (volta ao game room, sala='{1}')", Slot,
                 PendingRoomName.Length > 0 ? PendingRoomName : "asdd");
         }
