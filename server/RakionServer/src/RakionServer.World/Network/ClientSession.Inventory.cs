@@ -58,7 +58,7 @@ namespace RakionServer.World.Network
         /// identico ao comprovado (v2 ja' era 0); pocao -> mostra a quantidade no box (antes vinha 0). O
         /// contador NAO causa o freeze do stage (cliente novo + contador 0 ainda travava, teste 15/06).
         /// </summary>
-        public void SendBoxAdd(int itemId, byte boxSlot, byte level)
+        public void SendBoxAdd(int itemId, byte boxSlot, byte level, int count = 1)
         {
             using var w = new PacketWriter();
             w.WriteWord(0x31);             // opcode @0
@@ -69,10 +69,33 @@ namespace RakionServer.World.Network
             w.WriteWord((ushort)itemId);   // F4 (off14) -> destItem
             // off16..23 byte-fiel ao box-render capturado, EXCETO o contador (v2, off17):
             w.WriteByte(level == 0 ? (byte)1 : level);   // off16 b2 (level; callers passam 1)
-            w.WriteUInt32(IsPotion(itemId) ? 1u : 0u);   // off17 v2 = CONTADOR da poção (gear=0 -> frame inalterado)
+            w.WriteUInt32(IsPotion(itemId) ? (uint)System.Math.Max(1, count) : 0u);   // off17 v2 = CONTADOR (poção=quantidade do stack; gear=0)
             w.WriteByte(0x39); w.WriteByte(0x40); w.WriteByte(0); // off21..23 trailing do val 0x403900 (parse real ignora)
             SendEncryptedFrame(w.ToArray());
-            Log.Ok("shop", "[{0}] 0x31 box-add: item {1} -> box slot {2}", Slot, itemId, boxSlot);
+            Log.Ok("shop", "[{0}] 0x31 box-add: item {1} x{2} -> box slot {3}", Slot, itemId, count, boxSlot);
+        }
+
+        /// <summary>Popula o box consolidando poções por id (1 célula + contador); gear vai 1 por célula.</summary>
+        public void SetBoxItems(System.Collections.Generic.List<int> boxGear)
+        {
+            BoxItems = new System.Collections.Generic.List<int>(new int[0x78]);
+            BoxCount = new System.Collections.Generic.List<int>(new int[0x78]);
+            foreach (var it in boxGear) AddBoxItemStacked(it);
+        }
+
+        /// <summary>Adiciona um item ao box: poção empilha na célula existente do mesmo id; senão (e gear) ocupa
+        /// a 1a célula vazia (contador 1). Retorna a célula ocupada.</summary>
+        public byte AddBoxItemStacked(int itemId)
+        {
+            if (IsPotion(itemId))
+            {
+                int cell = BoxItems.IndexOf(itemId);
+                if (cell >= 0) { BoxCount[cell]++; return (byte)cell; }   // empilha no stack existente
+            }
+            int free = BoxItems.IndexOf(0);
+            if (free < 0) return 0;                                       // box cheio
+            BoxItems[free] = itemId; BoxCount[free] = 1;
+            return (byte)free;
         }
 
         /// <summary>

@@ -603,8 +603,7 @@ namespace RakionServer.World
                     Log.Ok("login", "[{0}] {1} set(s) type-10 desempacotado(s) no armazem", s.Slot, setsInBox.Count);
                 }
                 var boxGear = loadedBox.FindAll(IsBoxDisplayable);          // só gear entra no grid
-                s.BoxItems = new System.Collections.Generic.List<int>(new int[0x78]); // grade esparsa de 120 celulas (0=vazia)
-                for (int bi = 0; bi < boxGear.Count && bi < 0x78; bi++) s.BoxItems[bi] = boxGear[bi]; // carrega sequencial (itembox nao guarda posicao)
+                s.SetBoxItems(boxGear);   // consolida poções por id (1 célula + contador); gear 1 por célula
                 s.LoadPotionSlot(await _db.LoadQuickslotAsync(gi.Id));     // quickslot de pocao persistido (itembox.qslot)
                 s.StageRanks = await _db.LoadStageRanksAsync(ch.Id);       // ranks de stage -> overlay 0x0C@333 (RANK X CLEAR na seleção)
                 int boxHidden = loadedBox.Count - boxGear.Count;

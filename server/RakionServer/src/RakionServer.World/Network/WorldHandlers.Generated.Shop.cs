@@ -92,9 +92,8 @@ namespace RakionServer.World.Network
             var granted = new System.Collections.Generic.List<(int Item, byte Slot)>(grantItems.Count);
             foreach (var it in grantItems)
             {
-                int freeSlot = u.BoxItems.IndexOf(0);
-                if (ctx.World.IsBoxDisplayable(it) && freeSlot >= 0) u.BoxItems[freeSlot] = it; // ocupa -> exibido no próximo paint
-                granted.Add((it, (byte)(freeSlot >= 0 ? freeSlot : 0)));
+                byte slot = ctx.World.IsBoxDisplayable(it) ? u.AddBoxItemStacked(it) : (byte)0; // poção empilha; gear -> célula nova
+                granted.Add((it, slot));
             }
             // NAO adiciona em u.Items (= useriteminfo/APARENCIA equipada): o item de box NUNCA vai pro corpo 3D (crash).
 
@@ -153,7 +152,7 @@ namespace RakionServer.World.Network
             // (0x31 de cada item, slot=indice), nao so' o comprado. Assim os itens PERSISTIDOS do itembox (que
             // foram mandados antes em menu errado e ficaram invisiveis) aparecem junto com o novo. (Log provou:
             // o comprado ia pro slot N=BoxItems.Count e so' ele pintava; os 0..N-1 ficavam invisiveis.)
-            for (int i = 0; i < u.BoxItems.Count && i < 0x78; i++) if (u.BoxItems[i] != 0) u.SendBoxAdd(u.BoxItems[i], (byte)i, 1);
+            for (int i = 0; i < u.BoxItems.Count && i < 0x78; i++) if (u.BoxItems[i] != 0) u.SendBoxAdd(u.BoxItems[i], (byte)i, 1, u.BoxCount[i]);
 
             // --- SALDO EM TEMPO REAL (msgType 0x2e, code 0) ---
             // RE do cliente: o HUD le gold em AccountInfo+0x64 e cash +0x68 (engine.dll). O handler 0x2e

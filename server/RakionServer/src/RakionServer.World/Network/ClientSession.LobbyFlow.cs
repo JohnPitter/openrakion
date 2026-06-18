@@ -194,7 +194,7 @@ namespace RakionServer.World.Network
                     // item 0 = celula esvaziada por um move: NAO pintar (frame nunca validado; o cliente
                     // ja processou o move local e tem o buraco)
                     for (int i = 0; i < BoxItems.Count && i < 0x78; i++)
-                        if (BoxItems[i] != 0) SendBoxAdd(BoxItems[i], (byte)i, 1);
+                        if (BoxItems[i] != 0) SendBoxAdd(BoxItems[i], (byte)i, 1, BoxCount[i]);
                     // quickslot: FALLBACK do auto-render. Se a pintura na entrada do lobby (0x14) ainda não
                     // pegou (widget do potion-bar não construído na hora), pinta aqui no 1o open. Guard
                     // próprio (_potionPainted) -> não repinta nas reentradas.
