@@ -11,8 +11,12 @@ var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://0.0.0.0:80");
 var app = builder.Build();
 
+// Fonte ÚNICA da config do launcher = appsettings.json (ConnectionStrings:Rakion), sobreponível por
+// env (ConnectionStrings__Rakion) p/ Docker/CI. Sem fallback hardcoded (era credencial duplicada no
+// código): faltando, falha no boot com mensagem clara em vez de apontar p/ um DB errado em silêncio.
 string conn = app.Configuration.GetConnectionString("Rakion")
-    ?? "Server=127.0.0.1;Port=3306;Database=rakion;Uid=root;Pwd=123456;";
+    ?? throw new InvalidOperationException(
+        "ConnectionStrings:Rakion ausente — defina em appsettings.json (ou env ConnectionStrings__Rakion).");
 
 app.MapMethods("/launcherlogin.php", new[] { "GET", "POST" }, LauncherLogin);
 app.MapMethods("/launcherlogin", new[] { "GET", "POST" }, LauncherLogin);
