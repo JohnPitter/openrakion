@@ -49,7 +49,7 @@ namespace RakionServer.World.Network
                     // InField/FieldSecondary/Status=2 (FieldLobby) p/ os opcodes de sala/shop (0x2d/2e/2f) passarem
                     // o gate a partir do Game List (Roomstate Fase A — habilita o inventario/shop).
                     InField = true; FieldSecondary = true; SecondActive = true; Status = 2;
-                    SendEncryptedFrame(LobbyFrames.SpawnAck(_fieldHandle));
+                    SendEncryptedFrame(LobbyFrames.SpawnAck());
                     SendEncryptedFrame(LobbyFrames.SessionInfo(LobbyUid, LobbyName, _fieldHandle, clear: false));
                     SendEncryptedFrame(LobbyFrames.ChannelList(LobbyUid, LobbyName, _fieldHandle, clear: false));
                     Log.Ok("lobby", "[{0}] 0x14 + 0x1f + 0x1e (canais) + channel-lobby (Status=2)", Slot);
@@ -80,7 +80,7 @@ namespace RakionServer.World.Network
                     // nova sala = novo match: rearma o StartGameClock (a trava e' por ENTRADA NO STAGE,
                     // nao por sessao — sem isto a 2a sala da mesma sessao ficava com o field morto)
                     System.Threading.Interlocked.Exchange(ref _gameClockStarted, 0);
-                    SendEncryptedFrame(LobbyFrames.RoomCreateAck(_fieldHandle));
+                    SendEncryptedFrame(LobbyFrames.RoomCreateAck());
                     Log.Ok("lobby", "[{0}] 0x3b sala criada -> room lobby (Status=2, FSec, map={1} mode={2})",
                         Slot, PendingRoomMap, PendingRoomMode);
                     return true;

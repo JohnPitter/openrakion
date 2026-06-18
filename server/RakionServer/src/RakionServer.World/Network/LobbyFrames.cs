@@ -50,18 +50,28 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
-        /// <summary>0x14 spawn-ack: [14 00][00 00][arm=0x20 u32][fieldHandle 4B].</summary>
-        public static byte[] SpawnAck(byte[] fieldHandle) => HandleAck(0x14, fieldHandle);
-
-        /// <summary>0x36 game-list arm: idêntico ao 0x14 (mesmo fieldHandle), opcode 0x36.</summary>
-        public static byte[] GameListArm(byte[] fieldHandle) => HandleAck(0x36, fieldHandle);
-
-        private static byte[] HandleAck(int opcode, byte[] fieldHandle)
+        /// <summary>0x14 spawn/start-ack. RE FUN_0041fef0 (@0x41fef0, linha 755): a resposta REAL tem LEN=3
+        /// = [14 00][status=0]. O scoring é armado no HANDLER (FUN_0040ac30), NÃO neste frame; o
+        /// [20000000][handle] do blob antigo era LIXO DE STACK (padding do bloco de 12B). 3 reais + zero-pad.</summary>
+        public static byte[] SpawnAck()
         {
             using var w = new PacketWriter();
-            w.WriteWord(opcode);
+            w.WriteWord(0x14);
+            w.WriteByte(0);                 // status (0 = sucesso)
+            w.WriteBytes(new byte[9]);      // padding do bloco de 12B (era lixo de stack)
+            return w.ToArray();
+        }
+
+        /// <summary>0x36 game-list (FUN_00422c90 FieldPlayerList): no original é a LISTA DE SALAS, de tamanho
+        /// VARIÁVEL. Nosso STUB mantém a forma capturada que destrava a game-list/botão Create no cliente
+        /// (lista vazia p/ solo); a cauda (handle) é inerte. Reimplementar a serialização da lista seria
+        /// grande e sem ganho funcional aqui — fica stub.</summary>
+        public static byte[] GameListArm(byte[] fieldHandle)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x36);
             w.WriteWord(0);
-            w.WriteUInt32(0x20);            // constante que arma o scoring no cliente
+            w.WriteUInt32(0x20);
             w.WriteBytes(Fill(fieldHandle, 4));
             return w.ToArray();
         }
@@ -124,13 +134,16 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
-        /// <summary>0x3b ack de criação de sala: [3b 00][00 00 00][handle 7B].</summary>
-        public static byte[] RoomCreateAck(byte[] fieldHandle)
+        /// <summary>0x3b ack de criação de sala. RE FUN_00423580 (@0x423580, linha 264): LEN=5 =
+        /// [3b 00][status=0][seat:u16] (seat = slot do field-objeto, 0 no solo). O [538b003600007f] do blob
+        /// antigo era LIXO DE STACK. 5 reais + zero-pad.</summary>
+        public static byte[] RoomCreateAck()
         {
             using var w = new PacketWriter();
             w.WriteWord(0x3b);
-            w.WriteBytes(new byte[3]);
-            w.WriteBytes(Fill(fieldHandle, 7));
+            w.WriteByte(0);                 // status (0 = sucesso)
+            w.WriteWord(0);                 // seat:u16 (slot do field-objeto; 0 no solo)
+            w.WriteBytes(new byte[7]);      // padding do bloco de 12B (era lixo de stack)
             return w.ToArray();
         }
 
@@ -146,16 +159,19 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
-        /// <summary>0x48 tempo restante do stage: [48 00][01][RemainingSec = dur+3 u16][00 00][14 14 00 a0 0f].
-        /// RemainingSec vem do domínio (duração da sala). Referência: 432s -> 435 (0x01b3).</summary>
+        /// <summary>0x48 tempo restante do stage. RE FUN_00408440 (@0x408440, linha 1696): LEN=9 =
+        /// [48 00][01][RemainingSec=dur+3 u16][this+0x2c0=0][this+0x2c1=0][this+0x122][this+0x123]. Os 2
+        /// últimos são índices de best-player (14 14 na captura). O [a0 0f] final era LIXO DE STACK.
+        /// RemainingSec vem do domínio (duração da sala). Referência: 432s -> 435 (0x01b3). 9 reais + zero-pad.</summary>
         public static byte[] RemainingTime(int durationSec)
         {
             using var w = new PacketWriter();
             w.WriteWord(0x48);
             w.WriteByte(1);
             w.WriteWord(durationSec + 3);
-            w.WriteWord(0);
-            w.WriteByte(0x14); w.WriteByte(0x14); w.WriteByte(0); w.WriteByte(0xa0); w.WriteByte(0x0f);
+            w.WriteWord(0);                         // this+0x2c0 / this+0x2c1
+            w.WriteByte(0x14); w.WriteByte(0x14);   // this+0x122 / this+0x123 = índices best-player (LEN=9 acaba aqui)
+            w.WriteBytes(new byte[3]);              // padding do bloco de 12B (era lixo de stack: 00 a0 0f)
             return w.ToArray();
         }
 

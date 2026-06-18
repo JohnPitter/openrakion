@@ -31,8 +31,8 @@ namespace RakionServer.World.Tests
             Assert.Equal("3600006a4dcaaf2b4b3d9fa5", Hex(LobbyFrames.GameListArmExtra()));
 
         [Fact]
-        public void RemainingTime_MatchesOriginal() =>
-            Assert.Equal("480001b3010000141400a00f", Hex(LobbyFrames.RemainingTime(RefStageSec)));
+        public void RemainingTime_RealLen9_ZeroPad() =>   // RE FUN_00408440: 9 bytes reais (tempo+best-players) + pad (era 00a00f lixo)
+            Assert.Equal("480001b30100001414000000", Hex(LobbyFrames.RemainingTime(RefStageSec)));
 
         [Fact]
         public void ChannelList_Clear_MatchesOriginal() =>   // saída pós-clear: const + userid (sem handle)
@@ -51,11 +51,11 @@ namespace RakionServer.World.Tests
         // ---- Frames com HANDLE: const/domínio vs original, handle = Fill(handle injetado) ----
 
         [Fact]
-        public void SpawnAck_Structure() =>                  // [14 00][00 00][20000000][handle] — handle=Fh reproduz A
-            Assert.Equal("1400000020000000648c0509", Hex(LobbyFrames.SpawnAck(Fh)));
+        public void SpawnAck_RealLen3_ZeroPad() =>           // RE FUN_0041fef0: LEN=3 [14 00][status]; resto era lixo
+            Assert.Equal("140000000000000000000000", Hex(LobbyFrames.SpawnAck()));
 
         [Fact]
-        public void GameListArm_Structure() =>
+        public void GameListArm_Stub() =>                    // 0x36 FieldPlayerList é lista variável; stub com handle inerte
             Assert.Equal("3600000020000000648c0509", Hex(LobbyFrames.GameListArm(Fh)));
 
         [Fact]
@@ -74,8 +74,8 @@ namespace RakionServer.World.Tests
                 Hex(LobbyFrames.ChannelList(RefUserId, RefName, Fh, clear: false)));
 
         [Fact]
-        public void RoomCreateAck_Structure() =>
-            Assert.Equal("3b00000000648c0509648c05", Hex(LobbyFrames.RoomCreateAck(Fh)));
+        public void RoomCreateAck_RealLen5_ZeroPad() =>      // RE FUN_00423580: LEN=5 [3b 00][status][seat]; resto era lixo
+            Assert.Equal("3b0000000000000000000000", Hex(LobbyFrames.RoomCreateAck()));
 
         [Fact]
         public void MatchStartAck_Structure() =>
@@ -92,10 +92,10 @@ namespace RakionServer.World.Tests
         // ---- Provas de que o handle vem do DOMÍNIO (não é replay cravado) ----
 
         [Fact]
-        public void Handle_Is_Sourced_Not_Baked()
+        public void Handle_Is_Sourced_Not_Baked()           // GameListArm (stub) ainda carrega o handle de sessão na cauda
         {
-            var a = Hex(LobbyFrames.SpawnAck(new byte[] { 0xaa, 0xbb, 0xcc, 0xdd }));
-            var b = Hex(LobbyFrames.SpawnAck(new byte[] { 0x11, 0x22, 0x33, 0x44 }));
+            var a = Hex(LobbyFrames.GameListArm(new byte[] { 0xaa, 0xbb, 0xcc, 0xdd }));
+            var b = Hex(LobbyFrames.GameListArm(new byte[] { 0x11, 0x22, 0x33, 0x44 }));
             Assert.EndsWith("aabbccdd", a);   // o handle injetado aparece no fio
             Assert.EndsWith("11223344", b);
             Assert.NotEqual(a, b);            // handles distintos -> frames distintos (logo, não é blob fixo)
@@ -104,10 +104,10 @@ namespace RakionServer.World.Tests
         [Fact]
         public void Constants_Are_Invariant_To_Handle()
         {
-            var a = Hex(LobbyFrames.SpawnAck(new byte[] { 0xaa, 0xbb, 0xcc, 0xdd }));
-            var b = Hex(LobbyFrames.SpawnAck(new byte[] { 0x11, 0x22, 0x33, 0x44 }));
-            Assert.StartsWith("1400000020000000", a);   // opcode + arma-scoring constantes p/ qualquer handle
-            Assert.StartsWith("1400000020000000", b);
+            var a = Hex(LobbyFrames.GameListArm(new byte[] { 0xaa, 0xbb, 0xcc, 0xdd }));
+            var b = Hex(LobbyFrames.GameListArm(new byte[] { 0x11, 0x22, 0x33, 0x44 }));
+            Assert.StartsWith("3600000020000000", a);   // opcode + const p/ qualquer handle
+            Assert.StartsWith("3600000020000000", b);
         }
     }
 }
