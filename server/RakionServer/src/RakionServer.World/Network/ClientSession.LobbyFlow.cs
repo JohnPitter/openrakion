@@ -214,8 +214,10 @@ namespace RakionServer.World.Network
                 case 0x4b: // SPAWN no stage (72B). Inicia o relogio da partida: um timer incrementa
                     // GameSeq e manda o tick 1583 (o cliente ecoa o seq; seq avancando = timer corre).
                     InField = true;
+                    Status = 3;            // estado de CAMPO (Op_FieldUseItem exige Status==3; o 0x44/0x3A revertem p/ 2)
                     StartGameClock();
-                    Log.Ok("lobby", "[{0}] 0x4b (spawn) -> STAGE; relogio de gameplay iniciado (udp={1})", Slot, UdpEndpoint?.ToString() ?? "-");
+                    PaintQuickslot();      // re-registra as poções no campo — hipótese: o cliente zera o contador ao entrar no stage
+                    Log.Ok("lobby", "[{0}] 0x4b (spawn) -> STAGE (Status=3, poções re-enviadas); relogio iniciado (udp={1})", Slot, UdpEndpoint?.ToString() ?? "-");
                     return true;
                 case 0x0f: return true; // keepalive do cliente: sem resposta TCP
                 // (0x4b acima inicia o relogio)
