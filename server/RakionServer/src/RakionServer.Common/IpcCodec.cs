@@ -25,6 +25,11 @@ namespace RakionServer.Common
             return b;
         }
 
+        /// <summary>Verifica a integridade de um pacote IPC: como a BCRC final é o XOR de todos os bytes
+        /// anteriores, o XOR do pacote INTEIRO (incluindo o byte de CRC) é 0 quando íntegro. Usado p/ separar
+        /// IPC legítimo do gameplay UDP que compartilha a mesma porta (gameplay/forjado dá XOR != 0).</summary>
+        public static bool VerifyCrc(byte[] bytes) => bytes.Length >= 1 && BCRC(bytes, bytes.Length) == 0;
+
         public static void Encode(byte[] data, string code) => Encode(data, code, data.Length);
 
         public static void Encode(byte[] data, string code, int len)

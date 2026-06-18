@@ -136,6 +136,19 @@ namespace RakionServer.World.Network
 
         private async Task HandlePacketAsync(byte[] data, IPEndPoint from)
         {
+            // GUARD: a porta de IPC (40708) tambem recebe o gameplay UDP port1 do CLIENTE. O 0x0201 ja' foi
+            // roteado p/ echo antes daqui; QUALQUER outro UDP do cliente (ex.: 127.0.0.1:2301) caia neste
+            // parser e era mis-interpretado como IPC — gerava ServerInfo espurio (byte[3]==0), "cmd
+            // desconhecido" (2/3) e ate over-read do login (byte[3]==1). Validamos a CRC do protocolo
+            // (BCRC = XOR de todos os bytes; com o proprio CRC no fim, o XOR total e' 0) p/ aceitar SO'
+            // pacote bem-formado do broker. IPC minimo = [u16 port][u8 rnd][u8 cmd][u16 len][u8 crc] = 7B
+            // (= o RequestServerInfo). Gameplay/forjado tem XOR != 0 -> descartado em silencio.
+            if (data.Length < 7 || !IpcCodec.VerifyCrc(data))
+            {
+                Log.Debug("broker", "UDP nao-IPC descartado ({0}B de {1})", data.Length, from);
+                return;
+            }
+
             // formato broker->world: [u16 port][u8 rnd][u8 cmd][u16 len][payload][u8 crc]
             var r = new PacketReader(data);
             r.UInt16();          // porta do broker (ignorada)
