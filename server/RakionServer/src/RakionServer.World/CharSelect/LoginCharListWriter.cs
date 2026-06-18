@@ -52,6 +52,7 @@ namespace RakionServer.World.CharSelect
             WriteString(buf, 41, list.AccountName, AccountNameMax);        // @41 account name (campo fixo)
             BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(48), list.PowerLevelPoint);
             BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(56), list.Gold);
+            BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(60), list.Cash);   // @60 cash (EX points)
             buf[64] = list.SlotCount;                                     // @64 = nº de slots da conta (cria slots criáveis)
         }
 
@@ -73,7 +74,10 @@ namespace RakionServer.World.CharSelect
             WriteU16(buf, f + Equip, c.Equip, 7);
             WriteU16(buf, f + Quickslot, c.Quickslot, 6);
             WriteU8(buf, f + Enhance, c.Enhance, 7);
-            WriteU8(buf, f + Ranks, c.StageRanks, Math.Min(c.StageRanks.Length, FieldsSize - Ranks));
+            // StageRanks é indexado por stage (arr[N]=rank do stage N); o cliente lê @333 como stage 1,
+            // então PULA o índice 0 (stage 0 inexistente) — senão todo rank aparece 1 stage à frente.
+            if (c.StageRanks.Length > 1)
+                Array.Copy(c.StageRanks, 1, buf, f + Ranks, Math.Min(c.StageRanks.Length - 1, FieldsSize - Ranks));
             return rec + RecordSize(c.Name);
         }
 

@@ -633,6 +633,7 @@ namespace RakionServer.World
                 AccountName = chars.Count > 0 ? chars[0].Name : s.CharName,   // @41 (truncado a 2 chars no writer)
                 UserId = (uint)s.GameInfoId,
                 Gold = s.Gold,
+                Cash = s.Cash,
                 PowerLevelPoint = (ushort)Math.Min(s.PowerLevelPoint, (uint)ushort.MaxValue),
                 Chars = summaries,
             };

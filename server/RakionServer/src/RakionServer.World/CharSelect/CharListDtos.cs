@@ -23,7 +23,7 @@ namespace RakionServer.World.CharSelect
         public ushort[] Equip { get; init; } = new ushort[7];
         public byte[] Enhance { get; init; } = new byte[7];
         public ushort[] Quickslot { get; init; } = new ushort[6];
-        public byte[] StageRanks { get; init; } = Array.Empty<byte>();   // 1 byte/stage (stage 1 = índice 0)
+        public byte[] StageRanks { get; init; } = Array.Empty<byte>();   // 1 byte/stage, indexado por stage (arr[N]=stage N; índice 0 não usado)
     }
 
     /// <summary>
@@ -36,6 +36,7 @@ namespace RakionServer.World.CharSelect
         public uint UserId { get; init; }              // @7-8 do header (u16)
         public byte SlotCount { get; init; } = 4;      // @64 = nº de slots da conta (usergameinfo.slot)
         public uint Gold { get; init; }
+        public uint Cash { get; init; }                // @60 do 0x0C (cash / EX points)
         public ushort PowerLevelPoint { get; init; }
         public byte[] SessionHandle { get; init; } = new byte[4];
         public IReadOnlyList<CharSummary> Chars { get; init; } = Array.Empty<CharSummary>();

@@ -24,7 +24,7 @@ namespace RakionServer.World.Tests
             Name = "ABCDEF", Slot = 0, Level = 119, LevelPoint = 86,
             Win = 0x0A0B0C0D, Lose = 0x1A1B1C1D, Draw = 0x2A2B2C2D, Exp = 0x11223344,
             Stats = new ushort[] { 101, 102, 103, 104, 105, 106, 107, 108, 109, 110 },
-            StageRanks = new byte[] { 5, 4, 3, 2, 1 },
+            StageRanks = new byte[] { 0, 5, 4, 3, 2, 1 },   // indexado por stage (índice 0 não usado): stage1=5..stage5=1
         };
 
         private static CharSummary Ghijklmn() => new()
@@ -32,7 +32,7 @@ namespace RakionServer.World.Tests
             Name = "GHIJKLMN", Slot = 1, Level = 85, LevelPoint = 99,
             Win = 0x4A4B4C4D, Lose = 0x5A5B5C5D, Draw = 0x6A6B6C6D, Exp = 0x7A7B7C7D,
             Stats = new ushort[] { 121, 122, 123, 124, 125, 126, 127, 120, 119, 118 },
-            StageRanks = new byte[] { 1, 2, 3, 4, 5 },
+            StageRanks = new byte[] { 0, 1, 2, 3, 4, 5 },   // indexado por stage (índice 0 não usado)
         };
 
         [Fact]

@@ -82,6 +82,7 @@ namespace RakionServer.World.Network
         public byte PendingRoomMode;                         // mode do 0x3b: 0=stage (client-side), !=0=Battle/PvP (networked)
         public ushort PendingRoomDurationSec;                // duracao do round em SEGUNDOS (u16 do 0x3b, 290..1210)
         public byte PendingRoomRounds;                       // rounds configurados na sala (byte do 0x3b, <0x16; stage=1)
+        public string PendingRoomName = "";                  // nome da sala (0x3b) -> match-end 0x44 (era "asdd" hardcoded)
 
         // estado de combate/field (campos do user[slot] resolvidos por FUN_0040b7d0 e helpers de field)
         public ushort FieldTargetIndex; // user+0x14a0 (indice do field-objeto alvo resolvido por FUN_0040b7d0)
