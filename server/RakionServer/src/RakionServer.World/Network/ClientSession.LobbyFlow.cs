@@ -101,7 +101,7 @@ namespace RakionServer.World.Network
                         // pequeno DELAY p/ o overlay de Rank ter tempo de aparecer. (Mandar tudo junto, ou
                         // disparar no 0x53, fazia o Rank sumir.) O 0x53 GameResultReport que o cliente manda
                         // logo apos e' CONSUMIDO (case 0x53) p/ nao cair no handler que desconecta em solo.
-                        SendEncryptedFrame(LobbyFrames.StageClearResult(_fieldHandle));  // tela de RANK
+                        SendEncryptedFrame(LobbyFrames.StageClearResult());  // tela de RANK
                         Log.Ok("lobby", "[{0}] 0x4A StageClear -> Rank (0x44+refresh do lobby em ~5s)", Slot);
                         _ = ScheduleLobbyReturnAfterRankAsync();
                         return true;

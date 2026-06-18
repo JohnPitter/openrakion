@@ -159,14 +159,18 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
-        /// <summary>0x4a resultado do StageClear (tela de Rank): [4a 00][02][01 01 00][handle 6B].</summary>
-        public static byte[] StageClearResult(byte[] fieldHandle)
+        /// <summary>0x4a resultado do StageClear (tela de Rank). RE do builder FUN_00405a90 (@0x405a90):
+        /// a mensagem REAL tem 6 bytes (uVar6=6) — [4a 00][tipo=this+0x2bd, eco do request=0x02]
+        /// [this+0x2bf=1][this+0x2c0=contador de clears][this+0x2c1=0]. Os 6 bytes seguintes do bloco
+        /// cifrado de 12B eram LIXO DE STACK na captura antiga (uStack além dos 6 escritos), NÃO handle —
+        /// por isso zero-pad determinístico em vez do `737624007c04` capturado.</summary>
+        public static byte[] StageClearResult()
         {
             using var w = new PacketWriter();
             w.WriteWord(0x4a);
-            w.WriteByte(0x02);
-            w.WriteByte(0x01); w.WriteByte(0x01); w.WriteByte(0);
-            w.WriteBytes(Fill(fieldHandle, 6));
+            w.WriteByte(0x02);                                     // tipo StageClear (eco do param_1 do request)
+            w.WriteByte(0x01); w.WriteByte(0x01); w.WriteByte(0);  // estado do field (this+0x2bf/0x2c0/0x2c1)
+            w.WriteBytes(new byte[6]);                             // padding do bloco de 12B (era lixo de stack)
             return w.ToArray();
         }
 

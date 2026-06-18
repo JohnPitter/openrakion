@@ -82,8 +82,8 @@ namespace RakionServer.World.Tests
             Assert.Equal("430000648c0509643b000000", Hex(LobbyFrames.MatchStartAck(Fh)));
 
         [Fact]
-        public void StageClearResult_Structure() =>
-            Assert.Equal("4a0002010100648c0509648c", Hex(LobbyFrames.StageClearResult(Fh)));
+        public void StageClearResult_RealLen6_ZeroPad() =>   // RE FUN_00405a90: 6 bytes reais + padding (era lixo de stack)
+            Assert.Equal("4a0002010100000000000000", Hex(LobbyFrames.StageClearResult()));
 
         [Fact]
         public void GameListRefresh_Structure() =>
