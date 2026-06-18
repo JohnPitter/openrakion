@@ -121,16 +121,28 @@ namespace RakionServer.World.Network
             }
             int srcItem = ReadCell(srcType, srcSlot);
             int destItem = ReadCell(destType, destSlot);
-            WriteCell(srcType, srcSlot, destItem);   // swap origem <-> destino
-            WriteCell(destType, destSlot, srcItem);
+            int srcCnt = ReadCount(srcType, srcSlot);    // CARREGA a quantidade do stack no move (antes virava 1)
+            int destCnt = ReadCount(destType, destSlot);
             // Eco do move no FORMATO FIEL (21B, = FUN_00421870). O srcType cai no offset certo (param_3 do
             // FUN_0047d1d0): srcType=1 ativa o caminho do QUICKSLOT no cliente (-> FUN_004264a0), que limpa
-            // /pinta o widget de pocao correto (array +0xa74). Antes mandavamos 24B desalinhados -> o cliente
-            // lia srcType=0 SEMPRE (nunca tirava do quickslot) e os campos viravam lixo -> id corrompido no
-            // FUN_00402cf0 -> AV no draw. Agora cobre os 4 casos: box<->box, box->quickslot, quickslot->box
-            // (TIRAR a pocao) e quickslot<->quickslot.
-            SendPotionSlotMove(srcType, srcSlot, destItem, destType, destSlot, srcItem);
-            if (GameInfoId > 0) _ = _server.Db.SaveQuickslotAsync(GameInfoId, _potionSlot);  // persiste box<->quickslot
+            // /pinta o widget de pocao correto (array +0xa74). v1/v2 = CONTADOR (widget+0x194) -> tem que ser a
+            // quantidade real do stack, senao a pocao "vira 1" ao mover.
+            if (srcItem != 0 && srcItem == destItem && IsPotion(srcItem))
+            {
+                // MESMA pocao nos dois lados -> FUNDE os stacks (destino soma, origem esvazia)
+                int merged = srcCnt + destCnt;
+                WriteCell(srcType, srcSlot, 0);       WriteCount(srcType, srcSlot, 0);
+                WriteCell(destType, destSlot, destItem); WriteCount(destType, destSlot, merged);
+                SendPotionSlotMove(srcType, srcSlot, 0, destType, destSlot, destItem, destCnt: merged, srcCnt: 0);
+            }
+            else
+            {
+                // SWAP: origem recebe (destItem, destCnt), destino recebe (srcItem, srcCnt) — contadores junto
+                WriteCell(srcType, srcSlot, destItem); WriteCount(srcType, srcSlot, destCnt);
+                WriteCell(destType, destSlot, srcItem); WriteCount(destType, destSlot, srcCnt);
+                SendPotionSlotMove(srcType, srcSlot, destItem, destType, destSlot, srcItem, destCnt: srcCnt, srcCnt: destCnt);
+            }
+            if (GameInfoId > 0) _ = _server.Db.SaveQuickslotAsync(GameInfoId, _potionSlot);  // persiste box<->quickslot (linhas por itemId)
             Log.Ok("shop", "[{0}] 0x31 potion-slot: ({1}:{2}) <-> ({3}:{4}) item={5}",
                 Slot, srcType, srcSlot, destType, destSlot, srcItem);
         }
@@ -143,6 +155,16 @@ namespace RakionServer.World.Network
         {
             if (type == 0) { if (slot < BoxItems.Count) BoxItems[slot] = item; }
             else if (slot < _potionSlot.Length) _potionSlot[slot] = item;
+        }
+
+        private int ReadCount(byte type, byte slot) =>
+            type == 0 ? (slot < BoxCount.Count ? BoxCount[slot] : 0)
+                      : (slot < _potionCount.Length ? _potionCount[slot] : 0);
+
+        private void WriteCount(byte type, byte slot, int count)
+        {
+            if (type == 0) { if (slot < BoxCount.Count) BoxCount[slot] = count; }
+            else if (slot < _potionCount.Length) _potionCount[slot] = count;
         }
 
         /// <summary>Poção empilhável/contável (faixa de item-id 12000–12999, fiel ao FUN_0040c140/FUN_0040cd70).
@@ -193,15 +215,14 @@ namespace RakionServer.World.Network
         /// poção** (widget+0x194, lido cifrado pelo FUN_00440430) — o cliente EXIGE > 0 p/ deixar usar a poção
         /// no jogo; cada célula = 1 poção no nosso modelo -> poção manda 1, não-poção 0 (campo vira exp/limit).
         /// </summary>
-        private void SendPotionSlotMove(byte srcType, byte srcSlot, int newSrcItem, byte destType, byte destSlot, int newDestItem, int destCnt = 1)
+        private void SendPotionSlotMove(byte srcType, byte srcSlot, int newSrcItem, byte destType, byte destSlot, int newDestItem, int destCnt = 1, int srcCnt = 1)
         {
             // CONTADOR (v) = widget+0x194: > 0 deixa a poção visível/utilizável; 0 a deixa "zerada"/inerte.
-            // Cada célula = 1 poção no nosso modelo -> poção manda 1, não-poção 0 (lá o campo é exp/limit).
-            // NÃO causa o freeze do stage: com a build limpa (contador 0) e cliente NOVO o stage AINDA travava
-            // (teste in-game 15/06) -> o freeze é independente do contador (estado do cliente no-GG / pacote
-            // de entrada-no-stage, RE pendente). Por isso o contador volta — poção utilizável de novo.
-            uint srcCount  = IsPotion(newSrcItem)  ? 1u : 0u;
-            uint destCount = IsPotion(newDestItem) ? (uint)System.Math.Max(1, destCnt) : 0u;  // contador real do stack
+            // É a QUANTIDADE REAL do stack (não mais 1 fixo) -> mover/fundir preserva o total no widget.
+            // Não-poção = 0 (lá o campo é exp/limit). O contador NÃO causa o freeze do stage (independe
+            // dele; cliente NOVO + contador 0 ainda travava, teste 15/06 -> RE pendente).
+            uint srcCount  = IsPotion(newSrcItem)  ? (uint)System.Math.Max(1, srcCnt)  : 0u;
+            uint destCount = IsPotion(newDestItem) ? (uint)System.Math.Max(1, destCnt) : 0u;
             using var w = new PacketWriter();
             w.WriteWord(0x31);                  // off0  msgType (dispatch do cliente)
             w.WriteByte(0);                     // off2  status = 0 (sucesso; != 0 mostraria erro)
