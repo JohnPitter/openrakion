@@ -111,20 +111,12 @@ namespace RakionServer.World.Network
 
         private ushort _clientSeq;   // user+0x146e (ultimo seq recebido)
         private byte[] _invReqBody = System.Array.Empty<byte>();  // body do 0x2c (SlotActive/user14a4 do cliente) p/ ecoar no 0x12/0x13
-        // Maquina de estado do inventario = user+0x144c do worldserv.exe (FUN_0040b000 no 0x2c,
-        // FUN_0040c960 no 0x2d). 0=fechado, 1=aberto (pos-enter, aguardando a 1a list), 2=loja.
-        // O 0x2d so' responde a LISTA (0x13) na 1a chamada (estado 1 -> 0); nas seguintes responde
-        // o ACK curto. Sem isto remandavamos 0x13 a cada 0x2d, e o 2o 0x2d (ao sair) recebia outra
-        // lista em vez do ack -> o cliente reprocessava o grid e caia no CHAR-SELECT no Previous.
-        private byte _invState;
-        // HANDLE de sessao (0x0C@13, ecoado nos acks 0x2c/0x2d/0x34) e HANDLE de campo (0x14/0x36 + regiões
-        // de token da cadeia de lobby, via LobbyFrames). São PONTEIROS autorais do servidor: no worldserv
-        // original variavam por conexão (0x0C@13 = 8deb863f/b3c3863f/700e873f ~ 0x3f86xxxx; 0x14 = 648c0509/
-        // 648ce806/3c8c5607 ~ 0x07xxxxxx) e o cliente apenas os ECOA, nunca dereferencia (é memória de outro
-        // processo). Por isso GERADOS por sessão — NÃO copiados de captura: o cliente aceita qualquer valor
-        // estável na sessão (provado pelo diff de 3 sessões reais). É a "origem do dado no domínio".
+        // HANDLE de sessao (0x0C@13, ecoado nos acks de inventário 0x2c/0x2d/0x34). É um PONTEIRO autoral do
+        // servidor: no worldserv original variava por conexão (0x0C@13 = 8deb863f/b3c3863f/700e873f ~ 0x3f86xxxx)
+        // e o cliente apenas o ECOA, nunca dereferencia (é memória de outro processo). Por isso GERADO por sessão
+        // — NÃO copiado de captura: o cliente aceita qualquer valor estável (provado pelo diff de 3 sessões reais).
+        // (A cadeia de LOBBY já NÃO usa handle: todo 0x14/0x1e/0x1f/0x36/0x43 é LEN-real + zero-pad — ver LobbyFrames.)
         private readonly byte[] _invHandle = NewHandle();
-        private readonly byte[] _fieldHandle = NewHandle();
 
         /// <summary>Gera um handle autoral do servidor (4B não-zero), único por sessão. O cliente só o ecoa,
         /// então o valor é arbitrário — só precisa ser estável dentro da sessão e diferente de zero.</summary>

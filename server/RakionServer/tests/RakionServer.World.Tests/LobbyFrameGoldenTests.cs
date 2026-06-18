@@ -5,18 +5,19 @@ namespace RakionServer.World.Tests
 {
     /// <summary>
     /// Golden test dos frames da cadeia lobby->canal->sala->stage SINTETIZADOS por <see cref="LobbyFrames"/>.
-    /// As CONSTANTES e o DADO DE SESSÃO (userid 999=0x03e7, nome "JP", stage 432s) são exigidos byte-a-byte
-    /// contra a captura do worldserv ORIGINAL (mitm A/B/C). Os HANDLES (ponteiros autorais que o cliente só
-    /// ecoa) entram por parâmetro: aqui injeta-se o handle da sessão A (648c0509) para reproduzir a ESTRUTURA;
-    /// em produção cada sessão gera o seu (nenhum byte é replay de uma sessão gravada). Os testes
-    /// <see cref="Handle_Is_Sourced_Not_Baked"/> e <see cref="Constants_Are_Invariant_To_Handle"/> provam isso.
+    /// Os builders foram cravados da decompilação do worldserv (objdump): cada frame é emitido com seu LEN
+    /// REAL (3º arg do send) + zero-pad até o bloco de 12B. Os bytes além do LEN real, na captura, eram LIXO
+    /// DE STACK — VARIAM entre sessões (provado por diff do golden vs mitm_full_113423.log), logo NÃO são
+    /// replicados. As CONSTANTES e o DADO DE SESSÃO (userid 999=0x03e7, nome "JP", stage 432s) são exigidos
+    /// byte-a-byte contra a captura do original. NENHUM frame de lobby carrega handle de sessão na cauda: a
+    /// volta-à-lista pós-clear re-manda os MESMOS 0x1f/0x1e/0x36 da entrada (mitm_move_133859 l.460/461 ==
+    /// l.19/20). <see cref="Synth_Is_Domain_Sourced"/> prova que userid/nome vêm do domínio (não é blob fixo).
     /// </summary>
     public class LobbyFrameGoldenTests
     {
         private const ushort RefUserId = 999;                       // 0x03e7 -> e7 03
         private const string RefName = "JP";                        // 0x4a 0x50
         private const int RefStageSec = 432;                        // RemainingSec = 435 = 0x01b3
-        private static readonly byte[] Fh = { 0x64, 0x8c, 0x05, 0x09 }; // handle da sessão A (p/ reproduzir a estrutura)
 
         private static string Hex(byte[] b) => System.Convert.ToHexString(b).ToLowerInvariant();
 
@@ -27,17 +28,8 @@ namespace RakionServer.World.Tests
             Assert.Equal("10004e95dd29ce3a55db20b6ad97a65cc01c000000000000", Hex(LobbyFrames.GameGuard()));
 
         [Fact]
-        public void GameListArmExtra_MatchesOriginal() =>
-            Assert.Equal("3600006a4dcaaf2b4b3d9fa5", Hex(LobbyFrames.GameListArmExtra()));
-
-        [Fact]
         public void RemainingTime_RealLen9_ZeroPad() =>   // RE FUN_00408440: 9 bytes reais (tempo+best-players) + pad (era 00a00f lixo)
             Assert.Equal("480001b30100001414000000", Hex(LobbyFrames.RemainingTime(RefStageSec)));
-
-        [Fact]
-        public void ChannelList_Clear_MatchesOriginal() =>   // saída pós-clear: const + userid (sem handle)
-            Assert.Equal("1e000001646368616e6e656c3031000000e7034a500001000000000030002503e7030000",
-                Hex(LobbyFrames.ChannelList(RefUserId, RefName, Fh, clear: true)));
 
         [Fact]
         public void MatchEnd_MatchesOriginal() =>
@@ -48,66 +40,51 @@ namespace RakionServer.World.Tests
             Assert.Equal("0e00007f00000108fd7f00000108fd000000000000000000",
                 Hex(LobbyFrames.Endpoints(new byte[] { 127, 0, 0, 1 }, 2301)));
 
-        // ---- Frames com HANDLE: const/domínio vs original, handle = Fill(handle injetado) ----
+        // ---- Acks curtos cravados da decompilação: LEN real + zero-pad (cauda capturada era lixo de stack) ----
 
         [Fact]
         public void SpawnAck_RealLen3_ZeroPad() =>           // RE FUN_0041fef0: LEN=3 [14 00][status]; resto era lixo
             Assert.Equal("140000000000000000000000", Hex(LobbyFrames.SpawnAck()));
 
         [Fact]
-        public void GameListArm_Stub() =>                    // 0x36 FieldPlayerList é lista variável; stub com handle inerte
-            Assert.Equal("3600000020000000648c0509", Hex(LobbyFrames.GameListArm(Fh)));
-
-        [Fact]
-        public void SessionInfo_Entry_Structure() =>
-            Assert.Equal("1f000000e7034a500001000000000064e703000000000000",
-                Hex(LobbyFrames.SessionInfo(RefUserId, RefName, Fh, clear: false)));
-
-        [Fact]
-        public void SessionInfo_Clear_Structure() =>
-            Assert.Equal("1f000000e7034a50000100000000000200648c0509648c05",
-                Hex(LobbyFrames.SessionInfo(RefUserId, RefName, Fh, clear: true)));
-
-        [Fact]
-        public void ChannelList_Entry_Structure() =>
-            Assert.Equal("1e000001646368616e6e656c3031000000e7034a5000010000000000648c0509648c0509",
-                Hex(LobbyFrames.ChannelList(RefUserId, RefName, Fh, clear: false)));
+        public void GameListEmpty_RealLen3_ZeroPad() =>      // RE FUN_00422c90/@0x41c0b7: lista vazia (solo) = LEN=3 [36 00][00]
+            Assert.Equal("360000000000000000000000", Hex(LobbyFrames.GameListEmpty()));
 
         [Fact]
         public void RoomCreateAck_RealLen5_ZeroPad() =>      // RE FUN_00423580: LEN=5 [3b 00][status][seat]; resto era lixo
             Assert.Equal("3b0000000000000000000000", Hex(LobbyFrames.RoomCreateAck()));
 
         [Fact]
-        public void MatchStartAck_Structure() =>
-            Assert.Equal("430000648c0509643b000000", Hex(LobbyFrames.MatchStartAck(Fh)));
+        public void MatchStartAck_RealLen3_ZeroPad() =>      // RE FUN_004079d0: LEN=3 [43 00][status]; [handle][3b...] era lixo
+            Assert.Equal("430000000000000000000000", Hex(LobbyFrames.MatchStartAck()));
 
         [Fact]
         public void StageClearResult_RealLen6_ZeroPad() =>   // RE FUN_00405a90: 6 bytes reais + padding (era lixo de stack)
             Assert.Equal("4a0002010100000000000000", Hex(LobbyFrames.StageClearResult()));
 
-        [Fact]
-        public void GameListRefresh_Structure() =>
-            Assert.Equal("360000648c05090002000000", Hex(LobbyFrames.GameListRefresh(Fh)));
-
-        // ---- Provas de que o handle vem do DOMÍNIO (não é replay cravado) ----
+        // ---- Frames com registro de player (entrada E volta-à-lista): LEN real + zero-pad (cauda era lixo) ----
 
         [Fact]
-        public void Handle_Is_Sourced_Not_Baked()           // GameListArm (stub) ainda carrega o handle de sessão na cauda
+        public void SessionInfo_RealLen15_ZeroPad() =>  // RE FUN_00404fc0: ok=LEN15 [1f 00][00][00][uid][registro]; byte15+ lixo
+            Assert.Equal("1f000000e7034a5000010000000000000000000000000000",
+                Hex(LobbyFrames.SessionInfo(RefUserId, RefName)));
+
+        [Fact]
+        public void ChannelList_RealLen28_ZeroPad() =>  // RE FUN_00404da0: solo=LEN28 [1e..][nome][registro]; bytes28+ lixo
+            Assert.Equal("1e000001646368616e6e656c3031000000e7034a50000100000000000000000000000000",
+                Hex(LobbyFrames.ChannelList(RefUserId, RefName)));
+
+        // ---- Prova de que userid/nome vêm do DOMÍNIO (síntese, não blob cravado nem handle de captura) ----
+
+        [Fact]
+        public void Synth_Is_Domain_Sourced()
         {
-            var a = Hex(LobbyFrames.GameListArm(new byte[] { 0xaa, 0xbb, 0xcc, 0xdd }));
-            var b = Hex(LobbyFrames.GameListArm(new byte[] { 0x11, 0x22, 0x33, 0x44 }));
-            Assert.EndsWith("aabbccdd", a);   // o handle injetado aparece no fio
-            Assert.EndsWith("11223344", b);
-            Assert.NotEqual(a, b);            // handles distintos -> frames distintos (logo, não é blob fixo)
-        }
-
-        [Fact]
-        public void Constants_Are_Invariant_To_Handle()
-        {
-            var a = Hex(LobbyFrames.GameListArm(new byte[] { 0xaa, 0xbb, 0xcc, 0xdd }));
-            var b = Hex(LobbyFrames.GameListArm(new byte[] { 0x11, 0x22, 0x33, 0x44 }));
-            Assert.StartsWith("3600000020000000", a);   // opcode + const p/ qualquer handle
-            Assert.StartsWith("3600000020000000", b);
+            var a = Hex(LobbyFrames.SessionInfo(RefUserId, RefName));        // 999 + "JP"
+            var b = Hex(LobbyFrames.SessionInfo(1234, "ZZ"));               // 0x04d2 + "ZZ"
+            Assert.Contains("e7034a50", a);    // userid 999 (e703) + nome "JP" (4a50)
+            Assert.Contains("d2045a5a", b);    // userid 1234 (d204) + nome "ZZ" (5a5a)
+            Assert.NotEqual(a, b);             // entradas distintas -> frames distintos (não é blob fixo)
+            Assert.Contains("646368616e6e656c3031", Hex(LobbyFrames.ChannelList(1234, "ZZ"))); // "dchannel01" é const
         }
     }
 }

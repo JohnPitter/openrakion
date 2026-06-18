@@ -50,8 +50,8 @@ namespace RakionServer.World.Network
                     // o gate a partir do Game List (Roomstate Fase A — habilita o inventario/shop).
                     InField = true; FieldSecondary = true; SecondActive = true; Status = 2;
                     SendEncryptedFrame(LobbyFrames.SpawnAck());
-                    SendEncryptedFrame(LobbyFrames.SessionInfo(LobbyUid, LobbyName, _fieldHandle, clear: false));
-                    SendEncryptedFrame(LobbyFrames.ChannelList(LobbyUid, LobbyName, _fieldHandle, clear: false));
+                    SendEncryptedFrame(LobbyFrames.SessionInfo(LobbyUid, LobbyName));
+                    SendEncryptedFrame(LobbyFrames.ChannelList(LobbyUid, LobbyName));
                     Log.Ok("lobby", "[{0}] 0x14 + 0x1f + 0x1e (canais) + channel-lobby (Status=2)", Slot);
                     // POPULA o espelho do box (AccountInfo+0x78) JA no login — o painel do box no lobby (menu 0x14)
                     // pinta do espelho QUANDO E' CONSTRUIDO (igual o equip, carregado no 0x0C). O 0x13 da resposta
@@ -65,11 +65,11 @@ namespace RakionServer.World.Network
                     if (!_potionLoginPainted) { _potionLoginPainted = true; PaintQuickslot(); }
                     return true;
                 case 0x36:
-                    SendEncryptedFrame(LobbyFrames.GameListArm(_fieldHandle));
-                    // 0x36b (arma a lista de games p/ o botao Create) SÓ na 1a vez. A captura do original
-                    // mostra UM 0x36 por request; remandar o 0x36b a cada poll re-armava a game-list e
-                    // mantinha o cliente em polling (telas sobrepostas), travando o Previous.
-                    if (!_r36bSent) { _r36bSent = true; SendEncryptedFrame(LobbyFrames.GameListArmExtra()); }
+                    SendEncryptedFrame(LobbyFrames.GameListEmpty());
+                    // 2º 0x36 (a captura do original manda dois na fase de arme) SÓ na 1a vez. Remandar a
+                    // cada poll re-armava a game-list e mantinha o cliente em polling (telas sobrepostas),
+                    // travando o Previous. Mesmo builder: a lista vazia (count=0) é o que arma o Create.
+                    if (!_r36bSent) { _r36bSent = true; SendEncryptedFrame(LobbyFrames.GameListEmpty()); }
                     Log.Info("lobby", "[{0}] 0x36 ack{1}", Slot, _r36bSent ? " (+0x36b 1a vez)" : "");
                     return true;
                 case 0x3b: // CRIAR SALA: room lobby = Status=2 (FieldLobby) + InField + FieldSecondary. (Era
@@ -86,7 +86,7 @@ namespace RakionServer.World.Network
                     return true;
                 case 0x43: // engage/start do match: rearma o clock p/ REMATCH na mesma sala
                     System.Threading.Interlocked.Exchange(ref _gameClockStarted, 0);
-                    SendEncryptedFrame(LobbyFrames.MatchStartAck(_fieldHandle));
+                    SendEncryptedFrame(LobbyFrames.MatchStartAck());
                     Log.Info("lobby", "[{0}] 0x43 resp (clock rearmado)", Slot);
                     return true;
                 case 0x48: // tempo restante do stage = duração da sala (+3); cai p/ 432s se a sala não definiu
@@ -112,9 +112,11 @@ namespace RakionServer.World.Network
                     // estado do solo nao satisfaz apos o stage). Tratamos aqui: reset + refresh da lista
                     // (1f/1e/36, os MESMOS frames capturados do original APOS o 0x44 = o "voltar pra lista").
                     InField = true; FieldSecondary = true; SecondActive = true; Status = 2; // volta ao channel lobby (shop segue ok)
-                    SendEncryptedFrame(LobbyFrames.SessionInfo(LobbyUid, LobbyName, _fieldHandle, clear: true));
-                    SendEncryptedFrame(LobbyFrames.ChannelList(LobbyUid, LobbyName, _fieldHandle, clear: true));
-                    SendEncryptedFrame(LobbyFrames.GameListRefresh(_fieldHandle));
+                    // RE confirmada (mitm_move_133859 l.460/461 == entrada l.19/20): a volta-à-lista re-manda
+                    // os MESMOS 0x1f/0x1e/0x36 da entrada, sintetizados do estado — sem frame "clear" distinto.
+                    SendEncryptedFrame(LobbyFrames.SessionInfo(LobbyUid, LobbyName));
+                    SendEncryptedFrame(LobbyFrames.ChannelList(LobbyUid, LobbyName));
+                    SendEncryptedFrame(LobbyFrames.GameListEmpty());
                     Log.Ok("lobby", "[{0}] 0x3A FieldLeaveGame -> lista de games (channel lobby Status=2)", Slot);
                     return true;
                 // 0x2E (Shop Buy) NAO e' mais interceptado aqui -> cai no WorldHandlers.Dispatch (Op_RoomMemberQuery
@@ -139,7 +141,10 @@ namespace RakionServer.World.Network
                     if (!_potionPainted) { _potionPainted = true; PaintQuickslot(); }
                     return true;
                 case 0x2D: // FIEL à captura: o 0x2d responde SEMPRE o ack curto (handle), NUNCA 0x13.
-                    // O original (test com box vazio) so' manda o ack; mandar 0x13 (lista) prendia o cliente
+                    // O original tem uma máquina de estado do inventário em user+0x144c (FUN_0040b000 seta no
+                    // 0x2c, FUN_0040c960 lê no 0x2d): 0=fechado, 1=aberto, 2=loja — manda a LISTA 0x13 só na 1a
+                    // chamada (estado 1->0), depois o ack. Aqui DIVERGIMOS por simplicidade: o grid é pintado 1x
+                    // na ENTRADA (0x2c, via 0x31) e o 0x2d é sempre-ack. Mandar 0x13 no 0x2d prendia o cliente
                     // re-pedindo 0x2d (telas sobrepostas) e o Previous nao voltava p/ a lista de salas.
                     SendInventoryAck(1);
                     return true;

@@ -9,23 +9,34 @@ namespace RakionServer.World.Network
     /// a partir da ESTRUTURA documentada + CONSTANTES DE PROTOCOLO + DADO DE SESSÃO por parâmetro.
     /// Não há blob de captura: nenhum byte é replay de uma sessão gravada.
     ///
-    /// Classificação dos bytes — DERIVADA POR DIFF DE 3 SESSÕES REAIS (mitm A/B/C, capture_field_entry):
-    ///  - CONSTANTE DE PROTOCOLO (igual em todas as sessões): opcodes, "dchannel01", o nonce 0x10 e o
-    ///    token do 0x36b (idênticos A=B), e o framing (00/01/markers). Ficam fixos aqui.
-    ///  - DADO DE SESSÃO: userid e nome (do domínio); tempo restante do stage (duração da sala, dur+3).
-    ///  - HANDLE AUTORAL DO SERVIDOR: os campos que VARIARAM entre as sessões A/B/C são PONTEIROS do
-    ///    worldserv original (ex.: 0x14/0x36 = `648c0509`/`648ce806`/`3c8c5607` ~ 0x07xxxxxx) que o
-    ///    cliente apenas ECOA (nunca dereferencia — é memória de outro processo). Por isso NÃO se
-    ///    replicam: entram pelo <paramref name="fieldHandle"/> — o handle do NOSSO field-objeto, gerado
-    ///    por sessão (<see cref="ClientSession"/>). As demais regiões de token derivam dele (<see cref="Fill"/>).
+    /// REGRA-MESTRA (RE de worldserv.exe via objdump, 2026-06-18): a cifra de lobby empacota em
+    /// BLOCOS DE 12 BYTES e o cliente lê cada frame pelo comprimento REAL que o servidor enviou
+    /// (3º arg dos sends FUN_004038e0/FUN_0041b8a0/FUN_0041b940). Os bytes além desse LEN, dentro do
+    /// bloco cifrado, são LIXO DE STACK do buffer de envio — VARIAM entre sessões (provado por diff do
+    /// golden vs capture_field_entry/mitm_full_113423.log) e o cliente os ignora. Por isso TODO frame é
+    /// emitido com seu LEN real + zero-pad até o bloco; nenhum "handle/token" capturado sobrevive.
     ///
-    /// POS-CLEAR (0x4a/1f_clear/1e_clear/36_clear): só há 1 sessão capturada (sem stage-clear nos diffs),
-    /// então a fronteira handle×constante segue por ANALOGIA à cadeia de entrada — confirmar com captura
-    /// de um stage-clear no original.
+    /// Builders cravados da decompilação (FUN @ endereço, LEN real):
+    ///   0x10 GameGuard  : nonce de handshake estático (16B); GG neutralizado não valida.
+    ///   0x14 SpawnAck   : FUN_0041fef0  LEN=3  [14 00][status].
+    ///   0x1e ChannelList: FUN_00404da0  LEN var [1e 00][type][count][nome1\0][nome2\0][N registros]; solo=28.
+    ///   0x1f SessionInfo: FUN_00404fc0  erro LEN=3 [1f 00][status]; ok LEN=15 [1f 00][00][00][uid:u16][registro].
+    ///   0x36 GameList   : FUN_00422c90 e FUN @0x41c0b7 (FieldPlayerList); LEN começa em 3 e cresce com a lista.
+    ///                     Solo = lista vazia (count=0) = LEN=3 [36 00][00].
+    ///   0x3b RoomCreate : FUN_00423580  LEN=5  [3b 00][status][seat:u16].
+    ///   0x43 MatchStart : FUN_004079d0  LEN=3  [43 00][status] (status 0 = partida inicia).
+    ///   0x48 Remaining  : FUN_00408440  LEN=9  [48 00][01][dur+3][2c0][2c1][best t1][best t2].
+    ///   0x4a StageClear : FUN_00405a90  LEN=6  [4a 00][tipo][2bf][2c0][2c1].
+    /// Registro por-player de 0x1e/0x1f (FUN_0040afb0): [nome\0][class@1531][team@146c][dword@14d0].
+    ///
+    /// DADO DE SESSÃO: userid e nome (do domínio); tempo restante do stage (duração da sala, dur+3).
+    /// VOLTA-À-LISTA (pós-0x44/pós-clear): o original RE-MANDA os MESMOS 0x1f/0x1e/0x36 da entrada — confirmado
+    /// em capture_field_entry/mitm_move_133859.log (l.460/461 == entrada l.19/20, só os bytes de lixo diferem).
+    /// Não há frame "clear" distinto nem handle de sessão na cauda: tudo é o frame de entrada sintetizado.
     /// </summary>
     public static class LobbyFrames
     {
-        /// <summary>Canal único do mundo offline (0x1e/0x1e_clear). Texto C terminado em nul.</summary>
+        /// <summary>Canal único do mundo offline (0x1e). Texto C terminado em nul.</summary>
         public const string ChannelName = "dchannel01";
 
         /// <summary>0x10 GameGuard challenge (16B). IDÊNTICO em A=B=C -> constante (cliente GG-neutralizado
@@ -33,10 +44,10 @@ namespace RakionServer.World.Network
         private static readonly byte[] GameGuardChallenge =
             { 0x4e, 0x95, 0xdd, 0x29, 0xce, 0x3a, 0x55, 0xdb, 0x20, 0xb6, 0xad, 0x97, 0xa6, 0x5c, 0xc0, 0x1c };
 
-        /// <summary>Token do 0x36b (9B): arma a lista de games. IDÊNTICO em A=B -> constante de protocolo.</summary>
-        private static readonly byte[] GameListArmToken = { 0x6a, 0x4d, 0xca, 0xaf, 0x2b, 0x4b, 0x3d, 0x9f, 0xa5 };
-
-        private static readonly byte[] FramePad7 = { 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 };
+        /// <summary>Registro do player no 0x1f/0x1e (FUN_0040afb0), na ordem [nome-NUL][class@1531][team@146c]
+        /// [dword@14d0]. O nome (2B) é escrito antes; aqui vêm o NUL terminador + os campos do char solo
+        /// (class=1, team/stats=0).</summary>
+        private static readonly byte[] PlayerRecordTail = { 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
         // ---- BUILDERS ----------------------------------------------------------------------------------
 
@@ -62,58 +73,43 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
-        /// <summary>0x36 game-list (FUN_00422c90 FieldPlayerList): no original é a LISTA DE SALAS, de tamanho
-        /// VARIÁVEL. Nosso STUB mantém a forma capturada que destrava a game-list/botão Create no cliente
-        /// (lista vazia p/ solo); a cauda (handle) é inerte. Reimplementar a serialização da lista seria
-        /// grande e sem ganho funcional aqui — fica stub.</summary>
-        public static byte[] GameListArm(byte[] fieldHandle)
+        /// <summary>0x36 game-list (FieldPlayerList: FUN_00422c90 e o 2º builder @0x41c0b7). No original é a
+        /// LISTA DE SALAS/PLAYERS de tamanho VARIÁVEL ([36 00][count][por entrada ...]); o LEN começa em 3 e
+        /// só cresce com entradas. No mundo SOLO a lista está vazia -> count=0 -> LEN=3 = [36 00][00]. As caudas
+        /// `20000000`/`648ce806`/`6a4dcaaf...` das 3 capturas (arm/extra/refresh) eram LIXO DE STACK distinto —
+        /// não handle nem "token de arme": quem arma a game-list é o próprio count=0. 3 reais + zero-pad.</summary>
+        public static byte[] GameListEmpty()
         {
             using var w = new PacketWriter();
             w.WriteWord(0x36);
-            w.WriteWord(0);
-            w.WriteUInt32(0x20);
-            w.WriteBytes(Fill(fieldHandle, 4));
+            w.WriteByte(0);                 // count = 0 (lista vazia no solo)
+            w.WriteBytes(new byte[9]);      // padding do bloco de 12B (era lixo de stack)
             return w.ToArray();
         }
 
-        /// <summary>0x36b: [36 00][00][token 9B]. Arma a lista de games (1x; remandar reabre o polling).</summary>
-        public static byte[] GameListArmExtra()
-        {
-            using var w = new PacketWriter();
-            w.WriteWord(0x36);
-            w.WriteByte(0);
-            w.WriteBytes(GameListArmToken);
-            return w.ToArray();
-        }
-
-        /// <summary>0x1f info de sessão. Entrada e SAÍDA pós-clear divergem só na cauda. O userid (do
-        /// domínio) casa com o 0x0C; a cauda variável é handle do field (Fill do fieldHandle).</summary>
-        public static byte[] SessionInfo(ushort userId, string name, byte[] fieldHandle, bool clear)
+        /// <summary>0x1f info de sessão/char. RE FUN_00404fc0: a ENTRADA (sucesso) tem LEN=15 =
+        /// [1f 00][00][00][userid:u16][registro do player]. O registro (FUN_0040afb0) = [nome\0][class][team]
+        /// [dword]. O byte 15+ do bloco era LIXO DE STACK — VARIOU entre sessões (06/64/08 no diff golden×log),
+        /// logo zero-pad (LEN real=15). Userid e nome vêm do domínio. A volta-à-lista pós-clear re-manda ESTE
+        /// MESMO frame (mitm_move_133859 l.460 == entrada l.19; só o byte de lixo difere — sem handle/marker).</summary>
+        public static byte[] SessionInfo(ushort userId, string name)
         {
             using var w = new PacketWriter();
             w.WriteWord(0x1f);
             w.WriteWord(0);
             w.WriteWord(userId);
             WriteName(w, name);
-            w.WriteBytes(FramePad7);
-            if (clear)
-            {
-                w.WriteByte(0x02);                  // marker da saída
-                w.WriteByte(0);
-                w.WriteBytes(Fill(fieldHandle, 7)); // handle (era ptr do original)
-            }
-            else
-            {
-                w.WriteByte(fieldHandle[0]);        // byte de sessão (era 08/06 por sessão)
-                w.WriteWord(userId);
-                w.WriteBytes(new byte[6]);
-            }
+            w.WriteBytes(PlayerRecordTail);
+            w.WriteBytes(new byte[9]);              // bloco de 24B: byte 15+ era lixo de stack (LEN real=15)
             return w.ToArray();
         }
 
-        /// <summary>0x1e lista de canais ("dchannel01"). userid e nome do domínio; o token de entrada (8B)
-        /// é handle do field. A saída pós-clear não tem handle (só const + userid).</summary>
-        public static byte[] ChannelList(ushort userId, string name, byte[] fieldHandle, bool clear)
+        /// <summary>0x1e lista de canais ("dchannel01"). RE FUN_00404da0: [1e 00][type][count][nome1\0][nome2\0]
+        /// [N registros de player]. No solo: type=0, count=1, 1 registro (userid + nome + stats) -> LEN real=28.
+        /// A cauda (bytes 28+) era LIXO DE STACK — VARIOU entre sessões (5e735fb8.../648c0509...), logo zero-pad.
+        /// userid e nome vêm do domínio. A volta-à-lista pós-clear re-manda ESTE MESMO frame (mitm_move l.461 ==
+        /// entrada l.20, byte-a-byte).</summary>
+        public static byte[] ChannelList(ushort userId, string name)
         {
             using var w = new PacketWriter();
             w.WriteWord(0x1e);
@@ -122,15 +118,8 @@ namespace RakionServer.World.Network
             w.WriteWord(0);
             w.WriteWord(userId);
             WriteName(w, name);
-            w.WriteBytes(FramePad7);
-            if (clear)
-            {
-                w.WriteWord(0x0030);
-                w.WriteWord(0x0325);
-                w.WriteWord(userId);
-                w.WriteWord(0);
-            }
-            else w.WriteBytes(Fill(fieldHandle, 8)); // token de entrada = handle do field
+            w.WriteBytes(PlayerRecordTail);
+            w.WriteBytes(new byte[8]);   // bloco de 36B: bytes 28+ eram lixo de stack (LEN real=28)
             return w.ToArray();
         }
 
@@ -147,15 +136,17 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
-        /// <summary>0x43 ack de start do match: [43 00][00][handle 5B][3b 00 00 00]. A cauda 3b = opcode da
-        /// sala ecoado (constante A=B).</summary>
-        public static byte[] MatchStartAck(byte[] fieldHandle)
+        /// <summary>0x43 ack de start do match. RE FUN_004079d0 (@0x4079d0): a resposta REAL tem LEN=3 =
+        /// [43 00][status], enviada via FUN_0041b8a0(...,3,...). status 0 = partida inicia (seta o timer
+        /// this+0x2b8 = tick+40000ms); 1/2/3 = não pôde iniciar (faltam players/prontidão). O [handle 5B]
+        /// [3b 00 00 00] do blob antigo (e o [0003000000 3b000000] da captura) era LIXO DE STACK — varia
+        /// entre sessões, não é handle nem opcode ecoado. 3 reais + zero-pad.</summary>
+        public static byte[] MatchStartAck()
         {
             using var w = new PacketWriter();
             w.WriteWord(0x43);
-            w.WriteByte(0);
-            w.WriteBytes(Fill(fieldHandle, 5));
-            w.WriteByte(0x3b); w.WriteBytes(new byte[3]);
+            w.WriteByte(0);                 // status (0 = partida inicia)
+            w.WriteBytes(new byte[9]);      // padding do bloco de 12B (era lixo de stack)
             return w.ToArray();
         }
 
@@ -190,17 +181,6 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
-        /// <summary>0x36 refresh da lista de games (pós-clear / FieldLeaveGame): [36 00][00][handle 4B][00][02][00 00 00].</summary>
-        public static byte[] GameListRefresh(byte[] fieldHandle)
-        {
-            using var w = new PacketWriter();
-            w.WriteWord(0x36);
-            w.WriteByte(0);
-            w.WriteBytes(Fill(fieldHandle, 4));
-            w.WriteByte(0); w.WriteByte(0x02); w.WriteBytes(new byte[3]);
-            return w.ToArray();
-        }
-
         /// <summary>0x44 fim de partida (volta ao game room): [44 00][reason][00][01 00 00 00][nome da sala].
         /// O nome vem do domínio (último campo, tamanho variável seguro).</summary>
         public static byte[] MatchEnd(byte reason, string roomName)
@@ -229,16 +209,6 @@ namespace RakionServer.World.Network
             }
             w.WriteBytes(new byte[9]);              // trailer zeros
             return w.ToArray();
-        }
-
-        /// <summary>Expande o handle (ponteiro autoral do servidor, 4B) para n bytes — preenche as regiões
-        /// de token que o cliente apenas ecoa. O valor é irrelevante p/ o cliente; só precisa ser estável
-        /// na sessão (mesmo handle no 0x14 e 0x36).</summary>
-        private static byte[] Fill(byte[] handle, int n)
-        {
-            byte[] o = new byte[n];
-            for (int i = 0; i < n; i++) o[i] = handle[i % handle.Length];
-            return o;
         }
 
         private static void WriteName(PacketWriter w, string name)
