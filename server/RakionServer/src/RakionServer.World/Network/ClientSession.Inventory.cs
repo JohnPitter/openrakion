@@ -127,11 +127,12 @@ namespace RakionServer.World.Network
         private static bool IsPotion(int itemId) => itemId >= 12000 && itemId <= 12999;
 
         /// <summary>Popula o quickslot de pocao com o que foi persistido (itembox.qslot) no login.</summary>
-        public void LoadPotionSlot(System.Collections.Generic.IReadOnlyList<(int Cell, int ItemId)> entries)
+        public void LoadPotionSlot(System.Collections.Generic.IReadOnlyList<(int Cell, int ItemId, int Count)> entries)
         {
             System.Array.Clear(_potionSlot);
-            foreach (var (cell, itemId) in entries)
-                if (cell >= 0 && cell < _potionSlot.Length) _potionSlot[cell] = itemId;
+            System.Array.Clear(_potionCount);
+            foreach (var (cell, itemId, count) in entries)
+                if (cell >= 0 && cell < _potionSlot.Length) { _potionSlot[cell] = itemId; _potionCount[cell] = count; }
         }
 
         /// <summary>Pinta uma celula do quickslot de pocao na abertura do inventario. A forma do frame
@@ -139,12 +140,12 @@ namespace RakionServer.World.Network
         /// do handler do cliente (FUN_0047d1d0) escreve num array de widgets indexado pela celula SEM
         /// bounds-check e corrompia widgets -> AV no draw (rakion.bin+0x407ed). Origem = 1a celula VAZIA
         /// do box (escrita de item 0 = no-op visual), destino = a celula do quickslot.</summary>
-        private void SendPotionSlotAdd(int itemId, byte cell)
+        private void SendPotionSlotAdd(int itemId, byte cell, int count)
         {
             int empty = BoxItems.IndexOf(0);     // 1a celula vazia do box p/ usar de origem (escrita de 0 = no-op visual)
             if (empty < 0) return;               // box cheio: sem celula vazia
-            SendPotionSlotMove(0, (byte)empty, 0, 1, cell, itemId);
-            Log.Ok("shop", "[{0}] 0x31 potion-add: item {1} -> quickslot {2}", Slot, itemId, cell);
+            SendPotionSlotMove(0, (byte)empty, 0, 1, cell, itemId, count);
+            Log.Ok("shop", "[{0}] 0x31 potion-add: item {1} x{2} -> quickslot {3}", Slot, itemId, count, cell);
         }
 
         /// <summary>Pinta todas as células ocupadas do quickslot de poção (0x31 box->quickslot). Chamado na
@@ -154,7 +155,7 @@ namespace RakionServer.World.Network
         public void PaintQuickslot()
         {
             for (byte cell = 0; cell < _potionSlot.Length; cell++)
-                if (_potionSlot[cell] != 0) SendPotionSlotAdd(_potionSlot[cell], cell);
+                if (_potionSlot[cell] != 0) SendPotionSlotAdd(_potionSlot[cell], cell, _potionCount[cell]);
         }
 
         /// <summary>
@@ -169,7 +170,7 @@ namespace RakionServer.World.Network
         /// poção** (widget+0x194, lido cifrado pelo FUN_00440430) — o cliente EXIGE > 0 p/ deixar usar a poção
         /// no jogo; cada célula = 1 poção no nosso modelo -> poção manda 1, não-poção 0 (campo vira exp/limit).
         /// </summary>
-        private void SendPotionSlotMove(byte srcType, byte srcSlot, int newSrcItem, byte destType, byte destSlot, int newDestItem)
+        private void SendPotionSlotMove(byte srcType, byte srcSlot, int newSrcItem, byte destType, byte destSlot, int newDestItem, int destCnt = 1)
         {
             // CONTADOR (v) = widget+0x194: > 0 deixa a poção visível/utilizável; 0 a deixa "zerada"/inerte.
             // Cada célula = 1 poção no nosso modelo -> poção manda 1, não-poção 0 (lá o campo é exp/limit).
@@ -177,7 +178,7 @@ namespace RakionServer.World.Network
             // (teste in-game 15/06) -> o freeze é independente do contador (estado do cliente no-GG / pacote
             // de entrada-no-stage, RE pendente). Por isso o contador volta — poção utilizável de novo.
             uint srcCount  = IsPotion(newSrcItem)  ? 1u : 0u;
-            uint destCount = IsPotion(newDestItem) ? 1u : 0u;
+            uint destCount = IsPotion(newDestItem) ? (uint)System.Math.Max(1, destCnt) : 0u;  // contador real do stack
             using var w = new PacketWriter();
             w.WriteWord(0x31);                  // off0  msgType (dispatch do cliente)
             w.WriteByte(0);                     // off2  status = 0 (sucesso; != 0 mostraria erro)

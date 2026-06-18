@@ -640,13 +640,13 @@ namespace RakionServer.World
         }
 
         private static CharSummary BuildCharSummary(CharacterInfo ch, byte[] ranks,
-            List<(int Cell, int ItemId)>? quickslot)
+            List<(int Cell, int ItemId, int Count)>? quickslot)
         {
             // Equip NÃO entra no char-select: o preview 3D veste o gear no modelo da classe e crasha em classes
             // sem o bone da arma ('Weapon01_ON_R'). TODO: reabilitar (só armadura, ou tratar o bone por classe).
             var qs = new ushort[6];
             if (quickslot != null)
-                foreach (var (cell, itemId) in quickslot)
+                foreach (var (cell, itemId, _) in quickslot)
                     if (cell is >= 13 and <= 18) qs[cell - 13] = (ushort)itemId;
             return new CharSummary
             {

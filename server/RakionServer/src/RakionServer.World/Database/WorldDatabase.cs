@@ -375,18 +375,18 @@ namespace RakionServer.World.Database
             return list;
         }
 
-        /// <summary>Carrega o quickslot de pocao (itembox.qslot>0) de uma conta: (celula = qslot-1, itemId).</summary>
-        public async Task<System.Collections.Generic.List<(int Cell, int ItemId)>> LoadQuickslotAsync(int userId)
+        /// <summary>Carrega o quickslot consolidado por id: (celula = menor qslot-1, itemId, quantidade do stack).</summary>
+        public async Task<System.Collections.Generic.List<(int Cell, int ItemId, int Count)>> LoadQuickslotAsync(int userId)
         {
-            var list = new System.Collections.Generic.List<(int, int)>();
+            var list = new System.Collections.Generic.List<(int, int, int)>();
             try
             {
                 await using var c = new MySqlConnection(_conn);
                 await c.OpenAsync();
-                await using var cmd = new MySqlCommand("SELECT qslot, itemid FROM itembox WHERE userid=@uid AND qslot>0", c);
+                await using var cmd = new MySqlCommand("SELECT MIN(qslot) AS qslot, itemid, COUNT(*) AS cnt FROM itembox WHERE userid=@uid AND qslot>0 GROUP BY itemid", c);
                 cmd.Parameters.AddWithValue("@uid", userId);
                 await using var r = await cmd.ExecuteReaderAsync();
-                while (await r.ReadAsync()) list.Add((r.GetByte(0) - 1, r.GetInt32(1)));
+                while (await r.ReadAsync()) list.Add((System.Convert.ToInt32(r.GetValue(0)) - 1, r.GetInt32(1), System.Convert.ToInt32(r.GetValue(2))));
             }
             catch (Exception ex) { Log.Error("db", "LoadQuickslotAsync({0}): {1}", userId, ex.Message); }
             return list;
@@ -411,7 +411,7 @@ namespace RakionServer.World.Database
                     int item = potionSlot[cell];
                     if (item == 0) continue;
                     await using var mark = new MySqlCommand(
-                        "UPDATE itembox SET qslot=@q WHERE userid=@uid AND itemid=@it AND qslot=0 ORDER BY id LIMIT 1", c);
+                        "UPDATE itembox SET qslot=@q WHERE userid=@uid AND itemid=@it AND qslot=0", c);   // TODAS as linhas do id (stack) na celula
                     mark.Parameters.AddWithValue("@q", cell + 1);
                     mark.Parameters.AddWithValue("@uid", userId);
                     mark.Parameters.AddWithValue("@it", item);
