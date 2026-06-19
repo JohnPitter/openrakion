@@ -211,8 +211,10 @@ namespace RakionServer.World.Network
                 default:
                     // Shop list/loadout (0x2d/0x2f) E buy (0x2e) DEVEM chegar aos handlers reais
                     // (Op_RoomRosterSync/Op_GroupMemberInfo/Op_RoomMemberQuery) -> NAO consumir aqui, deixa o
-                    // Dispatch rodar (gate passa: channel/room lobby = InField+FSec+Status=2).
-                    if (opcode == 0x2d || opcode == 0x2e || opcode == 0x2f || opcode == 0x33) return false;
+                    // Dispatch rodar (gate passa: channel/room lobby = InField+FSec+Status=2). Idem 0x39
+                    // (FieldListReq = Quick Start / lista de salas, FUN_00423300): sem o reply [39 00][count][salas]
+                    // o cliente trava "esperando a resposta do world".
+                    if (opcode == 0x2d || opcode == 0x2e || opcode == 0x2f || opcode == 0x33 || opcode == 0x39) return false;
                     // Salas BATTLE/PvP (Mode != 0): os opcodes de COMBATE vao aos handlers reais do
                     // motor de partida — 0x4d (par golem/facing: y==0 = golem inimigo destruido ->
                     // fim de round), 0x3d (troca de arma), 0x50 (reporte de exp/gold do fim de partida ->
