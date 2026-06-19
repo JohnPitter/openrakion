@@ -26,7 +26,7 @@ namespace RakionServer.World.Network
     ///   0x3b RoomCreate : FUN_00423580  LEN=5  [3b 00][status][seat:u16].
     ///   0x43 MatchStart : FUN_004079d0  LEN=3  [43 00][status] (status 0 = partida inicia).
     ///   0x48 Remaining  : FUN_00408440  LEN=9  [48 00][01][dur+3][2c0][2c1][best t1][best t2].
-    ///   0x4a StageClear : FUN_00405a90  LEN=6  [4a 00][tipo][2bf][2c0][2c1].
+    ///   0x4a StageEnd   : clear=FUN_00405a90 (2bd=2) / morte=FUN_004087d0 (2bd=1)  LEN=6  [4a 00][2bd][2bf][2c0][2c1].
     /// Registro por-player de 0x1e/0x1f (FUN_0040afb0): [nome\0][class@1531][team@146c][dword@14d0].
     ///
     /// DADO DE SESSÃO: userid e nome (do domínio); tempo restante do stage (duração da sala, dur+3).
@@ -166,18 +166,19 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
-        /// <summary>0x4a resultado do StageClear (tela de Rank). RE do builder FUN_00405a90 (@0x405a90):
-        /// a mensagem REAL tem 6 bytes (uVar6=6) — [4a 00][tipo=this+0x2bd, eco do request=0x02]
-        /// [this+0x2bf=1][this+0x2c0=contador de clears][this+0x2c1=0]. Os 6 bytes seguintes do bloco
-        /// cifrado de 12B eram LIXO DE STACK na captura antiga (uStack além dos 6 escritos), NÃO handle —
-        /// por isso zero-pad determinístico em vez do `737624007c04` capturado.</summary>
-        public static byte[] StageClearResult()
+        /// <summary>0x4a resultado de FIM de stage (tela de resumo). RE de DOIS builders que montam a MESMA
+        /// forma de 6 bytes [4a 00][this+0x2bd][this+0x2bf][this+0x2c0][this+0x2c1], diferindo só no this+0x2bd:
+        ///  - CLEAR (FUN_00405a90 @0x405a90): 2bd=2 (eco do request StageClear) -> tela de Rank.
+        ///  - MORTE (GameDiePlayer FUN_004087d0 @0x4087d0, modo survival/case 2): 2bd=1 + timer 15s -> resumo de fim.
+        /// <paramref name="resultType"/> = this+0x2bd (2=clear, 1=morreu). Os 6 bytes seguintes do bloco de 12B
+        /// eram LIXO DE STACK na captura -> zero-pad determinístico.</summary>
+        public static byte[] StageEndResult(byte resultType)
         {
             using var w = new PacketWriter();
             w.WriteWord(0x4a);
-            w.WriteByte(0x02);                                     // tipo StageClear (eco do param_1 do request)
-            w.WriteByte(0x01); w.WriteByte(0x01); w.WriteByte(0);  // estado do field (this+0x2bf/0x2c0/0x2c1)
-            w.WriteBytes(new byte[6]);                             // padding do bloco de 12B (era lixo de stack)
+            w.WriteByte(resultType);                              // this+0x2bd (2=stage clear, 1=morte)
+            w.WriteByte(0x01); w.WriteByte(0x01); w.WriteByte(0); // estado do field (this+0x2bf/0x2c0/0x2c1)
+            w.WriteBytes(new byte[6]);                            // padding do bloco de 12B (era lixo de stack)
             return w.ToArray();
         }
 

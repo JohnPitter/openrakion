@@ -43,11 +43,18 @@ ANTES de adicionar mais código. Auditoria viva e dívida priorizada em
   (`WorldHandlers.<Domínio>.cs`) — a convenção já existe no repo.
 - Parâmetros: ≤4; acima, agrupe num DTO/record.
 - Aninhamento: ≤3 níveis; prefira early return.
-- Dívida de tamanho **QUITADA** (2026-06-14): os god-files foram fatiados em `partial class`
+- Dívida dos GOD-FILES **QUITADA** (2026-06-14): os monólitos foram fatiados em `partial class`
   por domínio — `WorldHandlers.Generated.cs` (2692→125 + 6 partials), `Broker/Systems.cs`
   (1797→270 + tipos aninhados em arquivos próprios), `ClientSession.cs` (1032→357 + LobbyFlow
   + LobbyFrames + Inventory). O domínio Field foi ainda fatiado em lifecycle (`.Field.cs` 459) × combate
-  (`.FieldCombat.cs` 401). Maior arquivo agora: `.Room.cs` (514, abaixo de 600).
+  (`.FieldCombat.cs` 401).
+- Dívida de tamanho **REMANESCENTE** (sinalizada, fatiar antes de 800): `WorldDatabase.cs` (702) e
+  `WorldServer.cs` (~710, bootstrap + progressão/`GrantExp`/`ApplyStageResult` + fields) seguem **acima de 600** —
+  não eram god-files do slice, são os núcleos DB e servidor. Depois vêm `WorldHandlers.ReconCombatB.cs` (515) e
+  `WorldHandlers.Generated.Room.cs` (514).
+- DOMÍNIO ≠ rede: regra de progressão/motor-de-partida (ex.: resultado de stage = exp/gold/rank) mora em
+  serviço de domínio (`WorldServer.ApplyStageResult`/`GrantExp`), **não** no handler de rede nem em partial de
+  outro domínio (ex.: o 0x53 NÃO mora em `ClientSession.Inventory.cs`; o handler só traduz bytes↔chamada).
 
 **Golden source / sem código morto**
 - UMA implementação por comportamento. Proibido manter versões paralelas (ex.: handler

@@ -101,7 +101,7 @@ namespace RakionServer.World.Network
                         // pequeno DELAY p/ o overlay de Rank ter tempo de aparecer. (Mandar tudo junto, ou
                         // disparar no 0x53, fazia o Rank sumir.) O 0x53 GameResultReport que o cliente manda
                         // logo apos e' CONSUMIDO (case 0x53) p/ nao cair no handler que desconecta em solo.
-                        SendEncryptedFrame(LobbyFrames.StageClearResult());  // tela de RANK
+                        SendEncryptedFrame(LobbyFrames.StageEndResult(2));   // tela de RANK (2bd=2 = clear)
                         Log.Ok("lobby", "[{0}] 0x4A StageClear -> Rank (0x44+refresh do lobby em ~5s)", Slot);
                         _ = ScheduleLobbyReturnAfterRankAsync();
                         return true;
@@ -150,9 +150,9 @@ namespace RakionServer.World.Network
                     return true;
                 case 0x53: // GameResultReport pos-clear (SOLO PvE). O handler real (Op_0x53_Recon) exige o
                     // field-record do match-engine, que esta OFF no solo (combate client-side) e DESCONECTAVA.
-                    // Consumimos aqui MAS creditamos o exp/gold reportados (FUN_00425010: [idx][cfgA][cfgB]
-                    // [cfgB x u16][exp u32][gold u32]) — antes o stage clear nao dava progresso nenhum.
-                    CreditSoloResult(data);
+                    // Consumimos aqui (regra de negocio = WorldServer.ApplyStageResult); antes o stage clear
+                    // nao dava progresso nenhum.
+                    OnStageResult(data);
                     return true;
                 case 0x4b: // SPAWN no stage (72B). Inicia o relogio da partida: um timer incrementa
                     // GameSeq e manda o tick 1583 (o cliente ecoa o seq; seq avancando = timer corre).
@@ -190,6 +190,24 @@ namespace RakionServer.World.Network
                         Log.Ok("lobby", "[{0}] 0x46 saída do stage solo -> eco FIELD 0x46 + 0x44 (destrava waiting-world)", Slot);
                         return true;
                     }
+                case 0x4F: // player MORREU no stage (DIE: data=[cause][killer]). No SOLO o combate é client-side e
+                    // o 0x4f era ENGOLIDO -> o cliente ficava "esperando outros players". RE GameDiePlayer
+                    // (FUN_004087d0 @0x4087d0, modo survival/case 2): na morte que encerra a partida o original
+                    // manda o eco 0x4f + o 0x4a de RESUMO com this+0x2bd=1 (morreu) + timer 15s -> fim. Replicamos:
+                    // eco + 0x4a(tipo=1) + volta ao room com delay (mesma malha do clear, que manda 0x4a tipo=2).
+                    {
+                        var fld = _server.GetField(FieldId);
+                        if (fld == null || fld.Mode != 0) return false;   // PvP/sem field -> dispatch real (Op_0x4F_Recon)
+                        byte cause = data.Length > 0 ? data[0] : (byte)0;
+                        byte killer = data.Length > 1 ? data[1] : (byte)0;
+                        // eco da morte (mesmo layout do Op_0x4F_Recon: [seat][cause][killer][score0][score1])
+                        fld.BroadcastField(0x4f, new byte[] { FieldSeat, cause, killer, fld.Score0, fld.Score1 });
+                        fld.OnPlayerDeath(FieldSeat, killerSeat: -1, cause: cause);
+                        SendEncryptedFrame(LobbyFrames.StageEndResult(1)); // RESUMO de fim por MORTE (0x4a, 2bd=1)
+                        _ = ScheduleLobbyReturnAfterRankAsync();           // delay -> 0x44 (volta ao game room)
+                        Log.Ok("lobby", "[{0}] 0x4f morte no stage solo -> eco FIELD 0x4f + resumo 0x4a(2bd=1) + 0x44 (delay)", Slot);
+                        return true;
+                    }
                 default:
                     // Shop list/loadout (0x2d/0x2f) E buy (0x2e) DEVEM chegar aos handlers reais
                     // (Op_RoomRosterSync/Op_GroupMemberInfo/Op_RoomMemberQuery) -> NAO consumir aqui, deixa o
@@ -197,10 +215,10 @@ namespace RakionServer.World.Network
                     if (opcode == 0x2d || opcode == 0x2e || opcode == 0x2f || opcode == 0x33) return false;
                     // Salas BATTLE/PvP (Mode != 0): os opcodes de COMBATE vao aos handlers reais do
                     // motor de partida — 0x4d (par golem/facing: y==0 = golem inimigo destruido ->
-                    // fim de round), 0x4f (morte), 0x3d (troca de arma), 0x50 (reporte de exp/gold do
-                    // fim de partida -> level-up). No SOLO (Mode 0) continuam engolidos: o combate e'
-                    // client-side e o 0x4d (y==0) encerraria o stage. (0x46 tem case próprio acima — solo tb.)
-                    if (opcode == 0x4d || opcode == 0x4f || opcode == 0x3d || opcode == 0x50)
+                    // fim de round), 0x3d (troca de arma), 0x50 (reporte de exp/gold do fim de partida ->
+                    // level-up). No SOLO (Mode 0) continuam engolidos: o combate e' client-side e o 0x4d
+                    // (y==0) encerraria o stage. (0x46 saída e 0x4f morte têm case próprio acima — solo tb.)
+                    if (opcode == 0x4d || opcode == 0x3d || opcode == 0x50)
                     {
                         var bf = _server.GetField(FieldId);
                         if (bf != null && bf.Mode != 0) return false; // dispatch -> Op_0xNN_Recon
@@ -316,6 +334,53 @@ namespace RakionServer.World.Network
             SendEncryptedFrame(LobbyFrames.MatchEnd(2, PendingRoomName.Length > 0 ? PendingRoomName : "asdd"));  // reason=2; nome da sala do domínio
             Log.Ok("lobby", "[{0}] pos-Rank (delay) -> 0x44 match-end (volta ao game room, sala='{1}')", Slot,
                 PendingRoomName.Length > 0 ? PendingRoomName : "asdd");
+        }
+
+        /// <summary>Handler do 0x53 GameResult (resultado do stage solo, FUN_00425010): traduz bytes -> chamada de
+        /// domínio (<see cref="WorldServer.ApplyStageResult"/>, que credita exp/gold/rank) e serializa as respostas
+        /// — level-up (0x51) + ack (0x53). A regra de negócio (progressão) mora no WorldServer; aqui só parse +
+        /// validação de limites + serialização. Layout: [stage u8][rank u8][count u8][count×u16 mapSlots][exp u32][gold u32].</summary>
+        private void OnStageResult(byte[] data)
+        {
+            try
+            {
+                var p = new PacketReader(data);
+                byte stage = p.Byte();         // <100 = stage id
+                byte rank = p.Byte();          // <6 = grade (0=nenhum,1=D,2=C,3=B,4=A,5=S)
+                byte count = p.Byte();         // <5 = qtde de mapSlots (u16) reportados
+                ushort[] mapSlots = new ushort[count];
+                for (int i = 0; i < count; i++) mapSlots[i] = (p.Remaining >= 2) ? p.UInt16() : (ushort)0;
+                uint exp = p.CanRead(4) ? p.UInt32() : 0;
+                uint gold = p.CanRead(4) ? p.UInt32() : 0;
+                const uint Max = 1_000_000;    // teto de sanidade (anti-cheat, = ValidateGamePoints do 0x50)
+                if (exp > Max || gold > Max)
+                {
+                    Log.Warn("field", "[{0}] 0x53 solo: Wrong Game Point! Exp:{1} Gold:{2} — ignorado", Slot, exp, gold);
+                    return;
+                }
+                int ups = _server.ApplyStageResult(this, stage, rank, exp, gold);   // domínio: bônus PU + gold + rank + exp
+                if (ups > 0) SendLevelUp();                                          // 0x51 ao cliente
+                // ACK do 0x53: sem ele o cliente nao comita o resultado (o rank so' entrava na selecao apos relog).
+                SendStageResultAck(stage, rank, count, mapSlots);
+                Log.Ok("field", "[{0}] 0x53 stage result solo — stage={1} rank={2} exp={3} gold={4}{5}", Slot, stage, rank, exp, gold,
+                    ups > 0 ? $" (+{ups} nivel -> {CharLevel})" : "");
+            }
+            catch (Exception ex) { Log.Warn("field", "[{0}] 0x53 solo parse: {1}", Slot, ex.Message); }
+        }
+
+        /// <summary>ACK do 0x53 GameResult (reply de sucesso do FUN_00425010): [53 00][0][stage][rank][count]
+        /// [mapSlots:u16...]. O original responde isto a TODO 0x53; sem ele o cliente nao confirma o resultado do
+        /// stage (rank/result so' aparecem na selecao apos relog). Canal LOBBY (SendLobby = FUN_004038e0).</summary>
+        private void SendStageResultAck(byte stage, byte rank, byte count, ushort[] mapSlots)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x53);
+            w.WriteByte(0);          // result = sucesso
+            w.WriteByte(stage);
+            w.WriteByte(rank);
+            w.WriteByte(count);
+            for (int i = 0; i < mapSlots.Length; i++) w.WriteWord(mapSlots[i]);
+            SendLobby(w.ToArray());
         }
 
         // ---- handshake UDP -------------------------------------------------------------

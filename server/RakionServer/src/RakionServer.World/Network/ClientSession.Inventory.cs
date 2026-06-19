@@ -394,41 +394,6 @@ namespace RakionServer.World.Network
             Log.Ok("shop", "[{0}] 0x34 power-user resposta (status={1})", Slot, status);
         }
 
-        /// <summary>
-        /// Credita o resultado do STAGE SOLO (0x53, FUN_00425010): parse [idx u8][cfgA u8][cfgB u8]
-        /// [cfgB x u16 mapSlots][exp u32][gold u32]. Mesmo teto anti-cheat do caminho PvP (0x50).
-        /// O level-up/persistencia ficam no WorldServer.GrantExp (curva classlevelinfo).
-        /// </summary>
-        private void CreditSoloResult(byte[] data)
-        {
-            try
-            {
-                var p = new PacketReader(data);
-                byte stage = p.Byte();         // b0 (<100) = stage id (confirmado in-game: idx=3 = Stage 3)
-                byte rank = p.Byte();          // b1 (<6) = grade do rank (confirmado: 4 = Rank A; 0=nenhum, 1=D, 2=C, 3=B, 4=A, 5=S)
-                byte cfgB = p.Byte();          // count (<5) = qtde de u16 (map slots) a pular
-                for (int i = 0; i < cfgB && p.Remaining >= 2; i++) p.UInt16();
-                uint exp = p.CanRead(4) ? p.UInt32() : 0;
-                uint gold = p.CanRead(4) ? p.UInt32() : 0;
-                const uint Max = 1_000_000;    // teto de sanidade (= ValidateGamePoints do 0x50)
-                if (exp > Max || gold > Max)
-                {
-                    Log.Warn("field", "[{0}] 0x53 solo: Wrong Game Point! Exp:{1} Gold:{2} — ignorado", Slot, exp, gold);
-                    return;
-                }
-                exp = BonusExp(exp); gold = BonusGold(gold);   // bônus de PU (pu_config) sobre o valor base
-                Gold += gold;
-                if (gold > 0 && GameInfoId > 0) _ = _server.Db.AddGoldAsync(GameInfoId, (int)gold);
-                if (rank > 0 && ActiveCharId > 0) _ = _server.Db.SaveStageRankAsync(ActiveCharId, stage, rank); // melhor rank por stage (userstageinfo)
-                int ups = _server.GrantExp(this, exp);
-                if (ups > 0) SendLevelUp();                    // 0x51 ao cliente: o PvP (Op_0x50_Recon) manda apos o GrantExp;
-                                                               // sem ele o solo sobe o nivel so' no DB (aparece no relog), nunca na tela -> barra presa
-                Log.Ok("field", "[{0}] 0x53 stage clear solo — stage={1} rank={2} exp={3} gold={4}{5}", Slot, stage, rank, exp, gold,
-                    ups > 0 ? $" (+{ups} nivel -> {CharLevel})" : "");
-            }
-            catch (Exception ex) { Log.Warn("field", "[{0}] 0x53 solo parse: {1}", Slot, ex.Message); }
-        }
-
         /// <summary>LOBBY 0x51 (level-up) ao proprio: [51 00][level][u16 levelPoint]. MESMO frame que o
         /// caminho PvP (Op_0x50_Recon) manda apos o GrantExp; sem ele o solo sobe o nivel server-side mas o
         /// cliente fica preso no nivel antigo (barra travada, ex.: 188/133) ate um relog.</summary>

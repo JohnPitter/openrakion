@@ -59,8 +59,12 @@ namespace RakionServer.World.Tests
             Assert.Equal("430000000000000000000000", Hex(LobbyFrames.MatchStartAck()));
 
         [Fact]
-        public void StageClearResult_RealLen6_ZeroPad() =>   // RE FUN_00405a90: 6 bytes reais + padding (era lixo de stack)
-            Assert.Equal("4a0002010100000000000000", Hex(LobbyFrames.StageClearResult()));
+        public void StageEndResult_Clear_RealLen6_ZeroPad() =>   // RE FUN_00405a90: 2bd=2 (clear) -> 6 bytes + padding
+            Assert.Equal("4a0002010100000000000000", Hex(LobbyFrames.StageEndResult(2)));
+
+        [Fact]
+        public void StageEndResult_Death_RealLen6_ZeroPad() =>   // RE GameDiePlayer FUN_004087d0: 2bd=1 (morte) -> mesma forma, byte[2]=1
+            Assert.Equal("4a0001010100000000000000", Hex(LobbyFrames.StageEndResult(1)));
 
         // ---- Frames com registro de player (entrada E volta-à-lista): LEN real + zero-pad (cauda era lixo) ----
 
