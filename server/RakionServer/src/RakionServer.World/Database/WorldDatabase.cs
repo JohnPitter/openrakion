@@ -50,6 +50,7 @@ namespace RakionServer.World.Database
                 await using var c = new MySqlConnection(_conn);
                 await c.OpenAsync();
                 await Exec(c, "ALTER TABLE itembox ADD COLUMN IF NOT EXISTS qslot TINYINT NOT NULL DEFAULT 0");
+                await Exec(c, "ALTER TABLE itembox ADD COLUMN IF NOT EXISTS level TINYINT NOT NULL DEFAULT 0");
                 await Exec(c,
                     "CREATE TABLE IF NOT EXISTS pu_config (" +
                     " id TINYINT NOT NULL PRIMARY KEY," +
@@ -64,7 +65,34 @@ namespace RakionServer.World.Database
                     " promo_start DATETIME NULL," +
                     " promo_end DATETIME NULL)");
                 await Exec(c, "INSERT IGNORE INTO pu_config (id) VALUES (1)");
-                Log.Ok("db", "schema verificado (itembox.qslot, pu_config)");
+                // Refino configurável: coeficientes por catalisador (linha por catalisador) + globais (singleton id=1).
+                await Exec(c,
+                    "CREATE TABLE IF NOT EXISTS enchant_catalyzer (" +
+                    " catalyzer_id INT NOT NULL PRIMARY KEY," +
+                    " name VARCHAR(32) NOT NULL DEFAULT ''," +
+                    " base_success DECIMAL(4,3) NOT NULL DEFAULT 0.900," +
+                    " decay DECIMAL(4,3) NOT NULL DEFAULT 0.070," +
+                    " level_cap TINYINT NOT NULL DEFAULT 14)");
+                await Exec(c,
+                    "INSERT IGNORE INTO enchant_catalyzer (catalyzer_id,name,base_success,decay,level_cap) VALUES" +
+                    " (13001,'Mithril',0.950,0.100,4)," +
+                    " (13002,'Adamantium',0.920,0.080,14)," +
+                    " (13003,'Orehalcon',0.900,0.070,14)," +
+                    " (13004,'test+1',0.850,0.050,9)," +
+                    " (13005,'test+2',0.800,0.040,14)");
+                await Exec(c,
+                    "CREATE TABLE IF NOT EXISTS enchant_config (" +
+                    " id TINYINT NOT NULL PRIMARY KEY," +
+                    " jewel_floor DECIMAL(4,3) NOT NULL DEFAULT 0.050," +
+                    " jewel_bonus DECIMAL(4,3) NOT NULL DEFAULT 0.030," +
+                    " event_mult DECIMAL(4,2) NOT NULL DEFAULT 1.00," +
+                    " pu_mult DECIMAL(4,2) NOT NULL DEFAULT 1.00," +
+                    " floor_min DECIMAL(4,3) NOT NULL DEFAULT 0.050," +
+                    " ceil_max DECIMAL(4,3) NOT NULL DEFAULT 0.980," +
+                    " downgrade_lo DECIMAL(4,3) NOT NULL DEFAULT 0.120," +
+                    " downgrade_hi DECIMAL(4,3) NOT NULL DEFAULT 0.300)");
+                await Exec(c, "INSERT IGNORE INTO enchant_config (id) VALUES (1)");
+                Log.Ok("db", "schema verificado (itembox.qslot, pu_config, enchant_*)");
             }
             catch (Exception ex) { Log.Error("db", "EnsureSchemaAsync: {0}", ex.Message); }
         }
@@ -102,6 +130,42 @@ namespace RakionServer.World.Database
                 }
             }
             catch (Exception ex) { Log.Error("db", "LoadPuConfigAsync: {0}", ex.Message); }
+            return cfg;
+        }
+
+        /// <summary>Carrega a config do refino: coeficientes por catalisador (enchant_catalyzer) + globais
+        /// (enchant_config id=1). Defaults se as linhas faltarem; o seed do EnsureSchemaAsync garante as 5
+        /// linhas de catalisador.</summary>
+        public async Task<EnchantConfig> LoadEnchantConfigAsync()
+        {
+            var cfg = new EnchantConfig();
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using (var cmd = new MySqlCommand(
+                    "SELECT catalyzer_id,base_success,decay,level_cap FROM enchant_catalyzer", c))
+                await using (var r = await cmd.ExecuteReaderAsync())
+                    while (await r.ReadAsync())
+                        cfg.SetCatalyzer(r.GetInt32(0), new EnchantConfig.Catalyzer(
+                            (double)r.GetDecimal(1), (double)r.GetDecimal(2), Convert.ToInt32(r.GetValue(3))));
+                await using (var cmd = new MySqlCommand(
+                    "SELECT jewel_floor,jewel_bonus,event_mult,pu_mult,floor_min,ceil_max,downgrade_lo,downgrade_hi" +
+                    " FROM enchant_config WHERE id=1", c))
+                await using (var r = await cmd.ExecuteReaderAsync())
+                    if (await r.ReadAsync())
+                    {
+                        cfg.JewelFloor = (double)r.GetDecimal(0);
+                        cfg.JewelBonus = (double)r.GetDecimal(1);
+                        cfg.EventMult = (double)r.GetDecimal(2);
+                        cfg.PuMult = (double)r.GetDecimal(3);
+                        cfg.FloorMin = (double)r.GetDecimal(4);
+                        cfg.CeilMax = (double)r.GetDecimal(5);
+                        cfg.DowngradeLo = (double)r.GetDecimal(6);
+                        cfg.DowngradeHi = (double)r.GetDecimal(7);
+                    }
+            }
+            catch (Exception ex) { Log.Error("db", "LoadEnchantConfigAsync: {0}", ex.Message); }
             return cfg;
         }
 
@@ -359,20 +423,51 @@ namespace RakionServer.World.Database
 
         /// <summary>Carrega os itens do BOX (itembox, qslot=0) de uma conta, em ordem (= ordem dos slots do box).
         /// Itens com qslot>0 estao no quickslot de pocao (ver LoadQuickslotAsync) e nao aparecem no box.</summary>
-        public async Task<System.Collections.Generic.List<int>> LoadItemBoxAsync(int userId)
+        public async Task<System.Collections.Generic.List<(int Id, int ItemId, int Level)>> LoadItemBoxAsync(int userId)
         {
-            var list = new System.Collections.Generic.List<int>();
+            var list = new System.Collections.Generic.List<(int, int, int)>();
             try
             {
                 await using var c = new MySqlConnection(_conn);
                 await c.OpenAsync();
-                await using var cmd = new MySqlCommand("SELECT itemid FROM itembox WHERE userid=@uid AND qslot=0 ORDER BY id", c);
+                await using var cmd = new MySqlCommand("SELECT id,itemid,level FROM itembox WHERE userid=@uid AND qslot=0 ORDER BY id", c);
                 cmd.Parameters.AddWithValue("@uid", userId);
                 await using var r = await cmd.ExecuteReaderAsync();
-                while (await r.ReadAsync()) list.Add(r.GetInt32(0));
+                while (await r.ReadAsync()) list.Add((r.GetInt32(0), r.GetInt32(1), r.GetInt32(2)));
             }
             catch (Exception ex) { Log.Error("db", "LoadItemBoxAsync({0}): {1}", userId, ex.Message); }
             return list;
+        }
+
+        /// <summary>Grava o nível de refino (enchant) de UMA linha do armazém (itembox) pelo id exato.
+        /// Usado no commit do refino p/ persistir o +N da arma.</summary>
+        public async Task UpdateItemBoxLevelAsync(int rowId, int level)
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand("UPDATE itembox SET level=@lv WHERE id=@id", c);
+                cmd.Parameters.AddWithValue("@lv", (byte)System.Math.Clamp(level, 0, 15));
+                cmd.Parameters.AddWithValue("@id", rowId);
+                await cmd.ExecuteNonQueryAsync();
+            }
+            catch (Exception ex) { Log.Error("db", "UpdateItemBoxLevelAsync({0},{1}): {2}", rowId, level, ex.Message); }
+        }
+
+        /// <summary>Remove UMA linha do armazém (itembox) pelo id EXATO — consumo do refino (catalyzer/materiais).
+        /// Preciso (não fungível por itemId): some só a célula refinada.</summary>
+        public async Task DeleteItemBoxByIdAsync(int rowId)
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand("DELETE FROM itembox WHERE id=@id", c);
+                cmd.Parameters.AddWithValue("@id", rowId);
+                await cmd.ExecuteNonQueryAsync();
+            }
+            catch (Exception ex) { Log.Error("db", "DeleteItemBoxByIdAsync({0}): {1}", rowId, ex.Message); }
         }
 
         /// <summary>Carrega o quickslot consolidado por id: (celula = menor qslot-1, itemId, quantidade do stack).</summary>

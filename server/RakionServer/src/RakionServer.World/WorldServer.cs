@@ -123,6 +123,7 @@ namespace RakionServer.World
 
         public bool Locked { get; private set; }                 // this+0x50 (servidor fechado p/ GM)
         public PuConfig PuConfig { get; private set; } = new();   // pu_config: preço/bônus/multiplicadores do PU (lida no boot)
+        public EnchantConfig EnchantConfig { get; private set; } = new();   // enchant_*: coeficientes do refino (lida no boot)
         public int MaxUser => _cfg.MaxUser;                       // this+0x536c
         public int CurrentUsers => Volatile.Read(ref _currentUsers);
 
@@ -376,10 +377,37 @@ namespace RakionServer.World
             Log.Ok("shop", "pu_config: preço={0} bônus={1} {2}d  xp×{3} gold×{4}{5}", PuConfig.Price,
                 PuConfig.BonusPoints, PuConfig.DurationDays, PuConfig.ExpMult, PuConfig.GoldMult,
                 PuConfig.PromoActive ? " (promo ON)" : "");
+            EnchantConfig = await _db.LoadEnchantConfigAsync();
+            Log.Ok("enchant", "config: {0} catalisador(es)  evento×{1} PU×{2}",
+                EnchantConfig.CatalyzerCount, EnchantConfig.EventMult, EnchantConfig.PuMult);
             await LoadItemDefsCacheAsync();   // catalogo de itens (iteminfo) p/ a compra 0x2e
             _levelCurve = await _db.LoadLevelCurveAsync(); // curva de exp por classe (level-up 0x50)
             Log.Ok("level", "curva de level carregada: {0} entradas (classlevelinfo)", _levelCurve.Count);
+            _ = Task.Run(() => ConfigReloadLoopAsync(_cts.Token));   // reload a quente de pu_config/enchant_* (admin sem restart)
             Log.Ok("world", "World Server pronto (ServerId={0})", _cfg.ServerId);
+        }
+
+        /// <summary>Reload a quente das configs editáveis pelo painel admin (pu_config + enchant_*): relê a cada 15s
+        /// e troca a referência. Cada config é imutável após o load, então a troca é atômica e segura p/ os leitores
+        /// (roll do refino, bônus de PU) sem lock. Deixa ligar/desligar evento SEM reiniciar o World; um load vazio
+        /// (hiccup do DB) é ignorado p/ não derrubar um evento ativo.</summary>
+        private async Task ConfigReloadLoopAsync(System.Threading.CancellationToken ct)
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try { await Task.Delay(TimeSpan.FromSeconds(15), ct); }
+                catch (OperationCanceledException) { break; }
+                try
+                {
+                    var ench = await _db.LoadEnchantConfigAsync();
+                    if (ench.CatalyzerCount == 0) continue;   // DB indisponível -> mantém a config atual
+                    bool changed = ench.EventMult != EnchantConfig.EventMult || ench.PuMult != EnchantConfig.PuMult;
+                    EnchantConfig = ench;
+                    PuConfig = await _db.LoadPuConfigAsync();   // DB confirmado OK pelo load acima
+                    if (changed) Log.Ok("enchant", "config recarregada: evento×{0} PU×{1}", ench.EventMult, ench.PuMult);
+                }
+                catch (Exception ex) { Log.Warn("db", "reload de config: {0}", ex.Message); }
+            }
         }
 
         /// <summary>Acesso ao DB para os handlers (compra 0x2e).</summary>
@@ -416,6 +444,80 @@ namespace RakionServer.World
             if (rank > 0 && s.ActiveCharId > 0) _ = _db.SaveStageRankAsync(s.ActiveCharId, stage, rank); // melhor rank por stage
             return GrantExp(s, exp);
         }
+
+        /// <summary>Aplica o UPGRADE do refino (handler 0x74 = clique de upgrade). SERVER-AUTHORITATIVE: este build do
+        /// worldserv DESCARTAVA o roll de FUN_0040c310 (o cliente fica em "Upgrading Now" esperando o resultado), então
+        /// reconstruímos o comportamento pretendido — valida (CUser::CheckEnchantReinforce), ROLA a probabilidade,
+        /// aplica o delta de nível na arma (persiste itembox.level) e consome catalyzer + materiais. Regra do motor de
+        /// refino — fora do handler de rede. Devolve o result code (0=+1, 1=nada, 2=-1; 6/7/8 = erro de validação).</summary>
+        public byte ApplyEnchant(ClientSession s, byte weaponSlot, byte catalyzerSlot,
+            System.Collections.Generic.IReadOnlyList<byte> materialSlots)
+        {
+            // VALIDAÇÃO (FUN_0040c310): arma presente e <8000, catalyzer 0x32c9..0x32cd, materiais 0x36b1..0x36b3,
+            // caps de nível. Erro -> 6/7/8 (o cliente mostra "não dá"), sem mexer no estado.
+            int weaponId = BoxItemAt(s, weaponSlot);
+            int catId = BoxItemAt(s, catalyzerSlot);
+            if (weaponId == 0 || weaponId >= 8000) return 6;
+            if (!EnchantConfig.TryGetCatalyzer(catId, out var cat)) return 7;   // catalisador desconhecido
+            int curLevel = weaponSlot < s.BoxLevel.Count ? s.BoxLevel[weaponSlot] : 0;
+            if (curLevel >= 15) return 6;
+            if (curLevel > cat.LevelCap) return 8;             // arma acima do teto do catalisador (Mithril +4, etc.)
+            int j1 = 0, j2 = 0, j3 = 0;
+            foreach (byte ms in materialSlots)
+            {
+                int mid = BoxItemAt(s, ms);
+                if (mid == 0x36b1) j1++;
+                else if (mid == 0x36b2) j2++;
+                else if (mid == 0x36b3) j3++;
+                else return 7;
+            }
+
+            // ROLL server-authoritative (a fórmula de probabilidade roda no servidor) -> delta de nível.
+            // s.PuActive entra no roll: a EnchantConfig aplica o multiplicador de Power User (e o de evento).
+            byte result = RollEnchant(catId, curLevel, j1, j2, j3, s.PuActive);
+            int delta = EnchantDelta(result);
+            int newLevel = System.Math.Clamp(curLevel + delta, 0, 15);
+            if (weaponSlot < s.BoxLevel.Count) s.BoxLevel[weaponSlot] = newLevel;
+            int wRow = weaponSlot < s.BoxRowId.Count ? s.BoxRowId[weaponSlot] : 0;
+            if (wRow > 0) _ = _db.UpdateItemBoxLevelAsync(wRow, newLevel);          // persiste o +N
+
+            // CONSOME catalyzer + materiais (some do box; remoção persistida pela linha EXATA do itembox)
+            Consume(s, catalyzerSlot);
+            foreach (byte ms in materialSlots) Consume(s, ms);
+
+            Log.Ok("enchant", "[{0}] refino: arma slot {1} +{2}->+{3} (result={4}); catalyzer {5:x} + {6} joia(s) [j1={7} j2={8} j3={9}] consumidos",
+                s.Slot, weaponSlot, curLevel, newLevel, result, catId, materialSlots.Count, j1, j2, j3);
+            return result;
+        }
+
+        /// <summary>Lê o itemId de uma célula do box (0 = vazia/fora de faixa).</summary>
+        private static int BoxItemAt(ClientSession s, byte slot) => slot < s.BoxItems.Count ? s.BoxItems[slot] : 0;
+
+        /// <summary>Esvazia a célula e persiste a remoção da linha EXATA do itembox.</summary>
+        private void Consume(ClientSession s, byte slot)
+        {
+            var (_, rowId) = s.ClearBoxCell(slot);
+            if (rowId > 0) _ = _db.DeleteItemBoxByIdAsync(rowId);
+        }
+
+        /// <summary>Roleta do refino: a probabilidade de sucesso vem da <see cref="EnchantConfig"/> (banco —
+        /// coeficientes por catalisador + multiplicadores de evento/PU; estrutura do polinômio fiel ao FUN_0040c310).
+        /// Aqui só sorteamos sucesso vs falha e, na falha, se vira downgrade (-1) ou nada. Destroy (result 5) é
+        /// neutralizado neste build. Devolve o result code (0=+1, 1=nada, 2=-1).</summary>
+        private byte RollEnchant(int catalyzerId, int curLevel, int j1, int j2, int j3, bool puActive)
+        {
+            double p0 = EnchantConfig.SuccessChance(catalyzerId, curLevel, j1, j2, j3, puActive);
+            if (_rng.NextDouble() < p0) return 0;   // SUCESSO +1
+            double downgrade = (1.0 - p0) * EnchantConfig.DowngradeFactor(curLevel);
+            return _rng.NextDouble() < downgrade ? (byte)2 : (byte)1;   // 2=-1 (downgrade) ou 1=nada
+        }
+
+        private static int EnchantDelta(byte resultCode) => resultCode switch
+        {
+            0 => +1, 2 => -1, 3 => -2, 4 => -3, _ => 0,
+        };
+
+        private readonly System.Random _rng = new();
 
         /// <summary>Sobe os niveis PENDENTES pela curva (sem creditar exp) e persiste. Chamado ao GANHAR exp
         /// (<see cref="GrantExp"/>) E no LOAD do char — um char carregado JÁ acima do limiar upa na hora, sem
@@ -616,16 +718,17 @@ namespace RakionServer.World
                 // SETS (type 10) são BUNDLES de peças de gear (iteminfo hit1-4/chit/ap = itemIds dos membros).
                 // Desempacota no armazem (troca o set pelas peças) — o cliente não tem ação de "usar set", então
                 // sem isto o set fica inerte no box. Idempotente: após desempacotar não resta set p/ desempacotar.
-                var setsInBox = loadedBox.FindAll(IsSet);
+                var setsInBox = loadedBox.FindAll(t => IsSet(t.ItemId));
                 if (setsInBox.Count > 0)
                 {
-                    foreach (var setId in setsInBox)
-                        await _db.UnpackSetInBoxAsync(gi.Id, setId, ExpandSetMembers(setId));
+                    var doneSets = new HashSet<int>();
+                    foreach (var t in setsInBox)
+                        if (doneSets.Add(t.ItemId)) await _db.UnpackSetInBoxAsync(gi.Id, t.ItemId, ExpandSetMembers(t.ItemId));
                     loadedBox = await _db.LoadItemBoxAsync(gi.Id);          // recarrega já desempacotado
-                    Log.Ok("login", "[{0}] {1} set(s) type-10 desempacotado(s) no armazem", s.Slot, setsInBox.Count);
+                    Log.Ok("login", "[{0}] {1} set(s) type-10 desempacotado(s) no armazem", s.Slot, doneSets.Count);
                 }
-                var boxGear = loadedBox.FindAll(IsBoxDisplayable);          // só gear entra no grid
-                s.SetBoxItems(boxGear);   // consolida poções por id (1 célula + contador); gear 1 por célula
+                var boxGear = loadedBox.FindAll(t => IsBoxDisplayable(t.ItemId));   // só gear entra no grid
+                s.SetBoxItems(boxGear);   // consolida poções por id (1 célula + contador); gear 1 por célula, com nível de refino
                 s.LoadPotionSlot(await _db.LoadQuickslotAsync(gi.Id));     // quickslot de pocao persistido (itembox.qslot)
                 s.StageRanks = await _db.LoadStageRanksAsync(ch.Id);       // ranks de stage -> overlay 0x0C@333 (RANK X CLEAR na seleção)
                 int boxHidden = loadedBox.Count - boxGear.Count;

@@ -134,7 +134,7 @@ namespace RakionServer.World.Network
                     // item 0 = celula esvaziada por um move: NAO pintar (frame nunca validado; o cliente
                     // ja processou o move local e tem o buraco)
                     for (int i = 0; i < BoxItems.Count && i < 0x78; i++)
-                        if (BoxItems[i] != 0) SendBoxAdd(BoxItems[i], (byte)i, 1, BoxCount[i]);
+                        if (BoxItems[i] != 0) SendBoxAdd(BoxItems[i], (byte)i, (byte)(1 + BoxLevel[i]), BoxCount[i]); // 1 + nível de refino (+N)
                     // quickslot: FALLBACK do auto-render. Se a pintura na entrada do lobby (0x14) ainda não
                     // pegou (widget do potion-bar não construído na hora), pinta aqui no 1o open. Guard
                     // próprio (_potionPainted) -> não repinta nas reentradas.
@@ -212,9 +212,10 @@ namespace RakionServer.World.Network
                     // Shop list/loadout (0x2d/0x2f) E buy (0x2e) DEVEM chegar aos handlers reais
                     // (Op_RoomRosterSync/Op_GroupMemberInfo/Op_RoomMemberQuery) -> NAO consumir aqui, deixa o
                     // Dispatch rodar (gate passa: channel/room lobby = InField+FSec+Status=2). Idem 0x39
-                    // (FieldListReq = Quick Start / lista de salas, FUN_00423300): sem o reply [39 00][count][salas]
-                    // o cliente trava "esperando a resposta do world".
-                    if (opcode == 0x2d || opcode == 0x2e || opcode == 0x2f || opcode == 0x33 || opcode == 0x39) return false;
+                    // (FieldListReq = Quick Start / lista de salas, FUN_00423300) e 0x74 (RoomMoveAction =
+                    // UPGRADE do refino, FUN_00421e10 -> reply SendMessage 0x28): sem o reply o cliente trava
+                    // ("esperando a resposta do world" / "Upgrading Now").
+                    if (opcode == 0x2d || opcode == 0x2e || opcode == 0x2f || opcode == 0x33 || opcode == 0x39 || opcode == 0x74) return false;
                     // Salas BATTLE/PvP (Mode != 0): os opcodes de COMBATE vao aos handlers reais do
                     // motor de partida — 0x4d (par golem/facing: y==0 = golem inimigo destruido ->
                     // fim de round), 0x3d (troca de arma), 0x50 (reporte de exp/gold do fim de partida ->

@@ -372,57 +372,48 @@ namespace RakionServer.World.Network
             byte[] data = new byte[3];
             for (int i = 0; i < count; i++) data[i] = ctx.P.Byte();
 
-            // FUN_0040ca50: listas do user (igual 0x73). TODO -> vazias.
-            byte countA = 0;
-            byte countB = 0;
-            byte flag = 0;
-
-            // FUN_0040c310(user, valA, b1, count, data, &cFlag, &out1, &out2, &out3, &out4, &out5) -> erro
-            // 5 out-params distintos (local_1300, local_1308, local_130c, local_12ec, local_12f0).
-            // TODO FUN_0040c310: assume sucesso (err==0), todos os outs=0.
-            byte err = 0;
-            uint out1 = 0;  // local_1300 (reaproveitado como out)
-            uint out2 = 0;  // local_1308
-            uint out3 = 0;  // local_130c
-            uint out4 = 0;  // local_12ec
-            uint out5 = 0;  // local_12f0
-
-            if (err != 0)
-            {
-                // SendLobby[u16 0x74][u8 err] (FUN_004038e0, len=3)
-                using var we = new PacketWriter();
-                we.WriteWord(0x74);
-                we.WriteByte(err);
-                u.SendLobby(we.ToArray());
-                return;
-            }
-
-            uint roomId = (uint)u.RoomId;                  // local_100c = *(user+0x1460)
-            uint fieldHandle = (uint)(u.FieldSecondary ? 1 : 0); // local_1304/local_fed = *(user+0x14a4) (TODO valor real)
+            // PREVIEW (FUN_00421e10): a PROBABILIDADE do refino roda no CLIENTE (CUser::CheckEnchantReinforce
+            // client-side, fórmula FP). O servidor original SÓ valida os itens e CONFIRMA via subtype 0x28 p/ o
+            // cliente avançar ao COMMIT (opcode 0x28 do canal lobby -> Op_EnchantCommit / FUN_0041de40, que aplica
+            // o result code rolado pelo cliente e consome os itens). O server-side roll de FUN_0040c310 é
+            // DESCARTADO no original (mov [esp+0x12],bl zera o result após o call) -> não o replicamos.
+            // Reply FIEL ao struct local_1010 (seq+subtype primeiro, depois os slots+SNs na ordem exata):
+            //   [u16 seq][u16 0x28][u32 +0x1460][slot+SN arma][slot+SN catalyzer][u8 qtd][3x(slot+SN material)]
+            //   [u8 0][u32 +0x14a4][u8 snapCount]. SN sintético = itemId da célula (não-zero; o commit usa slots).
+            uint Sn(byte slot) => (uint)(slot < u.BoxItems.Count ? u.BoxItems[slot] : 0);
 
             using var w = new PacketWriter();
-            // SendMessage: bytes APOS o subtype 0x28 (local_1010._2_2_), na ORDEM EXATA do struct.
-            w.WriteUInt32(roomId);    // local_100c   @4
-            w.WriteByte(valA);        // local_1008   @8  = (byte)local_12f4
-            w.WriteUInt32(out1);      // local_1007   @9  = local_1300 (out)
-            w.WriteByte(b1);          // local_1003   @13 = (byte)local_12f8
-            w.WriteUInt32(out2);      // local_1002   @14 = local_1308 (out)
-            w.WriteByte(count);       // local_ffe    @18 = (byte)local_1310
-            w.WriteByte(data[0]);     // local_ffd    @19 = local_1314[0]
-            w.WriteUInt32(out3);      // local_ffc    @20 = local_130c (out)
-            w.WriteByte(data[1]);     // local_ff8    @24 = local_1314[1]
-            w.WriteUInt32(out4);      // local_ff7    @25 = local_12ec (out)
-            w.WriteByte(data[2]);     // local_ff3    @29 = local_1314[2]
-            w.WriteUInt32(out5);      // local_ff2    @30 = local_12f0 (out)
-            w.WriteByte(0);           // local_fee    @34 = 0
-            w.WriteUInt32(fieldHandle);// local_fed   @35 = local_1304 (+0x14a4)
-            w.WriteByte(countA);      // local_fe9    @39 = countA (local_1318)
+            w.WriteWord(0);                           // seq (user+0x1488)
+            w.WriteWord(0x28);                        // subtype
+            w.WriteUInt32((uint)u.FieldHandleRaw);    // local_100c = +0x1460
+            w.WriteByte(valA);   w.WriteUInt32(Sn(valA));    // arma:      slot + SN
+            w.WriteByte(b1);     w.WriteUInt32(Sn(b1));      // catalyzer: slot + SN
+            w.WriteByte(count);                              // qtd de materiais
+            for (int i = 0; i < 3; i++) { w.WriteByte(data[i]); w.WriteUInt32(Sn(data[i])); } // 3x slot+SN
+            w.WriteByte(0);                           // local_fee
+            w.WriteUInt32((uint)u.FieldSecondaryRaw); // local_fed = +0x14a4
+            w.WriteByte(0);                           // snapCount (snapshot do inventário vazio)
+            u.SendLobby(w.ToArray());
+            Log.Debug("enchant", "[{0}] 0x74 preview -> 0x28 (arma {1} cat {2} +{3} mat)", u.Slot, valA, b1, count);
 
-            // TODO FUN_0040ca50: anexar listas (countA arrays, countB+arrays, flag+bloco) como no 0x73.
-            w.WriteByte(countB);      // @40 = local_1317
-            w.WriteByte(flag);        // @41 = local_1315
-
-            u.SendMessage(0x28, w.ToArray());
+            // UPGRADE (0x74 = clique de upgrade; o preenchimento do refinador usa 0x31). SERVER-AUTHORITATIVE:
+            // o servidor ROLA a probabilidade, aplica o +N e consome (WorldServer.ApplyEnchant — regra de domínio),
+            // e devolve o RESULTADO no reply [u16 0x74][result][slot arma][slot cat][qtd][slots mats] (formato do
+            // FUN_0041de40). É esse reply que limpa o "Upgrading Now" e mostra sucesso/falha no cliente.
+            byte[] mats = new byte[count];
+            for (int i = 0; i < count; i++) mats[i] = data[i];
+            byte result = ctx.World.ApplyEnchant(u, valA, b1, mats);
+            using (var wr = new PacketWriter())
+            {
+                wr.WriteWord(0x74);
+                wr.WriteByte(result);
+                wr.WriteByte(valA);
+                wr.WriteByte(b1);
+                wr.WriteByte(count);
+                for (int i = 0; i < count; i++) wr.WriteByte(data[i]);
+                u.SendLobby(wr.ToArray());
+            }
+            Log.Ok("enchant", "[{0}] 0x74 upgrade -> result={1}", u.Slot, result);
         }
 
         private static void Op_BuyLotto(HandlerContext ctx)

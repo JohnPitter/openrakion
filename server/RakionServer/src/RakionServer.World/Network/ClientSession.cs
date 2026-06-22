@@ -65,6 +65,8 @@ namespace RakionServer.World.Network
         public volatile bool ShopBuyInProgress;              // espelha user+0x144c==2 (anti-duplo-clique)
         public System.Collections.Generic.List<int> BoxItems { get; set; } = new(new int[0x78]); // grade do box: 120 celulas FIXAS (0=vazia). Esparsa p/ casar com a grade do cliente — mover item p/ celula vazia nao pode "sumir"
         public System.Collections.Generic.List<int> BoxCount { get; set; } = new(new int[0x78]); // contador por celula (pocao empilha; gear=1)
+        public System.Collections.Generic.List<int> BoxLevel { get; set; } = new(new int[0x78]); // nivel de refino (+N) por celula (itembox.level)
+        public System.Collections.Generic.List<int> BoxRowId { get; set; } = new(new int[0x78]); // id da linha itembox por celula (update/delete preciso do refino)
         public System.Collections.Generic.List<RakionServer.World.Database.UserItem> Items { get; set; } = new(); // inventario (useriteminfo) p/ o Box (0x2f)
         public byte CharLevel { get; set; } = 1;             // nivel do char ativo -> overlay 0x0C @96 (offset cravado no diff golden)
         public byte CharClass { get; set; }                  // classe do char ativo -> curva de level (classlevelinfo)
@@ -128,8 +130,10 @@ namespace RakionServer.World.Network
             return h;
         }
         private bool _r36bSent;   // 0x36b (arma a lista de games) so' 1x; remandar a cada poll travava o cliente
-        private readonly int[] _potionSlot = new int[0x13];   // quickslot de pocao = user+0x1da4 (19 celulas)
+        private readonly int[] _potionSlot = new int[0x13];   // quickslot/equip = user+0x1da4 (19 celulas; type1 do move 0x31)
         private readonly int[] _potionCount = new int[0x13];  // quantidade empilhada por celula (contador 'v' do 0x31)
+        private readonly int[] _potionLevel = new int[0x13];  // nivel de refino (+N) das celulas type1 — segue o item no move
+        private readonly int[] _potionRowId = new int[0x13];  // id da linha itembox das celulas type1 — segue o item no move
         private bool _potionPainted;          // quickslot pintado no 1o open (0x2c) da sessao — fallback do auto-render
         private bool _potionLoginPainted;     // quickslot pintado na entrada do lobby (0x14) — auto-render no relog (CONFIRMADO)
 
