@@ -207,6 +207,52 @@ public sealed class AdminDb(IConfiguration cfg)
             ("@pa", f.PromoActive ? 1 : 0), ("@pe", f.PromoExpMult), ("@pg", f.PromoGoldMult),
             ("@ps", (object?)f.PromoStart ?? DBNull.Value), ("@pen", (object?)f.PromoEnd ?? DBNull.Value));
 
+    // ---- enchant_* (refino) ----
+
+    public async Task<EnchantConfigForm> LoadEnchantConfigAsync()
+    {
+        var f = new EnchantConfigForm();
+        await using var c = await OpenAsync();
+        await using (var cmd = new MySqlCommand(
+            "SELECT jewel_floor,jewel_bonus,event_mult,pu_mult,floor_min,ceil_max,downgrade_lo,downgrade_hi " +
+            "FROM enchant_config WHERE id=1", c))
+        await using (var r = await cmd.ExecuteReaderAsync())
+        {
+            if (await r.ReadAsync())
+            {
+                f.JewelFloor = r.GetDecimal(0); f.JewelBonus = r.GetDecimal(1);
+                f.EventMult = r.GetDecimal(2); f.PuMult = r.GetDecimal(3);
+                f.FloorMin = r.GetDecimal(4); f.CeilMax = r.GetDecimal(5);
+                f.DowngradeLo = r.GetDecimal(6); f.DowngradeHi = r.GetDecimal(7);
+            }
+        }
+        await using (var cmd = new MySqlCommand(
+            "SELECT catalyzer_id,name,base_success,decay,level_cap FROM enchant_catalyzer ORDER BY catalyzer_id", c))
+        await using (var r = await cmd.ExecuteReaderAsync())
+        {
+            while (await r.ReadAsync())
+                f.Catalyzers.Add(new EnchantCatalyzerForm
+                {
+                    CatalyzerId = r.GetInt32(0), Name = r.GetString(1), BaseSuccess = r.GetDecimal(2),
+                    Decay = r.GetDecimal(3), LevelCap = Convert.ToInt32(r.GetValue(4))
+                });
+        }
+        return f;
+    }
+
+    public async Task SaveEnchantConfigAsync(EnchantConfigForm f)
+    {
+        await NonQuery(
+            "UPDATE enchant_config SET jewel_floor=@jf, jewel_bonus=@jb, event_mult=@ev, pu_mult=@pu, " +
+            "floor_min=@fm, ceil_max=@cm, downgrade_lo=@dl, downgrade_hi=@dh WHERE id=1",
+            ("@jf", f.JewelFloor), ("@jb", f.JewelBonus), ("@ev", f.EventMult), ("@pu", f.PuMult),
+            ("@fm", f.FloorMin), ("@cm", f.CeilMax), ("@dl", f.DowngradeLo), ("@dh", f.DowngradeHi));
+        foreach (var cat in f.Catalyzers)
+            await NonQuery(
+                "UPDATE enchant_catalyzer SET base_success=@b, decay=@d, level_cap=@lc WHERE catalyzer_id=@id",
+                ("@b", cat.BaseSuccess), ("@d", cat.Decay), ("@lc", cat.LevelCap), ("@id", cat.CatalyzerId));
+    }
+
     // ---- auto-update (launcher fetch) ----
 
     public async Task<List<FetchAppRow>> ListFetchAppsAsync()

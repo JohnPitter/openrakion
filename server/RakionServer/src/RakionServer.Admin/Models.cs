@@ -63,7 +63,7 @@ public static class ItemKind
     };
 }
 
-/// <summary>Formulário editável da pu_config (espelha a tabela; o World relê no boot).</summary>
+/// <summary>Formulário editável da pu_config (espelha a tabela; o World relê a quente em ~15s).</summary>
 public sealed class PuConfigForm
 {
     [Range(0, int.MaxValue)] public int Price { get; set; } = 8000;
@@ -76,4 +76,29 @@ public sealed class PuConfigForm
     [Range(1, 99)] public decimal PromoGoldMult { get; set; } = 2.0m;
     public DateTime? PromoStart { get; set; }
     public DateTime? PromoEnd { get; set; }
+}
+
+/// <summary>Linha editável de um catalisador do refino (enchant_catalyzer).</summary>
+public sealed class EnchantCatalyzerForm
+{
+    public int CatalyzerId { get; set; }
+    public string Name { get; set; } = "";
+    [Range(0, 1)] public decimal BaseSuccess { get; set; } = 0.90m;   // chance no +0
+    [Range(0, 1)] public decimal Decay { get; set; } = 0.07m;         // queda por nível
+    [Range(0, 15)] public int LevelCap { get; set; } = 14;            // nível máx. da arma aceito
+}
+
+/// <summary>Formulário do refino: globais (enchant_config) + catalisadores (enchant_catalyzer). O World relê a
+/// quente (~15s) — salvar aplica sem reiniciar. EventMult vale p/ todos; PuMult só p/ quem tem Power User.</summary>
+public sealed class EnchantConfigForm
+{
+    [Range(0, 99)] public decimal EventMult { get; set; } = 1.0m;     // multiplicador GLOBAL (eventos)
+    [Range(0, 99)] public decimal PuMult { get; set; } = 1.0m;        // multiplicador só com Power User
+    [Range(0, 1)] public decimal JewelFloor { get; set; } = 0.05m;    // piso por joia tipo 3 (Charm)
+    [Range(0, 1)] public decimal JewelBonus { get; set; } = 0.03m;    // bônus por joia tipo 1/2
+    [Range(0, 1)] public decimal FloorMin { get; set; } = 0.05m;
+    [Range(0, 1)] public decimal CeilMax { get; set; } = 0.98m;
+    [Range(0, 1)] public decimal DowngradeLo { get; set; } = 0.12m;   // risco de cair em +3..+5
+    [Range(0, 1)] public decimal DowngradeHi { get; set; } = 0.30m;   // risco de cair em +6+
+    public List<EnchantCatalyzerForm> Catalyzers { get; set; } = new();
 }

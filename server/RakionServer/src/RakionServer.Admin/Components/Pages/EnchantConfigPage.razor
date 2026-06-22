@@ -1,0 +1,68 @@
+@page "/refino"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AdminDb Db
+
+<PageTitle>Refino — OpenRakion Admin</PageTitle>
+<h1>Refino — configuração</h1>
+
+@if (_msg is not null) { <div class="toast @_msgKind">@_msg</div> }
+
+<div class="card">
+    <h2>Evento e Power User</h2>
+    <div class="fields">
+        <div><label>Sucesso × — todos (evento)</label><input type="number" step="0.05" @bind="_f.EventMult" /></div>
+        <div><label>Sucesso × — só Power User</label><input type="number" step="0.05" @bind="_f.PuMult" /></div>
+    </div>
+    <p class="mut" style="margin-top:10px;">1.0 = neutro. Os dois multiplicadores compõem: evento ×1.5 + PU ×1.5 → quem tem Power User joga com ×2.25.</p>
+</div>
+
+<div class="card">
+    <h2>Catalisadores</h2>
+    <table>
+        <thead><tr><th>id</th><th>Nome</th><th>Base (+0)</th><th>Queda/nível</th><th>Teto</th></tr></thead>
+        <tbody>
+            @foreach (var cat in _f.Catalyzers)
+            {
+                <tr>
+                    <td>@cat.CatalyzerId</td>
+                    <td>@cat.Name</td>
+                    <td><input type="number" step="0.01" @bind="cat.BaseSuccess" style="width:90px;" /></td>
+                    <td><input type="number" step="0.01" @bind="cat.Decay" style="width:90px;" /></td>
+                    <td><input type="number" @bind="cat.LevelCap" style="width:70px;" /></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <p class="mut" style="margin-top:10px;">Base = chance no +0 (0.95 = 95%). Queda = quanto a chance cai por nível. Teto = nível máximo da arma que o catalisador aceita.</p>
+</div>
+
+<div class="card">
+    <h2>Joias e limites</h2>
+    <div class="fields">
+        <div><label>Charm — piso por joia</label><input type="number" step="0.01" @bind="_f.JewelFloor" /></div>
+        <div><label>Bônus por joia (Abradant/Soul)</label><input type="number" step="0.01" @bind="_f.JewelBonus" /></div>
+        <div><label>Chance mínima</label><input type="number" step="0.01" @bind="_f.FloorMin" /></div>
+        <div><label>Chance máxima</label><input type="number" step="0.01" @bind="_f.CeilMax" /></div>
+        <div><label>Risco de cair (+3 a +5)</label><input type="number" step="0.01" @bind="_f.DowngradeLo" /></div>
+        <div><label>Risco de cair (+6 ou mais)</label><input type="number" step="0.01" @bind="_f.DowngradeHi" /></div>
+    </div>
+</div>
+
+<div class="row">
+    <button @onclick="Save">Salvar</button>
+    <span class="mut">O World relê a quente — aplica em ~15s, sem reiniciar.</span>
+</div>
+
+@code {
+    private EnchantConfigForm _f = new();
+    private string? _msg, _msgKind;
+
+    protected override async Task OnInitializedAsync() => _f = await Db.LoadEnchantConfigAsync();
+
+    private async Task Save()
+    {
+        try { await Db.SaveEnchantConfigAsync(_f); _msg = "Config salva — aplica em ~15s no World."; _msgKind = "ok"; }
+        catch (Exception ex) { _msg = "Erro: " + ex.Message; _msgKind = "err"; }
+    }
+}
