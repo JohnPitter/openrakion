@@ -33,3 +33,8 @@ Thumbs.db
 
 # Exceções: configs de exemplo PODEM entrar
 !server/config/*.ini
+
+# Logs/marcadores de teste local
+*.log.err
+.buddymark
+.logmark
