@@ -75,17 +75,20 @@ namespace RakionServer.World.Network
             Log.Ok("shop", "[{0}] 0x31 box-add: item {1} x{2} -> box slot {3}", Slot, itemId, count, boxSlot);
         }
 
-        /// <summary>Popula o box consolidando poções por id (1 célula + contador); gear vai 1 por célula.</summary>
-        public void SetBoxItems(System.Collections.Generic.List<int> boxGear)
+        /// <summary>Popula o box consolidando poções por id (1 célula + contador); gear vai 1 por célula,
+        /// carregando o nível de refino (+N) e o id da linha itembox (p/ persistência precisa).</summary>
+        public void SetBoxItems(System.Collections.Generic.List<(int Id, int ItemId, int Level)> boxGear)
         {
             BoxItems = new System.Collections.Generic.List<int>(new int[0x78]);
             BoxCount = new System.Collections.Generic.List<int>(new int[0x78]);
-            foreach (var it in boxGear) AddBoxItemStacked(it);
+            BoxLevel = new System.Collections.Generic.List<int>(new int[0x78]);
+            BoxRowId = new System.Collections.Generic.List<int>(new int[0x78]);
+            foreach (var it in boxGear) AddBoxItemStacked(it.ItemId, it.Level, it.Id);
         }
 
         /// <summary>Adiciona um item ao box: poção empilha na célula existente do mesmo id; senão (e gear) ocupa
-        /// a 1a célula vazia (contador 1). Retorna a célula ocupada.</summary>
-        public byte AddBoxItemStacked(int itemId)
+        /// a 1a célula vazia (contador 1, com nível de refino e id da linha). Retorna a célula ocupada.</summary>
+        public byte AddBoxItemStacked(int itemId, int level = 0, int rowId = 0)
         {
             if (IsPotion(itemId))
             {
@@ -94,8 +97,23 @@ namespace RakionServer.World.Network
             }
             int free = BoxItems.IndexOf(0);
             if (free < 0) return 0;                                       // box cheio
-            BoxItems[free] = itemId; BoxCount[free] = 1;
+            BoxItems[free] = itemId; BoxCount[free] = 1; BoxLevel[free] = level; BoxRowId[free] = rowId;
             return (byte)free;
+        }
+
+        /// <summary>Esvazia UMA célula do box (consumo do refino). Devolve (itemId, rowId itembox) p/ o domínio
+        /// persistir a remoção; (0,0) se a célula estava vazia/fora de faixa. Só estado em memória.</summary>
+        public (int ItemId, int RowId) ClearBoxCell(byte slot)
+        {
+            if (slot >= BoxItems.Count) return (0, 0);
+            int itemId = BoxItems[slot];
+            if (itemId == 0) return (0, 0);
+            int rowId = BoxRowId[slot];
+            BoxItems[slot] = 0;
+            BoxCount[slot] = 0;
+            BoxLevel[slot] = 0;
+            BoxRowId[slot] = 0;
+            return (itemId, rowId);
         }
 
         /// <summary>
@@ -123,6 +141,8 @@ namespace RakionServer.World.Network
             int destItem = ReadCell(destType, destSlot);
             int srcCnt = ReadCount(srcType, srcSlot);    // CARREGA a quantidade do stack no move (antes virava 1)
             int destCnt = ReadCount(destType, destSlot);
+            int srcLvl = ReadLevel(srcType, srcSlot), destLvl = ReadLevel(destType, destSlot);   // nível de refino (+N) e
+            int srcRow = ReadRowId(srcType, srcSlot), destRow = ReadRowId(destType, destSlot);   // rowId do itembox SEGUEM o item
             // Eco do move no FORMATO FIEL (21B, = FUN_00421870). O srcType cai no offset certo (param_3 do
             // FUN_0047d1d0): srcType=1 ativa o caminho do QUICKSLOT no cliente (-> FUN_004264a0), que limpa
             // /pinta o widget de pocao correto (array +0xa74). v1/v2 = CONTADOR (widget+0x194) -> tem que ser a
@@ -132,19 +152,24 @@ namespace RakionServer.World.Network
                 // MESMA pocao nos dois lados -> FUNDE os stacks (destino soma, origem esvazia)
                 int merged = srcCnt + destCnt;
                 WriteCell(srcType, srcSlot, 0);       WriteCount(srcType, srcSlot, 0);
+                WriteLevel(srcType, srcSlot, 0);      WriteRowId(srcType, srcSlot, 0);
                 WriteCell(destType, destSlot, destItem); WriteCount(destType, destSlot, merged);
                 SendPotionSlotMove(srcType, srcSlot, 0, destType, destSlot, destItem, destCnt: merged, srcCnt: 0);
             }
             else
             {
-                // SWAP: origem recebe (destItem, destCnt), destino recebe (srcItem, srcCnt) — contadores junto
-                WriteCell(srcType, srcSlot, destItem); WriteCount(srcType, srcSlot, destCnt);
-                WriteCell(destType, destSlot, srcItem); WriteCount(destType, destSlot, srcCnt);
-                SendPotionSlotMove(srcType, srcSlot, destItem, destType, destSlot, srcItem, destCnt: srcCnt, srcCnt: destCnt);
+                // SWAP: origem recebe (destItem, destCnt, destLvl, destRow), destino recebe os da origem — tudo junto,
+                // p/ o nível de refino (+N) NÃO ficar órfão na célula antiga ao mover/equipar o item.
+                WriteCell(srcType, srcSlot, destItem); WriteCount(srcType, srcSlot, destCnt); WriteLevel(srcType, srcSlot, destLvl); WriteRowId(srcType, srcSlot, destRow);
+                WriteCell(destType, destSlot, srcItem); WriteCount(destType, destSlot, srcCnt); WriteLevel(destType, destSlot, srcLvl); WriteRowId(destType, destSlot, srcRow);
+                SendPotionSlotMove(srcType, srcSlot, destItem, destType, destSlot, srcItem, destCnt: srcCnt, srcCnt: destCnt, newSrcLvl: destLvl, newDestLvl: srcLvl);
             }
-            if (GameInfoId > 0) _ = _server.Db.SaveQuickslotAsync(GameInfoId, _potionSlot);  // persiste box<->quickslot (linhas por itemId)
-            Log.Ok("shop", "[{0}] 0x31 potion-slot: ({1}:{2}) <-> ({3}:{4}) item={5}",
-                Slot, srcType, srcSlot, destType, destSlot, srcItem);
+            // Persiste no quickslot (itembox.qslot) SÓ poções. Gear/arma na zona ativa NÃO é deslocado p/ qslot —
+            // ele pertence ao box (qslot=0) com seu nível de refino. Antes, equipar uma arma a marcava como quickslot
+            // e, ao relogar, ela caía no LoadQuickslot (consolida por itemId, SEM nível) → o +N sumia.
+            if (GameInfoId > 0) _ = _server.Db.SaveQuickslotAsync(GameInfoId, QuickslotPotionsSnapshot());
+            Log.Ok("shop", "[{0}] 0x31 move: ({1}:{2} item={5} +{7}) <-> ({3}:{4} item={6} +{8})",
+                Slot, srcType, srcSlot, destType, destSlot, srcItem, destItem, srcLvl, destLvl);
         }
 
         private int ReadCell(byte type, byte slot) =>
@@ -165,6 +190,37 @@ namespace RakionServer.World.Network
         {
             if (type == 0) { if (slot < BoxCount.Count) BoxCount[slot] = count; }
             else if (slot < _potionCount.Length) _potionCount[slot] = count;
+        }
+
+        private int ReadLevel(byte type, byte slot) =>
+            type == 0 ? (slot < BoxLevel.Count ? BoxLevel[slot] : 0)
+                      : (slot < _potionLevel.Length ? _potionLevel[slot] : 0);
+
+        private void WriteLevel(byte type, byte slot, int level)
+        {
+            if (type == 0) { if (slot < BoxLevel.Count) BoxLevel[slot] = level; }
+            else if (slot < _potionLevel.Length) _potionLevel[slot] = level;
+        }
+
+        private int ReadRowId(byte type, byte slot) =>
+            type == 0 ? (slot < BoxRowId.Count ? BoxRowId[slot] : 0)
+                      : (slot < _potionRowId.Length ? _potionRowId[slot] : 0);
+
+        private void WriteRowId(byte type, byte slot, int rowId)
+        {
+            if (type == 0) { if (slot < BoxRowId.Count) BoxRowId[slot] = rowId; }
+            else if (slot < _potionRowId.Length) _potionRowId[slot] = rowId;
+        }
+
+        /// <summary>Snapshot da zona ativa SÓ com as células de poção (gear/arma → 0). O quickslot persistido
+        /// (itembox.qslot, fungível por itemId) é exclusivo de poção; gear não-fungível mora no box com seu nível
+        /// de refino. Sem isto, equipar uma arma a deslocava p/ qslot e ela perdia o +N ao recarregar.</summary>
+        private int[] QuickslotPotionsSnapshot()
+        {
+            var snap = new int[_potionSlot.Length];
+            for (int i = 0; i < _potionSlot.Length; i++)
+                if (IsPotion(_potionSlot[i])) snap[i] = _potionSlot[i];
+            return snap;
         }
 
         /// <summary>Poção empilhável/contável (faixa de item-id 12000–12999, fiel ao FUN_0040c140/FUN_0040cd70).
@@ -215,7 +271,7 @@ namespace RakionServer.World.Network
         /// poção** (widget+0x194, lido cifrado pelo FUN_00440430) — o cliente EXIGE > 0 p/ deixar usar a poção
         /// no jogo; cada célula = 1 poção no nosso modelo -> poção manda 1, não-poção 0 (campo vira exp/limit).
         /// </summary>
-        private void SendPotionSlotMove(byte srcType, byte srcSlot, int newSrcItem, byte destType, byte destSlot, int newDestItem, int destCnt = 1, int srcCnt = 1)
+        private void SendPotionSlotMove(byte srcType, byte srcSlot, int newSrcItem, byte destType, byte destSlot, int newDestItem, int destCnt = 1, int srcCnt = 1, int newSrcLvl = 0, int newDestLvl = 0)
         {
             // CONTADOR (v) = widget+0x194: > 0 deixa a poção visível/utilizável; 0 a deixa "zerada"/inerte.
             // É a QUANTIDADE REAL do stack (não mais 1 fixo) -> mover/fundir preserva o total no widget.
@@ -229,12 +285,17 @@ namespace RakionServer.World.Network
             w.WriteByte(srcType);               // off3  srcType (0=box, 1=quickslot) — DECIDE o ramo
             w.WriteByte(srcSlot);               // off4  srcSlot
             w.WriteWord((ushort)newSrcItem);    // off5  novo item na origem (0 = celula esvaziada)
-            w.WriteByte(0);                     // off7  b1 (level)
+            // off7/off16 b1/b2 = nível de refino. O handler do cliente FUN_0047d1d0 grava esse byte CRU no widget,
+            // e o nível é IDÊNTICO nas 2 zonas — o swap FUN_0040cf10 só faz memcpy box(+0x1f1c)↔equip(+0x1dca), sem
+            // conversão por zona. Espelhamos EXATAMENTE o box-render (SendBoxAdd, level==0?1:level), confirmado
+            // in-game — SEM 1+N e SEM distinção box/equip. Antes o move→box mandava 1+N, estourava a faixa de refino
+            // e o cliente perdia o "+N" ao desequipar (item "parecia nunca ter sido refinado").
+            w.WriteByte((byte)(IsPotion(newSrcItem) ? 0 : (newSrcLvl <= 0 ? 1 : newSrcLvl)));   // off7 b1 = nível origem
             w.WriteUInt32(srcCount);            // off8  v1 = CONTADOR da poção na origem (widget+0x194)
             w.WriteByte(destType);              // off12 destType
             w.WriteByte(destSlot);              // off13 destSlot
             w.WriteWord((ushort)newDestItem);   // off14 novo item no destino
-            w.WriteByte(0);                     // off16 b2 (level)
+            w.WriteByte((byte)(IsPotion(newDestItem) ? 0 : (newDestLvl <= 0 ? 1 : newDestLvl))); // off16 b2 = nível destino
             w.WriteUInt32(destCount);           // off17 v2 = CONTADOR da poção no destino (widget+0x194)
             SendEncryptedFrame(w.ToArray());
         }

@@ -103,7 +103,7 @@ namespace RakionServer.World.Network
 
             // PERSISTE em background (handler e sync; DB e async). Reverte saldo em memoria se falhar.
             int gameInfoId = u.GameInfoId; string acct = u.UserId;
-            var db = ctx.World.Db; bool gold = payGold; int p = price;
+            var db = ctx.World.Db; var world = ctx.World; bool gold = payGold; int p = price;
             System.Threading.Tasks.Task.Run(async () =>
             {
                 bool ok = true;
@@ -112,7 +112,14 @@ namespace RakionServer.World.Network
                     if (gold) { if (gameInfoId > 0) await db.AddGoldAsync(gameInfoId, -p); else ok = false; }
                     else { if (!string.IsNullOrEmpty(acct)) await db.AddCashAsync(acct, -p); else ok = false; }
                     if (ok && gameInfoId > 0)
-                        foreach (var it in grantItems) { if (await db.InsertItemBoxAsync(gameInfoId, it, 0) <= 0) { ok = false; break; } } // BOX (itembox)
+                        foreach (var g in granted)
+                        {
+                            int rowId = await db.InsertItemBoxAsync(gameInfoId, g.Item, 0);   // BOX (itembox)
+                            if (rowId <= 0) { ok = false; break; }
+                            // conecta a célula do box à linha do itembox -> o refino (UPDATE level / DELETE por id exato)
+                            // passa a persistir; sem isto os itens comprados tinham rowId=0 e o relog "desfazia" o upgrade.
+                            if (world.IsBoxDisplayable(g.Item) && g.Slot < u.BoxRowId.Count) u.BoxRowId[g.Slot] = rowId;
+                        }
                     else ok = false;
                 }
                 catch (System.Exception ex) { ok = false; Log.Error("shop", "[{0}] persist BUY item {1}: {2}", u.Slot, itemId, ex.Message); }
@@ -152,7 +159,7 @@ namespace RakionServer.World.Network
             // (0x31 de cada item, slot=indice), nao so' o comprado. Assim os itens PERSISTIDOS do itembox (que
             // foram mandados antes em menu errado e ficaram invisiveis) aparecem junto com o novo. (Log provou:
             // o comprado ia pro slot N=BoxItems.Count e so' ele pintava; os 0..N-1 ficavam invisiveis.)
-            for (int i = 0; i < u.BoxItems.Count && i < 0x78; i++) if (u.BoxItems[i] != 0) u.SendBoxAdd(u.BoxItems[i], (byte)i, 1, u.BoxCount[i]);
+            for (int i = 0; i < u.BoxItems.Count && i < 0x78; i++) if (u.BoxItems[i] != 0) u.SendBoxAdd(u.BoxItems[i], (byte)i, (byte)(1 + u.BoxLevel[i]), u.BoxCount[i]); // 1 + nível de refino
 
             // --- SALDO EM TEMPO REAL (msgType 0x2e, code 0) ---
             // RE do cliente: o HUD le gold em AccountInfo+0x64 e cash +0x68 (engine.dll). O handler 0x2e
