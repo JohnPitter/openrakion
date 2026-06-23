@@ -310,32 +310,52 @@ internal static class WindowMode
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string szExePath;
     }
 
-    // Patch do MODO JANELA no rakion.exe (sem ASLR, ImageBase 0x400000): em 0x40D46D o engine tem
-    //   85 C0 (TEST EAX,EAX) / 74 52 (JZ +0x52) / FF15.. (CALL [0x4D0468] = setup de fullscreen + troca de
-    // resolução). Trocar o 0x74 (JZ) por 0xEB (JMP curto) força o salto SEMPRE -> pula o CALL -> o engine
-    // roda windowed de verdade, sem trocar a resolução do desktop. (É o mesmo patch que o NyxLauncher aplica
-    // quando o "Window Mode" está marcado: ver RE do RakionLauncher.Loader.) Aplicado com o jogo suspenso,
-    // antes do engine chegar nessa instrução.
+    // Patches no rakion.exe (sem ASLR, ImageBase 0x400000) — todos trocam um JZ (0x74) por JMP curto (0xEB)
+    // pra forçar o salto e PULAR um bloco indesejado. Aplicados com o jogo suspenso.
+    //
+    // MODO JANELA — 0x40D46D: em [85 C0 (TEST EAX,EAX) / 74 52 (JZ) / FF15.. (CALL [0x4D0468])] o CALL é o setup
+    // de fullscreen + troca de resolução do desktop; o JMP pula ele -> windowed real. (Mesmo patch que o "Window
+    // Mode" do NyxLauncher faz; ver RE do RakionLauncher.Loader.)
     private const int WindowedPatchAddr = 0x40D46D;
-    private const byte WindowedJzByte = 0x74, WindowedJmpByte = 0xEB;
+    //
+    // SEM RESET DE DISPLAY AO MINIMIZAR — no WndProc (0x40DB10, classe "Rakion") o engine re-inicializa o display
+    // ao restaurar de minimizado (tela preta de ~4s: recria o device D3D9). Em WINDOWED o device não é perdido,
+    // então é desnecessário. Os 3 JZ guardam: 0x40DBC2 (SC_RESTORE -> FUN_0040d7b0 "Start new display mode"),
+    // 0x40DC1E (WM_ACTIVATEAPP ativar -> FUN_0040bc10 resume), 0x40DC4F (WM_ACTIVATEAPP desativar -> pause).
+    // Forçando os 3 JMP, o engine ignora a minimização no nível de display -> sem pause/resume/restart -> sem
+    // tela preta. Os 3 juntos: pular só o resume deixaria o render pausado pra sempre. Descoberto por RE (Ghidra)
+    // do WndProc do rakion.bin.
+    private static readonly int[] NoDisplayResetAddrs = { 0x40DBC2, 0x40DC1E, 0x40DC4F };
 
-    /// <summary>Aplica o patch do modo janela no processo do jogo (deve estar suspenso). Valida o byte
-    /// original (0x74) antes de escrever — build diferente não é tocado.</summary>
-    public static void PatchWindowedMode(int pid)
+    private const byte JzByte = 0x74, JmpByte = 0xEB;
+
+    /// <summary>Patch do modo janela (pula o setup de fullscreen/troca-de-resolução). Jogo deve estar suspenso.</summary>
+    public static void PatchWindowedMode(int pid) => ApplyJzToJmp(pid, new[] { WindowedPatchAddr }, "windowed");
+
+    /// <summary>Patch que impede o engine de re-inicializar o display ao restaurar de minimizado (corta a tela
+    /// preta). Só faz sentido em windowed/borderless (device não é perdido). Jogo deve estar suspenso.</summary>
+    public static void PatchNoDisplayReset(int pid) => ApplyJzToJmp(pid, NoDisplayResetAddrs, "no-reset-display");
+
+    /// <summary>Troca o JZ (0x74) por JMP curto (0xEB) em cada endereço, validando o byte original — build
+    /// diferente (byte != 0x74) não é tocado.</summary>
+    private static void ApplyJzToJmp(int pid, int[] addrs, string tag)
     {
         IntPtr h = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, false, (uint)pid);
-        if (h == IntPtr.Zero) { Log($"patch windowed: OpenProcess falhou pid={pid} err={Marshal.GetLastWin32Error()}"); return; }
+        if (h == IntPtr.Zero) { Log($"patch {tag}: OpenProcess falhou pid={pid} err={Marshal.GetLastWin32Error()}"); return; }
         try
         {
-            IntPtr addr = new(WindowedPatchAddr);
-            byte[] cur = new byte[1];
-            if (!ReadProcessMemory(h, addr, cur, 1, out _)) { Log("patch windowed: ReadProcessMemory falhou"); return; }
-            if (cur[0] == WindowedJmpByte) { Log("patch windowed: já aplicado"); return; }
-            if (cur[0] != WindowedJzByte) { Log($"patch windowed: byte inesperado 0x{cur[0]:X2} (build diferente) — não toca"); return; }
-            if (!VirtualProtectEx(h, addr, 1, PAGE_EXECUTE_READWRITE, out uint old)) return;
-            bool ok = WriteProcessMemory(h, addr, new[] { WindowedJmpByte }, 1, out _);
-            VirtualProtectEx(h, addr, 1, old, out _);
-            Log($"patch windowed: 0x40D46D 0x74 -> 0xEB {(ok ? "OK" : "FALHOU")}");
+            foreach (int a in addrs)
+            {
+                IntPtr addr = new(a);
+                byte[] cur = new byte[1];
+                if (!ReadProcessMemory(h, addr, cur, 1, out _)) { Log($"patch {tag}: read falhou @0x{a:X}"); continue; }
+                if (cur[0] == JmpByte) { Log($"patch {tag}: 0x{a:X} já aplicado"); continue; }
+                if (cur[0] != JzByte) { Log($"patch {tag}: 0x{a:X} byte inesperado 0x{cur[0]:X2} — não toca"); continue; }
+                if (!VirtualProtectEx(h, addr, 1, PAGE_EXECUTE_READWRITE, out uint old)) continue;
+                bool ok = WriteProcessMemory(h, addr, new[] { JmpByte }, 1, out _);
+                VirtualProtectEx(h, addr, 1, old, out _);
+                Log($"patch {tag}: 0x{a:X} 0x74 -> 0xEB {(ok ? "OK" : "FALHOU")}");
+            }
         }
         finally { CloseHandle(h); }
     }

@@ -137,7 +137,11 @@ internal sealed class MainForm : Form
             // Lança SUSPENSO, aplica o patch do modo janela (se não for fullscreen) ANTES de o engine trocar a
             // resolução do desktop, e só então resume — senão a "janela" cobre a tela na resolução do INI.
             var (pid, hThread) = GameLauncher.LaunchSuspended(_binDir, _user.Text.Trim(), GameLauncher.HexPass(_pass.Text), ServerId);
-            if (mode != WindowMode.Fullscreen) WindowMode.PatchWindowedMode(pid);
+            if (mode != WindowMode.Fullscreen)
+            {
+                WindowMode.PatchWindowedMode(pid);      // windowed real (não troca a resolução do desktop)
+                WindowMode.PatchNoDisplayReset(pid);    // não re-inicializa o display ao restaurar de minimizado
+            }
             GameLauncher.Resume(hThread);
 
             int w = _settings.ScreenWidth, h = _settings.ScreenHeight;   // alvo do framing = resolução escolhida
