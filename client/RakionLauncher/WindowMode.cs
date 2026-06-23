@@ -34,6 +34,8 @@ internal static class WindowMode
     [DllImport("user32.dll")] private static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int idx);
     [DllImport("user32.dll")] private static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int idx, IntPtr val);
     [DllImport("user32.dll")] private static extern bool AdjustWindowRect(ref RECT rc, uint style, bool menu);
+    [DllImport("user32.dll")] private static extern bool GetWindowPlacement(IntPtr hwnd, ref WINDOWPLACEMENT wp);
+    [DllImport("user32.dll")] private static extern bool SetWindowPlacement(IntPtr hwnd, ref WINDOWPLACEMENT wp);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool SetWindowText(IntPtr hwnd, string s);
     [DllImport("user32.dll")] private static extern int GetSystemMetrics(int idx);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
@@ -46,6 +48,8 @@ internal static class WindowMode
     private static void Log(string msg) { try { File.AppendAllText(LogPath, $"{DateTime.Now:HH:mm:ss.fff}  {msg}{Environment.NewLine}"); } catch { } }
 
     [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] private struct WINDOWPLACEMENT { public uint length, flags, showCmd; public POINT ptMinPosition, ptMaxPosition; public RECT rcNormalPosition; }
 
     private const int GWL_STYLE = -16, GWL_EXSTYLE = -20;
     private const long WS_POPUP = 0x80000000, WS_CAPTION = 0x00C00000, WS_SYSMENU = 0x00080000, WS_MINIMIZEBOX = 0x00020000;
@@ -131,7 +135,7 @@ internal static class WindowMode
                     // Ao minimizar, tira o título (vira popup) enquanto a janela está INVISÍVEL: ao restaurar, o
                     // engine vê window==backbuffer e NÃO encolhe o client. (Com o título, o engine encolhe o
                     // backbuffer pela borda a CADA restore -> faixa preta que cresce.) O título volta no restore.
-                    if (!wasIconic) StripFrame(hwnd);
+                    if (!wasIconic) StripFrame(hwnd, cw, ch);
                 }
                 else if (hwnd != framed)   // primeira janela ou recriada: espera estabilizar e frama do zero
                 {
@@ -160,13 +164,22 @@ internal static class WindowMode
         }
     }
 
-    /// <summary>Tira o título (vira popup) — usado enquanto a janela está minimizada pra que, ao restaurar, o
-    /// engine veja window==client==backbuffer e não encolha. Sem SetWindowPos: a janela está invisível.</summary>
-    private static void StripFrame(IntPtr hwnd)
+    /// <summary>Tira o título (vira popup) enquanto a janela está minimizada pra que, ao restaurar, o engine
+    /// veja window==client==backbuffer e não encolha. E define o RECT de restauração no tamanho ALVO (popup):
+    /// assim o engine reseta o backbuffer já no tamanho final e o re-add do título não muda o client — corta
+    /// o 2º device-reset (menos tela preta). Sem SetWindowPos no estilo: a janela está invisível.</summary>
+    private static void StripFrame(IntPtr hwnd, int clientW, int clientH)
     {
         long style = GetWindowLongPtr(hwnd, GWL_STYLE).ToInt64();
         if ((style & WS_CAPTION) != 0)
             SetWindowLongPtr(hwnd, GWL_STYLE, new IntPtr((style & ~TitledStyle) | WS_POPUP));
+        if (clientW < 320 || clientH < 240) return;
+        WINDOWPLACEMENT wp = new() { length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>() };
+        if (!GetWindowPlacement(hwnd, ref wp)) return;
+        var (sw, sh) = ScreenSize();
+        int x = Math.Max((sw - clientW) / 2, 0), y = Math.Max((sh - clientH) / 2, 0);
+        wp.rcNormalPosition = new RECT { Left = x, Top = y, Right = x + clientW, Bottom = y + clientH };
+        SetWindowPlacement(hwnd, ref wp);
     }
 
     /// <summary>A janela está fora do lugar esperado? Borderless quer o canto (0,0); windowed quer
@@ -202,6 +215,11 @@ internal static class WindowMode
         return (lastW >= 320 ? lastW : 800, lastH >= 240 ? lastH : 600);
     }
 
+    // non-client real (borda+título) aprendido de um frame bom — deixa o ApplyTitledFrame acertar o tamanho da
+    // janela DE PRIMEIRA, sem o passo intermediário do AdjustWindowRect (que erra a borda DWM e mexe no client,
+    // forçando um device-reset a mais ao restaurar de minimizado).
+    private static int _ncW = -1, _ncH = -1;
+
     private static void ApplyTitledFrame(IntPtr hwnd, int clientW, int clientH, bool activate, bool fill)
     {
         long style = GetWindowLongPtr(hwnd, GWL_STYLE).ToInt64();
@@ -211,29 +229,40 @@ internal static class WindowMode
         ClearTopmost(hwnd);
         SetWindowText(hwnd, "Rakion");
 
-        RECT rc = new() { Left = 0, Top = 0, Right = clientW, Bottom = clientH };
-        AdjustWindowRect(ref rc, (uint)(style & 0xFFFFFFFF), false);
-        int winW = rc.Right - rc.Left, winH = rc.Bottom - rc.Top;
-        if (activate) Log($"  ApplyTitledFrame: alvo client={clientW}x{clientH} -> SetWindowPos janela {winW}x{winH} style=0x{style & 0xFFFFFFFF:X8}");
-        PlaceWindow(hwnd, winW, winH, activate, fill);
-
-        var (acw, ach) = ClientSize(hwnd);   // corrige o gap residual da borda DWM/tema
-        if (acw > 0 && ach > 0 && (acw != clientW || ach != clientH))
+        if (_ncW >= 0)   // non-client conhecido: acerta o tamanho de 1ª (não passa por um client intermediário)
         {
-            winW += clientW - acw; winH += clientH - ach;
-            PlaceWindow(hwnd, winW, winH, activate, fill);
+            PlaceWindow(hwnd, clientW + _ncW, clientH + _ncH, activate, fill);
         }
+        else             // 1ª vez: estima via AdjustWindowRect e corrige o gap residual da borda DWM/tema
+        {
+            RECT rc = new() { Left = 0, Top = 0, Right = clientW, Bottom = clientH };
+            AdjustWindowRect(ref rc, (uint)(style & 0xFFFFFFFF), false);
+            int winW = rc.Right - rc.Left, winH = rc.Bottom - rc.Top;
+            PlaceWindow(hwnd, winW, winH, activate, fill);
+            var (acw, ach) = ClientSize(hwnd);
+            if (acw > 0 && ach > 0 && (acw != clientW || ach != clientH))
+                PlaceWindow(hwnd, winW + (clientW - acw), winH + (clientH - ach), activate, fill);
+        }
+        LearnNonClient(hwnd, clientW, clientH);   // aprende/atualiza o non-client real quando o client bateu o alvo
         if (activate) FocusWindow(hwnd);
+    }
+
+    private static void LearnNonClient(IntPtr hwnd, int clientW, int clientH)
+    {
+        var (cw, ch) = ClientSize(hwnd);
+        if (cw <= 0 || ch <= 0 || Math.Abs(cw - clientW) > 2 || Math.Abs(ch - clientH) > 2) return;
+        GetWindowRect(hwnd, out RECT wr);
+        int ncW = (wr.Right - wr.Left) - cw, ncH = (wr.Bottom - wr.Top) - ch;
+        if (ncW is >= 0 and < 60 && ncH is >= 0 and < 120) { _ncW = ncW; _ncH = ncH; }
     }
 
     private static void PlaceWindow(IntPtr hwnd, int winW, int winH, bool activate, bool fill)
     {
-        int x = 0, y = 0; int sw = 0, sh = 0;
-        if (!fill) { (sw, sh) = ScreenSize(); x = Math.Max((sw - winW) / 2, 0); y = Math.Max((sh - winH) / 2, 0); }
+        int x = 0, y = 0;
+        if (!fill) { var (sw, sh) = ScreenSize(); x = Math.Max((sw - winW) / 2, 0); y = Math.Max((sh - winH) / 2, 0); }
         uint flags = SWP_FRAMECHANGE | SWP_NOZORDER | SWP_SHOWWINDOW;
         if (!activate) flags |= SWP_NOACTIVATE;
         SetWindowPos(hwnd, IntPtr.Zero, x, y, winW, winH, flags);
-        Log($"  PlaceWindow: screen={sw}x{sh} manda x={x} y={y} {winW}x{winH} fill={fill} -> colou rect={FmtRect(hwnd)}");
     }
 
     private static void ClearTopmost(IntPtr hwnd)
