@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Launcher do Rakion (carlox / OpenRakion offline). Substitui o NyxLauncher/load.bin:
+    login, game options (tela/mouse/som) e PLAY lançando rakion.exe direto. O MODO JANELA é a
+    técnica do luxview-launcher (Go) portada pra .NET: roda o engine windowed (m_bActiveFullScreen=0)
+    e reformata a janela "Rakion" via Win32 + destrava o Alt+Tab (patch em keyhook.dll). Ver WindowMode.cs.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>RakionLauncher</AssemblyName>
+    <RootNamespace>RakionLauncher</RootNamespace>
+    <!-- rakion.exe exige admin (CreateProcess sem elevar = err 740); o launcher eleva. -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Ícone do exe (extraído do rakion.exe) — Explorer / taskbar / titlebar. Condicional: os assets são
+         derivados do cliente (proprietários, fora do git — ver Assets\README.md); sem eles o launcher compila. -->
+    <ApplicationIcon Condition="Exists('Assets\app.ico')">Assets\app.ico</ApplicationIcon>
+    <!-- Distribuição: publicar self-contained single-file pra o jogador não precisar instalar o .NET
+         (ver README / publish com -r win-x64 self-contained PublishSingleFile=true). -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Assets de UI (ícone + arte) embutidos no exe. Derivados do cliente, NÃO versionados (ver Assets\
+         README.md). O glob tolera a ausência: quem clona sem os assets ainda compila (UI degrada sem eles). -->
+    <EmbeddedResource Include="Assets\*.ico;Assets\*.png;Assets\*.bmp" />
+  </ItemGroup>
+
+</Project>

@@ -13,6 +13,10 @@ NyxLauncher*.exe
 risoption.exe
 Replacer.exe
 GameGuard/
+# Assets do launcher derivados do cliente (ícone do rakion.exe, recortes da arte) — ver client/RakionLauncher/Assets/README.md
+client/RakionLauncher/Assets/*.ico
+client/RakionLauncher/Assets/*.png
+client/RakionLauncher/Assets/*.bmp
 # Executáveis de servidor proprietários
 RakionWorldServ.exe
 BrokerServer.exe
