@@ -1,5 +1,6 @@
 using System;
 using System.Net;
+using System.Text;
 using System.Threading.Tasks;
 using RakionServer.Common;
 using RakionServer.World.CharSelect;
@@ -208,6 +209,11 @@ namespace RakionServer.World.Network
                         Log.Ok("lobby", "[{0}] 0x4f morte no stage solo -> eco FIELD 0x4f + resumo 0x4a(2bd=1) + 0x44 (delay)", Slot);
                         return true;
                     }
+                case 0x19: // CharacterGetUserName (messenger "add buddy"): o cliente pede ao WORLD o account-id
+                    // do dono do nick digitado e trava em "Waiting for ID Information on account from server"
+                    // (lang 599) ate' a resposta 0x0D. Sem isso o "add" do messenger nao avanca.
+                    _ = HandleGetUserNameAsync(data);
+                    return true;
                 default:
                     // Shop list/loadout (0x2d/0x2f) E buy (0x2e) DEVEM chegar aos handlers reais
                     // (Op_RoomRosterSync/Op_GroupMemberInfo/Op_RoomMemberQuery) -> NAO consumir aqui, deixa o
@@ -231,6 +237,24 @@ namespace RakionServer.World.Network
                     if (InField) { Log.Debug("lobby", "[{0}] opcode {1:X2} em campo (sem resp)", Slot, opcode); return true; }
                     return false;
             }
+        }
+
+        /// <summary>0x19 CharacterGetUserName: traduz o pedido (nick + opcode/seq da resposta) e responde o 0x0D
+        /// com o account-id do dono do nick (busca no DB). data = [nick][u32 respOpcode][u32 respSeq]; o cliente
+        /// dita o opcode/seq da resposta e nao valida o account-id, so' o status byte. RE: worldserv 0x413980.</summary>
+        private async Task HandleGetUserNameAsync(byte[] data)
+        {
+            // data = nick null-terminated; apos o NUL pode vir lixo de stack do buffer do cliente (varia
+            // entre sessoes) -> ignorado. Le ate' o primeiro NUL.
+            int nul = Array.IndexOf(data, (byte)0);
+            int nickLen = nul >= 0 ? nul : data.Length;
+            if (nickLen == 0) { Log.Warn("lobby", "[{0}] 0x19 GetUserName: nick vazio", Slot); return; }
+            string nick = Encoding.ASCII.GetString(data, 0, nickLen);
+
+            string? account = await _server.Db.GetCharOwnerByNickAsync(nick);
+            byte status = account != null ? (byte)0 : (byte)2;   // 0=ok, 2=char nao existe (lang 598)
+            SendEncryptedFrame(LobbyFrames.GetUserNameResult(status, account ?? "", nick));
+            Log.Ok("lobby", "[{0}] 0x19 GetUserName('{1}') -> status={2} account='{3}'", Slot, nick, status, account ?? "");
         }
 
         /// <summary>LoginComplete (msgType 2) — sucesso de FUN_0041f6c0.</summary>

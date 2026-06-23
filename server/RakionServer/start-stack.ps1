@@ -14,9 +14,10 @@ function Start-Svc([string]$proc, [string]$exe, [string]$argline) {
 
 Start-Svc "BrokenServer"      "$root\src\RakionServer.Broker\$bin\BrokenServer.exe"        ""
 Start-Svc "RakionWorldServer" "$root\src\RakionServer.World\$bin\RakionWorldServer.exe"    "`"$root\deploy\worldserver.ini`""
+Start-Svc "BuddyServer"       "$root\src\RakionServer.Buddy\$bin\BuddyServer.exe"          ""
 Start-Svc "RakionLauncherWeb" "$root\src\RakionServer.LauncherWeb\$bin\RakionLauncherWeb.exe" ""
 Start-Svc "RakionAdmin"       "$root\src\RakionServer.Admin\$bin\RakionAdmin.exe"          ""
 
 Write-Host ""
-Write-Host "Stack: launcher http://localhost  |  admin http://localhost:8080  |  broker :40706  |  world :40708"
+Write-Host "Stack: launcher http://localhost  |  admin http://localhost:8080  |  broker :40706  |  world :40708  |  buddy :8500/:8504"
 Write-Host "Lembre do MariaDB (docker start rakion-db) antes."

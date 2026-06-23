@@ -49,6 +49,24 @@ namespace RakionServer.World.Network
         /// (class=1, team/stats=0).</summary>
         private static readonly byte[] PlayerRecordTail = { 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
+        /// <summary>Resposta do 0x19 CharacterGetUserName (messenger "add buddy"): o WORLD informa o account-id
+        /// do dono de um nick, que o cliente exige antes de adicionar amigo — sem isso ele trava em "Waiting for
+        /// ID Information on account from server" (lang 599). O pedido carrega só o nick; o cliente NÃO valida o
+        /// accountId, só o status byte.
+        /// Layout: [u16 0x19 opcode][u16 0x0D subtype][byte status][accountId\0][buddyName\0]. status 0=ok, 1=erro, 2=nao existe.
+        /// O opcode do frame ecoa o do pedido (no world, request==response: 0x14->0x14, 0x36->0x36; 0x0D sozinho
+        /// colidiria com o char-data 0x0D do login). RE: DBCommandCharacterGetUserName @worldserv 0x413980.</summary>
+        public static byte[] GetUserNameResult(byte status, string accountId, string buddyName)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x0019);   // opcode do frame (ecoa o pedido)
+            w.WriteWord(0x000D);   // subtype interno (do worldserv 0x413980, +2 do buffer)
+            w.WriteByte(status);
+            w.WriteCString(accountId);
+            w.WriteCString(buddyName);
+            return w.ToArray();
+        }
+
         // ---- BUILDERS ----------------------------------------------------------------------------------
 
         /// <summary>0x10 GameGuard challenge: [10 00][nonce 16B][00 x6]. Tudo constante.</summary>

@@ -261,6 +261,24 @@ namespace RakionServer.World.Database
             }
         }
 
+        /// <summary>Account-name (usergameinfo.name) do dono de um char, pelo nick. null se o char nao existe.
+        /// Usado pelo messenger "add buddy": o cliente pede o account-id ao WORLD antes de adicionar (0x19 -> 0x0D).
+        /// Replica DBCommandCharacterGetUserName @worldserv 0x413980 (JOIN characterinfo -> usergameinfo).</summary>
+        public async Task<string?> GetCharOwnerByNickAsync(string nick)
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "SELECT a.name FROM usergameinfo a JOIN characterinfo b ON a.id=b.userid " +
+                    "WHERE b.name=@n LIMIT 1", c);
+                cmd.Parameters.AddWithValue("@n", nick);
+                return (await cmd.ExecuteScalarAsync()) as string;
+            }
+            catch (Exception ex) { Log.Error("db", "GetCharOwnerByNickAsync({0}): {1}", nick, ex.Message); return null; }
+        }
+
         /// <summary>Registra a conexao do usuario (tabela loguserconnect).</summary>
         public async Task LogUserConnectAsync(int userId, string userName, int serverId, string ip)
         {
