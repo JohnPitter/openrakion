@@ -33,6 +33,6 @@ Roda elevado (o `rakion.exe` exige admin; `CreateProcess` sem elevar = erro 740)
 
 ## Assets
 
-Os assets de UI (`Assets/*.ico|png|bmp`) são **derivados do cliente** (proprietários) e **não são
-versionados** — ver [`Assets/README.md`](Assets/README.md). O launcher **compila e roda sem eles** (a UI
-degrada sem ícone/banner); o `.csproj` os embute por glob quando presentes.
+Os assets de UI (`Assets/*.ico|png|bmp`) são de domínio público e ficam **versionados** — ver
+[`Assets/README.md`](Assets/README.md). O launcher **compila e roda sem eles** (a UI degrada sem
+ícone/banner); o `.csproj` os embute por glob quando presentes.
