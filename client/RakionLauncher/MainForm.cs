@@ -147,6 +147,7 @@ internal sealed class MainForm : Form
             int w = _settings.ScreenWidth, h = _settings.ScreenHeight;   // alvo do framing = resolução escolhida
             new Thread(() => WindowMode.FrameGameWindow(GameLauncher.GameProcess, mode, w, h)) { IsBackground = true }.Start();
             new Thread(() => WindowMode.PatchKeyHook(GameLauncher.GameProcess)) { IsBackground = true }.Start();
+            AddBotOverlay.Start(GameLauncher.GameProcess);   // botão "Adicionar Bot" sobre a janela do jogo (clique -> /addbot)
 
             _play.Enabled = false;
             Status("Rakion iniciado — aplicando o modo de janela…", false);
