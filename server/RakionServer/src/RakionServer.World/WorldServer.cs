@@ -101,6 +101,40 @@ namespace RakionServer.World
             return f;
         }
 
+        /// <summary>
+        /// Field da SALA pré-partida do host. O 0x3b só guarda os params (PendingRoom*); o Field nasce sob
+        /// demanda — e o /addbot precisa dele AINDA na sala (Status=2), antes do stage. Reusa o Field já
+        /// vinculado (FieldId) ou cria um dos params do host, mas SEM tocar no Status de lobby (a sala
+        /// pré-partida é Status=2; o stage promove a 3 depois reusando este mesmo Field via
+        /// <see cref="EnsureFieldForSession"/>). Devolve null se o host não criou sala (sem PendingRoom*),
+        /// p/ não materializar field-fantasma no lobby.
+        /// </summary>
+        public Domain.Field? GetOrCreateRoomField(ClientSession host)
+        {
+            lock (Fields)
+            {
+                var existing = Fields.Find(f => f.Id == host.FieldId);
+                if (existing != null) return existing;
+                if (host.PendingRoomMap == 0 && string.IsNullOrEmpty(host.PendingRoomName)) return null;
+                var f = new Domain.Field(_nextFieldId++)
+                {
+                    Name = host.PendingRoomName,
+                    Mode = host.PendingRoomMode,
+                    MapId = host.PendingRoomMap,
+                    MaxPlayers = 16,            // 8v8; o bot só precisa de um assento livre no time oposto
+                    Master = host,
+                    MasterSlot = host.Slot,
+                    State = 1,                  // ocupado (pré-partida) — não 2 (em jogo)
+                };
+                f.Add(host);
+                Fields.Add(f);
+                host.FieldId = f.Id;           // vincula; NÃO toca em Status/InField (sala pré-partida = Status=2)
+                Log.Info("field", "[{0}] field da sala criado sob demanda (id={1} map={2} mode={3}) p/ roster/bot",
+                    host.Slot, f.Id, host.PendingRoomMap, host.PendingRoomMode);
+                return f;
+            }
+        }
+
         /// <summary>Remove o usuario do field; se ficar vazio, libera o field.</summary>
         public void LeaveField(ClientSession s)
         {

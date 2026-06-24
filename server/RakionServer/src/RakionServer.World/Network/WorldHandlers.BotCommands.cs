@@ -36,8 +36,8 @@ namespace RakionServer.World.Network
             bool isRemove = lower.StartsWith("/removebot") || lower.StartsWith("/delbot") || lower.StartsWith("/clearbot");
             if (!isAdd && !isRemove) return false;
 
-            var field = world.GetField(u.FieldId);
-            if (field == null) { BotChatFeedback(u, "sala invalida"); return true; }
+            var field = world.GetOrCreateRoomField(u);
+            if (field == null) { BotChatFeedback(u, "crie uma sala primeiro"); return true; }
 
             if (isRemove)
             {
