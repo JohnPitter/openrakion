@@ -1,14 +1,15 @@
-"""Patch ETAPA 1 do botao "Add Bot" na tela do game room (rakion.bin, FUN_0044f080 @0x44f080).
-Cria uma COPIA rakion.bin.botbtn — o seu rakion.bin original NAO e' tocado. Pra testar: troque o
-.botbtn no lugar do rakion.bin (guarde o original), rode o jogo, entre numa sala. Se o botao
-"Add Bot" aparecer na barra de baixo sem crashar, a Etapa 1 funcionou (o CLIQUE e' a Etapa 2).
+"""Patch do botao "Add Bot" na tela do game room (rakion.bin == rakion.exe). Gera COPIAS .botbtn
+(o original NAO e' tocado); aplica com tools/swap_botbtn.ps1. RE estatica (Ghidra), 2 etapas:
 
-Hook: no fim de FUN_0044f080 (0x44fbad, "MOV ECX,[ESP+0x230]") salta p/ um CODE CAVE (0x515207) que
-cria 1 botao reusando o padrao exato do exe (ESI=tela), depois re-executa a instrucao e volta.
-Enderecos (rakion.bin, ImageBase 0x400000, sem ASLR): alloc FUN_004bf8c2, criar FUN_00437680,
+ETAPA 1 — o botao APARECE: hook no build da tela da SALA FUN_00446ff0 (0x447329, "MOV ECX,[ESP+0xac]")
+salta p/ um CODE CAVE (0x515207) que cria 1 csButton reusando o padrao exato do exe (ESI=tela,
+command id 0x200), depois re-executa a instrucao e volta. alloc FUN_004bf8c2, criar FUN_00437680,
 SetBitmap [0x4d1074], SetPos [0x4d10b8], SetSize [0x4d10bc], SetText = vtable+0x34.
 
-Uso: python tools/patch_botbtn.py
+ETAPA 2 — o CLIQUE funciona: hook no HandleEvent da sala FUN_00447af0 (0x447c14) -> cave (0x5152b0)
+que, se o command id == 0x200, chama SendChatDataInGame("/addbot") (o servidor adiciona o bot).
+
+Enderecos: rakion.bin, ImageBase 0x400000, sem ASLR (VA == offset via PE). Uso: python tools/patch_botbtn.py
 """
 import struct, shutil, os
 
@@ -21,7 +22,7 @@ HOOK_VA = 0x447329          # FUN_00446ff0 (tela da SALA, RE confirmada): "MOV E
 HOOK_LEN = 7
 RET_VA = 0x447330           # proxima instrucao apos a overwritten
 NEW_ID = 0x200              # command id do botao -> Etapa 2: case 0x200 em FUN_00447af0 -> SendChatDataInGame("/addbot")
-BTN_X, BTN_Y = 655, 648     # gap entre Invite e Game setting, alinhado com a fileira de baixo
+BTN_X, BTN_Y = 625, 648     # centralizado no vão entre Invite e Game setting (nudge -30 p/ não tampar Game setting)
 ALLOC = 0x4bf8c2
 CREATE = 0x437680
 
@@ -125,6 +126,22 @@ for pos, target_va in fixups:
 jrel = CAVE_VA - (HOOK_VA + 5)
 hook = b"\xe9" + struct.pack("<i", jrel) + b"\x90" * (HOOK_LEN - 5)
 
+# ===== ETAPA 2: handler do CLIQUE (cmd 0x200 -> SendChatDataInGame("/addbot")) =====
+# Receita RE verificada byte-a-byte contra o rakion.bin (agente). Hook em FUN_00447af0 @0x447c14
+# (HandleEvent da sala; le cmd_id em [EBP+0xc]); 0x200 nao colide com case existente. Cave @0x5152b0
+# (logo apos a da Etapa 1): cmp cmd==0x200 -> CNet=*(*0x4d0650)+0x119c; push 0; push "/addbot";
+# call [0x4d0434] (thunk IAT de SendChatDataInGame); volta ao codigo deslocado e jmp 0x447c1c.
+CLICK_CAVE_VA = 0x5152b0
+CLICK_HOOK_VA = 0x447c14
+CLICK_HOOK_LEN = 8                  # MOV EAX,[EBP+0xc] (3B) + ADD EAX,0xffffff00 (5B) deslocados
+click_cave = bytes.fromhex(
+    "8b450c3d00020000751d8b0d50064d00"
+    "8b0981c19c1100006a0068e4525100ff"
+    "1534044d00eb008b450c0500ffffffe9"
+    "3829f3ff2f616464626f7400")
+cjrel = CLICK_CAVE_VA - (CLICK_HOOK_VA + 5)
+click_hook = b"\xe9" + struct.pack("<i", cjrel) + b"\x90" * (CLICK_HOOK_LEN - 5)
+
 # ---- aplica nos arquivos (rakion.exe e rakion.bin) ----
 for name in TARGETS:
     path = os.path.join(BIN_DIR, name)
@@ -135,10 +152,14 @@ for name in TARGETS:
     data = bytearray(open(src, "rb").read())
     cave_off = va_to_off(data, CAVE_VA)
     hook_off = va_to_off(data, HOOK_VA)
-    if any(data[cave_off+i] for i in range(len(code))):
-        print("[!] %s: code-cave @%#x NAO esta livre — pulando p/ nao corromper" % (name, CAVE_VA)); continue
-    data[cave_off:cave_off+len(code)] = code
+    click_cave_off = va_to_off(data, CLICK_CAVE_VA)
+    click_hook_off = va_to_off(data, CLICK_HOOK_VA)
+    if any(data[cave_off+i] for i in range(len(code))) or any(data[click_cave_off+i] for i in range(len(click_cave))):
+        print("[!] %s: code-cave NAO esta livre — pulando p/ nao corromper" % name); continue
+    data[cave_off:cave_off+len(code)] = code                          # Etapa 1: cria o botao
     data[hook_off:hook_off+HOOK_LEN] = hook
+    data[click_cave_off:click_cave_off+len(click_cave)] = click_cave  # Etapa 2: clique -> /addbot
+    data[click_hook_off:click_hook_off+CLICK_HOOK_LEN] = click_hook
     open(path + ".botbtn", "wb").write(data)
-    print("OK %-11s -> %s.botbtn  (cave %dB @%#x, hook @%#x)" % (name, name, len(code), CAVE_VA, HOOK_VA))
+    print("OK %-11s -> %s.botbtn  (botao %dB @%#x + clique %dB @%#x)" % (name, name, len(code), CAVE_VA, len(click_cave), CLICK_CAVE_VA))
 print("Original intacto. Aplique com: tools\\swap_botbtn.ps1 apply")
