@@ -55,9 +55,21 @@ script) e loga em `C:\temp\botcap.log` (`W->C ... u16a=0xNNNN ... data=hex`). Po
 - Validar o datagrama UDP 0x30a pelo mesmo log (W->C/C->W UDP) → ligar `UdpFramingKnown` → bot anda.
 - Hit-detection: parsear a ação 0x30a do humano (que o servidor vê no UDP) → `BotTakeDamage`.
 
-## Botão NATIVO (outro gap, difícil)
-`FUN_0044f080` era o lobby; textos de botão são localização externa (sem âncora de string); frida congela a
-UI. Overlay (`client/RakionLauncher/AddBotOverlay.cs`) construído mas REJEITADO. Ver [[re-room-ui-buttons]].
+## Botão NATIVO — RE COMPLETA (agente 2026-06-24, tela cravada)
+A tela do GAME ROOM (RED/BLUE) = **`FUN_00446ff0`** @0x446ff0 (mode 0x1c; cria os botões + o grid de 20 slots
+`FUN_0042fb10` @+0x9f4 — prova que é a sala, não lobby). Obj: alloc `FUN_004bf8c2(0xa28)`, ctor `FUN_004464a0`,
+vtable `PTR_LAB_004d3770`, vivo em `DAT_004feed0+0x17c` (+0x180 = modo UI: 0x1c sala / 0x1d field). A antiga
+`FUN_0044f080` era LOBBY; textos de botão são localização externa (sem âncora de string) e frida congela a UI —
+por isso a RE foi por rastreio estático. Overlay `client/RakionLauncher/AddBotOverlay.cs` foi REJEITADO.
+- **Etapa 1 (botão APARECE) — patcheado** (`tools/patch_botbtn.py`; aplica/restaura via `swap_botbtn.ps1`):
+  hook `0x447329` (`MOV ECX,[ESP+0xac]`, 7B) → cave `0x515207` → `FUN_00437680(buf, ESI=screen, id=0x200,
+  -1,-1,0,0x400,0)` + SetBitmap(screen+0x184/+0x1b4)/SetText/SetPos/SetSize(0x66×0x1d). PENDENTE: confirmar
+  in-game + ajustar posição (BTN_X/Y).
+- **Etapa 2 (clique → /addbot) — a fazer**: o csButton solta evento `{type=0x0d, *(ev+0xc)=cmd}` no HandleEvent
+  da tela = **`FUN_00447af0`** (vtable+0x40; já trata 0x132 Start, 0x135 Previous, 0x137 team). Adicionar
+  `case 0x200:` → `CNet::SendChatDataInGame((CNet*)(*_pNetwork_exref+0x119c), "/addbot", 0)` (mesma chamada de
+  /kick,/notice em `FUN_0040df40` @0x40e1e2; o servidor já parseia /addbot). Artefatos:
+  `rakion-work/ghidra-proj/ROOM_SCREEN_FINDINGS.out.txt` + `room_*.out.txt`. Ver [[re-room-ui-buttons]].
 
 ## ACHADO (ponto exato do redirect pra captura)
 O endereço do world que o cliente conecta **NÃO** está num config solto — vem do **BROKER**:
