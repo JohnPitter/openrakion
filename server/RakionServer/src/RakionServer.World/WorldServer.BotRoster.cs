@@ -86,14 +86,22 @@ namespace RakionServer.World
         {
             var host = f.Master;
             if (host == null) return;
-            byte[] blob = BuildBotPlayerRecord(bot);
-            using var w = new PacketWriter();
-            w.WriteWord(0x4c);              // +0 opcode (u16)
-            w.WriteByte((byte)seat);       // +2 slot
-            w.WriteWord(blob.Length);      // +3 blobLen (u16)
-            w.WriteBytes(blob);            // +5 blob (FUN_0040b7f0)
-            try { host.SendLobby(w.ToArray()); } catch { }
-            Log.Ok("bot", "stage: 0x4c AddPlayer seat {0} ({1}B blob) -> host [{2}]", seat, blob.Length, host.Slot);
+            // Agente narrowou pra 0x4b OU 0x4c (o exato precisa de captura). Mando OS DOIS: o cliente
+            // processa o certo e ignora o outro (são exclusivos — só um chama AddRemotePlayer). 0x4b leva o
+            // slot NO BLOB (+0x1478); 0x4c leva o slot no header. Hedge p/ fechar o spawn sem a captura.
+            byte[] blob4b = BuildBotPlayerRecord(bot, (byte)seat);
+            byte[] blob4c = BuildBotPlayerRecord(bot, 0);
+            using (var w = new PacketWriter())          // 0x4b: [4b 00][u16 blobLen][blob]
+            {
+                w.WriteWord(0x4b); w.WriteWord(blob4b.Length); w.WriteBytes(blob4b);
+                try { host.SendLobby(w.ToArray()); } catch { }
+            }
+            using (var w = new PacketWriter())          // 0x4c: [4c 00][u8 seat][u16 blobLen][blob]
+            {
+                w.WriteWord(0x4c); w.WriteByte((byte)seat); w.WriteWord(blob4c.Length); w.WriteBytes(blob4c);
+                try { host.SendLobby(w.ToArray()); } catch { }
+            }
+            Log.Ok("bot", "stage: 0x4b+0x4c AddPlayer seat {0} ({1}B blob) -> host [{2}]", seat, blob4b.Length, host.Slot);
         }
 
         /// <summary>
@@ -137,12 +145,12 @@ namespace RakionServer.World
         /// 0x49 bytes. Os 2 blocos de equip (38B @+0x1da4 e 19B @+0x1dca) vão ZERADOS — o bot não tem gear, e
         /// item id 0 = slot de equip vazio (modelo base), evitando id inválido que crasharia o render 3D do slot.
         /// </summary>
-        private static byte[] BuildBotPlayerRecord(BotPlayer bot)
+        private static byte[] BuildBotPlayerRecord(BotPlayer bot, byte slotInBlob = 0)
         {
             using var w = new PacketWriter();
             w.WriteBytes(Encoding.ASCII.GetBytes(bot.Name)); w.WriteByte(0);  // nome + NUL  (+0x14a8)
             w.WriteByte(0);                     // tag/clan vazio + NUL        (+0x14c2)
-            w.WriteByte(0);                     // +0x1478
+            w.WriteByte(slotInBlob);            // +0x1478 (slot p/ o 0x4b; 0 no 0x38/0x4c, onde o slot vai no header)
             w.WriteUInt32(0);                   // +0x1450 (id/score)
             w.WriteWord(0);                     // +0x1458
             w.WriteUInt32(0);                   // +0x1454
