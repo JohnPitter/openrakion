@@ -74,31 +74,22 @@ internal static class AddBotOverlay
 
     private static void Run(string procName)
     {
-        var btn = new Button
-        {
-            Text = "Adicionar Bot",
-            Dock = DockStyle.Fill,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Color.FromArgb(40, 40, 48),
-            ForeColor = Color.Gainsboro,
-            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
-            TabStop = false,
-        };
-        btn.FlatAppearance.BorderColor = Color.FromArgb(120, 120, 140);
+        var btn = new StoneButton { Text = "Add Bot", Dock = DockStyle.Fill };
         var form = new Form
         {
             FormBorderStyle = FormBorderStyle.None,
             ShowInTaskbar = false,
             TopMost = true,
             StartPosition = FormStartPosition.Manual,
-            Size = new Size(118, 30),
-            BackColor = Color.FromArgb(40, 40, 48),
+            Size = new Size(102, 29),
         };
         form.Controls.Add(btn);
         btn.Click += (_, _) => SendAddBot(procName);
 
-        // re-posiciona junto da janela do jogo (canto inferior-direito da área de cliente)
-        var timer = new System.Windows.Forms.Timer { Interval = 400 };
+        // Ancora o botão na BARRA INFERIOR do jogo (na lacuna entre os grupos de botões, em linha com
+        // Game setting), proporcional à área de cliente — funciona em qualquer resolução. O engine recria
+        // a janela ao trocar de cena; re-acha e re-posiciona sempre.
+        var timer = new System.Windows.Forms.Timer { Interval = 350 };
         timer.Tick += (_, _) =>
         {
             uint pid = ProcessId(procName);
@@ -106,16 +97,56 @@ internal static class AddBotOverlay
             IntPtr g = FindGameWindow(pid);
             if (g == IntPtr.Zero) { form.Visible = false; return; }
             GetClientRect(g, out RECT rc);
+            int cw = rc.Right - rc.Left, ch = rc.Bottom - rc.Top;
+            if (cw < 320 || ch < 240) { form.Visible = false; return; }
             var origin = new POINT { X = rc.Left, Y = rc.Top };
             ClientToScreen(g, ref origin);
-            // canto sup-direito da área de cliente (fora da arte da sala, sempre visível)
-            int x = origin.X + (rc.Right - rc.Left) - form.Width - 8;
-            int y = origin.Y + 8;
+            int w = Math.Max(86, (int)(cw * 0.0747));   // ~102px a 1366 de largura (igual aos botões do jogo)
+            int h = Math.Max(24, (int)(ch * 0.041));     // ~29px
+            // lacuna entre o grupo esquerdo (Previous/Messenger/Invite) e o direito (Game setting/Team/Start),
+            // na MESMA linha da barra de botões inferior.
+            int x = origin.X + (int)(cw * 0.462);
+            int y = origin.Y + (int)(ch * 0.947);
+            if (form.Size.Width != w || form.Size.Height != h) form.Size = new Size(w, h);
             if (form.Location.X != x || form.Location.Y != y) form.Location = new Point(x, y);
             if (!form.Visible) form.Visible = true;
         };
         timer.Start();
         try { Application.Run(form); } catch { }
+    }
+
+    /// <summary>Botão desenhado pra imitar os botões de PEDRA do Rakion: gradiente cinza-pedra, borda
+    /// biselada (relevo), texto claro em negrito. Sem textura do jogo (que está num XFS), mas bem próximo.</summary>
+    private sealed class StoneButton : Button
+    {
+        public StoneButton()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+            FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0;
+            TabStop = false; UseVisualStyleBackColor = false;
+            Font = new Font("Tahoma", 8.25f, FontStyle.Bold);
+            ForeColor = Color.FromArgb(232, 226, 214);
+        }
+        private bool _hover, _down;
+        protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
+        protected override void OnMouseLeave(EventArgs e) { _hover = false; _down = false; Invalidate(); base.OnMouseLeave(e); }
+        protected override void OnMouseDown(System.Windows.Forms.MouseEventArgs e) { _down = true; Invalidate(); base.OnMouseDown(e); }
+        protected override void OnMouseUp(System.Windows.Forms.MouseEventArgs e) { _down = false; Invalidate(); base.OnMouseUp(e); }
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics; var r = ClientRectangle;
+            int top = _down ? 70 : (_hover ? 132 : 116), bot = _down ? 48 : (_hover ? 92 : 80);
+            using (var br = new System.Drawing.Drawing2D.LinearGradientBrush(r,
+                Color.FromArgb(top, top - 4, top - 10), Color.FromArgb(bot, bot - 3, bot - 8), 90f))
+                g.FillRectangle(br, r);
+            // bisel: claro em cima/esquerda, escuro embaixo/direita
+            using (var lt = new Pen(Color.FromArgb(_down ? 60 : 158, _down ? 58 : 152, _down ? 54 : 142)))
+            { g.DrawLine(lt, r.Left, r.Top, r.Right - 1, r.Top); g.DrawLine(lt, r.Left, r.Top, r.Left, r.Bottom - 1); }
+            using (var dk = new Pen(Color.FromArgb(46, 44, 40)))
+            { g.DrawLine(dk, r.Left, r.Bottom - 1, r.Right - 1, r.Bottom - 1); g.DrawLine(dk, r.Right - 1, r.Top, r.Right - 1, r.Bottom - 1); }
+            TextRenderer.DrawText(g, Text, Font, r, ForeColor,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+        }
     }
 
     /// <summary>Foca o jogo e DIGITA "/addbot" + Enter no chat (SendInput Unicode = teclado real).
