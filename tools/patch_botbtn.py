@@ -142,20 +142,26 @@ click_cave = bytes.fromhex(
 cjrel = CLICK_CAVE_VA - (CLICK_HOOK_VA + 5)
 click_hook = b"\xe9" + struct.pack("<i", cjrel) + b"\x90" * (CLICK_HOOK_LEN - 5)
 
-# ===== ETAPA 3: Z-ORDER — traz o botao pra FRENTE pra ele RECEBER o mouse-DOWN =====
-# Receita RE verificada (agente): o botao custom nao esta em "slot conhecido" que a tela re-ordena,
-# entao fica no FIM da lista de filhos e ATRAS do grid nativo na varredura de hit-test -> nunca recebe
-# o down -> Press nunca roda -> /addbot nunca sai (por isso a flag 0x1400 sozinha nao bastou). Fix:
-# desvia o caminho de SUCESSO da Etapa-1 (apos o SetSize @0x51528d) pra um bloco que refaz o SetSize +
-# csComponent::SetZorder(tela; botao, ref=head[esi+0x13c]) -> botao vira 1o na varredura. So o sucesso
-# e' afetado (os JE de falha seguem caindo no epilogo original 0x515299).
+# ===== ETAPA 3: posiciona o botao RELATIVO a origem da tela (e' o que faz o clique chegar) =====
+# Causa REAL (agente, traçada na varredura, corrige a RE anterior): (1) as coords cruas 625/648 NAO
+# somavam a origem da tela (sala = 800x600 CENTRADA; os nativos usam bx=[esi+0x270]/by=[esi+0x274] +
+# offset) -> em 800x600 o botao caía FORA da tela (y>600); (2) o grid/paineis sao CLIP-CHILDREN,
+# testados numa varredura ANTES da lista onde o botao vive -> z-order da LISTA nao os reordena (por
+# isso nao adiantou). Fix: desvia o caminho de SUCESSO da Etapa-1 (apos SetSize @0x51528d) pra um
+# bloco que refaz SetSize, RE-CHAMA SetPos com (bx+0x208, by+0x233) — mesma linha dos nativos, FORA do
+# grid (y<=by+426) e dos paineis (y<=by+554) -> 1a varredura nao pega, 2a acerta o botao -> Press ->
+# SendCommand(0x200) -> /addbot. (SetZorder mantido: inofensivo, poe o botao 1o na lista; flag 0x1400 fica.)
 ZFIX_EDIT_VA = 0x51528d
 ZFIX_EDIT = bytes.fromhex("e95a00000090909090909090")   # CALL SetSize (12B) -> JMP 0x5152ec + 7 NOP
 ZFIX_BLOCK_VA = 0x5152ec                                # zeros livres apos a string da Etapa 2
-ZFIX_BLOCK = bytes.fromhex(
+_zfix_body = bytes.fromhex(
     "6a1d6a668bcfff15bc104d00"                      # SetSize refeito (push 0x1d; push 0x66; mov ecx,edi; call [0x4d10bc])
+    "8b8674020000" "0533020000" "50"                # MOV EAX,[ESI+0x274](by); ADD EAX,0x233; PUSH EAX (Y)
+    "8b8670020000" "0508020000" "50"                # MOV EAX,[ESI+0x270](bx); ADD EAX,0x208; PUSH EAX (X)
+    "8bcf" "ff15b8104d00"                           # MOV ECX,EDI; CALL [0x4d10b8] SetPos (relativo a origem, como os nativos)
     "8b863c010000" "50" "57" "8bce" "ff1588104d00" # MOV EAX,[ESI+0x13c]; PUSH EAX(ref); PUSH EDI(btn); MOV ECX,ESI; CALL [0x4d1088] SetZorder
-    "61" "8b8c24ac000000" "e91b20f3ff")             # popad; MOV ECX,[ESP+0xac]; JMP 0x447330
+    "61" "8b8c24ac000000")                           # popad; MOV ECX,[ESP+0xac]
+ZFIX_BLOCK = _zfix_body + b"\xe9" + struct.pack("<i", 0x447330 - (ZFIX_BLOCK_VA + len(_zfix_body) + 5))  # JMP 0x447330
 
 # ---- aplica nos arquivos (rakion.exe e rakion.bin) ----
 for name in TARGETS:
