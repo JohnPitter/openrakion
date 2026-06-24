@@ -14,16 +14,29 @@ if (-not $here) { $here = Split-Path -Parent $MyInvocation.MyCommand.Path }
 $pyScript = Join-Path $here "frida_roombtn.py"
 $logFile  = Join-Path $here "roombtn.log"
 
-# 1) acha o Python
+# 1) acha um Python QUE TENHA PIP. Prefere 'py' (launcher do python.org) sobre 'python', porque o
+#    'python' do PATH pode ser um venv sem pip (ex.: o venv do hermes-agent -> 'No module named pip').
 $py = $null
-foreach ($cand in @("python", "py")) {
-    if (Get-Command $cand -ErrorAction SilentlyContinue) { $py = $cand; break }
+foreach ($cand in @("py", "python")) {
+    if (-not (Get-Command $cand -ErrorAction SilentlyContinue)) { continue }
+    & $cand -m pip --version > $null 2>&1
+    if ($LASTEXITCODE -eq 0) { $py = $cand; break }
 }
 if (-not $py) {
-    Write-Host "[ERRO] Python nao encontrado no PATH. Instale o Python 3 (python.org)." -ForegroundColor Red
+    # nenhum tinha pip pronto -> tenta provisionar pip (ensurepip) no primeiro python disponivel
+    foreach ($cand in @("py", "python")) {
+        if (-not (Get-Command $cand -ErrorAction SilentlyContinue)) { continue }
+        & $cand -m ensurepip --upgrade > $null 2>&1
+        & $cand -m pip --version > $null 2>&1
+        if ($LASTEXITCODE -eq 0) { $py = $cand; break }
+    }
+}
+if (-not $py) {
+    Write-Host "[ERRO] Nenhum Python com pip encontrado. Instale o Python 3 do python.org (marque 'Add to PATH')." -ForegroundColor Red
+    Write-Host "       (o 'python' do seu PATH e um venv sem pip - por isso uso 'py')" -ForegroundColor Red
     exit 1
 }
-Write-Host "[run] python: $py" -ForegroundColor DarkGray
+Write-Host "[run] python com pip: $py" -ForegroundColor DarkGray
 
 # 2) frida instalado? (suprime saida; decide por exit code, sem abortar)
 & $py -c "import frida" > $null 2>&1
