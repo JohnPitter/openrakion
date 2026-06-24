@@ -21,7 +21,7 @@ HOOK_VA = 0x44fbad          # "MOV ECX,[ESP+0x230]" (7 bytes) -> JMP cave + nops
 HOOK_LEN = 7
 RET_VA = 0x44fbb4           # proxima instrucao apos a overwritten ("MOV FS:[0],ECX")
 NEW_ID = 0x200
-BTN_X, BTN_Y = 625, 647     # posicao (gap entre Invite e Game setting); cosmetico se errar
+BTN_X, BTN_Y = 10, 10       # DIAGNOSTICO: canto sup-esq (sobre a cena 3D, sem painel). Ajusto depois.
 ALLOC = 0x4bf8c2
 CREATE = 0x437680
 
@@ -128,9 +128,11 @@ hook = b"\xe9" + struct.pack("<i", jrel) + b"\x90" * (HOOK_LEN - 5)
 # ---- aplica nos arquivos (rakion.exe e rakion.bin) ----
 for name in TARGETS:
     path = os.path.join(BIN_DIR, name)
-    if not os.path.exists(path):
+    # le SEMPRE do binario LIMPO: o .orig (backup do swap) se existir, senao o proprio arquivo
+    src = path + ".orig" if os.path.exists(path + ".orig") else path
+    if not os.path.exists(src):
         print("[skip] %s nao existe" % name); continue
-    data = bytearray(open(path, "rb").read())
+    data = bytearray(open(src, "rb").read())
     cave_off = va_to_off(data, CAVE_VA)
     hook_off = va_to_off(data, HOOK_VA)
     if any(data[cave_off+i] for i in range(len(code))):
