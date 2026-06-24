@@ -138,13 +138,14 @@ internal static class WindowMode
                     framed = hwnd;
                     Log($"framed hwnd=0x{hwnd.ToInt64():X} engine={engW}x{engH} alvo={cw}x{ch} -> {FmtClient(hwnd)} @{FmtRect(hwnd)}");
                 }
-                else                       // mesma janela visível: re-frama se divergiu (inclui restaurar de popup)
-                {
+                else                       // mesma janela visível: re-frama SÓ se o engine regrediu estilo/tamanho.
+                {                          // NÃO re-framar por POSIÇÃO — senão o loop puxava a janela de volta ao
+                                           // centro a cada 300ms e o usuário não conseguia arrastá-la (windowed).
                     long style = GetWindowLongPtr(hwnd, GWL_STYLE).ToInt64();
                     var (acw, ach) = ClientSize(hwnd);
                     bool lost = (style & WS_CAPTION) == 0;   // restaurou como popup (strippado) -> re-titula
                     bool wrongSize = Math.Abs(acw - cw) > 8 || Math.Abs(ach - ch) > 8;
-                    if (lost || wrongSize || WrongPlacement(hwnd, cw, ch, fill, style))
+                    if (lost || wrongSize)
                     {
                         if (wasIconic || lost) Log($"re-frame pós-restore: client={acw}x{ach} alvo={cw}x{ch} lost={(lost ? 1 : 0)} wSize={wrongSize}");
                         ApplyTitledFrame(hwnd, cw, ch, false, fill);
@@ -168,24 +169,12 @@ internal static class WindowMode
         if (clientW < 320 || clientH < 240) return;
         WINDOWPLACEMENT wp = new() { length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>() };
         if (!GetWindowPlacement(hwnd, ref wp)) return;
-        var (sw, sh) = ScreenSize();
-        int x = Math.Max((sw - clientW) / 2, 0), y = Math.Max((sh - clientH) / 2, 0);
+        // Preserva a posição onde o usuário deixou a janela (rcNormalPosition atual); só fixa o TAMANHO alvo no
+        // rect de restauração (p/ o engine resetar o backbuffer no tamanho final = corta o 2º device-reset).
+        // Antes centralizava — o restore de minimizado jogava a janela de volta ao centro.
+        int x = wp.rcNormalPosition.Left, y = wp.rcNormalPosition.Top;
         wp.rcNormalPosition = new RECT { Left = x, Top = y, Right = x + clientW, Bottom = y + clientH };
         SetWindowPlacement(hwnd, ref wp);
-    }
-
-    /// <summary>A janela está fora do lugar esperado? Borderless quer o canto (0,0); windowed quer
-    /// centralizado. Compara com a posição calculada (com tolerância) — uma janela já correta não dispara.</summary>
-    private static bool WrongPlacement(IntPtr hwnd, int cw, int ch, bool fill, long style)
-    {
-        GetWindowRect(hwnd, out RECT rc);
-        if (fill) return rc.Left > 40 || rc.Top > 40;
-        RECT r = new() { Left = 0, Top = 0, Right = cw, Bottom = ch };
-        AdjustWindowRect(ref r, (uint)(style & 0xFFFFFFFF), false);
-        int winW = r.Right - r.Left, winH = r.Bottom - r.Top;
-        var (sw, sh) = ScreenSize();
-        int ex = Math.Max((sw - winW) / 2, 0), ey = Math.Max((sh - winH) / 2, 0);
-        return Math.Abs(rc.Left - ex) > 24 || Math.Abs(rc.Top - ey) > 24;
     }
 
     private static string FmtClient(IntPtr h) { var (w, c) = ClientSize(h); return $"{w}x{c}"; }
@@ -250,10 +239,15 @@ internal static class WindowMode
 
     private static void PlaceWindow(IntPtr hwnd, int winW, int winH, bool activate, bool fill)
     {
-        int x = 0, y = 0;
-        if (!fill) { var (sw, sh) = ScreenSize(); x = Math.Max((sw - winW) / 2, 0); y = Math.Max((sh - winH) / 2, 0); }
         uint flags = SWP_FRAMECHANGE | SWP_NOZORDER | SWP_SHOWWINDOW;
         if (!activate) flags |= SWP_NOACTIVATE;
+        int x = 0, y = 0;
+        // borderless cola no canto (0,0); windowed centraliza só no 1º frame (activate=true). Num RE-frame de
+        // janela windowed (activate=false) PRESERVA a posição atual (SWP_NOMOVE) — é o que deixa o usuário
+        // ARRASTAR a janela: sem isso o framing a reposicionava no centro a cada ciclo.
+        if (fill) { /* canto (0,0) */ }
+        else if (activate) { var (sw, sh) = ScreenSize(); x = Math.Max((sw - winW) / 2, 0); y = Math.Max((sh - winH) / 2, 0); }
+        else flags |= SWP_NOMOVE;
         SetWindowPos(hwnd, IntPtr.Zero, x, y, winW, winH, flags);
     }
 
