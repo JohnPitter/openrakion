@@ -35,7 +35,11 @@ namespace RakionServer.World.Network
         /// desse roster. O MOVIMENTO (0x30a UDP) segue gated em <see cref="UdpFramingKnown"/> (canal/origem
         /// distintos, ainda não validados): com isto o bot APARECE no stage mas fica parado até a validação UDP.
         /// </summary>
-        public static bool ClientFramesEnabled => true;
+        // DESLIGADO de novo (2026-06-24): os frames de spawn no stage (0x45/0x54/0x4c/0x4b) são PALPITE e
+        // o 0x4b CRASHOU o cliente ao entrar no stage ("o stage fechou"). É a prova da lição-mestra (frame
+        // não-visto quebra o cliente). Só religar com o frame EXATO confirmado pela captura (ver
+        // docs/bot-stage-capture-retake.md). O 0x38 do slot da SALA NÃO depende disto e segue ligado.
+        public static bool ClientFramesEnabled => false;
 
         /// <summary>
         /// Corpo CNetMessage 0x30a (19B) da posição/ação do bot — DECODIFICADO (não gated). É o payload
