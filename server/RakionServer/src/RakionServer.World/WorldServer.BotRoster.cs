@@ -1,3 +1,5 @@
+using System;
+using System.Text;
 using RakionServer.Common;
 using RakionServer.World.Domain;
 using RakionServer.World.Network;
@@ -5,27 +7,74 @@ using RakionServer.World.Network;
 namespace RakionServer.World
 {
     /// <summary>
-    /// Renderização do bot no ROSTER da sala (os slots RED/BLUE do game room). Faz o cliente do host
-    /// desenhar o bot num slot ao adicioná-lo e esvaziar o slot ao removê-lo. O frame é SINTETIZADO da
-    /// estrutura do member-join do worldserv (caminho multi-membro), nunca replay.
+    /// Renderização do bot no ROSTER da sala (os slots RED/BLUE do game room). SÍNTESE do member-join do
+    /// worldserv ORIGINAL (RE em rakion-work/ghidra-proj/joinflow*.out.txt + joinasm.out.txt):
+    ///   - broadcast 0x38 montado em FUN_00406f40 @0x40735a (header 8B + registro);
+    ///   - registro de jogador serializado por FUN_0040b7f0 @0x40b7f0 ([nome\0][tag\0] + cauda fixa 0x49B).
+    /// O cliente JÁ tem o caminho de RECEBER 0x38 (quando um humano entra na sala), então o frame sintetizado
+    /// do estado do bot o desenha no slot — não é replay de captura.
     /// </summary>
     public sealed partial class WorldServer
     {
+        /// <summary>userid sintético do bot no frame (faixa alta p/ não colidir com usuários reais 1..MaxUser).</summary>
+        private static ushort BotUserId(int seat) => (ushort)(0xB000 + seat);
+
         /// <summary>
-        /// Notifica o cliente do host que um bot entrou num slot da sala (frame de member-join).
-        /// TODO (task #3): cravar o wire exato do member-join no worldserv (roomflow.out.txt) — o caminho
-        /// multi-membro nunca foi exercitado (servidor sempre foi solo). Até lá, o bot existe no domínio
-        /// e spawna no stage (0x45, frame conhecido); a aparição no slot da sala depende desta RE.
+        /// Member-join 0x38 ao host: faz o cliente desenhar o bot no slot. RE (FUN_00406f40 @0x40735a, offsets
+        /// confirmados pelas anotações Stack[] do disassembly): [38 00][status][slot][state][uid:u16][slotFlag]
+        /// [registro], len = registroLen + 8.
         /// </summary>
         private void NotifyBotJoinedRoom(Domain.Field f, BotPlayer bot, int seat, ClientSession host)
         {
-            Log.Debug("bot", "roster: bot '{0}' seat {1} (render no slot pendente de RE do member-join)", bot.Name, seat);
+            try { host.SendLobby(BuildRoomMemberJoin(bot, seat)); }
+            catch (Exception ex) { Log.Debug("bot", "roster 0x38 falhou: {0}", ex.Message); return; }
+            Log.Ok("bot", "roster: 0x38 member-join '{0}' seat {1} (cls {2} lvl {3}) -> host [{4}]",
+                bot.Name, seat, bot.CharClass, bot.Level, host.Slot);
         }
 
-        /// <summary>Notifica o host que um slot de bot esvaziou (frame de member-leave). TODO task #3.</summary>
+        /// <summary>Member-leave 0x3a ao host: esvazia o slot do bot. RE FUN_004091e0 @0x409403: [3a 00][slot], len 3.</summary>
         private void NotifyBotLeftRoom(Domain.Field f, int seat, ClientSession host)
         {
-            Log.Debug("bot", "roster: slot {0} liberado (render pendente de RE do member-leave)", seat);
+            using var w = new PacketWriter();
+            w.WriteWord(0x3a);
+            w.WriteByte((byte)seat);
+            try { host.SendLobby(w.ToArray()); } catch { }
+            Log.Debug("bot", "roster: 0x3a member-leave seat {0} -> host [{1}]", seat, host.Slot);
+        }
+
+        /// <summary>Header do 0x38 (8B) + registro do jogador. Veja o disassembly em joinasm.out.txt.</summary>
+        private static byte[] BuildRoomMemberJoin(BotPlayer bot, int seat)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x38);              // +0  opcode (u16)
+            w.WriteByte(0);                 // +2  status = 0 (sucesso)
+            w.WriteByte((byte)seat);        // +3  slot (0..0x13; 10..0x13 = BLUE)
+            w.WriteByte(3);                 // +4  state (3 = ocupado/ready, como AssignBotSeat)
+            w.WriteWord(BotUserId(seat));   // +5  userid (u16 LE)
+            w.WriteByte(0);                 // +7  slotFlag (game+0x127; 0 = não travado)
+            WriteBotPlayerRecord(w, bot);   // +8  registro (FUN_0040b7f0)
+            return w.ToArray();
+        }
+
+        /// <summary>
+        /// Registro de jogador — espelho EXATO de FUN_0040b7f0: [nome\0][tag\0] e, a seguir, a cauda fixa de
+        /// 0x49 bytes. Os 2 blocos de equip (38B @+0x1da4 e 19B @+0x1dca) vão ZERADOS — o bot não tem gear, e
+        /// item id 0 = slot de equip vazio (modelo base), evitando id inválido que crasharia o render 3D do slot.
+        /// </summary>
+        private static void WriteBotPlayerRecord(PacketWriter w, BotPlayer bot)
+        {
+            w.WriteBytes(Encoding.ASCII.GetBytes(bot.Name)); w.WriteByte(0);  // nome + NUL  (+0x14a8)
+            w.WriteByte(0);                     // tag/clan vazio + NUL        (+0x14c2)
+            w.WriteByte(0);                     // +0x1478
+            w.WriteUInt32(0);                   // +0x1450 (id/score)
+            w.WriteWord(0);                     // +0x1458
+            w.WriteUInt32(0);                   // +0x1454
+            w.WriteWord(0);                     // +0x145a
+            w.WriteByte((byte)bot.CharClass);   // +0x1530  CLASSE
+            w.WriteByte((byte)bot.Level);       // +0x1531  LEVEL
+            w.WriteByte(0);                     // +0x1473
+            w.WriteBytes(new byte[0x26]);       // +0x1da4  equip/aparência (38B) — sem gear
+            w.WriteBytes(new byte[0x13]);       // +0x1dca  equip2/stat (19B) — sem gear
         }
     }
 }
