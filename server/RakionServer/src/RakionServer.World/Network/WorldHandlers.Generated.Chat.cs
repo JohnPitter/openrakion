@@ -85,10 +85,6 @@ namespace RakionServer.World.Network
                     if (len > 1000) { u.Disconnect(0xa2); return; }
                     byte[] body = ctx.P.Bytes(len);
 
-                    // Comando de bot ("/addbot", "/removebot") — o servidor lê o texto C->S em claro.
-                    // Se consumido, NAO broadcasta como chat normal.
-                    if (TryHandleBotChatCommand(ctx, body)) return;
-
                     // FUN_00405f30: faz broadcast do chat no field para todos os jogadores
                     // TODO FUN_00405f30(field, mySlot, len, body)
                     using (var w = new PacketWriter())

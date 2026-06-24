@@ -10,6 +10,10 @@ namespace RakionServer.World.Network
     /// idiomático e zero-patch é o comando de chat (a própria sala anuncia "Type /?, commands").
     /// O servidor lê o texto C→S em claro (a cifra é só outbound), então intercepta aqui antes do
     /// broadcast normal de chat. Toda a regra vive no serviço de domínio (WorldServer.AddBotToField).
+    ///
+    /// O chat DA SALA chega como opcode 0x47 (3D chat), roteado pelo <see cref="ClientSession"/> no
+    /// LobbyFlow (não pela tabela WorldHandlers, onde 0x56=Stub). Por isso a entrada é context-free
+    /// (recebe a sessão e o servidor), chamada de ClientSession.HandleLobbyFlow case 0x47.
     /// </summary>
     public static partial class WorldHandlers
     {
@@ -20,7 +24,7 @@ namespace RakionServer.World.Network
         /// comando (o chamador NÃO deve broadcastar como chat normal). Tolerante ao wrapping do body
         /// (byte de canal/terminador): extrai o texto imprimível e procura o comando a partir do '/'.
         /// </summary>
-        internal static bool TryHandleBotChatCommand(HandlerContext ctx, byte[] body)
+        internal static bool TryHandleBotChatCommand(ClientSession u, WorldServer world, byte[] body)
         {
             string text = ExtractPrintable(body);
             int slash = text.IndexOf('/');
@@ -32,15 +36,14 @@ namespace RakionServer.World.Network
             bool isRemove = lower.StartsWith("/removebot") || lower.StartsWith("/delbot") || lower.StartsWith("/clearbot");
             if (!isAdd && !isRemove) return false;
 
-            var u = ctx.User;
-            var field = ctx.World.GetField(u.FieldId);
-            if (field == null) { BotChatFeedback(ctx, "sala invalida"); return true; }
+            var field = world.GetField(u.FieldId);
+            if (field == null) { BotChatFeedback(u, "sala invalida"); return true; }
 
             if (isRemove)
             {
                 bool all = lower.Contains("all") || lower.StartsWith("/clearbot");
-                int removed = ctx.World.RemoveBotsFromField(field, u, all);
-                BotChatFeedback(ctx, removed > 0 ? $"{removed} bot(s) removido(s)" : "nenhum bot para remover");
+                int removed = world.RemoveBotsFromField(field, u, all);
+                BotChatFeedback(u, removed > 0 ? $"{removed} bot(s) removido(s)" : "nenhum bot para remover");
                 return true;
             }
 
@@ -48,11 +51,11 @@ namespace RakionServer.World.Network
             int ok = 0; string lastMsg = "";
             for (int i = 0; i < count; i++)
             {
-                var r = ctx.World.AddBotToField(field, u);
+                var r = world.AddBotToField(field, u);
                 if (r.Ok) { ok++; lastMsg = r.Message; }
-                else { BotChatFeedback(ctx, ok > 0 ? $"{ok} bot(s); {r.Message}" : r.Message); return true; }
+                else { BotChatFeedback(u, ok > 0 ? $"{ok} bot(s); {r.Message}" : r.Message); return true; }
             }
-            BotChatFeedback(ctx, ok == 1 ? lastMsg : $"{ok} bots adicionados");
+            BotChatFeedback(u, ok == 1 ? lastMsg : $"{ok} bots adicionados");
             return true;
         }
 
@@ -74,19 +77,15 @@ namespace RakionServer.World.Network
         }
 
         /// <summary>
-        /// Devolve uma linha de chat de sistema ao host (canal LOBBY, opcode 0x56) confirmando o comando.
-        /// Mesma forma que o cliente já renderiza: [0x56][senderSlot][u16 len][texto]. O sender é o próprio
-        /// host (o cliente desenha como uma linha normal). É só feedback — a ação não depende disto.
+        /// Devolve uma linha de chat ao host confirmando o comando. O chat da sala é 0x47 (mesma forma
+        /// que o cliente acabou de MANDAR: texto cru "&lt;nome&gt; : &lt;msg&gt;"); o cliente já tem o
+        /// caminho de RECEBER 0x47 (chat multiplayer da sala), então ecoamos no mesmo opcode/forma. É só
+        /// feedback — a ação (bot adicionado) não depende disto; o log [bot] é a prova de fluxo.
         /// </summary>
-        private static void BotChatFeedback(HandlerContext ctx, string msg)
+        private static void BotChatFeedback(ClientSession u, string msg)
         {
-            var u = ctx.User;
-            byte[] textb = Encoding.ASCII.GetBytes("[BOT] " + msg);
-            using var w = new PacketWriter();
-            w.WriteByte((byte)u.Slot);
-            w.WriteWord(textb.Length);
-            w.WriteBytes(textb);
-            try { u.SendLobby(Prefix(0x56, w.ToArray())); } catch { }
+            byte[] textb = Encoding.ASCII.GetBytes("Bot : " + msg + "\0");
+            try { u.SendLobby(Prefix(0x47, textb)); } catch { }
             Log.Info("bot", "[{0}] {1}", u.Slot, msg);
         }
     }

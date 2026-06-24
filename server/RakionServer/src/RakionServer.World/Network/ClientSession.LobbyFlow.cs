@@ -214,6 +214,12 @@ namespace RakionServer.World.Network
                     // (lang 599) ate' a resposta 0x0D. Sem isso o "add" do messenger nao avanca.
                     _ = HandleGetUserNameAsync(data);
                     return true;
+                case 0x47: // chat DA SALA (3D chat). Intercepta comando de bot (/addbot, /removebot). Sem
+                    // isto o comando caía no catch-all "em campo (sem resp)" e era engolido — o gatilho
+                    // antigo estava no 0x56, que a tabela mapeia p/ Stub (nunca roda). data = "<nome> : <texto>".
+                    // Chat normal segue engolido no solo (o cliente desenha o próprio chat local).
+                    WorldHandlers.TryHandleBotChatCommand(this, _server, data);
+                    return true;
                 default:
                     // Shop list/loadout (0x2d/0x2f) E buy (0x2e) DEVEM chegar aos handlers reais
                     // (Op_RoomRosterSync/Op_GroupMemberInfo/Op_RoomMemberQuery) -> NAO consumir aqui, deixa o
