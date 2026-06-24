@@ -29,6 +29,15 @@ namespace RakionServer.World.Network
         public static bool UdpFramingKnown => false;
 
         /// <summary>
+        /// TRAVA-MESTRA de TODO frame do bot que vai ao cliente (spawn 0x45, move 0x30a, morte 0x4f).
+        /// false = bot 100% server-side (existe no domínio, conta na partida, é limpo no fim) e NENHUM
+        /// byte é enviado ao cliente — assim /addbot, limpeza e re-add são testáveis SEM risco de crash.
+        /// Só ligar quando o roster (info do player no slot) e o datagrama estiverem validados por captura
+        /// in-game — mandar frame de um seat que o cliente não conhece pode travar o cliente (lição-mestra).
+        /// </summary>
+        public static bool ClientFramesEnabled => false;
+
+        /// <summary>
         /// Corpo CNetMessage 0x30a (19B) da posição/ação do bot — DECODIFICADO (não gated). É o payload
         /// que o destino lê em GetActionFromMessage. O <paramref name="seat"/> vai nos 5 bits baixos do
         /// byte de ação (identifica o autor no relay). <paramref name="actState"/> = 3 bits altos.

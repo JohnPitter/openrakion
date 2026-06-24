@@ -28,14 +28,16 @@ namespace RakionServer.World
             {
                 var bot = rec.Bot!;
 
-                // 1) SPAWN: anuncia o bot aos clientes (FIELD 0x45 [seat], MESMO frame que o servidor
-                //    emite quando um humano spawna). Uma vez por round; promove o rec a playing.
+                // 1) SPAWN: marca o bot como playing (domínio) e — se os frames do bot estiverem ligados —
+                //    anuncia aos clientes (FIELD 0x45 [seat]). Gated: mandar 0x45 de um seat cujo info o
+                //    cliente não tem (roster não validado) pode travar o cliente (lição-mestra).
                 if (!bot.SpawnedThisRound)
                 {
-                    f.BroadcastField(0x45, new[] { (byte)rec.Slot });
                     bot.SpawnedThisRound = true;
                     rec.State = 4; rec.Dead = false; bot.Dead = false;
-                    Log.Ok("bot", "field {0}: '{1}' spawn (seat {2} time {3})", f.Id, bot.Name, rec.Slot, rec.Team);
+                    if (BotMovement.ClientFramesEnabled) f.BroadcastField(0x45, new[] { (byte)rec.Slot });
+                    Log.Ok("bot", "field {0}: '{1}' spawn (seat {2} time {3}){4}", f.Id, bot.Name, rec.Slot,
+                        rec.Team, BotMovement.ClientFramesEnabled ? "" : " [server-side; frames off]");
                     continue;
                 }
                 if (bot.Dead || rec.Dead) continue;
@@ -117,11 +119,14 @@ namespace RakionServer.World
             if (bot.Hp > 0) return;
 
             bot.Dead = true;
-            f.OnPlayerDeath(rec.Slot, killerSeat, cause);   // dead + crédito ao killer + placar/round
-            f.BroadcastFieldPlaying(0x4f,
-                new byte[] { (byte)rec.Slot, cause, (byte)killerSeat, f.Score0, f.Score1 });
-            if (f.Phase == MatchPhase.RoundEnd)
-                f.BroadcastFieldPlaying(0x4a, f.Build0x4a());
+            f.OnPlayerDeath(rec.Slot, killerSeat, cause);   // dead + crédito ao killer + placar/round (domínio)
+            if (BotMovement.ClientFramesEnabled)
+            {
+                f.BroadcastFieldPlaying(0x4f,
+                    new byte[] { (byte)rec.Slot, cause, (byte)killerSeat, f.Score0, f.Score1 });
+                if (f.Phase == MatchPhase.RoundEnd)
+                    f.BroadcastFieldPlaying(0x4a, f.Build0x4a());
+            }
             Log.Ok("bot", "field {0}: '{1}' morto por seat {2} (cause {3})", f.Id, bot.Name, killerSeat, cause);
         }
     }
