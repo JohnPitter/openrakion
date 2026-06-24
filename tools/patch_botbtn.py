@@ -17,11 +17,11 @@ BIN_DIR = r"C:\Users\joaop\Desenvolvimento\Rakion\rakion-final\Bin"
 TARGETS = ["rakion.exe", "rakion.bin"]
 IMAGE_BASE = 0x400000
 CAVE_VA = 0x515207          # code cave (3003 bytes livres)
-HOOK_VA = 0x44fbad          # "MOV ECX,[ESP+0x230]" (7 bytes) -> JMP cave + nops
+HOOK_VA = 0x447329          # FUN_00446ff0 (tela da SALA, RE confirmada): "MOV ECX,[ESP+0xac]" (7B) -> JMP cave
 HOOK_LEN = 7
-RET_VA = 0x44fbb4           # proxima instrucao apos a overwritten ("MOV FS:[0],ECX")
-NEW_ID = 0x200
-BTN_X, BTN_Y = 10, 10       # DIAGNOSTICO: canto sup-esq (sobre a cena 3D, sem painel). Ajusto depois.
+RET_VA = 0x447330           # proxima instrucao apos a overwritten
+NEW_ID = 0x200              # command id do botao -> Etapa 2: case 0x200 em FUN_00447af0 -> SendChatDataInGame("/addbot")
+BTN_X, BTN_Y = 640, 695     # barra inferior, perto do Game setting; ajusto depois
 ALLOC = 0x4bf8c2
 CREATE = 0x437680
 
@@ -103,7 +103,7 @@ emit(0xff,0x15,0xbc,0x10,0x4d,0x00)          # call [0x4d10bc] SetSize
 # done:
 done_pos = len(code)
 emit(0x61)                                   # popad
-emit(0x8b,0x8c,0x24,0x30,0x02,0x00,0x00)     # MOV ECX,[ESP+0x230] (instrucao overwritten)
+emit(0x8b,0x8c,0x24,0xac,0x00,0x00,0x00)     # MOV ECX,[ESP+0xac] (overwritten de FUN_00446ff0)
 jmp(RET_VA)                                  # jmp 0x44fbb4
 # string "Add Bot\0"
 str_pos = len(code)
