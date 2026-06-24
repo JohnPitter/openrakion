@@ -85,8 +85,27 @@ Implementado em `BotMovement.EncodeActionBody` (golden test `BotMovementTests`).
 6. **Validar in-game** (iterativo): bot anda/persegue/ataca/morre/mata sem travar o cliente. Golden
    test byte-a-byte do blob sintetizado contra uma captura (mitm `openrakion-server:latest`).
 
-## Captura (cross-check / golden)
+## Captura (fecha movimento + roster de uma vez) — PASSO A PASSO
 
-`rakion-work/mitmproxy2.py` + container `openrakion-server:latest`: capturar uma sessão PvP com
-movimento isola o 0x4b/0x30b real para validar a síntese byte-a-byte (como foi feito p/ 0x0C, lobby,
-inventário). Útil para confirmar SCALE e o carrier sem mais RE estática.
+Harness pronto: [`tools/mitm_botcap.py`](../tools/mitm_botcap.py) (passthrough + LOG de TCP e UDP) e
+[`tools/decode_bot_action.py`](../tools/decode_bot_action.py) (descobre o envelope real do datagrama +
+decodifica o corpo 0x30a). Container `openrakion-server:latest` (já presente).
+
+```
+# 1) world ORIGINAL (Docker) — TCP+UDP de gameplay
+docker run --rm -p 40708:40708/tcp -p 40708:40708/udp -p 40709:40709/udp openrakion-server:latest
+
+# 2) o proxy de captura (loga em C:\temp\botcap.log)
+python tools/mitm_botcap.py
+
+# 3) cliente -> 127.0.0.1:41708 ; entre numa sala/stage e ANDE em +X, depois +Y, depois GIRE,
+#    depois ATAQUE — movimentos isolados e repetidos. (1 cliente já emite o 0x30a; 2 = roster.)
+
+# 4) decodifica
+python tools/decode_bot_action.py
+```
+
+O decoder mostra as **famílias** de pacote UDP (marker/tamanho) e o **corpo 0x30a** decodificado
+(slot/pos/heading/aim). Andar deve mover `pos.(x/y)` monotonicamente; girar muda `head`. O campo
+`env=` é o ENVELOPE a cravar (seq+srcSlot+marker) — com 1 captura eu confirmo byte-a-byte, ligo
+`BotMovement.UdpFramingKnown=true`, e o bot anda/ataca. Mesmo método de 0x0C/lobby/inventário.
