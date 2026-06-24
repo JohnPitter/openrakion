@@ -17,7 +17,7 @@ namespace RakionServer.World
     /// conexoes TCP (porta do jogo), liga os sockets UDP de gameplay, mantem o
     /// canal IPC com o broker e o estado das sessoes/usuarios.
     /// </summary>
-    public sealed class WorldServer
+    public sealed partial class WorldServer
     {
         private readonly WorldConfig _cfg;
         private readonly WorldDatabase _db;
@@ -108,10 +108,15 @@ namespace RakionServer.World
             if (f == null) return;
             f.Remove(s);
             s.FieldId = -1;
+            // O último HUMANO saiu (Count = só humanos; bots não entram em Players): descarta os bots
+            // e libera o field. Bots nunca mantêm uma sala viva — sem humano, a sala morre.
             if (f.Count == 0)
             {
+                int bots = f.BotCount;
+                DiscardBots(f);
                 lock (Fields) Fields.Remove(f);
-                Log.Info("field", "field {0} '{1}' liberado (vazio)", f.Id, f.Name);
+                Log.Info("field", "field {0} '{1}' liberado (sem humanos; {2} bot(s) descartado(s))",
+                    f.Id, f.Name, bots);
             }
         }
 
@@ -148,6 +153,10 @@ namespace RakionServer.World
 
         /// <summary>Envia um tick de gameplay (1583 + SEQ) ao endpoint UDP do jogador.</summary>
         public void SendGameplayTick(System.Net.IPEndPoint to, byte seq) => _udpGame?.SendTick(to, seq);
+
+        /// <summary>Envia um datagrama de gameplay SINTETIZADO (move/ação 0x30a do bot) ao endpoint UDP de
+        /// um peer humano. O bot não tem cliente p/ enviar — o servidor monta o pacote do estado do bot.</summary>
+        internal void SendGameplayRaw(System.Net.IPEndPoint to, byte[] pkt) => _udpGame?.SendRaw(to, pkt);
 
         /// <summary>
         /// Motor da partida por-field (FUN_00409940 + FUN_004069a0): roda a maquina de estado
@@ -245,6 +254,11 @@ namespace RakionServer.World
                         f.BroadcastFieldPlaying(0x4a,
                             new byte[] { f.LastRoundWinner, f.WinnerSide, f.Wins0, f.Wins1 });
                     }
+                    else
+                    {
+                        // IA dos bots (spawn 0x45 + decisão/movimento/ataque sintetizados) durante o round.
+                        BotTick(f);
+                    }
                     break;
 
                 case Domain.MatchPhase.RoundEnd:
@@ -289,6 +303,9 @@ namespace RakionServer.World
         private void SettleMatch(Domain.Field f)
         {
             f.Settled = true;
+            // Fim de match (rounds acabaram / sem players): descarta TODOS os bots — eles nunca
+            // persistem no roster pós-partida; a volta à sala mostra só humanos (re-adicionar refaz).
+            DiscardBots(f);
             if (f.Mode == 0) return;
             byte winner = f.Wins0 > f.Wins1 ? (byte)0 : f.Wins1 > f.Wins0 ? (byte)1 : (byte)2;
             foreach (var r in f.Slots)

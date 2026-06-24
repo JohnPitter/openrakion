@@ -85,6 +85,10 @@ namespace RakionServer.World.Network
                     if (len > 1000) { u.Disconnect(0xa2); return; }
                     byte[] body = ctx.P.Bytes(len);
 
+                    // Comando de bot ("/addbot", "/removebot") — o servidor lê o texto C->S em claro.
+                    // Se consumido, NAO broadcasta como chat normal.
+                    if (TryHandleBotChatCommand(ctx, body)) return;
+
                     // FUN_00405f30: faz broadcast do chat no field para todos os jogadores
                     // TODO FUN_00405f30(field, mySlot, len, body)
                     using (var w = new PacketWriter())
@@ -178,7 +182,7 @@ namespace RakionServer.World.Network
                     uint data = ctx.P.UInt32(); // local_1000 = *(param_3+1)
 
                     // Localiza a sessao do alvo e confirma que esta em field (status==3)
-                    ClientSession target = null;
+                    ClientSession? target = null;
                     foreach (var s in ctx.World.Sessions)
                     {
                         if (s.Slot == targetSlot) { target = s; break; }

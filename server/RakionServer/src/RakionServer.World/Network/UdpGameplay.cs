@@ -98,6 +98,15 @@ namespace RakionServer.World.Network
             catch (Exception ex) { Log.Debug("udp", "tick {0}: {1}", to, ex.Message); }
         }
 
+        /// <summary>Envia um datagrama de gameplay já montado ao endpoint de um peer (usado pelo bot, que
+        /// SINTETIZA o pacote de move/ação 0x30a — não há cliente p/ enviá-lo). Não é relay: o pacote é
+        /// construído do estado do bot.</summary>
+        public void SendRaw(IPEndPoint to, byte[] pkt)
+        {
+            try { _sock?.SendTo(pkt, to); }
+            catch (Exception ex) { Log.Debug("udp", "sendraw {0}: {1}", to, ex.Message); }
+        }
+
         /// <summary>Resolve a sessao remetente de um pacote UDP (por endpoint exato, senao por IP).</summary>
         private ClientSession? ResolveSender(IPEndPoint from)
         {

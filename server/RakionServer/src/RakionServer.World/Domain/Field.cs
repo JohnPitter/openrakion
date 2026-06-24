@@ -13,6 +13,7 @@ namespace RakionServer.World.Domain
     public sealed class PlayerRec
     {
         public ClientSession? Session;   // +0 userSlot (resolvido p/ a sessao)
+        public BotPlayer? Bot;           // ocupante SINTETICO (sem socket); mutuamente exclusivo com Session
         public byte State;               // +2 (=field+slot*0x14+0x126)
         public byte WeaponState = 1;     // arma atual do jogador: 1=armaA, 2=armaB
         public bool Dead;                // +4 (0x128) flag morto
@@ -20,6 +21,9 @@ namespace RakionServer.World.Domain
         public byte Cause;               // ultima causa de morte
         public byte Team => (byte)(Slot < 10 ? 0 : 1); // slots 0..9 = time0, 10..0x13 = time1
         public int Slot;                 // indice no array (0..0x13)
+
+        /// <summary>Seat ocupado por um bot sintetico (nunca recebe frames; o servidor gera o comportamento).</summary>
+        public bool IsBot => Bot != null;
 
         public bool Occupied => State != 0 && State != 5;
         public bool Playing => State == 4;
@@ -147,6 +151,90 @@ namespace RakionServer.World.Domain
                 }
             }
             return -1;
+        }
+
+        // ---- bots (ocupantes sinteticos, sem socket) -----------------------------------------
+
+        private int _nextBotId = 1;
+
+        /// <summary>Jogadores HUMANOS no field (= <see cref="Players"/>; bots NAO entram aqui).</summary>
+        public int HumanCount => Count;
+
+        /// <summary>Quantos seats sao ocupados por bots.</summary>
+        public int BotCount
+        {
+            get { int n = 0; foreach (var r in Slots) if (r.IsBot) n++; return n; }
+        }
+
+        /// <summary>Ha pelo menos um humano em algum seat ocupado? (cleanup: field so vive por humano).</summary>
+        public bool HasHuman
+        {
+            get { foreach (var r in Slots) if (r.Occupied && r.Session != null) return true; return false; }
+        }
+
+        /// <summary>
+        /// Aloca um seat para um BOT no bloco do seu time (0..9 = time0, 10..0x13 = time1), preferindo
+        /// o time pedido e caindo p/ o outro bloco se cheio. Espelha AssignSeat mas marca o rec como
+        /// ocupante sintetico (Session=null, Bot=b). Devolve o seat ou -1 (sala cheia).
+        /// </summary>
+        public int AssignBotSeat(BotPlayer bot)
+        {
+            int seat = FreeSeatInTeam(bot.Team);
+            if (seat < 0) seat = FreeSeatInTeam((byte)(bot.Team ^ 1)); // time pedido cheio -> outro bloco
+            if (seat < 0) return -1;
+            var r = Slots[seat];
+            r.Session = null;
+            r.Bot = bot;
+            r.State = 3; // ready (mesmo estado de um humano recem-alocado)
+            r.WeaponState = 1;
+            r.Dead = false;
+            r.Score = 0;
+            bot.Team = r.Team; // normaliza o time ao bloco real do seat
+            return seat;
+        }
+
+        /// <summary>1o seat livre (State==0, sem ocupante) no bloco de um time; -1 se cheio.</summary>
+        private int FreeSeatInTeam(byte team)
+        {
+            int lo = team == 0 ? 0 : 10;
+            int hi = team == 0 ? 10 : 0x14;
+            for (int i = lo; i < hi; i++)
+                if (Slots[i].State == 0 && Slots[i].Session == null && Slots[i].Bot == null) return i;
+            return -1;
+        }
+
+        /// <summary>Aloca um BotPlayer novo (id efemero por field) e o coloca num seat. Devolve (bot,seat) ou null.</summary>
+        public (BotPlayer Bot, int Seat)? AddBot(string name, byte level, byte charClass, byte team)
+        {
+            var bot = new BotPlayer(_nextBotId, name, level, charClass, team);
+            int seat = AssignBotSeat(bot);
+            if (seat < 0) return null;
+            _nextBotId++;
+            return (bot, seat);
+        }
+
+        /// <summary>Esvazia o seat de um bot (cleanup de fim de match / saida do humano).</summary>
+        public void ClearBotSeat(int seat)
+        {
+            var r = RecAt(seat);
+            if (r == null || !r.IsBot) return;
+            r.Bot = null; r.State = 0; r.WeaponState = 1; r.Dead = false; r.Score = 0; r.Cause = 0;
+        }
+
+        /// <summary>Remove TODOS os bots do field (descarta as identidades efemeras). Idempotente.</summary>
+        public int RemoveAllBots()
+        {
+            int n = 0;
+            foreach (var r in Slots)
+                if (r.IsBot) { r.Bot = null; r.State = 0; r.WeaponState = 1; r.Dead = false; r.Score = 0; r.Cause = 0; n++; }
+            if (n > 0) Log.Info("bot", "field {0}: {1} bot(s) removido(s)", Id, n);
+            return n;
+        }
+
+        /// <summary>Enumera os seats ocupados por bot (rec + seat), p/ o motor de IA.</summary>
+        public System.Collections.Generic.IEnumerable<PlayerRec> BotRecs()
+        {
+            foreach (var r in Slots) if (r.IsBot) yield return r;
         }
 
         public int CountPlaying()
@@ -331,7 +419,7 @@ namespace RakionServer.World.Domain
             // reset por ROUND (nao por match): cada round do Golem/Boss comeca com os Master Golens
             // cheios e o objetivo em aberto de novo.
             Golem0Hp = 100; Golem1Hp = 100; ObjectiveDecided = false;
-            foreach (var r in Slots) if (r.Occupied) { r.Dead = false; if (r.State == 3) r.State = 4; }
+            foreach (var r in Slots) if (r.Occupied) { r.Dead = false; if (r.State == 3) r.State = 4; r.Bot?.ResetForRound(); }
             RecomputeMvp();
             Log.Ok("field", "field {0} round {1} iniciado (dur={2}s mode={3})", Id, Round, RoundDurationSec, Mode);
         }
