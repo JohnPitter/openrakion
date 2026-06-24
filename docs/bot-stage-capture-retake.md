@@ -58,3 +58,17 @@ script) e loga em `C:\temp\botcap.log` (`W->C ... u16a=0xNNNN ... data=hex`). Po
 ## Botão NATIVO (outro gap, difícil)
 `FUN_0044f080` era o lobby; textos de botão são localização externa (sem âncora de string); frida congela a
 UI. Overlay (`client/RakionLauncher/AddBotOverlay.cs`) construído mas REJEITADO. Ver [[re-room-ui-buttons]].
+
+## ACHADO (ponto exato do redirect pra captura)
+O endereço do world que o cliente conecta **NÃO** está num config solto — vem do **BROKER**:
+`RakionServer.Broker/Systems.cs:200` `ServerListPacket(cliVersion)` monta a lista de `Systems.GSList` (cada
+world REGISTRADO: `value.ip`/`value.wan` + `value.port`; layout `[IP 4][port BE 2][usedSala][maxSalas]
+[usedSlots][maxSlots]`). O world se registra no broker via `RakionServer.World/Network/BrokerLink.cs` (lê
+ip/porta do `worldserver.ini`). O launcher (:80) decide "online" pelo broker.
+
+**Receita de captura (sem o usuário mudar nada no cliente):** manter o broker + um world registrado (status
+online → o launcher passa o login) **e** fazer o `value.ip`/`value.port` desse registro apontar pro **PROXY**
+(`mitm_botcap.py` na porta que o broker anuncia; o original atrás dele via `RKMITM_TCP_OUT`). Assim o cliente
+vai broker → proxy → original transparentemente. ⚠️ Só DURANTE a captura — reverter depois (senão quebra o
+jogo normal, que foi o "servidor offline" desta sessão quando parei o meu world).
+
