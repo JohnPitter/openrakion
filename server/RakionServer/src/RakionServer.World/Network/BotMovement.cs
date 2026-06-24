@@ -29,13 +29,13 @@ namespace RakionServer.World.Network
         public static bool UdpFramingKnown => false;
 
         /// <summary>
-        /// TRAVA-MESTRA de TODO frame do bot que vai ao cliente (spawn 0x45, move 0x30a, morte 0x4f).
-        /// false = bot 100% server-side (existe no domínio, conta na partida, é limpo no fim) e NENHUM
-        /// byte é enviado ao cliente — assim /addbot, limpeza e re-add são testáveis SEM risco de crash.
-        /// Só ligar quando o roster (info do player no slot) e o datagrama estiverem validados por captura
-        /// in-game — mandar frame de um seat que o cliente não conhece pode travar o cliente (lição-mestra).
+        /// Habilita os frames TCP do bot ao cliente: spawn no stage (0x45) e morte (0x4f). LIGADO desde que
+        /// o ROSTER foi validado in-game (o bot aparece no slot via member-join 0x38, RE byte-exata do
+        /// worldserv) — o cliente conhece o seat, então o 0x45 [45 00 00 seat] o spawna no stage a partir
+        /// desse roster. O MOVIMENTO (0x30a UDP) segue gated em <see cref="UdpFramingKnown"/> (canal/origem
+        /// distintos, ainda não validados): com isto o bot APARECE no stage mas fica parado até a validação UDP.
         /// </summary>
-        public static bool ClientFramesEnabled => false;
+        public static bool ClientFramesEnabled => true;
 
         /// <summary>
         /// Corpo CNetMessage 0x30a (19B) da posição/ação do bot — DECODIFICADO (não gated). É o payload

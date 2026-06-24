@@ -42,6 +42,25 @@ namespace RakionServer.World
             Log.Debug("bot", "roster: 0x3a member-leave seat {0} -> host [{1}]", seat, host.Slot);
         }
 
+        /// <summary>
+        /// "Entrou/carregou no STAGE" 0x45 ao host: o STAGE não tem frame de spawn próprio — o cliente
+        /// spawna o jogador a partir do roster que JÁ tem (0x38) ao receber este sinal. RE FUN_00407c70
+        /// @0x407d44: broadcast de 4 bytes [45 00 00 seat] (FUN_004061f0) + seta o slot p/ state 3 ("loaded").
+        /// O servidor original ainda dispara 0x54 ("begin") quando todos carregam; aqui o relógio do .NET
+        /// (StartGameClock) já conduz a partida, então só o 0x45 por bot.
+        /// </summary>
+        private void NotifyBotEnteredStage(Domain.Field f, int seat)
+        {
+            var host = f.Master;
+            if (host == null) return;
+            using var w = new PacketWriter();
+            w.WriteWord(0x45);          // +0 opcode (u16)
+            w.WriteByte(0);             // +2 pad
+            w.WriteByte((byte)seat);    // +3 seat
+            try { host.SendLobby(w.ToArray()); } catch { }
+            Log.Ok("bot", "stage: 0x45 entered seat {0} -> host [{1}]", seat, host.Slot);
+        }
+
         /// <summary>Header do 0x38 (8B) + registro do jogador. Veja o disassembly em joinasm.out.txt.</summary>
         private static byte[] BuildRoomMemberJoin(BotPlayer bot, int seat)
         {

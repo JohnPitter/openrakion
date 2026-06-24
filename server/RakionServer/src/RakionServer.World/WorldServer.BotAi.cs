@@ -35,7 +35,7 @@ namespace RakionServer.World
                 {
                     bot.SpawnedThisRound = true;
                     rec.State = 4; rec.Dead = false; bot.Dead = false;
-                    if (BotMovement.ClientFramesEnabled) f.BroadcastField(0x45, new[] { (byte)rec.Slot });
+                    if (BotMovement.ClientFramesEnabled) NotifyBotEnteredStage(f, rec.Slot);
                     Log.Ok("bot", "field {0}: '{1}' spawn (seat {2} time {3}){4}", f.Id, bot.Name, rec.Slot,
                         rec.Team, BotMovement.ClientFramesEnabled ? "" : " [server-side; frames off]");
                     continue;
