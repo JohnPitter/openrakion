@@ -75,6 +75,28 @@ namespace RakionServer.World
         }
 
         /// <summary>
+        /// AddPlayer 0x4c — é o que REALMENTE spawna o avatar 3D do bot no stage (RE engine.dll: a vtable
+        /// IScavengerWorldNet manda SendFieldGameAddPlayer/Reply → CSessionState::AddRemotePlayer; o 0x45/0x54
+        /// só montam "carregou/begin"). Frame reliable do world: [4c 00][u8 seat][u16 blobLen][blob], onde o
+        /// blob é o MESMO registro FUN_0040b7f0 do slot da sala (0x38) — por isso o bot já aparecia no slot,
+        /// só faltava reusar o blob no opcode de campo. (Agente flagou 0x4b/0x4c como candidatos; 0x4c traz o
+        /// seat explícito, casando com AddRemotePlayer(slot,blobLen,blob).)
+        /// </summary>
+        private void NotifyBotAddPlayer(Domain.Field f, int seat, BotPlayer bot)
+        {
+            var host = f.Master;
+            if (host == null) return;
+            byte[] blob = BuildBotPlayerRecord(bot);
+            using var w = new PacketWriter();
+            w.WriteWord(0x4c);              // +0 opcode (u16)
+            w.WriteByte((byte)seat);       // +2 slot
+            w.WriteWord(blob.Length);      // +3 blobLen (u16)
+            w.WriteBytes(blob);            // +5 blob (FUN_0040b7f0)
+            try { host.SendLobby(w.ToArray()); } catch { }
+            Log.Ok("bot", "stage: 0x4c AddPlayer seat {0} ({1}B blob) -> host [{2}]", seat, blob.Length, host.Slot);
+        }
+
+        /// <summary>
         /// Spawna os bots no STAGE no MOMENTO do load do host (0x4b → StartGameClock): emite o 0x45 de cada
         /// bot (carregou) e então o 0x54 (begin, todos carregaram). Timing junto do load do host — o cliente
         /// processa o 0x45 dos remotos durante a própria entrada — + o begin que faltava (o BotTick só emitia
@@ -88,9 +110,10 @@ namespace RakionServer.World
             foreach (var rec in f.BotRecs())
             {
                 var bot = rec.Bot!;
-                bot.SpawnedThisRound = true;            // marca p/ o BotTick não re-emitir o 0x45
+                bot.SpawnedThisRound = true;            // marca p/ o BotTick não re-emitir
                 rec.State = 4; rec.Dead = false; bot.Dead = false;
-                NotifyBotEnteredStage(f, rec.Slot);     // 0x45 [45 00 00 seat]
+                NotifyBotEnteredStage(f, rec.Slot);     // 0x45 [45 00 00 seat] (carregou)
+                NotifyBotAddPlayer(f, rec.Slot, bot);   // 0x4c AddPlayer = SPAWN do avatar 3D (a peça que faltava)
             }
             NotifyStageBegin(host);                     // 0x54 [54 00] = todos carregaram → entra no stage
         }
@@ -105,7 +128,7 @@ namespace RakionServer.World
             w.WriteByte(3);                 // +4  state (3 = ocupado/ready, como AssignBotSeat)
             w.WriteWord(BotUserId(seat));   // +5  userid (u16 LE)
             w.WriteByte(0);                 // +7  slotFlag (game+0x127; 0 = não travado)
-            WriteBotPlayerRecord(w, bot);   // +8  registro (FUN_0040b7f0)
+            w.WriteBytes(BuildBotPlayerRecord(bot));   // +8  registro (FUN_0040b7f0)
             return w.ToArray();
         }
 
@@ -114,8 +137,9 @@ namespace RakionServer.World
         /// 0x49 bytes. Os 2 blocos de equip (38B @+0x1da4 e 19B @+0x1dca) vão ZERADOS — o bot não tem gear, e
         /// item id 0 = slot de equip vazio (modelo base), evitando id inválido que crasharia o render 3D do slot.
         /// </summary>
-        private static void WriteBotPlayerRecord(PacketWriter w, BotPlayer bot)
+        private static byte[] BuildBotPlayerRecord(BotPlayer bot)
         {
+            using var w = new PacketWriter();
             w.WriteBytes(Encoding.ASCII.GetBytes(bot.Name)); w.WriteByte(0);  // nome + NUL  (+0x14a8)
             w.WriteByte(0);                     // tag/clan vazio + NUL        (+0x14c2)
             w.WriteByte(0);                     // +0x1478
@@ -128,6 +152,7 @@ namespace RakionServer.World
             w.WriteByte(0);                     // +0x1473
             w.WriteBytes(new byte[0x26]);       // +0x1da4  equip/aparência (38B) — sem gear
             w.WriteBytes(new byte[0x13]);       // +0x1dca  equip2/stat (19B) — sem gear
+            return w.ToArray();
         }
     }
 }
