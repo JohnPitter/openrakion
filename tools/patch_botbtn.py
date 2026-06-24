@@ -21,7 +21,7 @@ HOOK_VA = 0x447329          # FUN_00446ff0 (tela da SALA, RE confirmada): "MOV E
 HOOK_LEN = 7
 RET_VA = 0x447330           # proxima instrucao apos a overwritten
 NEW_ID = 0x200              # command id do botao -> Etapa 2: case 0x200 em FUN_00447af0 -> SendChatDataInGame("/addbot")
-BTN_X, BTN_Y = 640, 695     # barra inferior, perto do Game setting; ajusto depois
+BTN_X, BTN_Y = 655, 648     # gap entre Invite e Game setting, alinhado com a fileira de baixo
 ALLOC = 0x4bf8c2
 CREATE = 0x437680
 
