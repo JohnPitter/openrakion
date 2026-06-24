@@ -157,7 +157,7 @@ ZFIX_BLOCK_VA = 0x5152ec                                # zeros livres apos a st
 _zfix_body = bytes.fromhex(
     "6a1d6a668bcfff15bc104d00"                      # SetSize refeito (push 0x1d; push 0x66; mov ecx,edi; call [0x4d10bc])
     "8b8674020000" "0533020000" "50"                # MOV EAX,[ESI+0x274](by); ADD EAX,0x233; PUSH EAX (Y)
-    "8b8670020000" "0508020000" "50"                # MOV EAX,[ESI+0x270](bx); ADD EAX,0x208; PUSH EAX (X)
+    "8b8670020000" "055c010000" "50"                # MOV EAX,[ESI+0x270](bx); ADD EAX,0x15c; PUSH EAX (X) = gap entre Invite(fim bx+340) e Game setting(bx+458)
     "8bcf" "ff15b8104d00"                           # MOV ECX,EDI; CALL [0x4d10b8] SetPos (relativo a origem, como os nativos)
     "8b863c010000" "50" "57" "8bce" "ff1588104d00" # MOV EAX,[ESI+0x13c]; PUSH EAX(ref); PUSH EDI(btn); MOV ECX,ESI; CALL [0x4d1088] SetZorder
     "61" "8b8c24ac000000")                           # popad; MOV ECX,[ESP+0xac]
