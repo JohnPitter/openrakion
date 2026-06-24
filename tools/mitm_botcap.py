@@ -16,8 +16,13 @@ import socket, struct, threading, time
 
 KEY = bytes([0xE1,0x3A,0x7E,0xF5,0x37,0x2C,0x10,0x4D,0x4E,0xCE,0xB3,0x0C,0x56,0x26,0xA4,0x8E])
 ORIG_IP = "127.0.0.1"
-TCP_IN, TCP_OUT = 41708, 40708
-UDP_TRIPLES = [(41708, 40708, 51708), (41709, 40709, 51709)]
+# Portas configuraveis por env (RKMITM_*). Default = modo TRANSPARENTE: proxy na 40708/40709 (porta
+# que o cliente ja usa) -> world ORIGINAL exposto numa porta alternativa (40808/40809). Assim o cliente
+# nao muda nada. (Antes: 41708->40708, exigia apontar o cliente.)
+import os
+TCP_IN = int(os.environ.get("RKMITM_TCP_IN", 40708))
+TCP_OUT = int(os.environ.get("RKMITM_TCP_OUT", 40808))
+UDP_TRIPLES = [(40708, 40808, 50708), (40709, 40809, 50709)]
 LOG = r"C:\temp\botcap.log"
 _lock = threading.Lock(); _t0 = time.time()
 
