@@ -63,7 +63,7 @@ emit(0x83,0xc4,0x04)                         # add esp,4
 emit(0x85,0xc0)                              # test eax,eax
 emit(0x0f,0x84); jz1=len(code); imm32(0)     # jz done (near, patch depois)
 emit(0x6a,0x00)                              # push 0
-emit(0x68); imm32(0x400)                     # push 0x400
+emit(0x68); imm32(0x1400)                    # push 0x1400 (bit 0x1000: release chama Press DIRETO, sem depender da captura do engine)
 emit(0x6a,0x00)                              # push 0
 emit(0x6a,0xff)                              # push -1
 emit(0x6a,0xff)                              # push -1
