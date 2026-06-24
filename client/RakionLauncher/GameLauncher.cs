@@ -52,9 +52,11 @@ internal static class GameLauncher
     /// <summary>Converte a senha em hex ASCII (o esquema que o cliente/world esperam no argv[1]).</summary>
     public static string HexPass(string pass) => Convert.ToHexString(Encoding.ASCII.GetBytes(pass)).ToLowerInvariant();
 
-    public static bool IsRunning()
+    /// <summary>O processo de PID dado ainda está vivo? Monitoramento POR INSTÂNCIA (multi-cliente): cada launch
+    /// acompanha o seu próprio rakion.exe, em vez de "existe algum rakion?" — que confundiria 2 clientes.</summary>
+    public static bool IsAlive(int pid)
     {
-        foreach (var _ in System.Diagnostics.Process.GetProcessesByName("rakion")) return true;
-        return false;
+        try { using var p = System.Diagnostics.Process.GetProcessById(pid); return !p.HasExited; }
+        catch { return false; }   // pid inexistente -> já saiu
     }
 }

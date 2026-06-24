@@ -130,13 +130,15 @@ internal sealed class MainForm : Form
         try
         {
             if (!File.Exists(Path.Combine(_binDir, GameLauncher.GameProcess))) { Status($"rakion.exe não encontrado em {_binDir}", true); return; }
-            if (_user.Text.Trim() == "") { Status("informe o usuário", true); return; }
+            string user = _user.Text.Trim();
+            if (user == "") { Status("informe o usuário", true); return; }
 
             _settings.Save(_iniPath, _modeFile);   // garante o m_bActiveFullScreen certo no INI antes de lançar
             string mode = _settings.DisplayMode;
-            // Lança SUSPENSO, aplica o patch do modo janela (se não for fullscreen) ANTES de o engine trocar a
-            // resolução do desktop, e só então resume — senão a "janela" cobre a tela na resolução do INI.
-            var (pid, hThread) = GameLauncher.LaunchSuspended(_binDir, _user.Text.Trim(), GameLauncher.HexPass(_pass.Text), ServerId);
+            // Lança SUSPENSO, aplica os patches ANTES de o engine inicializar (mutex p/ multi-instância; modo
+            // janela ANTES de trocar a resolução do desktop), e só então resume.
+            var (pid, hThread) = GameLauncher.LaunchSuspended(_binDir, user, GameLauncher.HexPass(_pass.Text), ServerId);
+            WindowMode.PatchMultiInstance(pid);         // libera N clientes na mesma máquina (sempre, mesmo em fullscreen)
             if (mode != WindowMode.Fullscreen)
             {
                 WindowMode.PatchWindowedMode(pid);      // windowed real (não troca a resolução do desktop)
@@ -145,21 +147,14 @@ internal sealed class MainForm : Form
             GameLauncher.Resume(hThread);
 
             int w = _settings.ScreenWidth, h = _settings.ScreenHeight;   // alvo do framing = resolução escolhida
-            new Thread(() => WindowMode.FrameGameWindow(GameLauncher.GameProcess, mode, w, h)) { IsBackground = true }.Start();
-            new Thread(() => WindowMode.PatchKeyHook(GameLauncher.GameProcess)) { IsBackground = true }.Start();
+            new Thread(() => WindowMode.FrameGameWindow(pid, mode, w, h)) { IsBackground = true }.Start();
+            new Thread(() => WindowMode.PatchKeyHook(pid)) { IsBackground = true }.Start();
 
-            _play.Enabled = false;
-            Status("Rakion iniciado — aplicando o modo de janela…", false);
-            WatchExit();
+            // Botão SEGUE HABILITADO: troca o login e clique START de novo p/ abrir uma 2ª conta na mesma máquina.
+            Status($"Rakion iniciado ({user}). Para uma 2ª conta: troque o login e clique START de novo.", false);
         }
         catch (Exception ex) { Status(ex.Message, true); }
     }
-
-    private void WatchExit() => new Thread(() =>
-    {
-        while (GameLauncher.IsRunning()) Thread.Sleep(1000);
-        try { BeginInvoke(() => { _play.Enabled = true; Status("Pronto.", false); }); } catch { }
-    }) { IsBackground = true }.Start();
 
     private void Status(string msg, bool error) { _status.ForeColor = error ? Color.Firebrick : Theme.Ink; _status.Text = msg; }
 
