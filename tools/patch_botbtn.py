@@ -12,8 +12,9 @@ Uso: python tools/patch_botbtn.py
 """
 import struct, shutil, os
 
-BIN = r"C:\Users\joaop\Desenvolvimento\Rakion\rakion-final\Bin\rakion.bin"
-OUT = BIN + ".botbtn"
+# O launcher roda rakion.exe; rakion.bin tem conteudo IDENTICO (mesmos offsets). Patcha os DOIS.
+BIN_DIR = r"C:\Users\joaop\Desenvolvimento\Rakion\rakion-final\Bin"
+TARGETS = ["rakion.exe", "rakion.bin"]
 IMAGE_BASE = 0x400000
 CAVE_VA = 0x515207          # code cave (3003 bytes livres)
 HOOK_VA = 0x44fbad          # "MOV ECX,[ESP+0x230]" (7 bytes) -> JMP cave + nops
@@ -120,18 +121,22 @@ for pos, target_va in fixups:
     instr_end_va = CAVE_VA + pos + 4
     struct.pack_into("<i", code, pos, target_va - instr_end_va)
 
-# ---- aplica no arquivo ----
-data = bytearray(open(BIN, "rb").read())
-cave_off = va_to_off(data, CAVE_VA)
-hook_off = va_to_off(data, HOOK_VA)
-# cave
-data[cave_off:cave_off+len(code)] = code
 # hook: JMP cave (5) + NOP*(HOOK_LEN-5)
 jrel = CAVE_VA - (HOOK_VA + 5)
 hook = b"\xe9" + struct.pack("<i", jrel) + b"\x90" * (HOOK_LEN - 5)
-data[hook_off:hook_off+HOOK_LEN] = hook
 
-open(OUT, "wb").write(data)
-print("OK: %d bytes de code-cave @ %#x ; hook @ %#x" % (len(code), CAVE_VA, HOOK_VA))
-print("Saida: %s" % OUT)
-print("TESTE: guarde o rakion.bin original, renomeie %s -> rakion.bin, rode o jogo, entre numa sala." % os.path.basename(OUT))
+# ---- aplica nos arquivos (rakion.exe e rakion.bin) ----
+for name in TARGETS:
+    path = os.path.join(BIN_DIR, name)
+    if not os.path.exists(path):
+        print("[skip] %s nao existe" % name); continue
+    data = bytearray(open(path, "rb").read())
+    cave_off = va_to_off(data, CAVE_VA)
+    hook_off = va_to_off(data, HOOK_VA)
+    if any(data[cave_off+i] for i in range(len(code))):
+        print("[!] %s: code-cave @%#x NAO esta livre — pulando p/ nao corromper" % (name, CAVE_VA)); continue
+    data[cave_off:cave_off+len(code)] = code
+    data[hook_off:hook_off+HOOK_LEN] = hook
+    open(path + ".botbtn", "wb").write(data)
+    print("OK %-11s -> %s.botbtn  (cave %dB @%#x, hook @%#x)" % (name, name, len(code), CAVE_VA, HOOK_VA))
+print("Original intacto. Aplique com: tools\\swap_botbtn.ps1 apply")
