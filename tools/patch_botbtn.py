@@ -142,6 +142,21 @@ click_cave = bytes.fromhex(
 cjrel = CLICK_CAVE_VA - (CLICK_HOOK_VA + 5)
 click_hook = b"\xe9" + struct.pack("<i", cjrel) + b"\x90" * (CLICK_HOOK_LEN - 5)
 
+# ===== ETAPA 3: Z-ORDER — traz o botao pra FRENTE pra ele RECEBER o mouse-DOWN =====
+# Receita RE verificada (agente): o botao custom nao esta em "slot conhecido" que a tela re-ordena,
+# entao fica no FIM da lista de filhos e ATRAS do grid nativo na varredura de hit-test -> nunca recebe
+# o down -> Press nunca roda -> /addbot nunca sai (por isso a flag 0x1400 sozinha nao bastou). Fix:
+# desvia o caminho de SUCESSO da Etapa-1 (apos o SetSize @0x51528d) pra um bloco que refaz o SetSize +
+# csComponent::SetZorder(tela; botao, ref=head[esi+0x13c]) -> botao vira 1o na varredura. So o sucesso
+# e' afetado (os JE de falha seguem caindo no epilogo original 0x515299).
+ZFIX_EDIT_VA = 0x51528d
+ZFIX_EDIT = bytes.fromhex("e95a00000090909090909090")   # CALL SetSize (12B) -> JMP 0x5152ec + 7 NOP
+ZFIX_BLOCK_VA = 0x5152ec                                # zeros livres apos a string da Etapa 2
+ZFIX_BLOCK = bytes.fromhex(
+    "6a1d6a668bcfff15bc104d00"                      # SetSize refeito (push 0x1d; push 0x66; mov ecx,edi; call [0x4d10bc])
+    "8b863c010000" "50" "57" "8bce" "ff1588104d00" # MOV EAX,[ESI+0x13c]; PUSH EAX(ref); PUSH EDI(btn); MOV ECX,ESI; CALL [0x4d1088] SetZorder
+    "61" "8b8c24ac000000" "e91b20f3ff")             # popad; MOV ECX,[ESP+0xac]; JMP 0x447330
+
 # ---- aplica nos arquivos (rakion.exe e rakion.bin) ----
 for name in TARGETS:
     path = os.path.join(BIN_DIR, name)
@@ -154,12 +169,17 @@ for name in TARGETS:
     hook_off = va_to_off(data, HOOK_VA)
     click_cave_off = va_to_off(data, CLICK_CAVE_VA)
     click_hook_off = va_to_off(data, CLICK_HOOK_VA)
-    if any(data[cave_off+i] for i in range(len(code))) or any(data[click_cave_off+i] for i in range(len(click_cave))):
+    zfix_edit_off = va_to_off(data, ZFIX_EDIT_VA)
+    zfix_block_off = va_to_off(data, ZFIX_BLOCK_VA)
+    if any(data[cave_off+i] for i in range(len(code))) or any(data[click_cave_off+i] for i in range(len(click_cave))) \
+       or any(data[zfix_block_off+i] for i in range(len(ZFIX_BLOCK))):
         print("[!] %s: code-cave NAO esta livre — pulando p/ nao corromper" % name); continue
     data[cave_off:cave_off+len(code)] = code                          # Etapa 1: cria o botao
     data[hook_off:hook_off+HOOK_LEN] = hook
     data[click_cave_off:click_cave_off+len(click_cave)] = click_cave  # Etapa 2: clique -> /addbot
     data[click_hook_off:click_hook_off+CLICK_HOOK_LEN] = click_hook
+    data[zfix_edit_off:zfix_edit_off+len(ZFIX_EDIT)] = ZFIX_EDIT      # Etapa 3: z-order (desvio apos a Etapa 1)
+    data[zfix_block_off:zfix_block_off+len(ZFIX_BLOCK)] = ZFIX_BLOCK
     open(path + ".botbtn", "wb").write(data)
-    print("OK %-11s -> %s.botbtn  (botao %dB @%#x + clique %dB @%#x)" % (name, name, len(code), CAVE_VA, len(click_cave), CLICK_CAVE_VA))
+    print("OK %-11s -> %s.botbtn  (botao %dB @%#x + clique %dB @%#x + zorder %dB @%#x)" % (name, name, len(code), CAVE_VA, len(click_cave), CLICK_CAVE_VA, len(ZFIX_BLOCK), ZFIX_BLOCK_VA))
 print("Original intacto. Aplique com: tools\\swap_botbtn.ps1 apply")
