@@ -25,7 +25,9 @@ def on_message(msg, data):
         print(msg, flush=True)
 
 def find_client_pid():
-    for p in frida.enumerate_processes():
+    # frida 16: enumerate_processes saiu do modulo -> via device local
+    dev = frida.get_local_device()
+    for p in dev.enumerate_processes():
         if p.name in CLIENT_NAMES or "rakion" in p.name.lower():
             return p.pid, p.name
     return None, None
