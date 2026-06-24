@@ -85,6 +85,13 @@ namespace RakionServer.World
         public void DiscardBots(Domain.Field f)
         {
             if (f.BotCount == 0) return;
+            // Esvazia o slot no cliente do host (0x3a member-leave por seat) ANTES de remover. Sem isto o
+            // cliente segue mostrando o bot no slot após o fim do match/settle ("continuam visíveis"). Em
+            // LeaveField o host já saiu (Master = sessão morta) — o send é try/catch, então é inócuo.
+            var host = f.Master;
+            if (host != null)
+                foreach (var r in f.BotRecs())
+                    NotifyBotLeftRoom(f, r.Slot, host);
             f.RemoveAllBots();
         }
 
