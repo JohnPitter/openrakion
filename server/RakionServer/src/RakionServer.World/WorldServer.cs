@@ -124,6 +124,11 @@ namespace RakionServer.World
                     MaxPlayers = 16,            // 8v8; o bot só precisa de um assento livre no time oposto
                     Master = host,
                     State = 1,                  // ocupado (pré-partida) — não 2 (em jogo)
+                    // CRÍTICO: o tick liquida `State==1 && !Settled` (= partida ACABADA -> DiscardBots). A sala
+                    // pré-partida é State=1 igual a um match encerrado e seria liquidada na hora (bots somem em
+                    // ~50ms). Marcando Settled=true o tick a ignora; ResetMatch (engage 0x43) zera p/ false ao
+                    // começar a partida, restaurando a liquidação pós-match normal.
+                    Settled = true,
                 };
                 Fields.Add(f);
                 f.Add(host);                                  // lista Players (count/broadcast)
