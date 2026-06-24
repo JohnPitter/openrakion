@@ -123,11 +123,12 @@ namespace RakionServer.World
                     MapId = host.PendingRoomMap,
                     MaxPlayers = 16,            // 8v8; o bot só precisa de um assento livre no time oposto
                     Master = host,
-                    MasterSlot = host.Slot,
                     State = 1,                  // ocupado (pré-partida) — não 2 (em jogo)
                 };
-                f.Add(host);
                 Fields.Add(f);
+                f.Add(host);                                  // lista Players (count/broadcast)
+                int seat = f.AssignSeat(host);                // ASSENTO real (Slots): FindRec/Team/MasterSlot dependem disto
+                if (seat >= 0) { host.FieldSeat = (byte)seat; host.FieldObjectIndex = (ushort)seat; f.MasterSlot = seat; }
                 host.FieldId = f.Id;           // vincula; NÃO toca em Status/InField (sala pré-partida = Status=2)
                 Log.Info("field", "[{0}] field da sala criado sob demanda (id={1} map={2} mode={3}) p/ roster/bot",
                     host.Slot, f.Id, host.PendingRoomMap, host.PendingRoomMode);
