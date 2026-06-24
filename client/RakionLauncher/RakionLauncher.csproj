@@ -20,8 +20,9 @@
     <!-- Ícone do exe (extraído do rakion.exe) — Explorer / taskbar / titlebar. Condicional: os assets são
          derivados do cliente (proprietários, fora do git — ver Assets\README.md); sem eles o launcher compila. -->
     <ApplicationIcon Condition="Exists('Assets\app.ico')">Assets\app.ico</ApplicationIcon>
-    <!-- Distribuição: publicar self-contained single-file pra o jogador não precisar instalar o .NET
-         (ver README / publish com -r win-x64 self-contained PublishSingleFile=true). -->
+    <!-- Distribuição: framework-dependent single-file (~0,5 MB) via PublishProfile win-x64 — exige o
+         .NET 9 Desktop Runtime na máquina (o apphost mostra o link de download se faltar). Ver README /
+         Properties/PublishProfiles/win-x64.pubxml. (Self-contained ~48 MB era 108 MB sem otimizar.) -->
   </PropertyGroup>
 
   <ItemGroup>

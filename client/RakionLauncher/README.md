@@ -24,10 +24,14 @@ três coisas (ver [`WindowMode.cs`](WindowMode.cs)):
 
 ```sh
 dotnet build -c Release
-# publish self-contained single-file (o jogador não precisa instalar o .NET):
-dotnet publish -c Release -r win-x64 --self-contained true \
-  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+# publish framework-dependent single-file (~0,5 MB) — ver Properties/PublishProfiles/win-x64.pubxml.
+# Exige o .NET 9 Desktop Runtime na máquina (o apphost abre o link de download se faltar):
+dotnet publish -p:PublishProfile=win-x64        # saída: bin/publish/RakionLauncher.exe
 ```
+
+> Trade-off de distribuição: framework-dependent = ~0,5 MB (updates minúsculos no auto-update) mas exige o
+> runtime instalado. Para "baixou e rodou" sem instalar nada, publique self-contained otimizado (~48 MB):
+> `--self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:InvariantGlobalization=true`.
 
 Roda elevado (o `rakion.exe` exige admin; `CreateProcess` sem elevar = erro 740) — ver `app.manifest`.
 
