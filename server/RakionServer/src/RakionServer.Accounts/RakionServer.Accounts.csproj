@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Slice de CONTAS: criação de conta (user + usergameinfo) compartilhada pelo painel admin e pelo
+       /register do launcher web. Regra de negócio (validação) + persistência isoladas dos apps. -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>RakionServer.Accounts</RootNamespace>
+    <AssemblyName>RakionServer.Accounts</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MySqlConnector" Version="2.3.*" />
+  </ItemGroup>
+
+</Project>

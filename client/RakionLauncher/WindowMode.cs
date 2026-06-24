@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -83,19 +82,11 @@ internal static class WindowMode
     private static (int w, int h) ClientSize(IntPtr hwnd) { GetClientRect(hwnd, out RECT rc); return (rc.Right - rc.Left, rc.Bottom - rc.Top); }
     private static (int w, int h) ScreenSize() => (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 
-    private static uint ProcessId(string procName)
-    {
-        foreach (var p in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(procName)))
-            return (uint)p.Id;
-        return 0;
-    }
-
-    private static IntPtr WaitForGameWindow(string procName, int tries)
+    private static IntPtr WaitForGameWindow(int pid, int tries)
     {
         for (int i = 0; i < tries; i++)
         {
-            uint pid = ProcessId(procName);
-            if (pid != 0) { var h = FindGameWindow(pid); if (h != IntPtr.Zero) return h; }
+            if (GameLauncher.IsAlive(pid)) { var h = FindGameWindow((uint)pid); if (h != IntPtr.Zero) return h; }
             Thread.Sleep(500);
         }
         return IntPtr.Zero;
@@ -106,27 +97,28 @@ internal static class WindowMode
     /// engine), não no tamanho intermediário que o init cria. Frama UMA vez, depois do engine estabilizar,
     /// e só re-frama se o engine regredir o estilo — sem brigar por posição (era o que fazia a tela piscar).
     /// No-op em fullscreen (exclusivo não precisa de framing).</summary>
-    public static void FrameGameWindow(string procName, string mode, int wantW, int wantH)
+    public static void FrameGameWindow(int pid, string mode, int wantW, int wantH)
     {
         if (mode == Fullscreen) return;
         bool fill = mode == Borderless;
         // Mede/reformata no espaço DPI-unaware do jogo (Serious Engine é DPI-unaware) -> as coordenadas
         // e métricas de tela batem; sem isso, em telas HiDPI a janela fica deslocada/cortada.
         SetThreadDpiAwarenessContext(DpiUnaware);
-        new Thread(() => KeepWindowAccessible(procName)) { IsBackground = true }.Start();
+        new Thread(() => KeepWindowAccessible(pid)) { IsBackground = true }.Start();
 
-        if (WaitForGameWindow(procName, 180) == IntPtr.Zero) return;   // ~90s (MD5/GameGuard antes da janela)
+        if (WaitForGameWindow(pid, 180) == IntPtr.Zero) return;   // ~90s (MD5/GameGuard antes da janela)
 
         int cw = 0, ch = 0;
         IntPtr framed = IntPtr.Zero;
         // Roda a SESSÃO INTEIRA: o engine RECRIA a janela de render ao trocar de cena (login -> char select ->
         // sala) e ao reinicializar o display; com um hwnd fixo a gente fica preso no handle morto (vira 0x0).
-        // Então re-acha a janela "Rakion" sempre e re-frama a recriada. Janela minimizada pelo usuário: respeita.
-        uint pid;
+        // Então re-acha a janela "Rakion" do NOSSO pid sempre e re-frama a recriada. Por PID (não por nome): com
+        // 2 clientes na mesma máquina cada thread de framing cuida só da janela do seu processo. Janela
+        // minimizada pelo usuário: respeita.
         bool wasIconic = false;
-        while ((pid = ProcessId(procName)) != 0)
+        while (GameLauncher.IsAlive(pid))
         {
-            IntPtr hwnd = FindGameWindow(pid);
+            IntPtr hwnd = FindGameWindow((uint)pid);
             if (hwnd != IntPtr.Zero)
             {
                 bool iconic = IsIconic(hwnd);
@@ -139,20 +131,21 @@ internal static class WindowMode
                 }
                 else if (hwnd != framed)   // primeira janela ou recriada: espera estabilizar e frama do zero
                 {
-                    var (engW, engH) = WaitClientStable(hwnd, procName);
+                    var (engW, engH) = WaitClientStable(hwnd, pid);
                     cw = wantW >= 320 ? wantW : engW;   // alvo = resolução escolhida (= backbuffer do INI)
                     ch = wantH >= 240 ? wantH : engH;
                     ApplyTitledFrame(hwnd, cw, ch, true, fill);
                     framed = hwnd;
                     Log($"framed hwnd=0x{hwnd.ToInt64():X} engine={engW}x{engH} alvo={cw}x{ch} -> {FmtClient(hwnd)} @{FmtRect(hwnd)}");
                 }
-                else                       // mesma janela visível: re-frama se divergiu (inclui restaurar de popup)
-                {
+                else                       // mesma janela visível: re-frama SÓ se o engine regrediu estilo/tamanho.
+                {                          // NÃO re-framar por POSIÇÃO — senão o loop puxava a janela de volta ao
+                                           // centro a cada 300ms e o usuário não conseguia arrastá-la (windowed).
                     long style = GetWindowLongPtr(hwnd, GWL_STYLE).ToInt64();
                     var (acw, ach) = ClientSize(hwnd);
                     bool lost = (style & WS_CAPTION) == 0;   // restaurou como popup (strippado) -> re-titula
                     bool wrongSize = Math.Abs(acw - cw) > 8 || Math.Abs(ach - ch) > 8;
-                    if (lost || wrongSize || WrongPlacement(hwnd, cw, ch, fill, style))
+                    if (lost || wrongSize)
                     {
                         if (wasIconic || lost) Log($"re-frame pós-restore: client={acw}x{ach} alvo={cw}x{ch} lost={(lost ? 1 : 0)} wSize={wrongSize}");
                         ApplyTitledFrame(hwnd, cw, ch, false, fill);
@@ -176,24 +169,12 @@ internal static class WindowMode
         if (clientW < 320 || clientH < 240) return;
         WINDOWPLACEMENT wp = new() { length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>() };
         if (!GetWindowPlacement(hwnd, ref wp)) return;
-        var (sw, sh) = ScreenSize();
-        int x = Math.Max((sw - clientW) / 2, 0), y = Math.Max((sh - clientH) / 2, 0);
+        // Preserva a posição onde o usuário deixou a janela (rcNormalPosition atual); só fixa o TAMANHO alvo no
+        // rect de restauração (p/ o engine resetar o backbuffer no tamanho final = corta o 2º device-reset).
+        // Antes centralizava — o restore de minimizado jogava a janela de volta ao centro.
+        int x = wp.rcNormalPosition.Left, y = wp.rcNormalPosition.Top;
         wp.rcNormalPosition = new RECT { Left = x, Top = y, Right = x + clientW, Bottom = y + clientH };
         SetWindowPlacement(hwnd, ref wp);
-    }
-
-    /// <summary>A janela está fora do lugar esperado? Borderless quer o canto (0,0); windowed quer
-    /// centralizado. Compara com a posição calculada (com tolerância) — uma janela já correta não dispara.</summary>
-    private static bool WrongPlacement(IntPtr hwnd, int cw, int ch, bool fill, long style)
-    {
-        GetWindowRect(hwnd, out RECT rc);
-        if (fill) return rc.Left > 40 || rc.Top > 40;
-        RECT r = new() { Left = 0, Top = 0, Right = cw, Bottom = ch };
-        AdjustWindowRect(ref r, (uint)(style & 0xFFFFFFFF), false);
-        int winW = r.Right - r.Left, winH = r.Bottom - r.Top;
-        var (sw, sh) = ScreenSize();
-        int ex = Math.Max((sw - winW) / 2, 0), ey = Math.Max((sh - winH) / 2, 0);
-        return Math.Abs(rc.Left - ex) > 24 || Math.Abs(rc.Top - ey) > 24;
     }
 
     private static string FmtClient(IntPtr h) { var (w, c) = ClientSize(h); return $"{w}x{c}"; }
@@ -201,10 +182,10 @@ internal static class WindowMode
 
     /// <summary>Espera o client da janela ficar estável (mesmo tamanho por 3 leituras) — sinal de que o
     /// engine terminou de criar/redimensionar o display. Devolve esse tamanho (fallback se nunca estabilizar).</summary>
-    private static (int w, int h) WaitClientStable(IntPtr hwnd, string procName)
+    private static (int w, int h) WaitClientStable(IntPtr hwnd, int pid)
     {
         int lastW = -1, lastH = -1, stable = 0;
-        for (int i = 0; i < 40 && ProcessId(procName) != 0 && IsWindow(hwnd); i++)   // até ~10s; aborta se a janela morre
+        for (int i = 0; i < 40 && GameLauncher.IsAlive(pid) && IsWindow(hwnd); i++)   // até ~10s; aborta se a janela morre
         {
             var (w, h) = ClientSize(hwnd);
             if (w >= 320 && h >= 240 && w == lastW && h == lastH) { if (++stable >= 3) return (w, h); }
@@ -258,10 +239,15 @@ internal static class WindowMode
 
     private static void PlaceWindow(IntPtr hwnd, int winW, int winH, bool activate, bool fill)
     {
-        int x = 0, y = 0;
-        if (!fill) { var (sw, sh) = ScreenSize(); x = Math.Max((sw - winW) / 2, 0); y = Math.Max((sh - winH) / 2, 0); }
         uint flags = SWP_FRAMECHANGE | SWP_NOZORDER | SWP_SHOWWINDOW;
         if (!activate) flags |= SWP_NOACTIVATE;
+        int x = 0, y = 0;
+        // borderless cola no canto (0,0); windowed centraliza só no 1º frame (activate=true). Num RE-frame de
+        // janela windowed (activate=false) PRESERVA a posição atual (SWP_NOMOVE) — é o que deixa o usuário
+        // ARRASTAR a janela: sem isso o framing a reposicionava no centro a cada ciclo.
+        if (fill) { /* canto (0,0) */ }
+        else if (activate) { var (sw, sh) = ScreenSize(); x = Math.Max((sw - winW) / 2, 0); y = Math.Max((sh - winH) / 2, 0); }
+        else flags |= SWP_NOMOVE;
         SetWindowPos(hwnd, IntPtr.Zero, x, y, winW, winH, flags);
     }
 
@@ -276,12 +262,11 @@ internal static class WindowMode
 
     /// <summary>Roda a sessão toda só impedindo que o jogo fique always-on-top (pro Alt+Tab raisar outras
     /// janelas). A trava real do Alt+Tab é removida por <see cref="PatchKeyHook"/>.</summary>
-    private static void KeepWindowAccessible(string procName)
+    private static void KeepWindowAccessible(int pid)
     {
-        uint pid;
-        while ((pid = ProcessId(procName)) != 0)   // re-acha a janela (o engine recria ao trocar de cena)
+        while (GameLauncher.IsAlive(pid))   // re-acha a janela do nosso pid (o engine recria ao trocar de cena)
         {
-            IntPtr hwnd = FindGameWindow(pid);
+            IntPtr hwnd = FindGameWindow((uint)pid);
             if (hwnd != IntPtr.Zero) ClearTopmost(hwnd);
             Thread.Sleep(500);
         }
@@ -310,12 +295,13 @@ internal static class WindowMode
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string szExePath;
     }
 
-    // Patches no rakion.exe (sem ASLR, ImageBase 0x400000) — todos trocam um JZ (0x74) por JMP curto (0xEB)
-    // pra forçar o salto e PULAR um bloco indesejado. Aplicados com o jogo suspenso.
+    // Patches no rakion.exe (sem ASLR, ImageBase 0x400000). Aplicados com o jogo SUSPENSO. Cada patch é
+    // (endereço, byteEsperado, byteNovo); o aplicador valida o byte original (build diferente / já aplicado
+    // não é tocado, só logado). Patcher central: PatchByteAt (mesmo caminho usado pelo keyhook).
     //
     // MODO JANELA — 0x40D46D: em [85 C0 (TEST EAX,EAX) / 74 52 (JZ) / FF15.. (CALL [0x4D0468])] o CALL é o setup
-    // de fullscreen + troca de resolução do desktop; o JMP pula ele -> windowed real. (Mesmo patch que o "Window
-    // Mode" do NyxLauncher faz; ver RE do RakionLauncher.Loader.)
+    // de fullscreen + troca de resolução do desktop; o JMP (0x74->0xEB) pula ele -> windowed real. (Mesmo patch
+    // que o "Window Mode" do NyxLauncher faz; ver RE do RakionLauncher.Loader.)
     private const int WindowedPatchAddr = 0x40D46D;
     //
     // SEM RESET DE DISPLAY AO MINIMIZAR — no WndProc (0x40DB10, classe "Rakion") o engine re-inicializa o display
@@ -326,68 +312,69 @@ internal static class WindowMode
     // tela preta. Os 3 juntos: pular só o resume deixaria o render pausado pra sempre. Descoberto por RE (Ghidra)
     // do WndProc do rakion.bin.
     private static readonly int[] NoDisplayResetAddrs = { 0x40DBC2, 0x40DC1E, 0x40DC4F };
+    //
+    // MULTI-INSTÂNCIA — FUN_00402c80 é o check de instância única: CreateMutexA + (GetLastError() ==
+    // ERROR_ALREADY_EXISTS) -> retorna 1 quando já há um cliente aberto. O chamador (0x4171ca) faz
+    // `test eax,eax / jne abort`. O imediato 0xB7 (=183=ERROR_ALREADY_EXISTS) do `cmp eax,0xB7` está em
+    // 0x402C96; trocando-o por 0xFF, o `sete al` nunca dá 1 (GetLastError aqui só vale 0 ou 0xB7) -> a função
+    // sempre devolve 0 -> "nenhuma instância anterior" -> N clientes na mesma máquina. Cravado no disasm.
+    private const int MutexCmpImmAddr = 0x402C96;
 
     private const byte JzByte = 0x74, JmpByte = 0xEB;
+    private const byte MutexErrLo = 0xB7, MutexErrNeutralized = 0xFF;
 
     /// <summary>Patch do modo janela (pula o setup de fullscreen/troca-de-resolução). Jogo deve estar suspenso.</summary>
-    public static void PatchWindowedMode(int pid) => ApplyJzToJmp(pid, new[] { WindowedPatchAddr }, "windowed");
+    public static void PatchWindowedMode(int pid) => ApplyPatches(pid, "windowed", (WindowedPatchAddr, JzByte, JmpByte));
 
     /// <summary>Patch que impede o engine de re-inicializar o display ao restaurar de minimizado (corta a tela
     /// preta). Só faz sentido em windowed/borderless (device não é perdido). Jogo deve estar suspenso.</summary>
-    public static void PatchNoDisplayReset(int pid) => ApplyJzToJmp(pid, NoDisplayResetAddrs, "no-reset-display");
+    public static void PatchNoDisplayReset(int pid)
+        => ApplyPatches(pid, "no-reset-display", Array.ConvertAll(NoDisplayResetAddrs, a => (a, JzByte, JmpByte)));
 
-    /// <summary>Troca o JZ (0x74) por JMP curto (0xEB) em cada endereço, validando o byte original — build
-    /// diferente (byte != 0x74) não é tocado.</summary>
-    private static void ApplyJzToJmp(int pid, int[] addrs, string tag)
+    /// <summary>Patch de multi-instância: neutraliza o check de instância única (0x402C80) trocando o imediato
+    /// ERROR_ALREADY_EXISTS por um valor impossível -> o check sempre diz "1ª instância" -> N clientes na mesma
+    /// máquina. Independe do modo de tela. Jogo deve estar suspenso.</summary>
+    public static void PatchMultiInstance(int pid)
+        => ApplyPatches(pid, "multi-instance", (MutexCmpImmAddr, MutexErrLo, MutexErrNeutralized));
+
+    /// <summary>Aplica N patches de 1 byte num processo (abre o handle uma vez), validando cada byte original.</summary>
+    private static void ApplyPatches(int pid, string tag, params (int Addr, byte Expected, byte New)[] patches)
     {
         IntPtr h = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, false, (uint)pid);
         if (h == IntPtr.Zero) { Log($"patch {tag}: OpenProcess falhou pid={pid} err={Marshal.GetLastWin32Error()}"); return; }
-        try
-        {
-            foreach (int a in addrs)
-            {
-                IntPtr addr = new(a);
-                byte[] cur = new byte[1];
-                if (!ReadProcessMemory(h, addr, cur, 1, out _)) { Log($"patch {tag}: read falhou @0x{a:X}"); continue; }
-                if (cur[0] == JmpByte) { Log($"patch {tag}: 0x{a:X} já aplicado"); continue; }
-                if (cur[0] != JzByte) { Log($"patch {tag}: 0x{a:X} byte inesperado 0x{cur[0]:X2} — não toca"); continue; }
-                if (!VirtualProtectEx(h, addr, 1, PAGE_EXECUTE_READWRITE, out uint old)) continue;
-                bool ok = WriteProcessMemory(h, addr, new[] { JmpByte }, 1, out _);
-                VirtualProtectEx(h, addr, 1, old, out _);
-                Log($"patch {tag}: 0x{a:X} 0x74 -> 0xEB {(ok ? "OK" : "FALHOU")}");
-            }
-        }
+        try { foreach (var p in patches) PatchByteAt(h, new IntPtr(p.Addr), p.Expected, p.New, tag); }
         finally { CloseHandle(h); }
+    }
+
+    /// <summary>Troca 1 byte num endereço do processo, validando o byte original (build diferente / já aplicado
+    /// não é tocado, só logado). Restaura a proteção de página depois.</summary>
+    private static void PatchByteAt(IntPtr h, IntPtr addr, byte expected, byte newVal, string tag)
+    {
+        long va = addr.ToInt64();
+        byte[] cur = new byte[1];
+        if (!ReadProcessMemory(h, addr, cur, 1, out _)) { Log($"patch {tag}: read falhou @0x{va:X}"); return; }
+        if (cur[0] == newVal) { Log($"patch {tag}: 0x{va:X} já aplicado"); return; }
+        if (cur[0] != expected) { Log($"patch {tag}: 0x{va:X} byte inesperado 0x{cur[0]:X2} (esp 0x{expected:X2}) — não toca"); return; }
+        if (!VirtualProtectEx(h, addr, 1, PAGE_EXECUTE_READWRITE, out uint old)) return;
+        bool ok = WriteProcessMemory(h, addr, new[] { newVal }, 1, out _);
+        VirtualProtectEx(h, addr, 1, old, out _);
+        Log($"patch {tag}: 0x{va:X} 0x{expected:X2} -> 0x{newVal:X2} {(ok ? "OK" : "FALHOU")}");
     }
 
     /// <summary>O cliente embute keyhook.dll, que instala 2 hooks WH_KEYBOARD_LL que ENGOLEM Alt+Tab/Alt+Esc
     /// /tecla Windows (retornam 1). Os 2 sites de bloqueio são `mov eax,1` (B8 01 00 00 00) nos RVA 0x106D/0x10A2;
     /// o imediato "1" fica em 0x106E/0x10A3. Trocamos por 0 -> o hook retorna 0 e a tecla passa. Patchar a
     /// PROCEDURE (não o install) torna o timing irrelevante. Seguro com o GameGuard morto (offline).</summary>
-    public static void PatchKeyHook(string procName)
+    public static void PatchKeyHook(int pid)
     {
-        uint pid = 0;
-        for (int i = 0; i < 240; i++) { pid = ProcessId(procName); if (pid != 0) break; Thread.Sleep(500); }
-        if (pid == 0) return;
         IntPtr baseAddr = IntPtr.Zero;
-        for (int i = 0; i < 120; i++) { baseAddr = ModuleBase(pid, "keyhook.dll"); if (baseAddr != IntPtr.Zero) break; Thread.Sleep(250); }
+        for (int i = 0; i < 120; i++) { baseAddr = ModuleBase((uint)pid, "keyhook.dll"); if (baseAddr != IntPtr.Zero) break; Thread.Sleep(250); }
         if (baseAddr == IntPtr.Zero) return;
 
-        IntPtr h = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, false, pid);
+        IntPtr h = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, false, (uint)pid);
         if (h == IntPtr.Zero) return;
-        try { foreach (int rva in new[] { 0x106E, 0x10A3 }) PatchByteToZero(h, baseAddr + rva); }
+        try { foreach (int rva in new[] { 0x106E, 0x10A3 }) PatchByteAt(h, baseAddr + rva, 0x01, 0x00, "keyhook"); }
         finally { CloseHandle(h); }
-    }
-
-    private static void PatchByteToZero(IntPtr h, IntPtr addr)
-    {
-        byte[] cur = new byte[1];
-        if (!ReadProcessMemory(h, addr, cur, 1, out _)) return;
-        if (cur[0] == 0x00) return;     // já patchado
-        if (cur[0] != 0x01) return;     // byte inesperado (build diferente) — não toca
-        if (!VirtualProtectEx(h, addr, 1, PAGE_EXECUTE_READWRITE, out uint old)) return;
-        WriteProcessMemory(h, addr, new byte[] { 0x00 }, 1, out _);
-        VirtualProtectEx(h, addr, 1, old, out _);
     }
 
     private static IntPtr ModuleBase(uint pid, string name)

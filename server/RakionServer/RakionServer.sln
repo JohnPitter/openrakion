@@ -21,6 +21,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RakionServer.LauncherWeb", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RakionServer.Admin", "src\RakionServer.Admin\RakionServer.Admin.csproj", "{62D8C13A-A411-4C04-BC7E-E1DA798DAD63}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RakionServer.Accounts", "src\RakionServer.Accounts\RakionServer.Accounts.csproj", "{F4CA4920-08D1-49F5-A12E-DEC0BFFF0A92}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -115,6 +117,18 @@ Global
 		{62D8C13A-A411-4C04-BC7E-E1DA798DAD63}.Release|x64.Build.0 = Release|Any CPU
 		{62D8C13A-A411-4C04-BC7E-E1DA798DAD63}.Release|x86.ActiveCfg = Release|Any CPU
 		{62D8C13A-A411-4C04-BC7E-E1DA798DAD63}.Release|x86.Build.0 = Release|Any CPU
+		{F4CA4920-08D1-49F5-A12E-DEC0BFFF0A92}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F4CA4920-08D1-49F5-A12E-DEC0BFFF0A92}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F4CA4920-08D1-49F5-A12E-DEC0BFFF0A92}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F4CA4920-08D1-49F5-A12E-DEC0BFFF0A92}.Debug|x64.Build.0 = Debug|Any CPU
+		{F4CA4920-08D1-49F5-A12E-DEC0BFFF0A92}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F4CA4920-08D1-49F5-A12E-DEC0BFFF0A92}.Debug|x86.Build.0 = Debug|Any CPU
+		{F4CA4920-08D1-49F5-A12E-DEC0BFFF0A92}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F4CA4920-08D1-49F5-A12E-DEC0BFFF0A92}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F4CA4920-08D1-49F5-A12E-DEC0BFFF0A92}.Release|x64.ActiveCfg = Release|Any CPU
+		{F4CA4920-08D1-49F5-A12E-DEC0BFFF0A92}.Release|x64.Build.0 = Release|Any CPU
+		{F4CA4920-08D1-49F5-A12E-DEC0BFFF0A92}.Release|x86.ActiveCfg = Release|Any CPU
+		{F4CA4920-08D1-49F5-A12E-DEC0BFFF0A92}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -127,5 +141,6 @@ Global
 		{713357EF-D86A-4D35-BE2A-2711289FF1B0} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 		{6498E1AD-187D-476D-90EB-C66CD0EB7522} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{62D8C13A-A411-4C04-BC7E-E1DA798DAD63} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{F4CA4920-08D1-49F5-A12E-DEC0BFFF0A92} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal
