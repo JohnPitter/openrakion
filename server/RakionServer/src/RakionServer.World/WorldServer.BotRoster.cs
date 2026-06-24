@@ -61,6 +61,40 @@ namespace RakionServer.World
             Log.Ok("bot", "stage: 0x45 entered seat {0} -> host [{1}]", seat, host.Slot);
         }
 
+        /// <summary>
+        /// "Begin" 0x54 ao host (RE FUN_004066c0 @0x4066c0): [54 00], 2 bytes, mandado a cada slot state 3/4
+        /// QUANDO todos carregaram. O 0x45 só marca "loaded"; é o 0x54 que faz o cliente transicionar os
+        /// avatares remotos (o bot) PARA o stage. Sem ele o bot não entra mesmo com o 0x45.
+        /// </summary>
+        private void NotifyStageBegin(ClientSession host)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x54);
+            try { host.SendLobby(w.ToArray()); } catch { }
+            Log.Ok("bot", "stage: 0x54 begin -> host [{0}]", host.Slot);
+        }
+
+        /// <summary>
+        /// Spawna os bots no STAGE no MOMENTO do load do host (0x4b → StartGameClock): emite o 0x45 de cada
+        /// bot (carregou) e então o 0x54 (begin, todos carregaram). Timing junto do load do host — o cliente
+        /// processa o 0x45 dos remotos durante a própria entrada — + o begin que faltava (o BotTick só emitia
+        /// o 0x45, ~60ms depois e sem 0x54, e o avatar nunca entrava). Gated por ClientFramesEnabled.
+        /// </summary>
+        public void SpawnFieldBotsInStage(Domain.Field f)
+        {
+            if (!BotMovement.ClientFramesEnabled || f.BotCount == 0) return;
+            var host = f.Master;
+            if (host == null) return;
+            foreach (var rec in f.BotRecs())
+            {
+                var bot = rec.Bot!;
+                bot.SpawnedThisRound = true;            // marca p/ o BotTick não re-emitir o 0x45
+                rec.State = 4; rec.Dead = false; bot.Dead = false;
+                NotifyBotEnteredStage(f, rec.Slot);     // 0x45 [45 00 00 seat]
+            }
+            NotifyStageBegin(host);                     // 0x54 [54 00] = todos carregaram → entra no stage
+        }
+
         /// <summary>Header do 0x38 (8B) + registro do jogador. Veja o disassembly em joinasm.out.txt.</summary>
         private static byte[] BuildRoomMemberJoin(BotPlayer bot, int seat)
         {
