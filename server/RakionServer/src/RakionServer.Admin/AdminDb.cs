@@ -1,4 +1,5 @@
 using MySqlConnector;
+using RakionServer.Accounts;
 
 namespace RakionServer.Admin;
 
@@ -42,25 +43,10 @@ public sealed class AdminDb(IConfiguration cfg)
     public async Task<AccountRow?> GetAccountAsync(string id)
         => (await ListAccountsAsync(id, 1)).Find(a => a.Id == id);
 
+    /// <summary>Cria conta (user + usergameinfo) via golden source <see cref="AccountStore"/> — mesma regra do
+    /// /register do launcher. true = criada; false = id/senha inválidos ou conta já existente.</summary>
     public async Task<bool> CreateAccountAsync(string id, string password, int country = 1)
-    {
-        await using var c = await OpenAsync();
-        await using (var u = new MySqlCommand("INSERT INTO user (id, password, Authority, country) VALUES (@id,@pw,0,@co)", c))
-        {
-            u.Parameters.AddWithValue("@id", id);
-            u.Parameters.AddWithValue("@pw", password);
-            u.Parameters.AddWithValue("@co", country);
-            await u.ExecuteNonQueryAsync();
-        }
-        await using (var g = new MySqlCommand(
-            "INSERT INTO usergameinfo (name, createtime, lastconnect, country, tutorial) VALUES (@id, NOW(), NOW(), @co, 1)", c))
-        {
-            g.Parameters.AddWithValue("@id", id);
-            g.Parameters.AddWithValue("@co", country);
-            await g.ExecuteNonQueryAsync();
-        }
-        return true;
-    }
+        => await AccountStore.CreateAsync(_conn, id, password, country) == CreateAccountResult.Created;
 
     public async Task SetPasswordAsync(string id, string password)
         => await NonQuery("UPDATE user SET password=@pw WHERE id=@id", ("@pw", password), ("@id", id));

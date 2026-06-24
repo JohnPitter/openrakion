@@ -8,6 +8,7 @@ namespace RakionLauncher;
 internal static class AuthClient
 {
     public enum LoginResult { Valid, Invalid, Unreachable }
+    public enum RegisterResult { Created, Exists, InvalidId, InvalidPassword, Unreachable, Error }
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(6) };
 
@@ -26,5 +27,24 @@ internal static class AuthClient
                 : LoginResult.Invalid;
         }
         catch { return LoginResult.Unreachable; }
+    }
+
+    /// <summary>Cria conta via POST <c>/register</c> (user + pass HEX). Corpo "OK" = criada; "[Error]: motivo"
+    /// mapeia o motivo (exists/invalidid/invalidpass); falha de rede/timeout -> Unreachable. As regras de id/senha
+    /// são validadas no servidor (<c>AccountStore</c>) — fonte única.</summary>
+    public static async Task<RegisterResult> RegisterAsync(string baseUrl, string user, string hexPass)
+    {
+        try
+        {
+            var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["user"] = user, ["pass"] = hexPass });
+            using var resp = await Http.PostAsync($"{baseUrl}/register", form);
+            string body = (await resp.Content.ReadAsStringAsync()).Trim();
+            if (body.Equals("OK", StringComparison.OrdinalIgnoreCase)) return RegisterResult.Created;
+            if (body.Contains("exists", StringComparison.OrdinalIgnoreCase)) return RegisterResult.Exists;
+            if (body.Contains("invalidid", StringComparison.OrdinalIgnoreCase)) return RegisterResult.InvalidId;
+            if (body.Contains("invalidpass", StringComparison.OrdinalIgnoreCase)) return RegisterResult.InvalidPassword;
+            return RegisterResult.Error;
+        }
+        catch { return RegisterResult.Unreachable; }
     }
 }

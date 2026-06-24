@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\RakionServer.Common\RakionServer.Common.csproj" />
+    <ProjectReference Include="..\RakionServer.Accounts\RakionServer.Accounts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

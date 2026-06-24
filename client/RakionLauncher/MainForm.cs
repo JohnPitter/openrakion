@@ -99,9 +99,30 @@ internal sealed class MainForm : Form
         _pass.SetBounds(22, 336, 210, 26);
         Controls.Add(_user); Controls.Add(_pass);
 
+        var register = new LinkLabel
+        {
+            Text = "Criar conta", AutoSize = true, Location = new Point(246, 340),
+            LinkColor = Theme.Dark, ActiveLinkColor = Color.Gold, LinkBehavior = LinkBehavior.HoverUnderline,
+            Font = new Font("Segoe UI", 9f, FontStyle.Bold)
+        };
+        register.LinkClicked += (_, _) => OnRegister();
+        Controls.Add(register);
+
         _play.SetBounds(366, 262, 120, 100); Theme.StyleButton(_play, primary: true); _play.TextAlign = ContentAlignment.MiddleCenter; _play.Click += OnPlay;
         _options.SetBounds(494, 262, 120, 100); Theme.StyleButton(_options); _options.TextAlign = ContentAlignment.MiddleCenter; _options.Click += OnOptions;
         Controls.Add(_play); Controls.Add(_options);
+    }
+
+    private void OnRegister()
+    {
+        using var dlg = new RegisterForm(ServerConfig.BaseUrl(_clientDir));
+        dlg.ShowDialog(this);
+        if (dlg.CreatedId != null)
+        {
+            _user.Text = dlg.CreatedId;
+            _pass.Focus();
+            Status($"Conta '{dlg.CreatedId}' criada. Informe a senha e clique START.", false);
+        }
     }
 
     private void BuildStatus()
