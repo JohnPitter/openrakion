@@ -125,7 +125,7 @@ internal sealed class MainForm : Form
         Status($"Modo de tela: {ModeLabel(_settings.DisplayMode)}   ·   {_settings.ScreenWidth} x {_settings.ScreenHeight}", false);
     }
 
-    private void OnPlay(object? sender, EventArgs e)
+    private async void OnPlay(object? sender, EventArgs e)
     {
         try
         {
@@ -133,11 +133,22 @@ internal sealed class MainForm : Form
             string user = _user.Text.Trim();
             if (user == "") { Status("informe o usuário", true); return; }
 
+            // Valida as credenciais no auth web ANTES de lançar (aviso de login inválido). A senha em hex é a
+            // mesma usada no argv do jogo — calcula uma vez e reusa no launch.
+            string hexPass = GameLauncher.HexPass(_pass.Text);
+            _play.Enabled = false;
+            Status("Validando login…", false);
+            var login = await AuthClient.LoginAsync(ServerConfig.BaseUrl(_clientDir), user, hexPass);
+            _play.Enabled = true;
+            if (login == AuthClient.LoginResult.Invalid) { Status("Login ID ou senha inválidos.", true); return; }
+            if (login == AuthClient.LoginResult.Unreachable)
+            { Status($"Servidor de login indisponível ({ServerConfig.AuthHost(_clientDir)}). O servidor está no ar?", true); return; }
+
             _settings.Save(_iniPath, _modeFile);   // garante o m_bActiveFullScreen certo no INI antes de lançar
             string mode = _settings.DisplayMode;
             // Lança SUSPENSO, aplica os patches ANTES de o engine inicializar (mutex p/ multi-instância; modo
             // janela ANTES de trocar a resolução do desktop), e só então resume.
-            var (pid, hThread) = GameLauncher.LaunchSuspended(_binDir, user, GameLauncher.HexPass(_pass.Text), ServerId);
+            var (pid, hThread) = GameLauncher.LaunchSuspended(_binDir, user, hexPass, ServerId);
             WindowMode.PatchMultiInstance(pid);         // libera N clientes na mesma máquina (sempre, mesmo em fullscreen)
             if (mode != WindowMode.Fullscreen)
             {

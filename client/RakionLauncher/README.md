@@ -35,6 +35,14 @@ dotnet publish -p:PublishProfile=win-x64        # saída: bin/publish/RakionLaun
 
 Roda elevado (o `rakion.exe` exige admin; `CreateProcess` sem elevar = erro 740) — ver `app.manifest`.
 
+## Servidor de login
+
+Antes de lançar, o launcher valida o login no auth web (`GET /launcherlogin`, :80) e avisa se as credenciais
+forem inválidas (corpo `[Error]: N`) ou se o servidor estiver fora do ar. O host vem do arquivo
+**`server.host`** no diretório do cliente (1 linha: IP ou `host:porta`); na ausência, usa `127.0.0.1`
+(servidor na mesma máquina). Para um servidor remoto (ex.: o pacote do carlox), crie `server.host` com o IP
+do servidor — o mesmo que o `config.xfs` aponta para broker/world (ver [`ServerConfig.cs`](ServerConfig.cs)).
+
 ## Assets
 
 Os assets de UI (`Assets/*.ico|png|bmp`) são de domínio público e ficam **versionados** — ver
