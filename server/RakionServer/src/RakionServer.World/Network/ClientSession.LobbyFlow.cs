@@ -310,6 +310,11 @@ namespace RakionServer.World.Network
             if (PendingRoomDurationSec != 0) f.RoundDurationSec = PendingRoomDurationSec; // tempo configurado na sala
             if (PendingRoomRounds != 0) f.MaxRounds = PendingRoomRounds;                  // rounds configurados na sala
             _server.NotifyPlayerReady(f, this);
+            // PvP COM BOTS: inicia o 1º round (Phase=Pre→Playing) p/ o motor rodar o BotTick (spawn 0x45 + IA).
+            // O MatchTick só roda BotTick na fase Playing; StartGameClock (guardado por _gameClockStarted, 1x)
+            // deixava Phase=Pre → o bot nunca spawnava. Com bots o host é o único humano, então o round começa
+            // no load dele (2 humanos usariam o all-loaded 0x54 do original).
+            if (f.Mode != 0 && f.BotCount > 0 && f.Phase != Domain.MatchPhase.Playing) f.StartRound();
             Log.Ok("field", "[{0}] sala aplicada ao field {1}: mode={2} map={3} dur={4}s rounds={5}",
                 Slot, f.Id, f.Mode, f.MapId, f.RoundDurationSec, f.MaxRounds);
             // Sala Battle/PvP (mode != 0) = fluxo NETWORKED: o SERVER inicia o loop UDP com o 1o
