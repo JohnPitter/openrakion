@@ -12,21 +12,31 @@ no **stage 3D** (aparecer + lutar). Este doc é o ponto de retomada.
   `State==1 && !Settled` liquidava e sumia os bots).
 
 ## PENDENTE — bot no stage 3D (o "jogar contra ele")
-O avatar 3D **NÃO** nasce de UDP nem dos frames TCP que tentamos (0x45/0x54/0x4c todos disparam server-side
-mas o cliente não desenha). RE da **engine.dll** (agente): o spawn 3D é `CSessionState::AddRemotePlayer`
-@0x10e2b0 (← `SendFieldGameAddPlayer/Reply`, vtable IScavengerWorldNet @0x36216828), **opcode reliable do
-world 0x4b/0x4c** com o **MESMO blob** do 0x38 (`BuildBotPlayerRecord`, FUN_0040b7f0). Layouts candidatos:
-- `0x4b`: `[u16 0x4b][u16 blobLen][blob]` (slot no blob, +0x1478)
-- `0x4c`: `[u16 0x4c][u8 slot][u16 blobLen][blob]` (slot explícito) — foi o que tentei (`NotifyBotAddPlayer`).
+RE da **engine.dll** (agente 2026-06-24, ImageBase 0x36000000) **CORRIGE** o entendimento anterior:
+- Os **`0x4b`/`0x4c` que tentei eram SENDERS** (`SendFieldGameAddPlayer`@0x36192350 / `...Reply`@0x361923c0,
+  cliente→servidor), **não** frames de recepção. Injetá-los = cliente "fala" um add-player sem partida
+  casada → **AV (o crash "stage fechou")**. NÃO reusar.
+- Dispatcher do protocolo-mundo = `CSessionState::HandleMessage`@0x3610d7c0 (0x307 CreateNpc…0x30a move,
+  0x30b pos/morte, 0x30c event) — **nenhum spawna jogador**.
+- Spawn 3D real = **entity-message ADDPLAYER (tipo 7)** reliable, montada por `WriteAddPlayer`@0x360fcb40
+  (inv. `ReadAddPlayer`@0x360fccb0) → `AddRemotePlayer`@0x3610e2b0 `(uchar slot, u16 blobLen, char* blob)`:
+    header `[u32 tipo=7][u16 len=0x45+nameLen+tagLen][u32 entityId]` +
+    corpo `[u32 slot][16B aparência/classe][u16 nameLen+nome\0][u16 tagLen+tag\0][32B stats/equip][u32
+    handle#1][u32 handle#2][u32 ownerClientId]`. Identidade = mesmo núcleo do 0x38; SEM posição (o field
+    define). `blobLen` pode ser 0 (o `player->vtable[+0x118]` é stub vazio).
+- **Canal**: TCP reliable-world (mesmo trilho do 0x38/SendLobby), não UDP.
+- **PRÉ-REQUISITO (causa do AV)**: partida **carregada** antes (`Connect{Local,Remote}SessionState`
+  @0x36105650/0x36105f30) — senão CSessionState/CWorld/slots não existem → AV. Guard `ss[0x4854+slot*4]==0`.
+  Ordem: load → ADDPLAYER(tipo 7) → move 0x30a.
+- **Incerteza p/ captura**: o ENVELOPE wire da entity-message tipo 7. Os 2 handles = contadores do server
+  (`_pNetwork+0x1304`); gerar por sessão (como `_fieldHandle`). Artefato: `stage_spawn_re.out.txt`.
 
-Já implementado e **ligado** (`ClientFramesEnabled=true`): `SpawnFieldBotsInStage` (chamado do
-`StartGameClock`/0x4b) emite 0x45 + 0x4c + 0x54 ao host no load. **Não funciona** — o frame/seq EXATO só a
-captura confirma (o agente avisou). Artefatos de RE: `rakion-work/ghidra-proj/{joinflow*,stageenter,starttrig,
-engine_blob,engine_spawn}.txt`.
+**Código a CORRIGIR**: `WorldServer.BotRoster.cs` (`NotifyBotAddPlayer`/`SpawnFieldBotsInStage`) ainda manda
+0x4b/0x4c — **ERRADO** (são senders). Trocar por síntese da entity-message tipo 7, gated até a captura
+confirmar o envelope. `ClientFramesEnabled=false` está **certo** (não religar com 0x4b/0x4c).
 
-Depois do spawn vêm: **movimento 0x30a** (UDP, `BotMovement.EncodeActionBody` cravado, gated
-`UdpFramingKnown=false` — risco de validação de origem) e **hit-detection** (parsear o 0x30a do humano →
-`BotTakeDamage`).
+Depois do spawn: **movimento 0x30a** (UDP, `BotMovement.EncodeActionBody` cravado, gated
+`UdpFramingKnown=false`) e **hit-detection** (parsear o 0x30a do humano → `BotTakeDamage`).
 
 ## Como CAPTURAR o frame de spawn (próxima sessão)
 Ferramenta pronta: **`tools/mitm_botcap.py`** = proxy MITM que **decifra** o TCP (AES-128-ECB, chave no
