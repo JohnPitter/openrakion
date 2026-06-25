@@ -58,6 +58,8 @@ namespace RakionServer.Buddy
         public const ushort SVC_GROUP_DEL       = 0x3154;
         public const ushort SVC_GROUP_CHG       = 0x3156;
         public const ushort SVC_SMS_SEND        = 0x2030;
+        public const ushort SVC_TUNNEL_PACKET   = 0x2020;   // PM via tunnel TCP (relay) — IGNORADO: o PM é P2P puro (UDP direto)
+        public const ushort SVC_USER_STATE      = 0x3010;   // cliente pergunta o status (presença) de um id
 
         private static readonly IReadOnlyDictionary<int, string> Names = new Dictionary<int, string>
         {
@@ -76,6 +78,7 @@ namespace RakionServer.Buddy
             [RET_SET_EXTUSER] = "RET_SET_EXTUSER", [SVC_SET_NICK] = "SVC_SET_NICK",
             [SVC_SET_EXTUSER] = "SVC_SET_EXTUSER", [SVC_GROUP_GETLIST] = "SVC_GROUP_GETLIST",
             [NTF_USER_STATE] = "NTF_USER_STATE", [NTF_NOTICE2] = "NTF_NOTICE2",
+            [SVC_TUNNEL_PACKET] = "SVC_TUNNEL_PACKET", [SVC_USER_STATE] = "SVC_USER_STATE",
         };
 
         public static string Name(int cd) => Names.TryGetValue(cd, out var n) ? n : $"CD_0x{cd:x4}";

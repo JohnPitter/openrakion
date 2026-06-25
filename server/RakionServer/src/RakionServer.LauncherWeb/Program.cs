@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using MySqlConnector;
+using RakionServer.Accounts;
 using RakionServer.Common;
 
 // Auth web do launcher (porta fiel do launcher_web.py + fetch.php para .NET). Serve na :80:
@@ -20,6 +21,7 @@ string conn = app.Configuration.GetConnectionString("Rakion")
 
 app.MapMethods("/launcherlogin.php", new[] { "GET", "POST" }, LauncherLogin);
 app.MapMethods("/launcherlogin", new[] { "GET", "POST" }, LauncherLogin);
+app.MapMethods("/register", new[] { "POST" }, Register);
 app.MapGet("/fetch.php", Fetch);
 app.MapGet("/fetch", Fetch);
 app.MapFallback(() => Results.Content("", "text/html"));   // note/file/config: vazio
@@ -49,6 +51,31 @@ async Task<IResult> LauncherLogin(HttpRequest req)
         return Text(token);
     }
     catch (Exception ex) { Log.Error("web", "login DB: {0}", ex.Message); return Text("[Error]: " + ex.Message); }
+}
+
+// POST user=&pass=HEX -> cria a conta (user + usergameinfo) via AccountStore (golden source com o painel
+// admin). Corpo "OK" = criada; "[Error]: <motivo>" = recusada (exists/invalidid/invalidpass) ou erro de DB.
+async Task<IResult> Register(HttpRequest req)
+{
+    string id = (await Param(req, "user")).Trim();
+    string passhex = await Param(req, "pass");
+    string? pw = HexToLatin1(passhex);
+    if (pw is null) { Log.Warn("web", "register pass inválido (hex) user={0}", id); return Text("[Error]: badpass"); }
+    try
+    {
+        var result = await AccountStore.CreateAsync(conn, id, pw);
+        if (result == CreateAccountResult.Created) Log.Ok("web", "register OK user={0}", id);
+        else Log.Warn("web", "register FAIL user={0} -> {1}", id, result);
+        return Text(result switch
+        {
+            CreateAccountResult.Created => "OK",
+            CreateAccountResult.AlreadyExists => "[Error]: exists",
+            CreateAccountResult.InvalidId => "[Error]: invalidid",
+            CreateAccountResult.InvalidPassword => "[Error]: invalidpass",
+            _ => "[Error]: 1",
+        });
+    }
+    catch (Exception ex) { Log.Error("web", "register DB: {0}", ex.Message); return Text("[Error]: " + ex.Message); }
 }
 
 // QUERY_STRING = "AppId&Ver" (dois números). Espelha fetch.php: monta a lista de updates a aplicar.

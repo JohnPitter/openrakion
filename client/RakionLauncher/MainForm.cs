@@ -99,9 +99,30 @@ internal sealed class MainForm : Form
         _pass.SetBounds(22, 336, 210, 26);
         Controls.Add(_user); Controls.Add(_pass);
 
+        var register = new LinkLabel
+        {
+            Text = "Criar conta", AutoSize = true, Location = new Point(246, 340),
+            LinkColor = Theme.Dark, ActiveLinkColor = Color.Gold, LinkBehavior = LinkBehavior.HoverUnderline,
+            Font = new Font("Segoe UI", 9f, FontStyle.Bold)
+        };
+        register.LinkClicked += (_, _) => OnRegister();
+        Controls.Add(register);
+
         _play.SetBounds(366, 262, 120, 100); Theme.StyleButton(_play, primary: true); _play.TextAlign = ContentAlignment.MiddleCenter; _play.Click += OnPlay;
         _options.SetBounds(494, 262, 120, 100); Theme.StyleButton(_options); _options.TextAlign = ContentAlignment.MiddleCenter; _options.Click += OnOptions;
         Controls.Add(_play); Controls.Add(_options);
+    }
+
+    private void OnRegister()
+    {
+        using var dlg = new RegisterForm(ServerConfig.BaseUrl(_clientDir));
+        dlg.ShowDialog(this);
+        if (dlg.CreatedId != null)
+        {
+            _user.Text = dlg.CreatedId;
+            _pass.Focus();
+            Status($"Conta '{dlg.CreatedId}' criada. Informe a senha e clique START.", false);
+        }
     }
 
     private void BuildStatus()
@@ -125,18 +146,31 @@ internal sealed class MainForm : Form
         Status($"Modo de tela: {ModeLabel(_settings.DisplayMode)}   ·   {_settings.ScreenWidth} x {_settings.ScreenHeight}", false);
     }
 
-    private void OnPlay(object? sender, EventArgs e)
+    private async void OnPlay(object? sender, EventArgs e)
     {
         try
         {
             if (!File.Exists(Path.Combine(_binDir, GameLauncher.GameProcess))) { Status($"rakion.exe não encontrado em {_binDir}", true); return; }
-            if (_user.Text.Trim() == "") { Status("informe o usuário", true); return; }
+            string user = _user.Text.Trim();
+            if (user == "") { Status("informe o usuário", true); return; }
+
+            // Valida as credenciais no auth web ANTES de lançar (aviso de login inválido). A senha em hex é a
+            // mesma usada no argv do jogo — calcula uma vez e reusa no launch.
+            string hexPass = GameLauncher.HexPass(_pass.Text);
+            _play.Enabled = false;
+            Status("Validando login…", false);
+            var login = await AuthClient.LoginAsync(ServerConfig.BaseUrl(_clientDir), user, hexPass);
+            _play.Enabled = true;
+            if (login == AuthClient.LoginResult.Invalid) { Status("Login ID ou senha inválidos.", true); return; }
+            if (login == AuthClient.LoginResult.Unreachable)
+            { Status($"Servidor de login indisponível ({ServerConfig.AuthHost(_clientDir)}). O servidor está no ar?", true); return; }
 
             _settings.Save(_iniPath, _modeFile);   // garante o m_bActiveFullScreen certo no INI antes de lançar
             string mode = _settings.DisplayMode;
-            // Lança SUSPENSO, aplica o patch do modo janela (se não for fullscreen) ANTES de o engine trocar a
-            // resolução do desktop, e só então resume — senão a "janela" cobre a tela na resolução do INI.
-            var (pid, hThread) = GameLauncher.LaunchSuspended(_binDir, _user.Text.Trim(), GameLauncher.HexPass(_pass.Text), ServerId);
+            // Lança SUSPENSO, aplica os patches ANTES de o engine inicializar (mutex p/ multi-instância; modo
+            // janela ANTES de trocar a resolução do desktop), e só então resume.
+            var (pid, hThread) = GameLauncher.LaunchSuspended(_binDir, user, hexPass, ServerId);
+            WindowMode.PatchMultiInstance(pid);         // libera N clientes na mesma máquina (sempre, mesmo em fullscreen)
             if (mode != WindowMode.Fullscreen)
             {
                 WindowMode.PatchWindowedMode(pid);      // windowed real (não troca a resolução do desktop)
@@ -145,21 +179,14 @@ internal sealed class MainForm : Form
             GameLauncher.Resume(hThread);
 
             int w = _settings.ScreenWidth, h = _settings.ScreenHeight;   // alvo do framing = resolução escolhida
-            new Thread(() => WindowMode.FrameGameWindow(GameLauncher.GameProcess, mode, w, h)) { IsBackground = true }.Start();
-            new Thread(() => WindowMode.PatchKeyHook(GameLauncher.GameProcess)) { IsBackground = true }.Start();
+            new Thread(() => WindowMode.FrameGameWindow(pid, mode, w, h)) { IsBackground = true }.Start();
+            new Thread(() => WindowMode.PatchKeyHook(pid)) { IsBackground = true }.Start();
 
-            _play.Enabled = false;
-            Status("Rakion iniciado — aplicando o modo de janela…", false);
-            WatchExit();
+            // Botão SEGUE HABILITADO: troca o login e clique START de novo p/ abrir uma 2ª conta na mesma máquina.
+            Status($"Rakion iniciado ({user}). Para uma 2ª conta: troque o login e clique START de novo.", false);
         }
         catch (Exception ex) { Status(ex.Message, true); }
     }
-
-    private void WatchExit() => new Thread(() =>
-    {
-        while (GameLauncher.IsRunning()) Thread.Sleep(1000);
-        try { BeginInvoke(() => { _play.Enabled = true; Status("Pronto.", false); }); } catch { }
-    }) { IsBackground = true }.Start();
 
     private void Status(string msg, bool error) { _status.ForeColor = error ? Color.Firebrick : Theme.Ink; _status.Text = msg; }
 

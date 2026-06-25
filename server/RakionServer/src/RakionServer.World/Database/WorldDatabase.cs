@@ -11,7 +11,7 @@ namespace RakionServer.World.Database
     /// fica aqui (backend). Tabelas reconstruidas do dump v258: user, usergameinfo,
     /// loguserconnect, usercount.
     /// </summary>
-    public sealed class WorldDatabase
+    public sealed partial class WorldDatabase   // domínio messenger/amigos: WorldDatabase.Messenger.cs
     {
         private readonly string _conn;
 
@@ -37,71 +37,8 @@ namespace RakionServer.World.Database
             }
         }
 
-        /// <summary>
-        /// Provisiona o que o dump v258 nao tem mas o servidor offline usa. Idempotente (IF NOT EXISTS)
-        /// — roda no boot p/ sobreviver a um re-import do dump. `itembox.qslot` marca a posicao de um
-        /// consumivel (0 = box, N = celula N-1 do quickslot); `pu_config` guarda preco/bonus/multiplicadores
-        /// do Power User (linha unica id=1, editavel pelo painel admin).
-        /// </summary>
-        public async Task EnsureSchemaAsync()
-        {
-            try
-            {
-                await using var c = new MySqlConnection(_conn);
-                await c.OpenAsync();
-                await Exec(c, "ALTER TABLE itembox ADD COLUMN IF NOT EXISTS qslot TINYINT NOT NULL DEFAULT 0");
-                await Exec(c, "ALTER TABLE itembox ADD COLUMN IF NOT EXISTS level TINYINT NOT NULL DEFAULT 0");
-                await Exec(c,
-                    "CREATE TABLE IF NOT EXISTS pu_config (" +
-                    " id TINYINT NOT NULL PRIMARY KEY," +
-                    " price INT NOT NULL DEFAULT 8000," +
-                    " bonus_points SMALLINT NOT NULL DEFAULT 51," +
-                    " duration_days SMALLINT NOT NULL DEFAULT 30," +
-                    " exp_mult DECIMAL(4,2) NOT NULL DEFAULT 1.50," +
-                    " gold_mult DECIMAL(4,2) NOT NULL DEFAULT 1.50," +
-                    " promo_active TINYINT(1) NOT NULL DEFAULT 0," +
-                    " promo_exp_mult DECIMAL(4,2) NOT NULL DEFAULT 2.00," +
-                    " promo_gold_mult DECIMAL(4,2) NOT NULL DEFAULT 2.00," +
-                    " promo_start DATETIME NULL," +
-                    " promo_end DATETIME NULL)");
-                await Exec(c, "INSERT IGNORE INTO pu_config (id) VALUES (1)");
-                // Refino configurável: coeficientes por catalisador (linha por catalisador) + globais (singleton id=1).
-                await Exec(c,
-                    "CREATE TABLE IF NOT EXISTS enchant_catalyzer (" +
-                    " catalyzer_id INT NOT NULL PRIMARY KEY," +
-                    " name VARCHAR(32) NOT NULL DEFAULT ''," +
-                    " base_success DECIMAL(4,3) NOT NULL DEFAULT 0.900," +
-                    " decay DECIMAL(4,3) NOT NULL DEFAULT 0.070," +
-                    " level_cap TINYINT NOT NULL DEFAULT 14)");
-                await Exec(c,
-                    "INSERT IGNORE INTO enchant_catalyzer (catalyzer_id,name,base_success,decay,level_cap) VALUES" +
-                    " (13001,'Mithril',0.950,0.100,4)," +
-                    " (13002,'Adamantium',0.920,0.080,14)," +
-                    " (13003,'Orehalcon',0.900,0.070,14)," +
-                    " (13004,'test+1',0.850,0.050,9)," +
-                    " (13005,'test+2',0.800,0.040,14)");
-                await Exec(c,
-                    "CREATE TABLE IF NOT EXISTS enchant_config (" +
-                    " id TINYINT NOT NULL PRIMARY KEY," +
-                    " jewel_floor DECIMAL(4,3) NOT NULL DEFAULT 0.050," +
-                    " jewel_bonus DECIMAL(4,3) NOT NULL DEFAULT 0.030," +
-                    " event_mult DECIMAL(4,2) NOT NULL DEFAULT 1.00," +
-                    " pu_mult DECIMAL(4,2) NOT NULL DEFAULT 1.00," +
-                    " floor_min DECIMAL(4,3) NOT NULL DEFAULT 0.050," +
-                    " ceil_max DECIMAL(4,3) NOT NULL DEFAULT 0.980," +
-                    " downgrade_lo DECIMAL(4,3) NOT NULL DEFAULT 0.120," +
-                    " downgrade_hi DECIMAL(4,3) NOT NULL DEFAULT 0.300)");
-                await Exec(c, "INSERT IGNORE INTO enchant_config (id) VALUES (1)");
-                Log.Ok("db", "schema verificado (itembox.qslot, pu_config, enchant_*)");
-            }
-            catch (Exception ex) { Log.Error("db", "EnsureSchemaAsync: {0}", ex.Message); }
-        }
-
-        private static async Task Exec(MySqlConnection c, string sql)
-        {
-            await using var cmd = new MySqlCommand(sql, c);
-            await cmd.ExecuteNonQueryAsync();
-        }
+        // EnsureSchemaAsync (provisionamento idempotente: itembox, pu_config, enchant_*, buddylist,
+        // messenger_session) + o helper Exec: fatiados em WorldDatabase.Schema.cs (partial) — gate de tamanho.
 
         /// <summary>Carrega a config do Power User (pu_config id=1). Default se a linha faltar.</summary>
         public async Task<PuConfig> LoadPuConfigAsync()
@@ -261,23 +198,8 @@ namespace RakionServer.World.Database
             }
         }
 
-        /// <summary>Account-name (usergameinfo.name) do dono de um char, pelo nick. null se o char nao existe.
-        /// Usado pelo messenger "add buddy": o cliente pede o account-id ao WORLD antes de adicionar (0x19 -> 0x0D).
-        /// Replica DBCommandCharacterGetUserName @worldserv 0x413980 (JOIN characterinfo -> usergameinfo).</summary>
-        public async Task<string?> GetCharOwnerByNickAsync(string nick)
-        {
-            try
-            {
-                await using var c = new MySqlConnection(_conn);
-                await c.OpenAsync();
-                await using var cmd = new MySqlCommand(
-                    "SELECT a.name FROM usergameinfo a JOIN characterinfo b ON a.id=b.userid " +
-                    "WHERE b.name=@n LIMIT 1", c);
-                cmd.Parameters.AddWithValue("@n", nick);
-                return (await cmd.ExecuteScalarAsync()) as string;
-            }
-            catch (Exception ex) { Log.Error("db", "GetCharOwnerByNickAsync({0}): {1}", nick, ex.Message); return null; }
-        }
+        // GetCharOwnerByNick + messenger_session + buddylist recíproca + buddyname: domínio messenger/amigos,
+        // fatiado em WorldDatabase.Messenger.cs (partial class) para o gate de tamanho do CLAUDE.md.
 
         /// <summary>Registra a conexao do usuario (tabela loguserconnect).</summary>
         public async Task LogUserConnectAsync(int userId, string userName, int serverId, string ip)

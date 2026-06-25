@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\RakionServer.World\RakionServer.World.csproj" />
+    <ProjectReference Include="..\..\src\RakionServer.Buddy\RakionServer.Buddy.csproj" />
   </ItemGroup>
 
   <ItemGroup>

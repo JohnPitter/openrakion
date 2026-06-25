@@ -209,6 +209,11 @@ namespace RakionServer.World.Network
                         Log.Ok("lobby", "[{0}] 0x4f morte no stage solo -> eco FIELD 0x4f + resumo 0x4a(2bd=1) + 0x44 (delay)", Slot);
                         return true;
                     }
+                case 0x15: // CharacterChangeBuddyName (messenger "nick change"): o cliente manda só [novoNick\0] e
+                    // trava em "Waiting for change request of character's name for messenger from server" (lang 604)
+                    // até a resposta 0x15/0x0B. Sincroniza usergameinfo.buddyname com o nick escolhido.
+                    _ = HandleChangeBuddyNameAsync(data);
+                    return true;
                 case 0x19: // CharacterGetUserName (messenger "add buddy"): o cliente pede ao WORLD o account-id
                     // do dono do nick digitado e trava em "Waiting for ID Information on account from server"
                     // (lang 599) ate' a resposta 0x0D. Sem isso o "add" do messenger nao avanca.
@@ -257,10 +262,27 @@ namespace RakionServer.World.Network
             if (nickLen == 0) { Log.Warn("lobby", "[{0}] 0x19 GetUserName: nick vazio", Slot); return; }
             string nick = Encoding.ASCII.GetString(data, 0, nickLen);
 
-            string? account = await _server.Db.GetCharOwnerByNickAsync(nick);
-            byte status = account != null ? (byte)0 : (byte)2;   // 0=ok, 2=char nao existe (lang 598)
-            SendEncryptedFrame(LobbyFrames.GetUserNameResult(status, account ?? "", nick));
-            Log.Ok("lobby", "[{0}] 0x19 GetUserName('{1}') -> status={2} account='{3}'", Slot, nick, status, account ?? "");
+            // Domínio: resolve o dono do nick E persiste a amizade RECÍPROCA (o AddBuddy do cliente é mudo, então
+            // a amizade nasce aqui). O cliente não valida o accountId, só o status byte (0=ok, 2=não existe).
+            var (status, account) = await _server.ResolveAndAddBuddyAsync(this, nick);
+            SendEncryptedFrame(LobbyFrames.GetUserNameResult(status, account, nick));
+            Log.Ok("lobby", "[{0}] 0x19 GetUserName('{1}') -> status={2} account='{3}'", Slot, nick, status, account);
+        }
+
+        /// <summary>0x15 CharacterChangeBuddyName (nick change do messenger): o cliente manda só [novoNick\0]; o
+        /// world persiste em usergameinfo.buddyname (pela conta da sessão, gameinfo.id) e confirma com o frame
+        /// 0x15/0x0B. Sem a confirmação o cliente trava em "Waiting for change request of character's name for
+        /// messenger from server" (lang 604). RE: worldserv FUN_004137a0. Lê só até o 1º NUL (resto = lixo de stack).</summary>
+        private async Task HandleChangeBuddyNameAsync(byte[] data)
+        {
+            int nul = Array.IndexOf(data, (byte)0);
+            int len = nul >= 0 ? nul : data.Length;
+            string nick = len > 0 ? Encoding.ASCII.GetString(data, 0, len) : "";
+            byte status = 0;
+            if (GameInfoId > 0 && nick.Length > 0) await _server.Db.UpdateBuddyNameAsync(GameInfoId, nick);
+            else status = 1;   // sem conta resolvida ou nick vazio -> erro (o cliente mostra a falha)
+            SendEncryptedFrame(LobbyFrames.ChangeBuddyNameResult(status, nick));
+            Log.Ok("lobby", "[{0}] 0x15 ChangeBuddyName('{1}') -> status={2} (gi={3})", Slot, nick, status, GameInfoId);
         }
 
         /// <summary>LoginComplete (msgType 2) — sucesso de FUN_0041f6c0.</summary>
