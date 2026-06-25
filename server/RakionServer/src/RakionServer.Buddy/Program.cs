@@ -20,7 +20,9 @@ namespace RakionServer.Buddy
             Log.Info("boot", "================================================");
 
             int[] ports = ResolvePorts(args);
-            var server = new BuddyServer(ports);
+            var db = new BuddyDatabase(BuddyConfig.ResolveConnectionString());
+            await db.PingAsync();
+            var server = new BuddyServer(db, ports);
 
             var stop = new CancellationTokenSource();
             void RequestStop() { try { if (!stop.IsCancellationRequested) stop.Cancel(); } catch (ObjectDisposedException) { } }

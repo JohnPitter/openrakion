@@ -54,10 +54,7 @@ namespace RakionServer.World
             public string Pass = "123456";
             public string Name = "rakion";
 
-            public string ConnectionString =>
-                $"Server={Ip};Port={Port};Database={Name};Uid={User};Pwd={Pass};" +
-                "Pooling=true;Default Command Timeout=15;Connection Timeout=10;" +
-                "AllowPublicKeyRetrieval=true;SslMode=None";
+            public string ConnectionString => RakionDb.BuildConnectionString(Ip, Port, Name, User, Pass);
         }
 
         public static WorldConfig Load(string path)

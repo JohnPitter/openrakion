@@ -67,6 +67,21 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
+        /// <summary>Resposta do 0x15 CharacterChangeBuddyName (nick change do messenger): o WORLD confirma a troca
+        /// do nick do messenger (usergameinfo.buddyname). Sem ela o cliente trava em "Waiting for change request of
+        /// character's name for messenger from server" (lang 604). Layout (RE worldserv FUN_004137a0, tamanho =
+        /// strlen+6 = 2+2+1+strlen+1): [u16 0x15 opcode][u16 0x0B subtype][byte status][nick\0]. status 0=ok, 1=erro.
+        /// Espelha o 0x19 (opcode ecoa o pedido; o subtype 0x0B é o uStack_100c._2_2_ do worldserv).</summary>
+        public static byte[] ChangeBuddyNameResult(byte status, string nick)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x0015);   // opcode do frame (ecoa o pedido)
+            w.WriteWord(0x000B);   // subtype interno (worldserv FUN_004137a0: uStack_100c._2_2_ = 0xb)
+            w.WriteByte(status);
+            w.WriteCString(nick);
+            return w.ToArray();
+        }
+
         // ---- BUILDERS ----------------------------------------------------------------------------------
 
         /// <summary>0x10 GameGuard challenge: [10 00][nonce 16B][00 x6]. Tudo constante.</summary>

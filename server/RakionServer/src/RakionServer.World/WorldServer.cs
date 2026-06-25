@@ -445,6 +445,22 @@ namespace RakionServer.World
             return GrantExp(s, exp);
         }
 
+        /// <summary>Domínio do messenger (add buddy, 0x19): resolve o nick -> conta dona e, se existe e não é o
+        /// próprio jogador, persiste a amizade RECÍPROCA (buddylist nos 2 sentidos). Devolve (status, accountId do
+        /// dono) p/ o handler serializar a resposta — status 0=ok, 2=char não existe (lang 598). O AddBuddy do
+        /// cliente é MUDO (não emite SVC_ADD_BUDDY), então a amizade é persistida aqui, não no Buddy.</summary>
+        public async Task<(byte Status, string Account)> ResolveAndAddBuddyAsync(ClientSession s, string targetNick)
+        {
+            string? targetAccount = await _db.GetCharOwnerByNickAsync(targetNick);
+            if (targetAccount == null) return ((byte)2, "");                 // char não existe (lang 598)
+            if (!string.Equals(targetAccount, s.UserId, StringComparison.OrdinalIgnoreCase))
+            {
+                await _db.AddBuddyReciprocalAsync(s.UserId, targetAccount);
+                Log.Ok("buddy", "[{0}] amizade '{1}' <-> '{2}' (nick '{3}') persistida", s.Slot, s.UserId, targetAccount, targetNick);
+            }
+            return ((byte)0, targetAccount);
+        }
+
         /// <summary>Aplica o UPGRADE do refino (handler 0x74 = clique de upgrade). SERVER-AUTHORITATIVE: este build do
         /// worldserv DESCARTAVA o roll de FUN_0040c310 (o cliente fica em "Upgrading Now" esperando o resultado), então
         /// reconstruímos o comportamento pretendido — valida (CUser::CheckEnchantReinforce), ROLA a probabilidade,
@@ -737,6 +753,10 @@ namespace RakionServer.World
             else { Log.Warn("login", "[{0}] '{1}' sem char ativo (characterinfo.used=1 ausente)", s.Slot, userId); }
             s.LoginCharList = await BuildLoginCharListAsync(s);   // lista de chars do char-select (0x0C), sintetizada do DB
             await _db.LogUserConnectAsync(gi.Id, userId, _cfg.ServerId, s.RemoteIp);
+            // Messenger (F9): grava a identidade do buddy (account+nick+IP). O login do Buddy é cifrado e não
+            // carrega o nick -> o Buddy resolve a conexão TCP por IP (messenger_session) p/ saber quem é, carregar
+            // a lista de amigos e anunciar presença. O nick é o nome do char ativo (id de rede do messenger).
+            await _db.UpsertMessengerSessionAsync(s.UserId, ch?.Name?.Length > 0 ? ch.Name : userId, s.RemoteIp);
             Log.Ok("login", "[{0}] '{1}' logado (char='{2}', gold={3}, cash={4}) — {5}/{6} online",
                 s.Slot, userId, gi.CharName, s.Gold, s.Cash, CurrentUsers, MaxUser);
         }
@@ -789,10 +809,12 @@ namespace RakionServer.World
                 LeaveField(s);
                 if (s.Authenticated)
                     Interlocked.Decrement(ref _currentUsers);
+                // Messenger (F9): a identidade do buddy é por IP -> ao sair, apaga a messenger_session p/ uma
+                // conexão futura do mesmo IP não ser resolvida como esta conta (e o amigo cair offline na presença).
+                if (s.UserId.Length > 0) await _db.DeleteMessengerSessionAsync(s.UserId);
                 Log.Info("world", "[{0}] sessao encerrada ('{1}') — {2}/{3} online",
                     s.Slot, s.UserId, CurrentUsers, MaxUser);
             }
-            await Task.CompletedTask;
         }
 
         // ---- broker -----------------------------------------------------------
