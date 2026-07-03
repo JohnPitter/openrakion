@@ -130,6 +130,31 @@ namespace RakionServer.World.Network
                     // real (Op_FieldLeaveGame) desconecta (DISC 0x50: guard InField&&FieldSecondary que o
                     // estado do solo nao satisfaz apos o stage). Tratamos aqui: reset + refresh da lista
                     // (1f/1e/36, os MESMOS frames capturados do original APOS o 0x44 = o "voltar pra lista").
+                    // MEMBER-LEAVE da SALA pré-partida (multiplayer): libera o próprio seat e avisa os demais com
+                    // 0x3a member-leave — sem isto o master mantém o card de quem saiu (fantasma pós-saída). Guard
+                    // Settled=true (só a sala pré-partida; ResetMatch zera ao começar o match -> NÃO toca o fluxo
+                    // pós-partida validado) + Count>1 (há quem notificar). Remoção inline (não LeaveField) p/ não
+                    // acionar a lógica de W.O. do abandono de stage.
+                    {
+                        var lf = _server.GetField(FieldId);
+                        var myRec = lf?.FindRec(this);
+                        if (lf != null && myRec != null && lf.Settled && lf.Count > 1)
+                        {
+                            int leftSeat = myRec.Slot;
+                            bool wasMaster = lf.MasterSlot == leftSeat;
+                            lf.Remove(this);                                   // libera o rec (State=0, Session=null)
+                            if (wasMaster)                                     // host saiu -> reatribui ao 1º ocupado
+                            {
+                                lf.MasterSlot = -1;
+                                foreach (var r in lf.Slots) if (r.Occupied) { lf.MasterSlot = r.Slot; break; }
+                            }
+                            byte[] memberLeave = { 0x3a, 0x00, (byte)leftSeat };
+                            lock (lf.Players) foreach (var m in lf.Players) if (m.Connected) m.SendLobby(memberLeave);
+                            FieldId = -1;
+                            Log.Ok("lobby", "[{0}] saiu da sala {1} seat {2} -> 0x3a member-leave a {3} restante(s){4}",
+                                Slot, lf.Id, leftSeat, lf.Count, wasMaster ? " (novo master seat " + lf.MasterSlot + ")" : "");
+                        }
+                    }
                     InField = true; FieldSecondary = true; SecondActive = true; Status = 2; // volta ao channel lobby (shop segue ok)
                     // RE confirmada (mitm_move_133859 l.460/461 == entrada l.19/20): a volta-à-lista re-manda
                     // os MESMOS 0x1f/0x1e/0x36 da entrada, sintetizados do estado — sem frame "clear" distinto.
