@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -90,10 +91,42 @@ namespace RakionServer.World
         /// dedicado; multi: reusa o field ja associado (FieldId). Marca State=2 (em jogo) p/ o
         /// motor rodar e seta os campos de seat do user (FUN_0040b7b0).
         /// </summary>
+        /// <summary>Se true, um cliente que entra no stage se JUNTA ao field de OUTRO humano já em jogo (em vez de
+        /// criar um field SOLO). É o multiplayer "por atalho" — sem game list/salas: o 1º entra no stage, o 2º cai
+        /// no MESMO field. Necessário p/ 2 clientes juntos (captura do blob da Cell + PvP real). Ambos devem estar
+        /// no MESMO mapa (criar sala com o mesmo mapa) senão dessincroniza.</summary>
+        public static bool AutoJoinSameField = false;   // desligado: o certo é game list + join (não atalho)
+
+        /// <summary>Acha um field EM JOGO (State==2) com outro humano jogando p/ o <paramref name="s"/> se juntar.</summary>
+        private Domain.Field? FindJoinableField(ClientSession s)
+        {
+            if (!AutoJoinSameField) return null;
+            lock (Fields)
+            {
+                foreach (var f in Fields)
+                {
+                    if (f.Id == s.FieldId || f.State != 2) continue;
+                    foreach (var r in f.Slots)
+                        if (r.Session != null && r.Session != s && !r.IsBot && r.Playing)
+                        {
+                            Log.Ok("field", "[{0}] JOIN automático no field {1} (host seat {2}) — multiplayer sem salas",
+                                s.Slot, f.Id, r.Slot);
+                            return f;
+                        }
+                }
+            }
+            return null;
+        }
+
         public Domain.Field EnsureFieldForSession(ClientSession s)
         {
-            Domain.Field f = GetField(s.FieldId)
+            // JOIN tem PRIORIDADE sobre o field-da-sala próprio: o cliente já teve FieldId setado ao criar a sala
+            // (GetOrCreateRoomField), então GetField pegaria o dele e nunca juntaria. FindJoinableField primeiro =
+            // 2º cliente cai no field do 1º (multiplayer sem game list).
+            Domain.Field f = FindJoinableField(s)
+                ?? GetField(s.FieldId)
                 ?? CreateField(s.CharName.Length > 0 ? s.CharName : $"field{s.Slot}", mapId: 0, mode: 0, capacity: 8, master: s);
+            if (f.Id != s.FieldId) s.FieldId = f.Id;   // re-vincula ao field juntado
             f.State = 2; // field+8 = 2 (em jogo)
             int seat = f.AssignSeat(s);
             if (seat >= 0) { s.FieldSeat = (byte)seat; s.FieldObjectIndex = (ushort)seat; }
@@ -243,6 +276,10 @@ namespace RakionServer.World
                     foreach (var f in snapshot)
                     {
                         if (f.State != 2) continue;   // solo E PvP — sem o clock o cliente solo nao manda input (trava no briefing)
+                        // 2+ HUMANOS = P2P: o CLIENTE (host) dirige o relógio 1583 e o manda direto ao outro
+                        // (captura do original: o 1583 é P2P 2301↔2302, NÃO servidor->cliente). O tick do servidor
+                        // conflitava com o do peer -> o 2º cliente ficava "fantasma". Só solo/bot usa o clock do server.
+                        if (f.HumanCount >= 2) continue;
                         foreach (var r in f.Slots)
                         {
                             var s = r.Session;
@@ -423,6 +460,14 @@ namespace RakionServer.World
                 _udpGame = new UdpGameplay(this, gamePort);
                 _udpGame.Start();
             }
+
+            // Log em arquivo para diagnóstico sem precisar copiar do console.
+            Log.EnableFileLog(Path.Combine(AppContext.BaseDirectory, "worldserver.log"));
+
+            // Trilha fina do mini-peer (categoria 'peer'): cada estado/frame do handshake de sessão dos bots.
+            // Liga o sink do slice RakionServer.Peer (I/O isolado) ao Log do servidor p/ o teste in-game cravar
+            // o ponto exato do stall. Sai como [DBG] [peer] (gateado por Log.DebugEnabled).
+            RakionServer.Peer.PeerTrace.Sink = line => Log.Ok("peer", "{0}", line);
 
             _ = Task.Run(() => AcceptLoopAsync(_cts.Token));
             _ = Task.Run(() => FieldEngineLoopAsync(_cts.Token)); // motor da partida por-field (FUN_00409940)
@@ -640,9 +685,12 @@ namespace RakionServer.World
             if (d == null) return false;
             // Gear (0-5) + materiais/consumiveis/cash (6,7,9-14, ex: Mithril 13001 type 13) têm ícone de
             // box e pintam normalmente. O crash do painel no Previous que motivava o filtro antigo (só
-            // type<=5) JÁ foi resolvido (acks 0x2c/0x2d fiéis ao original). Só o type 8 (transform) fica
-            // fora — não tem ícone de box no cliente GG-removido (renderiza invisível).
-            return d.Type != 8;
+            // type<=5) JÁ foi resolvido (acks 0x2c/0x2d fiéis ao original).
+            // EXPERIMENTO captura-de-Cell (2026-07-01): type 8 (cell/creature) LIBERADO no grid p/ o jogador
+            // arrastar a cell ao deck de creature e invocar no stage (captura do 0x307 real → HIT×N nativo).
+            // RISCO ACEITO no teste: o cliente GG-removido pode pintar a cell SEM ícone (invisível) e o botão
+            // "Previous" pode crashar o painel com type-8 no box. Reverter p/ `return d.Type != 8;` se instabilizar.
+            return true;
         }
 
         /// <summary>Item é um SET (type 10) — um BUNDLE de peças, não uma peça equipável direta.</summary>

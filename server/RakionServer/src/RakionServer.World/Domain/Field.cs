@@ -22,6 +22,15 @@ namespace RakionServer.World.Domain
         public byte Team => (byte)(Slot < 10 ? 0 : 1); // slots 0..9 = time0, 10..0x13 = time1
         public int Slot;                 // indice no array (0..0x13)
 
+        // ---- posição server-side (atualizada pelo relay do 0x30a do humano; lida pela IA do bot) ----
+        public float LastX, LastY, LastZ;
+        public float LastHeading;        // graus (do 0x30a) — direção que o humano OLHA; p/ o cone de acerto
+        public long LastPositionMs;      // timestamp da última atualização de posição
+
+        /// <summary>Velocidade estimada do alvo no plano XZ (coord/ms, suavizada por EMA) — derivada do delta
+        /// entre 0x30a consecutivos. A IA do bot usa p/ ANTECIPAR (liderar a mira/perseguição); zero = parado.</summary>
+        public float VelX, VelZ;
+
         /// <summary>Seat ocupado por um bot sintetico (nunca recebe frames; o servidor gera o comportamento).</summary>
         public bool IsBot => Bot != null;
 
@@ -61,6 +70,25 @@ namespace RakionServer.World.Domain
         public byte State;           // field+8: 0=livre, 1=fim-match, 2=em jogo
         public int SlotEnabled;      // mascara/contagem de slots habilitados
         public byte MapId;           // field+0x118
+        public ushort MapSlot;       // slot de nível (0x122..0x4ba) do 0x3b -> trailing u16 do entry 0x36 (this+0x3a8)
+        public string Password = ""; // senha da sala (0x3b, <9) — validada no join 0x38
+        public bool IsRoom;          // sala criada por host (0x3b) e publicável na game list; false p/ field de stage-solo
+
+        // ---- ENVOLTÓRIA DOS HUMANOS (chão VÁLIDO empírico): onde qualquer humano já pisou É chão. O clamp do bot
+        //   usa isto em vez de geometria chutada (que prendia o bot numa "parede invisível"). Expande no 0x30a.
+        private float _hullMinX = float.MaxValue, _hullMaxX = float.MinValue;
+        private float _hullMinZ = float.MaxValue, _hullMaxZ = float.MinValue;
+        public bool HasHumanHull => _hullMaxX >= _hullMinX;
+        public void ExpandHumanHull(float x, float z)
+        {
+            if (x < _hullMinX) _hullMinX = x; if (x > _hullMaxX) _hullMaxX = x;
+            if (z < _hullMinZ) _hullMinZ = z; if (z > _hullMaxZ) _hullMaxZ = z;
+        }
+        /// <summary>Caixa caminhável do bot = envoltória dos humanos + <paramref name="pad"/> de folga. Null até um
+        /// humano ter enviado posição (aí o BotTick cai no clamp fixo do mapa como fallback).</summary>
+        public Domain.WalkBounds? HumanHull(float pad) => HasHumanHull
+            ? new Domain.WalkBounds(_hullMinX - pad, _hullMaxX + pad, _hullMinZ - pad, _hullMaxZ + pad)
+            : (Domain.WalkBounds?)null;
         public byte MinLevel;        // field+0x114
         public byte MaxLevel;        // field+0x115
         public byte LeaderSlotA = 0xff; // field+0x122 (MVP/lider time A; 0xff = nenhum)
@@ -89,6 +117,7 @@ namespace RakionServer.World.Domain
         // ---- modo GOLEM/BOSS (objetivo): cada time tem um Master Golem com energia ----
         public ushort Golem0Hp = 100;   // energia do Master Golem do time 0 (stage-DB: "Master Golem has <%d%%> energy")
         public ushort Golem1Hp = 100;   // energia do Master Golem do time 1
+        public ushort GoldGolemHp = 100; // energia do golem DOURADO central (neutro) — gate da rota de objetivo do bot
         public bool ObjectiveDecided;   // ja houve vencedor por objetivo (Golem destruido)
 
         public bool Settled;            // resultado do match ja liquidado no DB (WorldServer.SettleMatch)
@@ -132,6 +161,48 @@ namespace RakionServer.World.Domain
 
         /// <summary>Player-record por slot/seat (0..0x13).</summary>
         public PlayerRec? RecAt(int seat) => (seat >= 0 && seat < Slots.Length) ? Slots[seat] : null;
+
+        /// <summary>Troca o ocupante do <paramref name="seat"/> para o OUTRO bloco de time (0..9 = time0/vermelho,
+        /// 10..0x13 = time1/azul) no primeiro slot livre. Devolve o novo seat, ou -1 se o outro bloco está cheio.
+        /// Espelha FUN_004075a0 (0x3e re-spawn/troca de assento) — usado na tela da sala.</summary>
+        public int SwitchTeamBlock(int seat)
+        {
+            var src = RecAt(seat);
+            if (src == null || src.State == 0) return -1;
+            int lo = seat < 10 ? 10 : 0;
+            int hi = seat < 10 ? Slots.Length : 10;
+            for (int i = lo; i < hi; i++)
+            {
+                var dst = Slots[i];
+                if (dst.State != 0 || dst.Session != null || dst.Bot != null) continue;
+                dst.Session = src.Session; dst.Bot = src.Bot; dst.State = src.State;
+                dst.WeaponState = src.WeaponState; dst.Dead = src.Dead; dst.Score = src.Score;
+                src.Session = null; src.Bot = null; src.State = 0; src.WeaponState = 1; src.Dead = false; src.Score = 0;
+                if (dst.Session != null) { dst.Session.FieldSeat = (byte)i; dst.Session.FieldObjectIndex = (ushort)i; }
+                if (MasterSlot == seat) MasterSlot = i;
+                return i;
+            }
+            return -1;
+        }
+
+        /// <summary>Aloca um seat balanceado: prefere o bloco de time com MENOS ocupantes (empate -> vermelho 0..9),
+        /// caindo p/ <see cref="AssignSeat"/> se o bloco preferido estiver cheio. Usado no JOIN de sala p/ o 2º
+        /// jogador cair no time vazio (1-1) — destrava o Ready sem depender do botão de troca.</summary>
+        public int AssignSeatBalanced(ClientSession s)
+        {
+            var existing = FindRec(s);
+            if (existing != null) return existing.Slot;
+            int red = 0, blue = 0;
+            foreach (var r in Slots) if (r.State != 0) { if (r.Slot < 10) red++; else blue++; }
+            int lo = blue < red ? 10 : 0, hi = blue < red ? Slots.Length : 10;
+            for (int i = lo; i < hi; i++)
+            {
+                if (Slots[i].State != 0 || Slots[i].Session != null || Slots[i].Bot != null) continue;
+                Slots[i].Session = s; Slots[i].State = 3; Slots[i].WeaponState = 1; Slots[i].Dead = false; Slots[i].Score = 0;
+                return i;
+            }
+            return AssignSeat(s); // bloco preferido cheio -> qualquer livre
+        }
 
         /// <summary>Aloca um seat livre para a sessao (FUN_0040b7b0). Devolve o seat ou -1.</summary>
         public int AssignSeat(ClientSession s)
@@ -204,9 +275,10 @@ namespace RakionServer.World.Domain
         }
 
         /// <summary>Aloca um BotPlayer novo (id efemero por field) e o coloca num seat. Devolve (bot,seat) ou null.</summary>
-        public (BotPlayer Bot, int Seat)? AddBot(string name, byte level, byte charClass, byte team)
+        public (BotPlayer Bot, int Seat)? AddBot(string name, byte level, byte charClass, byte team,
+                                                 BotDifficulty difficulty = BotDifficulty.Normal)
         {
-            var bot = new BotPlayer(_nextBotId, name, level, charClass, team);
+            var bot = new BotPlayer(_nextBotId, name, level, charClass, team, difficulty);
             int seat = AssignBotSeat(bot);
             if (seat < 0) return null;
             _nextBotId++;
@@ -418,7 +490,7 @@ namespace RakionServer.World.Domain
             Score0 = 0; Score1 = 0;
             // reset por ROUND (nao por match): cada round do Golem/Boss comeca com os Master Golens
             // cheios e o objetivo em aberto de novo.
-            Golem0Hp = 100; Golem1Hp = 100; ObjectiveDecided = false;
+            Golem0Hp = 100; Golem1Hp = 100; GoldGolemHp = 100; ObjectiveDecided = false;
             foreach (var r in Slots) if (r.Occupied) { r.Dead = false; if (r.State == 3) r.State = 4; r.Bot?.ResetForRound(); }
             RecomputeMvp();
             Log.Ok("field", "field {0} round {1} iniciado (dur={2}s mode={3})", Id, Round, RoundDurationSec, Mode);
@@ -433,7 +505,7 @@ namespace RakionServer.World.Domain
         {
             Round = 0; Wins0 = 0; Wins1 = 0; Score0 = 0; Score1 = 0;
             WinnerSide = 0; LastRoundWinner = 0; Warned30 = 0;
-            Golem0Hp = 100; Golem1Hp = 100; ObjectiveDecided = false;
+            Golem0Hp = 100; Golem1Hp = 100; GoldGolemHp = 100; ObjectiveDecided = false;
             Settled = false;
             foreach (var r in Slots) if (r.Occupied) r.Score = 0;
         }
@@ -519,6 +591,107 @@ namespace RakionServer.World.Domain
             }
         }
 
+        /// <summary>Alcance do golpe do humano no plano XZ (coord) p/ a arbitragem humano→bot. Aproximação do
+        /// alcance de melee (aim-vec do 0x30a ≈ 6.0); cone/raycast exato por arma = RE pendente (§11). 5.0: o bot
+        /// orbita a ~2.6 no melee, então o acerto conecta COLADO; 9 fazia o número aparecer "antes de hitar" (longe).</summary>
+        public const float HumanMeleeRange = 3.0f;
+
+        /// <summary>Throttle entre golpes do humano no MESMO bot (ms) — evita instakill por 0x311 repetidos.</summary>
+        private const long BotHitCooldownMs = 250;
+
+        /// <summary>Recuo (coord) do bot ao levar um golpe não-letal — reação VISÍVEL via 0x30a (sem o type-7).</summary>
+        private const float HitKnockbackDist = 2.4f;
+
+        /// <summary>Recuo (coord) maior no golpe LETAL — o bot "voa" para trás e congela (morte server-side).</summary>
+        private const float DeathKnockbackDist = 3.0f;
+
+        /// <summary>Duração do STAGGER (ms) ao apanhar — o bot trava o ataque/movimento e cambaleia. Maior que o
+        /// throttle (250) p/ encadear durante o combo do humano (stun-lock realista; recupera ao parar de bater).</summary>
+        private const long BotHitStaggerMs = 550;
+
+        /// <summary>
+        /// Arbitra um golpe do humano <paramref name="attackerSeat"/> (0x311) contra o BOT inimigo mais próximo
+        /// dentro do alcance — o bot não tem cliente p/ reportar a própria morte (combate cliente-autoritativo),
+        /// então o SERVIDOR detecta e aplica. Geometria = distância XZ ao alcance (cone/raycast exato = §11).
+        /// Aplica o dano (placeholder por <paramref name="actionId"/> até a RE de iteminfo/combo, §11); se o bot
+        /// zera HP, marca a morte (<see cref="OnPlayerDeath"/> credita o humano + placar/round) e devolve o seat
+        /// do bot morto p/ o chamador broadcastar o 0x4f. Devolve null se não houve morte (errou/sobreviveu/throttle).
+        /// </summary>
+        public int? ResolveBotHitByHuman(int attackerSeat, ushort actionId, out int hitBotSlot, byte cause = 0)
+        {
+            hitBotSlot = -1;
+            if (State != 2 || Phase == MatchPhase.Pre || Mode == 0)
+            {
+                Log.Ok("combat", "field {0}: golpe seat {1} IGNORADO (gate PvP: State={2} Phase={3} Mode={4})",
+                    Id, attackerSeat, State, Phase, Mode);
+                return null;   // só PvP em jogo
+            }
+            var a = RecAt(attackerSeat);
+            if (a == null || !a.Playing || a.IsBot || a.LastPositionMs == 0)
+            {
+                Log.Ok("combat", "field {0}: golpe seat {1} IGNORADO (atacante inválido: null={2} playing={3} isBot={4} posMs={5})",
+                    Id, attackerSeat, a == null, a?.Playing == true, a?.IsBot == true, a?.LastPositionMs ?? 0);
+                return null;
+            }
+
+            // Direção que o humano OLHA (do heading do 0x30a). Mesma convenção do EncodeActionBody (Yaw+180):
+            // o vetor "look" = ângulo (heading-180) → (lookX,lookZ) = (-sin, -cos). O acerto SÓ conta se o bot
+            // estiver no CONE à frente (senão o golpe foi pro lado/trás e o número não deve aparecer).
+            float hdg = a.LastHeading * (MathF.PI / 180f);
+            float lookX = -MathF.Sin(hdg), lookZ = -MathF.Cos(hdg);
+            const float ConeDotMin = 0.20f;   // ~cos(78°): golpe dentro de ±78° da mira
+
+            PlayerRec? best = null;       // melhor alvo DENTRO do alcance E do cone
+            PlayerRec? nearest = null;    // bot inimigo mais próximo (mesmo fora) — diagnóstico do "errou"
+            float bestD2 = HumanMeleeRange * HumanMeleeRange;
+            float nearestD2 = float.MaxValue;
+            float bestDot = -2f;
+            int enemyBots = 0;
+            foreach (var r in Slots)
+            {
+                if (!r.IsBot || r.Bot == null || r.Dead || r.Team == a.Team || !r.Playing) continue;
+                enemyBots++;
+                float dx = r.Bot.X - a.LastX, dz = r.Bot.Z - a.LastZ;
+                float d2 = dx * dx + dz * dz;
+                if (d2 < nearestD2) { nearestD2 = d2; nearest = r; }
+                float len = MathF.Sqrt(d2);
+                float dot = len > 0.01f ? (dx * lookX + dz * lookZ) / len : 1f;   // >0 = bot à frente da mira
+                if (d2 <= bestD2 && dot >= ConeDotMin) { bestD2 = d2; best = r; bestDot = dot; }
+                if (best == null && r == nearest) bestDot = dot;   // diagnóstico: dot do +perto p/ calibrar a convenção
+            }
+            if (best?.Bot == null)
+            {
+                Log.Ok("combat", "field {0}: golpe seat {1} ERROU — bots={2}, +perto seat {3} a {4:F1} (alc {5}, hdg {10:F0}°, dot {11:F2}, cone≥{12}); humano=({6:F1},{7:F1}) bot=({8:F1},{9:F1})",
+                    Id, attackerSeat, enemyBots, nearest?.Slot ?? -1, nearest != null ? MathF.Sqrt(nearestD2) : -1f,
+                    HumanMeleeRange, a.LastX, a.LastZ, nearest?.Bot?.X ?? 0f, nearest?.Bot?.Z ?? 0f, a.LastHeading, bestDot, ConeDotMin);
+                return null;
+            }
+
+            long now = Environment.TickCount64;
+            if (now - best.Bot.LastHitMs < BotHitCooldownMs)
+            {
+                Log.Ok("combat", "field {0}: golpe seat {1} no bot seat {2} THROTTLE ({3}ms<{4}ms)",
+                    Id, attackerSeat, best.Slot, now - best.Bot.LastHitMs, BotHitCooldownMs);
+                return null;
+            }
+            best.Bot.LastHitMs = now;
+            hitBotSlot = best.Slot;   // acerto confirmado (mesmo não-fatal) — a infra sinaliza o HIT×N à ponte
+            ushort dmg = MeleeDamageFor(actionId);
+            bool died = best.Bot.TakeDamage(dmg);
+            best.Bot.ApplyKnockback(a.LastX, a.LastZ, died ? DeathKnockbackDist : HitKnockbackDist);   // recuo visível (0x30a)
+            if (!died) best.Bot.Stagger(now, BotHitStaggerMs);   // cambaleia + interrompe o combo (reação de hit)
+            Log.Ok("combat", "field {0}: humano seat {1} ACERTOU bot seat {2} -{3} (HP {4}/{5}) dist={6:F1} action=0x{7:X4}{8}",
+                Id, attackerSeat, best.Slot, dmg, best.Bot.Hp, best.Bot.MaxHp, MathF.Sqrt(bestD2), actionId, died ? " -> MORREU" : "");
+            if (!died) return null;       // sobreviveu
+
+            OnPlayerDeath(best.Slot, attackerSeat, cause);
+            return best.Slot;
+        }
+
+        /// <summary>Dano de melee por actionId do 0x311 — PLACEHOLDER até a RE de arma/combo→dano (iteminfo, §11).
+        /// 40 ⇒ ~3 golpes p/ derrubar o bot de 100 de energia (balanceamento provisório).</summary>
+        private static ushort MeleeDamageFor(ushort actionId) => 40;
+
         /// <summary>Encerra o round atual: contabiliza wins, vai p/ fase RoundEnd (intermissao 15s).</summary>
         public void EndRound(byte winnerSide)
         {
@@ -554,6 +727,28 @@ namespace RakionServer.World.Domain
             Log.Ok("field", "field {0} Master Golem time{1} energia={2}%", Id, golemTeam, golemTeam == 0 ? Golem0Hp : Golem1Hp);
             if (Golem0Hp == 0) EndRoundObjective(1);       // golem do time0 destruido -> time1 vence o round
             else if (Golem1Hp == 0) EndRoundObjective(0);  // golem do time1 destruido -> time0 vence o round
+        }
+
+        /// <summary>Aplica dano ao golem DOURADO central (neutro) — gate da rota de objetivo do bot. Devolve
+        /// true ao zerar (derrotado); NÃO encerra round (o dourado é passo da rota, não o win-condition).</summary>
+        public bool DamageGoldGolem(ushort dmg)
+        {
+            if (GoldGolemHp == 0) return false;
+            GoldGolemHp = (ushort)Math.Max(0, GoldGolemHp - dmg);
+            if (GoldGolemHp != 0) return false;
+            Log.Ok("field", "field {0} golem DOURADO derrotado (rota de objetivo do bot)", Id);
+            return true;
+        }
+
+        /// <summary>Despacha o dano da rota de objetivo do bot ao golem-alvo: <paramref name="target"/>
+        /// 0/1 = Master Golem do time (via <see cref="DamageGolem"/>, que ao zerar dispara
+        /// <see cref="EndRoundObjective"/> = vitória), 2 = golem dourado neutro. Devolve true quando o
+        /// golem-alvo é derrotado neste golpe.</summary>
+        public bool DamageGolemTarget(int target, ushort dmg)
+        {
+            if (target == 2) return DamageGoldGolem(dmg);
+            DamageGolem(target, dmg);
+            return (target == 0 ? Golem0Hp : Golem1Hp) == 0;
         }
 
         /// <summary>

@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Text;
 using RakionServer.Common;
 
@@ -117,6 +119,43 @@ namespace RakionServer.World.Network
             w.WriteWord(0x36);
             w.WriteByte(0);                 // count = 0 (lista vazia no solo)
             w.WriteBytes(new byte[9]);      // padding do bloco de 12B (era lixo de stack)
+            return w.ToArray();
+        }
+
+        /// <summary>Game list 0x36 SINTETIZADA do worldserv (FUN_00422c90 monta [36 00][count][entradas];
+        /// cada entrada = [u16 fieldIndex][corpo do FUN_00405790]). Corpo: [0]flag/senha [1]playing(state==2)
+        /// [2]map(+0x118) [3]mode(+0x119) [4]minLvl(+0x111) [5]maxLvl(+0x112) [6](+0x113) [7](+0x2bc)
+        /// [8]maxRounds(+0x11a) [9]curPlayers(+0x116+0x117) [10]maxPlayers(+0x114+0x115) [11..16]host IP:port
+        /// [17..22]zeros [23..]nome\0 [fim]u16(+0x3a8=mapSlot). Validado in-game 2026-07-01 (renderizou
+        /// Number/[Mapa] Nome/Lv min~max/n/N byte-a-byte). Lista vazia = count=0 + pad (arma o Create).</summary>
+        public static byte[] GameList(IReadOnlyList<RoomListEntry> rooms)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x36);
+            w.WriteByte((byte)Math.Min(rooms.Count, 255));        // count @off2
+            foreach (var r in rooms)
+            {
+                w.WriteWord(r.FieldIndex);                        // [u16 fieldIndex] -> "Number" + echo no join 0x38
+                w.WriteByte((byte)(r.HasPassword ? 1 : 0));       // [0]  flag senha (cadeado)
+                w.WriteByte((byte)(r.Playing ? 1 : 0));           // [1]  playing -> "Status"
+                w.WriteByte(r.Map);                               // [2]  map -> nome do mapa (ex.: [Gravity])
+                w.WriteByte(r.Mode);                              // [3]  mode
+                w.WriteByte(r.MinLevel);                          // [4]  minLevel -> "Level" (min)
+                w.WriteByte(r.MaxLevel);                          // [5]  maxLevel -> "Level" (max)
+                w.WriteByte(0);                                   // [6]  (+0x113)
+                w.WriteByte(0);                                   // [7]  (+0x2bc)
+                w.WriteByte(r.MaxRounds);                         // [8]  maxRounds
+                w.WriteByte(r.CurPlayers);                        // [9]  curPlayers -> "n/N" (esq)
+                w.WriteByte(r.MaxPlayers);                        // [10] maxPlayers -> "n/N" (dir)
+                w.WriteUInt32(r.HostIp);                          // [11..14] host IP -> "Network"
+                w.WriteWord(r.HostPort);                          // [15..16] host port
+                w.WriteUInt32(0);                                 // [17..20] zeros
+                w.WriteWord(0);                                   // [21..22] zeros
+                foreach (char c in r.Name ?? "") w.WriteByte((byte)c); // [23..] nome -> "Game title"
+                w.WriteByte(0);                                   // NUL
+                w.WriteWord(r.MapSlot);                           // [fim] u16 (+0x3a8) = mapSlot
+            }
+            if (rooms.Count == 0) w.WriteBytes(new byte[9]);      // bloco vazio (= GameListEmpty; arma o Create)
             return w.ToArray();
         }
 

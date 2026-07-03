@@ -27,7 +27,8 @@ namespace RakionServer.World
         /// só ANTES da partida começar (não durante o round); o bot entra no time OPOSTO ao host (p/ o
         /// humano jogar contra ele). Devolve o resultado p/ o handler dar feedback.
         /// </summary>
-        public AddBotResult AddBotToField(Domain.Field f, ClientSession requester)
+        public AddBotResult AddBotToField(Domain.Field f, ClientSession requester,
+                                          BotDifficulty difficulty = BotDifficulty.Normal)
         {
             var hostRec = f.FindRec(requester);
             if (hostRec == null) return new AddBotResult(false, "voce nao esta na sala", -1, null);
@@ -39,15 +40,17 @@ namespace RakionServer.World
             byte cls = (byte)(requester.CharClass == 0 ? 1 : requester.CharClass);
             string name = NextBotName();
 
-            var added = f.AddBot(name, level, cls, botTeam);
+            var added = f.AddBot(name, level, cls, botTeam, difficulty);
             if (added == null) return new AddBotResult(false, "sala cheia", -1, null);
 
-            Log.Ok("bot", "[{0}] bot '{1}' (lvl {2} cls {3}) -> field {4} seat {5} time {6}",
-                requester.Slot, name, level, cls, f.Id, added.Value.Seat, added.Value.Bot.Team);
+            Log.Ok("bot", "[{0}] bot '{1}' (lvl {2} cls {3} dif {4}) -> field {5} seat {6} time {7}",
+                requester.Slot, name, level, cls, difficulty, f.Id, added.Value.Seat, added.Value.Bot.Team);
 
             // Faz o cliente do host renderizar o bot no slot da sala (frame de roster sintetizado).
             NotifyBotJoinedRoom(f, added.Value.Bot, added.Value.Seat, requester);
-            return new AddBotResult(true, $"{name} entrou (time {(added.Value.Bot.Team == 0 ? "vermelho" : "azul")})",
+            string difLabel = difficulty switch { BotDifficulty.Easy => "fácil", BotDifficulty.Hard => "difícil", _ => "normal" };
+            return new AddBotResult(true,
+                $"{name} entrou (time {(added.Value.Bot.Team == 0 ? "vermelho" : "azul")}, {difLabel})",
                 added.Value.Seat, added.Value.Bot);
         }
 

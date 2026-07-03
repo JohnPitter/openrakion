@@ -1,6 +1,7 @@
 using System;
 using System.Text;
 using RakionServer.Common;
+using RakionServer.World.Domain;
 
 namespace RakionServer.World.Network
 {
@@ -34,7 +35,9 @@ namespace RakionServer.World.Network
 
             bool isAdd = lower.StartsWith("/addbot") || lower == "/bot" || lower.StartsWith("/bot ");
             bool isRemove = lower.StartsWith("/removebot") || lower.StartsWith("/delbot") || lower.StartsWith("/clearbot");
-            if (!isAdd && !isRemove) return false;
+            bool isStatus = lower.StartsWith("/botstatus") || lower.StartsWith("/bots");
+            bool isDebug = lower.StartsWith("/botdebug") || lower.StartsWith("/botfix");
+            if (!isAdd && !isRemove && !isStatus && !isDebug) return false;
 
             var field = world.GetOrCreateRoomField(u);
             if (field == null) { BotChatFeedback(u, "crie uma sala primeiro"); return true; }
@@ -47,15 +50,54 @@ namespace RakionServer.World.Network
                 return true;
             }
 
+            if (isStatus)
+            {
+                var sb = new StringBuilder();
+                int n = 0;
+                foreach (var r in field.BotRecs())
+                {
+                    var b = r.Bot!;
+                    string gate = b.GateOpen ? "OPEN" : "closed";
+                    string hs = b.Peer?.HandshakeState.ToString() ?? "no-peer";
+                    string tgt = b.TargetSeat >= 0 ? $"#{b.TargetSeat}" : "none";
+                    sb.AppendLine($"{b.Name} s{r.Slot} [{b.Difficulty}] hp={b.Hp} pos=({b.X:F1},{b.Z:F1}) gate={gate} hs={hs} tgt={tgt}");
+                    n++;
+                }
+                BotChatFeedback(u, n > 0 ? $"{n} bot(s): {sb}" : "nenhum bot");
+                return true;
+            }
+
+            if (isDebug)
+            {
+                int forced = 0;
+                foreach (var r in field.BotRecs())
+                {
+                    var b = r.Bot!;
+                    if (!b.GateOpen)
+                    {
+                        b.ForceGateOpen();
+                        forced++;
+                    }
+                }
+                BotChatFeedback(u, forced > 0 ? $"{forced} gate(s) forçado(s)" : "todos gates já abertos");
+                return true;
+            }
+
             int count = Math.Clamp(ParseCount(lower), 1, MaxBotsPerCommand);
+            var diff = BotProfile.Parse(lower);     // "/addbot hard 2", "/addbot facil" -> dificuldade
+            ushort npcCls = BotMovement.ParseNpcClass(lower);   // classe NPC opcional ("/addbot mago|arqueiro|golem")
             int ok = 0; string lastMsg = "";
             for (int i = 0; i < count; i++)
             {
-                var r = world.AddBotToField(field, u);
-                if (r.Ok) { ok++; lastMsg = r.Message; }
+                var r = world.AddBotToField(field, u, diff);
+                if (r.Ok)
+                {
+                    if (npcCls != 0 && r.Bot != null) r.Bot.NpcClassId = npcCls;   // override da classe do avatar
+                    ok++; lastMsg = r.Message;
+                }
                 else { BotChatFeedback(u, ok > 0 ? $"{ok} bot(s); {r.Message}" : r.Message); return true; }
             }
-            BotChatFeedback(u, ok == 1 ? lastMsg : $"{ok} bots adicionados");
+            BotChatFeedback(u, ok == 1 ? lastMsg : $"{ok} bots adicionados ({diff})");
             return true;
         }
 
@@ -68,12 +110,12 @@ namespace RakionServer.World.Network
             return sb.ToString();
         }
 
-        /// <summary>"/addbot 3" -> 3; sem número -> 1.</summary>
+        /// <summary>Primeiro token numérico do comando ("/addbot 3", "/addbot hard 2" -> 3/2); sem número -> 1.</summary>
         private static int ParseCount(string lower)
         {
-            int sp = lower.IndexOf(' ');
-            if (sp < 0 || sp + 1 >= lower.Length) return 1;
-            return int.TryParse(lower.Substring(sp + 1).Trim(), out int n) && n > 0 ? n : 1;
+            foreach (var tok in lower.Split(' ', '\t'))
+                if (int.TryParse(tok.Trim(), out int n) && n > 0) return n;
+            return 1;
         }
 
         /// <summary>

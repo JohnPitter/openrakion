@@ -43,120 +43,155 @@ namespace RakionServer.World
         }
 
         /// <summary>
-        /// "Entrou/carregou no STAGE" 0x45 ao host: o STAGE não tem frame de spawn próprio — o cliente
-        /// spawna o jogador a partir do roster que JÁ tem (0x38) ao receber este sinal. RE FUN_00407c70
-        /// @0x407d44: broadcast de 4 bytes [45 00 00 seat] (FUN_004061f0) + seta o slot p/ state 3 ("loaded").
-        /// O servidor original ainda dispara 0x54 ("begin") quando todos carregam; aqui o relógio do .NET
-        /// (StartGameClock) já conduz a partida, então só o 0x45 por bot.
-        /// </summary>
-        private void NotifyBotEnteredStage(Domain.Field f, int seat)
-        {
-            var host = f.Master;
-            if (host == null) return;
-            using var w = new PacketWriter();
-            w.WriteWord(0x45);          // +0 opcode (u16)
-            w.WriteByte(0);             // +2 pad
-            w.WriteByte((byte)seat);    // +3 seat
-            try { host.SendLobby(w.ToArray()); } catch { }
-            Log.Ok("bot", "stage: 0x45 entered seat {0} -> host [{1}]", seat, host.Slot);
-        }
-
-        /// <summary>
-        /// "Begin" 0x54 ao host (RE FUN_004066c0 @0x4066c0): [54 00], 2 bytes, mandado a cada slot state 3/4
-        /// QUANDO todos carregaram. O 0x45 só marca "loaded"; é o 0x54 que faz o cliente transicionar os
-        /// avatares remotos (o bot) PARA o stage. Sem ele o bot não entra mesmo com o 0x45.
-        /// </summary>
-        private void NotifyStageBegin(ClientSession host)
-        {
-            using var w = new PacketWriter();
-            w.WriteWord(0x54);
-            try { host.SendLobby(w.ToArray()); } catch { }
-            Log.Ok("bot", "stage: 0x54 begin -> host [{0}]", host.Slot);
-        }
-
-        /// <summary>
-        /// AddPlayer 0x4c — é o que REALMENTE spawna o avatar 3D do bot no stage (RE engine.dll: a vtable
-        /// IScavengerWorldNet manda SendFieldGameAddPlayer/Reply → CSessionState::AddRemotePlayer; o 0x45/0x54
-        /// só montam "carregou/begin"). Frame reliable do world: [4c 00][u8 seat][u16 blobLen][blob], onde o
-        /// blob é o MESMO registro FUN_0040b7f0 do slot da sala (0x38) — por isso o bot já aparecia no slot,
-        /// só faltava reusar o blob no opcode de campo. (Agente flagou 0x4b/0x4c como candidatos; 0x4c traz o
-        /// seat explícito, casando com AddRemotePlayer(slot,blobLen,blob).)
+        /// Spawn 3D do bot no STAGE — emite o 0x4b AddPlayer (canal FIELD via SendMessage; NÃO o LOBBY) que
+        /// INSTANCIA o avatar no host. O corpo (decode byte-a-byte da captura MITM) é sintetizado pelo codec
+        /// <see cref="BotMovement.BuildStageAddPlayer"/>; aqui só se traduz estado→chamada e serializa.
         /// </summary>
         private void NotifyBotAddPlayer(Domain.Field f, int seat, BotPlayer bot)
         {
             var host = f.Master;
             if (host == null) return;
-            // Agente narrowou pra 0x4b OU 0x4c (o exato precisa de captura). Mando OS DOIS: o cliente
-            // processa o certo e ignora o outro (são exclusivos — só um chama AddRemotePlayer). 0x4b leva o
-            // slot NO BLOB (+0x1478); 0x4c leva o slot no header. Hedge p/ fechar o spawn sem a captura.
-            byte[] blob4b = BuildBotPlayerRecord(bot, (byte)seat);
-            byte[] blob4c = BuildBotPlayerRecord(bot, 0);
-            using (var w = new PacketWriter())          // 0x4b: [4b 00][u16 blobLen][blob]
-            {
-                w.WriteWord(0x4b); w.WriteWord(blob4b.Length); w.WriteBytes(blob4b);
-                try { host.SendLobby(w.ToArray()); } catch { }
-            }
-            using (var w = new PacketWriter())          // 0x4c: [4c 00][u8 seat][u16 blobLen][blob]
-            {
-                w.WriteWord(0x4c); w.WriteByte((byte)seat); w.WriteWord(blob4c.Length); w.WriteBytes(blob4c);
-                try { host.SendLobby(w.ToArray()); } catch { }
-            }
-            Log.Ok("bot", "stage: 0x4b+0x4c AddPlayer seat {0} ({1}B blob) -> host [{2}]", seat, blob4b.Length, host.Slot);
+            try { host.SendMessage(0x4b, BotMovement.BuildStageAddPlayer(bot, seat)); } catch { return; }
+            Log.Ok("bot", "stage: 0x4b AddPlayer seat {0} (cls {1} lvl {2}) -> host [{3}]",
+                seat, bot.CharClass, bot.Level, host.Slot);
         }
 
         /// <summary>
-        /// Spawna os bots no STAGE no MOMENTO do load do host (0x4b → StartGameClock): emite o 0x45 de cada
-        /// bot (carregou) e então o 0x54 (begin, todos carregaram). Timing junto do load do host — o cliente
-        /// processa o 0x45 dos remotos durante a própria entrada — + o begin que faltava (o BotTick só emitia
-        /// o 0x45, ~60ms depois e sem 0x54, e o avatar nunca entrava). Gated por ClientFramesEnabled.
+        /// Spawna os bots no STAGE no load do host (chamado do StartGameClock/0x4b). Sequência CRAVADA da
+        /// captura MITM real (stage_capture.txt): o servidor manda 0x48 FieldGameStart UMA vez e, em seguida,
+        /// 0x4b AddPlayer por bot — no canal FIELD. O 0x4b é o que INSTANCIA o avatar 3D do bot no mundo do
+        /// host. Gated por ClientFramesEnabled.
         /// </summary>
         public void SpawnFieldBotsInStage(Domain.Field f)
         {
             if (!BotMovement.ClientFramesEnabled || f.BotCount == 0) return;
             var host = f.Master;
             if (host == null) return;
+            try { host.SendMessage(0x48, BotMovement.BuildFieldGameStart()); } catch { }   // round-load (1x)
             foreach (var rec in f.BotRecs())
             {
                 var bot = rec.Bot!;
-                bot.SpawnedThisRound = true;            // marca p/ o BotTick não re-emitir
+                bot.SpawnedThisRound = true;
+                bot.SpawnedMs = Environment.TickCount64;
+                bot.InitStagePosition();
                 rec.State = 4; rec.Dead = false; bot.Dead = false;
-                NotifyBotEnteredStage(f, rec.Slot);     // 0x45 [45 00 00 seat] (carregou)
-                NotifyBotAddPlayer(f, rec.Slot, bot);   // 0x4c AddPlayer = SPAWN do avatar 3D (a peça que faltava)
+                bot.SpawnGen++;                                  // nova entidade na engine -> a ponte invalida o cache e re-acha (anti-crash)
+                if (BotMovement.UseNpcAvatar)
+                {
+                    SpawnBotAsNpc(f, rec, bot);                  // 0x307 NPC (descartado: classes auto-vivas não registram)
+                }
+                else
+                {
+                    NotifyBotAddPlayer(f, rec.Slot, bot);        // 0x45 fantasma CPlayer (RENDERIZA) — movido pela ponte de injeção
+                    EnsureBotPeerConnected(f, rec, bot);
+                }
             }
-            NotifyStageBegin(host);                     // 0x54 [54 00] = todos carregaram → entra no stage
         }
 
         /// <summary>Header do 0x38 (8B) + registro do jogador. Veja o disassembly em joinasm.out.txt.</summary>
-        private static byte[] BuildRoomMemberJoin(BotPlayer bot, int seat)
+        private static byte[] BuildRoomMemberJoin(BotPlayer bot, int seat) =>
+            BuildMemberJoin(bot.Name, (byte)bot.CharClass, (byte)bot.Level, BotUserId(seat), seat);
+
+        /// <summary>Userid do ocupante no frame (bot = faixa alta 0xB000+seat; humano = usergameinfo.id).</summary>
+        private static ushort RecUid(Domain.PlayerRec rec) =>
+            rec.Bot != null ? BotUserId(rec.Slot) : (ushort)(rec.Session?.GameInfoId ?? 0);
+
+        /// <summary>Registro de jogador (FUN_0040b7f0) de QUALQUER ocupante (host/humano/bot).</summary>
+        private static byte[] RecordFor(Domain.PlayerRec rec) =>
+            rec.Bot != null
+                ? BuildPlayerRecord(rec.Bot.Name, (byte)rec.Bot.CharClass, (byte)rec.Bot.Level)
+                : BuildPlayerRecord(rec.Session?.CharName ?? "", (byte)(rec.Session?.CharClass ?? 0),
+                                    (byte)(rec.Session?.CharLevel ?? 1), 0, rec.Session?.UdpEndpoint);   // endereço P2P do peer
+
+        /// <summary>
+        /// 0x37 = estado COMPLETO da sala p/ o JOINER (worldserv FUN_00406f40 @0x407280..0x407360). É o frame
+        /// que TRANSICIONA o cliente do game-list p/ a tela da sala (RED/BLUE). Enviado SÓ ao joiner (LOBBY).
+        /// Header 16B + nome\0 + senha\0 + desc\0 + roster (20 slots: [state]; se ocupado += [uid u16][team]
+        /// [registro FUN_0040b7f0]).
+        /// </summary>
+        internal static byte[] BuildRoomState(Domain.Field f)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x37);                          // 0..1 opcode
+            w.WriteWord((ushort)f.Id);                  // 2..3 *(u16)this (id do field)
+            w.WriteByte(f.State);                       // 4    field state (this+8)
+            w.WriteByte((byte)(f.MasterSlot & 0xff));   // 5    host slot (this+0x121)
+            w.WriteByte(f.MapId);                       // 6    map (this+0x118)
+            w.WriteByte(f.Mode);                        // 7    mode (this+0x119)
+            w.WriteByte(f.MinLevel);                    // 8    minLevel (this+0x111)
+            w.WriteByte(f.MaxLevel);                    // 9    maxLevel (this+0x112)
+            w.WriteByte(0);                             // 10   (this+0x113)
+            w.WriteByte(f.Round);                       // 11   (this+0x2bc)
+            w.WriteByte(f.MaxRounds);                   // 12   maxRounds (this+0x11a)
+            w.WriteWord(f.MapSlot);                     // 13..14 mapSlot (this+0x11c)
+            w.WriteByte(f.FragLimit);                   // 15   fragLimit (this+0x11e)
+            w.WriteCString(f.Name);                     // nome\0  (this+0x16)
+            w.WriteCString(f.Password);                 // senha\0 (this+0x3f)
+            w.WriteCString("");                         // desc\0  (this+0x48) vazio
+            foreach (var rec in f.Slots)                // roster: 20 slots (this+0x126, stride 0x14)
+            {
+                bool occ = rec.State != 0 && rec.State != 5 && (rec.Session != null || rec.Bot != null);
+                // wire state: 1 = na sala (não-ready), 5 = locked, 0 = vazio. O interno 3/4 vira 1 (worldserv).
+                byte wire = rec.State == 0 ? (byte)0 : rec.State == 5 ? (byte)5 : (byte)1;
+                w.WriteByte(wire);                      // [state] sempre
+                if (occ)
+                {
+                    w.WriteWord(RecUid(rec));           // [uid u16]  (this+0x124)
+                    w.WriteByte(rec.Team);              // [team/flag] (this+0x127)
+                    w.WriteBytes(RecordFor(rec));       // [registro] (FUN_0040b7f0)
+                }
+            }
+            return w.ToArray();
+        }
+
+        /// <summary>
+        /// Member-join 0x38 GENÉRICO (bot OU humano — golden source): [38 00][status][slot][state][uid:u16]
+        /// [slotFlag][registro], len = registroLen + 8. Usado tanto pelo roster do bot quanto pelo join
+        /// (0x38) de um humano que entra na sala (ver <see cref="TryJoinRoom"/>).
+        /// </summary>
+        internal static byte[] BuildMemberJoin(string name, byte charClass, byte level, ushort uid, int seat,
+                                               byte state = 1, byte slotFlag = 0, System.Net.IPEndPoint? peerEp = null)
         {
             using var w = new PacketWriter();
             w.WriteWord(0x38);              // +0  opcode (u16)
             w.WriteByte(0);                 // +2  status = 0 (sucesso)
             w.WriteByte((byte)seat);        // +3  slot (0..0x13; 10..0x13 = BLUE)
-            w.WriteByte(3);                 // +4  state (3 = ocupado/ready, como AssignBotSeat)
-            w.WriteWord(BotUserId(seat));   // +5  userid (u16 LE)
-            w.WriteByte(0);                 // +7  slotFlag (game+0x127; 0 = não travado)
-            w.WriteBytes(BuildBotPlayerRecord(bot));   // +8  registro (FUN_0040b7f0)
+            w.WriteByte(state);             // +4  state (1 = na sala; Ready exige player+0x1ac ∈ {1,2})
+            w.WriteWord(uid);               // +5  userid (u16 LE)
+            w.WriteByte(slotFlag);          // +7  slotFlag (game+0x127; 0 = não travado)
+            w.WriteBytes(BuildPlayerRecord(name, charClass, level, 0, peerEp));   // +8  registro (FUN_0040b7f0) — c/ endereço P2P do peer
             return w.ToArray();
         }
 
+        /// <summary>Endereço UDP do peer no registro (P2P DIRETO) — 2 pares [IP u32][port u16] em NETWORK ORDER
+        /// (big-endian): externo + loopback. CRAVADO da captura do original (o 0x38/0x37 carregam
+        /// `ac110001 d631 7f000001 08fd(=2301)`). Sem isto o cliente não sabe onde está o outro e fica "fantasma"
+        /// (o movimento 0x30a é P2P direto 2301↔2302, NÃO passa pelo servidor). null = zeros (bot/sem endpoint).</summary>
+        private static void WritePeerAddr(PacketWriter w, System.Net.IPEndPoint? ep)
+        {
+            if (ep == null) { w.WriteBytes(new byte[12]); return; }
+            byte[] ip = ep.Address.MapToIPv4().GetAddressBytes();       // 4B network order
+            byte hi = (byte)(ep.Port >> 8), lo = (byte)ep.Port;         // porta big-endian (network order)
+            w.WriteBytes(ip); w.WriteByte(hi); w.WriteByte(lo);         // IP1:port1 = endereço do peer
+            w.WriteBytes(new byte[] { 127, 0, 0, 1 }); w.WriteByte(hi); w.WriteByte(lo);  // IP2:port2 = loopback (mesma máquina)
+        }
+
         /// <summary>
-        /// Registro de jogador — espelho EXATO de FUN_0040b7f0: [nome\0][tag\0] e, a seguir, a cauda fixa de
-        /// 0x49 bytes. Os 2 blocos de equip (38B @+0x1da4 e 19B @+0x1dca) vão ZERADOS — o bot não tem gear, e
-        /// item id 0 = slot de equip vazio (modelo base), evitando id inválido que crasharia o render 3D do slot.
+        /// Registro de jogador — espelho EXATO de FUN_0040b7f0: [nome\0][tag\0][slotInBlob] + [ENDEREÇO UDP do peer]
+        /// + class/level + cauda de equip (zerada). O ENDEREÇO (4 campos +0x1450/+0x1458/+0x1454/+0x145a) É o que o
+        /// original preenche p/ o P2P direto (ver <see cref="WritePeerAddr"/>); eu zerava e por isso os 2 humanos
+        /// nunca se achavam. Os 2 blocos de equip vão ZERADOS (sem gear; item id 0 = slot vazio, evita AV no render).
         /// </summary>
-        private static byte[] BuildBotPlayerRecord(BotPlayer bot, byte slotInBlob = 0)
+        internal static byte[] BuildPlayerRecord(string name, byte charClass, byte level, byte slotInBlob = 0,
+                                                 System.Net.IPEndPoint? peerEp = null)
         {
             using var w = new PacketWriter();
-            w.WriteBytes(Encoding.ASCII.GetBytes(bot.Name)); w.WriteByte(0);  // nome + NUL  (+0x14a8)
+            w.WriteBytes(Encoding.ASCII.GetBytes(name ?? "")); w.WriteByte(0);  // nome + NUL  (+0x14a8)
             w.WriteByte(0);                     // tag/clan vazio + NUL        (+0x14c2)
             w.WriteByte(slotInBlob);            // +0x1478 (slot p/ o 0x4b; 0 no 0x38/0x4c, onde o slot vai no header)
-            w.WriteUInt32(0);                   // +0x1450 (id/score)
-            w.WriteWord(0);                     // +0x1458
-            w.WriteUInt32(0);                   // +0x1454
-            w.WriteWord(0);                     // +0x145a
-            w.WriteByte((byte)bot.CharClass);   // +0x1530  CLASSE
-            w.WriteByte((byte)bot.Level);       // +0x1531  LEVEL
+            WritePeerAddr(w, peerEp);           // +0x1450 [IP1 u32][port1 u16] +0x1454 [IP2 u32][port2 u16] = ENDEREÇO P2P
+            w.WriteByte(charClass);             // +0x1530  CLASSE
+            w.WriteByte(level);                 // +0x1531  LEVEL
             w.WriteByte(0);                     // +0x1473
             w.WriteBytes(new byte[0x26]);       // +0x1da4  equip/aparência (38B) — sem gear
             w.WriteBytes(new byte[0x13]);       // +0x1dca  equip2/stat (19B) — sem gear

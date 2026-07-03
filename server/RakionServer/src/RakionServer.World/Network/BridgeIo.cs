@@ -1,0 +1,77 @@
+using System.IO;
+using System.Text;
+using System.Threading;
+
+namespace RakionServer.World.Network
+{
+    /// <summary>
+    /// Contrato de arquivos com a ponte de injeção no cliente (<c>bot_render.dll</c>). A ponte roda DENTRO do
+    /// <c>rakion.exe</c> e fura o muro do peer por dentro: lê <c>bot_pos.txt</c> (posições dos bots →
+    /// <c>SetPlacement</c> nativo = o bot ANDA na tela) e <c>bot_hit.txt</c> (sinal de acerto humano→bot →
+    /// <c>AddHitCount</c> nativo = o contador HIT×N aparece). Infra pura de I/O; o domínio entrega os números.
+    /// Mecanismo PROVADO in-game (ver memória bot-movimento-injecao-cliente-real): loopback de arquivo a ~20Hz.
+    /// </summary>
+    internal static class BridgeIo
+    {
+        private const string Dir = @"C:\temp";
+        private static readonly string BotPosPath = Path.Combine(Dir, "bot_pos.txt");
+        private static readonly string HitPath = Path.Combine(Dir, "bot_hit.txt");
+        private static int _hitSeq;
+
+        static BridgeIo()
+        {
+            try { Directory.CreateDirectory(Dir); } catch { /* ponte é best-effort; servidor segue sem ela */ }
+        }
+
+        /// <summary>Escreve as posições dos bots vivos (uma linha <c>"slot x z yaw"</c> por bot). A ponte mapeia
+        /// o slot ao <c>CPlayer</c> pelo heap e reposiciona. Coords de mundo da engine — o MESMO espaço do 0x30a
+        /// do humano que a IA persegue, então a saída da IA (<c>bot.X/Z</c>) vai direto.</summary>
+        internal static void WriteBotPositions(StringBuilder lines)
+        {
+            try { File.WriteAllText(BotPosPath, lines.ToString()); } catch { }
+        }
+
+        /// <summary>Sinaliza um acerto humano→bot. A ponte vê o contador subir (borda) e chama <c>AddHitCount</c>
+        /// no humano local → o contador HIT×N nativo aparece. Formato <c>"seq slot"</c>: <paramref name="botSlot"/>
+        /// identifica o bot e o seq monotônico evita re-disparo do mesmo acerto.</summary>
+        internal static void SignalHit(int botSlot)
+        {
+            try { File.WriteAllText(HitPath, $"{Interlocked.Increment(ref _hitSeq)} {botSlot}\n"); } catch { }
+        }
+
+        private static readonly string BotNpcPath = Path.Combine(Dir, "bot_npc.txt");
+
+        /// <summary>FASE 1b/2 (colisão real via DLL): publica o(s) bot(s) vivo(s) como linha
+        /// <c>"owner sub classId x y z heading"</c> p/ a <c>bot_reliable.dll</c> criar/mover um NPC de COLISÃO real
+        /// no cliente (AddRemoteGeneralNpc @engine.dll 0x361097a0). Resolve parede+hit de raiz (o fake type-7 só
+        /// aproxima). Coords de mundo (mesmo espaço do 0x30a). Ver createnpc-via-dll-rakion-final.</summary>
+        internal static void WriteBotNpc(StringBuilder lines)
+        {
+            try { File.WriteAllText(BotNpcPath, lines.ToString()); } catch { }
+        }
+
+        private static readonly string BotSlotsPath = Path.Combine(Dir, "bot_slots.txt");
+
+        /// <summary>Publica os SLOTS dos bots vivos de um stage p/ o abridor do canal reliable
+        /// (<c>bot_reliable.dll</c>): a DLL seta <c>player[slot]+0x1d8=1</c> na memória do cliente do humano →
+        /// o create-com-colisão que o servidor emite passa pelo dispatcher reliable (que dropa slots com
+        /// +0x1d8==0) → o bot vira <c>CEntity</c> real acertável → o contador HIT×N dispara pelo código nativo.
+        /// NÃO dirige posição (sem clipping). Só engine.dll (offsets estáveis). Ver docs/pvp-stage-re.md §12.
+        /// <paramref name="slots"/> = slots separados por espaço ("" quando não há bot). CAVEAT: arquivo global —
+        /// multi-stage simultâneo com slots colidentes é fora de escopo do teste (1 humano/1 field).</summary>
+        internal static void WriteBotSlots(string slots)
+        {
+            try { File.WriteAllText(BotSlotsPath, slots); } catch { }
+        }
+
+        private static readonly string CapturePath = Path.Combine(Dir, "cell_capture.txt");
+
+        /// <summary>CAPTURA do 0x307 CreateNpc REAL (invocação de Cell por um cliente humano): grava o hex completo
+        /// do datagrama + origem/tamanho num arquivo (append). É o golden source pra sintetizar o blob do bot
+        /// byte-a-byte — resolve o tail ambíguo, os valores de estado e o drift de versão da RE estática.</summary>
+        internal static void CaptureCreateNpc(int len, string from, string hex)
+        {
+            try { File.AppendAllText(CapturePath, $"0x307 len={len} from={from} hex={hex}\n"); } catch { }
+        }
+    }
+}

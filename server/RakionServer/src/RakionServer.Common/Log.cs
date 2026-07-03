@@ -1,17 +1,29 @@
 using System;
+using System.IO;
 
 namespace RakionServer.Common
 {
     /// <summary>
-    /// Logger simples com timestamp e categoria, em cores no console.
+    /// Logger simples com timestamp e categoria, em cores no console + arquivo.
     /// Toda jornada/feature dos servidores loga por aqui (debug e visualizacao).
     /// </summary>
     public static class Log
     {
         private static readonly object _gate = new object();
+        private static StreamWriter? _file;
 
         /// <summary>Quando false, mensagens Debug() sao suprimidas.</summary>
         public static bool DebugEnabled { get; set; } = true;
+
+        /// <summary>Ativa log em arquivo. Chamar uma vez no boot.</summary>
+        public static void EnableFileLog(string path)
+        {
+            lock (_gate)
+            {
+                _file?.Dispose();
+                _file = new StreamWriter(path, append: true) { AutoFlush = true };
+            }
+        }
 
         // Overloads de 1 argumento (mensagem ja formatada) — categoria generica "op".
         public static void Info(string message) => Write(ConsoleColor.Gray, "INFO", "op", message, EmptyArgs);
@@ -50,6 +62,7 @@ namespace RakionServer.Common
                 Console.ForegroundColor = color;
                 Console.WriteLine(line);
                 Console.ForegroundColor = prev;
+                try { _file?.WriteLine(line); } catch { }
             }
         }
     }

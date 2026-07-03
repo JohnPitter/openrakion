@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using RakionServer.Common;
+using RakionServer.Peer;
 
 namespace RakionServer.World.Network
 {
@@ -29,11 +30,23 @@ namespace RakionServer.World.Network
         private const byte GameplayFeedbackOp1 = 0x83;
         private const byte DefaultGameplayState = 0x0a;
 
+        /// <summary>Base das portas UDP dedicadas dos bots (<c>WorldServer.BotPeer._botPortSeq</c> = 41000; bots
+        /// bindam 41001+). No loopback bot e humano compartilham 127.0.0.1; usar isto p/ NÃO deixar um pacote de
+        /// bot resolver como cliente real e sobrescrever o <c>UdpEndpoint</c> do humano.</summary>
+        private const int BotUdpPortBase = 41000;
+
         private readonly WorldServer _world;
         private readonly int _port;
+        public int Port => _port;
         private Socket? _sock;
         private CancellationTokenSource? _cts;
         private readonly byte[] _rx = new byte[2048];
+
+        // Endpoint-handshake 0x319: throttle de re-registro por (endpoint do humano, slot do bot). O cliente
+        // grava o endpoint UMA vez, mas re-enviamos a cada RegisterTtlMs p/ robustez (re-spawn/round/re-join).
+        private const long RegisterTtlMs = 1500;
+        private readonly System.Collections.Generic.Dictionary<string, long> _botEpReg = new();
+        private uint _regSeq;
 
         public UdpGameplay(WorldServer world, int port)
         {
@@ -107,12 +120,136 @@ namespace RakionServer.World.Network
             catch (Exception ex) { Log.Debug("udp", "sendraw {0}: {1}", to, ex.Message); }
         }
 
+        /// <summary>
+        /// RELAY de pacote do bot para todos os jogadores humanos de um field. Espelha o comportamento
+        /// do worldserv original (FUN_00411760): recebe o pacote sintetizado pelo bot e reenvia aos
+        /// endpoints UDP de todos os humanos no mesmo field. O host recebe do socket do servidor (mesma
+        /// fonte que pacotes relayed de outros jogadores), então o engine processa como gameplay válido.
+        /// </summary>
+        public void RelayToField(int fieldId, byte[] pkt)
+        {
+            if (_sock == null) return;
+            int n = 0;
+            foreach (var sess in _world.Sessions)
+            {
+                if (sess.UdpEndpoint == null || (!sess.InField && sess.Status != 3)) continue; // Status 3 = stage (UserStatus.InField): robusto a relog que zera o bool InField
+                if (sess.FieldId != fieldId) continue;
+                try { _sock.SendTo(pkt, sess.UdpEndpoint); n++; } catch { }
+            }
+            if (n > 0) Log.Debug("udp", "relay bot -> {0} humano(s) field {1} ({2}B)", n, fieldId, pkt.Length);
+        }
+
+        /// <summary>
+        /// Relay de pacote de fonte desconhecida (bot) para TODOS os humanos em fields com bots.
+        /// O bot envia 0x30a do seu socket dedicado; o servidor recebe e repassa ao host pelo socket
+        /// do servidor — o mesmo canal que o relay original do worldserv.
+        /// </summary>
+        private void RelayToAllFields(byte[] pkt, IPEndPoint from)
+        {
+            if (_sock == null) return;
+            // slot do bot = srcSlot do header (offset 6) dos 0x30a/0x030f — usado p/ registrar o endpoint.
+            byte botSlot = pkt.Length > 6 ? pkt[6] : (byte)0xff;
+            int n = 0;
+            foreach (var sess in _world.Sessions)
+            {
+                if (sess.UdpEndpoint == null || (!sess.InField && sess.Status != 3)) continue; // Status 3 = stage (UserStatus.InField): robusto a relog que zera o bool InField
+                if (sess.UdpEndpoint.Equals(from)) continue;   // não ecoa ao sender
+                var f = _world.GetField(sess.FieldId);
+                if (f == null || f.BotCount == 0) continue;    // só fields com bots
+                // Registra o endpoint do bot (0x319) no cliente ANTES do 0x30a: faz o cliente gravar o socket do
+                // servidor como endpoint do slot do bot, destravando o gate de movimento (IsValidUDP_ForPlayer).
+                if (botSlot != 0xff) EnsureBotEndpointRegistered(sess.UdpEndpoint, botSlot);
+                try { _sock.SendTo(pkt, sess.UdpEndpoint); n++; } catch { }
+            }
+            if (n > 0) Log.Ok("udp", "RELAY bot -> {0} humano(s) ({1}B)", n, pkt.Length);
+            else Log.Debug("udp", "RELAY bot: 0 humanos em fields com bots ({0}B)", pkt.Length);
+        }
+
+        /// <summary>
+        /// Relay dos datagramas do AVATAR NPC do bot (0x307/0x30b) aos humanos em fields com bots. Igual ao
+        /// <see cref="RelayToAllFields"/>, mas SEM o handshake 0x319 (o NPC não é jogador — não há filtro de
+        /// endpoint por-player a destravar; a entidade é endereçada por owner*9+sub na tabela do host).
+        /// </summary>
+        private void RelayNpcToFields(byte[] pkt, IPEndPoint from)
+        {
+            if (_sock == null) return;
+            int n = 0;
+            foreach (var sess in _world.Sessions)
+            {
+                if (sess.UdpEndpoint == null || (!sess.InField && sess.Status != 3)) continue; // Status 3 = stage (UserStatus.InField): robusto a relog que zera o bool InField
+                if (sess.UdpEndpoint.Equals(from)) continue;   // não ecoa ao sender
+                var f = _world.GetField(sess.FieldId);
+                if (f == null) continue;   // relaya NPC (0x307/0x30b) a TODOS no field — a Cell de um humano tem de
+                //   aparecer pros outros mesmo SEM bot (era bug: exigia BotCount>0). Necessário p/ a captura do blob.
+                try { _sock.SendTo(pkt, sess.UdpEndpoint); n++; } catch { }
+            }
+            if (n > 0) Log.Ok("udp", "RELAY NPC -> {0} humano(s) ({1}B)", n, pkt.Length);
+            else Log.Debug("udp", "RELAY NPC: 0 humanos no field ({0}B)", pkt.Length);
+        }
+
+        /// <summary>
+        /// Garante (com throttle) que o cliente <paramref name="humanEp"/> tem o endpoint do servidor gravado como
+        /// o do <paramref name="slot"/> do bot, via o handshake 0x319 (<see cref="BotMovement.BuildPeerRegister"/>).
+        /// Enviado do _sock — a MESMA origem que relaya os 0x30a — para que o (IP,porta) gravado bata no check de
+        /// movimento. Re-envia a cada <see cref="RegisterTtlMs"/> (robustez a re-spawn/round).
+        /// </summary>
+        private void EnsureBotEndpointRegistered(IPEndPoint humanEp, byte slot)
+        {
+            if (_sock == null) return;
+            string key = humanEp + "|" + slot;
+            long now = Environment.TickCount64;
+            if (_botEpReg.TryGetValue(key, out long last) && now - last < RegisterTtlMs) return;
+            _botEpReg[key] = now;
+            try { _sock.SendTo(BotMovement.BuildPeerRegister(slot, _regSeq++), humanEp); }
+            catch (Exception ex) { Log.Debug("udp", "0x319 reg {0} slot {1}: {2}", humanEp, slot, ex.Message); return; }
+            Log.Ok("udp", "0x319 endpoint-register bot slot {0} -> {1} (destrava movimento)", slot, humanEp);
+        }
+
+        /// <summary>Relay HUMANO->HUMANO: manda o pacote de gameplay (0x30a/0x30f/reliable) do <paramref name="sender"/>
+        /// aos OUTROS humanos do MESMO field, registrando (0x319) o endpoint do servidor como peer do sender em cada
+        /// receptor (senão o 0x30a relayado não passa em IsValidUDP_ForPlayer). Do _sock do servidor — mesma origem do
+        /// register. 2 clientes na mesma máquina: cada um vê o movimento do outro.</summary>
+        private void RelayHumanToOthers(byte[] pkt, ClientSession sender, Domain.Field? field)
+        {
+            if (_sock == null || field == null) return;
+            byte seat = sender.FieldSeat;
+            if (seat >= 0x14) return;
+            int n = 0;
+            foreach (var s in _world.Sessions)
+            {
+                if (s == sender || s.UdpEndpoint == null || s.FieldId != field.Id) continue;
+                if (!s.InField && s.Status != 3) continue;
+                EnsureBotEndpointRegistered(s.UdpEndpoint, seat);   // server = peer[seat] no receptor -> passa o filtro
+                try { _sock.SendTo(pkt, s.UdpEndpoint); n++; } catch { }
+            }
+            if (n > 0) Log.Debug("udp", "RELAY humano seat {0} -> {1} outro(s) ({2}B)", seat, n, pkt.Length);
+        }
+
         /// <summary>Resolve a sessao remetente de um pacote UDP (por endpoint exato, senao por IP).</summary>
         private ClientSession? ResolveSender(IPEndPoint from)
         {
             foreach (var s in _world.Sessions)
                 if (s.UdpEndpoint != null && s.UdpEndpoint.Equals(from)) return s;
             return _world.GetSessionByIp(from.Address.ToString());
+        }
+
+        /// <summary>Resolve a sessao de um PING de handshake UDP. O ping manda slot=0 FIXO -> GetSession(0) daria o
+        /// host p/ TODOS os clientes (2 na mesma maquina colidem). Resolve por: (1) endpoint ja aprendido; (2) a
+        /// sessao que ainda ESPERA endpoint (UdpEndpoint==null) — prefere a de GameInfoId==key (id ecoado no ping),
+        /// senao a 1a conectada+ativa sem endpoint; (3) fallback GetSession(slot)/IP.</summary>
+        private ClientSession? ResolveUdpHandshake(IPEndPoint from, ushort slot, uint key)
+        {
+            foreach (var s in _world.Sessions)
+                if (s.UdpEndpoint != null && s.UdpEndpoint.Equals(from)) return s;   // ja aprendido (pings seguintes)
+            ClientSession? waiting = null;
+            foreach (var s in _world.Sessions)
+            {
+                if (!s.Connected || !s.SlotActive || s.UdpEndpoint != null) continue;
+                if (key != 0 && (uint)s.GameInfoId == key) return s;                 // match forte: id de sessao ecoado
+                waiting ??= s;                                                       // 1a sessao esperando endpoint
+            }
+            if (waiting != null) return waiting;
+            return _world.GetSession(slot) ?? _world.GetSessionByIp(from.Address.ToString());  // solo/legado
         }
 
         private void Process(IPEndPoint from, byte[] pkt)
@@ -159,6 +296,139 @@ namespace RakionServer.World.Network
             // ACK 0x030d do cliente (7B): consome.
             if (pkt.Length >= 2 && pkt[0] == 0x0d && pkt[1] == 0x03) return;
 
+            // LOCKSTEP de connect-de-sessão da engine (0x0304 janela-de-token / 0x0305 eco / 0x0319 ack). RE
+            // peer_registration_re (captura byte-a-byte): o gate de APLICAÇÃO do 0x30a de um peer no host SÓ abre
+            // após este handshake reliable com aquele peer — o bot faz transporte (0x0201)+spawn (0x4b) mas não o
+            // lockstep, então o host nunca entra em "networked com o bot". O bot não tem cliente: o servidor ECOA,
+            // no lugar do bot, o 0x0305 p/ cada 0x0304 do host (bytes idênticos, opcode 0x04->0x05 — captura
+            // l.55/56). LOG diagnóstico de TODO o lockstep p/ o teste in-game revelar o fluxo real do host.
+            if (pkt.Length >= 2 && pkt[1] == 0x03 && (pkt[0] == 0x04 || pkt[0] == 0x05 || pkt[0] == 0x19))
+            {
+                var ls = ResolveSender(from);
+                var lf = ls != null ? _world.GetField(ls.FieldId) : null;
+                int bots = lf?.BotCount ?? 0;
+                Log.Ok("udp", "LOCKSTEP 0x03{0:X2} {1}B de {2} (seat={3} bots={4}) {5}", pkt[0], pkt.Length, from,
+                    ls?.Slot ?? -1, bots, Convert.ToHexString(pkt[..System.Math.Min(16, pkt.Length)]));
+                if (bots > 0 && pkt[0] == 0x04)
+                {
+                    byte[] lsEcho = (byte[])pkt.Clone(); lsEcho[0] = 0x05;   // 0x0304 -> 0x0305, mesmo token (captura)
+                    try { _sock!.SendTo(lsEcho, from); Log.Ok("udp", "  -> eco 0x0305 (no lugar do bot) ao host {0}", from); } catch { }
+                }
+                return;
+            }
+
+            // AVATAR NPC do bot (0x307 CreateNpc / 0x30b move), RELIABLE (0x83xx) OU unreliable (0x03xx): SEMPRE
+            // do bot -> relay ao host. Não passa pela desambiguação por slot do bloco abaixo (o 1º byte do corpo
+            // é owner/A, não um player slot) nem pelo 0x319 (o NPC tem chave própria na tabela do host).
+            // FIX 2026-07-01: o create do bot (e o da Cell real) vai RELIABLE (0x8307). Sem casar pkt[1]==0x83
+            // aqui, ele NÃO batia neste bloco nem em IsReliableFrame -> caía no ping-path (~l.420) e era consumido
+            // como ping falso (slot = bytes[5..6] = 0x0A00 = 2560) -> NUNCA relayado -> Golem nunca renderizava.
+            if (pkt.Length >= 2 && (pkt[1] == 0x03 || pkt[1] == 0x83) && (pkt[0] == 0x07 || pkt[0] == 0x0b))
+            {
+                // CAPTURA de CreateNpc só de CLIENTE real (porta < base de bot) — golden p/ o blob; nunca o do bot.
+                if (pkt[0] == 0x07 && from.Port < BotUdpPortBase)
+                {
+                    string hex = Convert.ToHexString(pkt);
+                    Log.Ok("udp", "CAPTURE-CELL 0x{0:X2}07 {1}B de {2}: {3}", pkt[1], pkt.Length, from, hex);
+                    BridgeIo.CaptureCreateNpc(pkt.Length, from.ToString(), hex);
+                }
+                else Log.Ok("udp", "RELAY NPC bot 0x{0:X2}{1:X2} {2}B de {3}", pkt[1], pkt[0], pkt.Length, from);
+                RelayNpcToFields(pkt, from);
+                return;
+            }
+
+            // NETCODE da SESSÃO P2P da engine + 0x30a/0x030f gameplay.
+            if (WireFrames.IsReliableFrame(pkt) ||
+                (pkt.Length >= 2 && pkt[1] == 0x03 && (pkt[0] == 0x0a || pkt[0] == 0x0f)))
+            {
+                ushort mt = pkt.Length >= 2 ? (ushort)(pkt[0] | (pkt[1] << 8)) : (ushort)0;
+                Log.Ok("udp", "GAMEPLAY RX {0}B type=0x{1:X4} de {2} data={3}", pkt.Length, mt, from, Convert.ToHexString(pkt[..Math.Min(32, pkt.Length)]));
+                var sender = ResolveSender(from);
+                var sf = sender != null ? _world.GetField(sender.FieldId) : null;
+                // LOOPBACK FIX: bot e humano são AMBOS 127.0.0.1, então ResolveSender (fallback por IP) atribui os
+                // pacotes do BOT ao humano. Desambigua pelo srcSlot do datagrama (offset 6): se o dono é um BOT no
+                // field, é o pacote do BOT (a relayar), mesmo que o IP tenha resolvido o humano.
+                byte srcSlot = pkt.Length > 6 ? pkt[6] : (byte)0xff;
+                bool isBotPacket = sf != null && srcSlot != 0xff && sf.RecAt(srcSlot)?.IsBot == true;
+                if (sender != null && !isBotPacket)
+                {
+                    // 0x30a do humano: extrai posição. Datagrama 26B = [u16 msg][u32 seq][u8 slot][corpo 19B];
+                    // corpo: dt@7, actState@9, e a POSIÇÃO x/y/z (packed *0.01) em 11/13/15 — NÃO em 7/9/11.
+                    if (pkt[0] == 0x0a && pkt.Length >= 17 && sf != null)
+                    {
+                        var rec = sf.FindRec(sender);
+                        if (rec != null && !rec.IsBot)
+                        {
+                            const float scale = 0.01f;
+                            float nx = BinaryPrimitives.ReadInt16LittleEndian(pkt.AsSpan(11)) * scale;
+                            float ny = BinaryPrimitives.ReadInt16LittleEndian(pkt.AsSpan(13)) * scale;
+                            float nz = BinaryPrimitives.ReadInt16LittleEndian(pkt.AsSpan(15)) * scale;
+                            long nowMs = Environment.TickCount64;
+                            // velocidade do alvo (coord/ms, EMA p/ amortecer ruído do 0x30a a 10 Hz) — antecipação da IA
+                            if (rec.LastPositionMs != 0)
+                            {
+                                float dt = nowMs - rec.LastPositionMs;
+                                if (dt > 0f && dt < 500f)
+                                {
+                                    rec.VelX = 0.5f * rec.VelX + 0.5f * (nx - rec.LastX) / dt;
+                                    rec.VelZ = 0.5f * rec.VelZ + 0.5f * (nz - rec.LastZ) / dt;
+                                }
+                            }
+                            rec.LastX = nx; rec.LastY = ny; rec.LastZ = nz;
+                            if (pkt.Length >= 19) rec.LastHeading = BinaryPrimitives.ReadInt16LittleEndian(pkt.AsSpan(17)); // +0a do corpo = heading (graus)
+                            rec.LastPositionMs = nowMs;
+                            sf.ExpandHumanHull(nx, nz);   // chão VÁLIDO empírico p/ o clamp do bot (onde o humano pisou)
+                        }
+                    }
+                    // RELAY HUMANO->HUMANO (2 clientes): o 0x30a/0x30f/reliable do humano vai aos OUTROS humanos do
+                    // MESMO field. Registra o endpoint do servidor como peer do sender no receptor (0x319) p/ passar
+                    // no IsValidUDP_ForPlayer. Sem isto o 2º humano fica "fantasma" (só se vê). O avatar é criado pelo
+                    // spawn mútuo 0x4b (SpawnStageForHumans); aqui só o movimento.
+                    RelayHumanToOthers(pkt, sender, sf);
+                    return;
+                }
+                // Pacote do BOT (srcSlot=bot) OU fonte realmente desconhecida -> RELAY aos humanos no field
+                // (do _sock do servidor — mesma origem que o 0x319 registra, p/ passar no IsValidUDP_ForPlayer).
+                Log.Ok("udp", "RELAY bot 0x{0:X2}{1:X2} {2}B srcSlot={3} de {4}", pkt[0], pkt[1], pkt.Length, srcSlot, from);
+                RelayToAllFields(pkt, from);
+                return;
+            }
+
+            // 0x0311 ATAQUE (10B): [u16 0x0311][u32 seq][u8 srcSlot][u8 sub][u16 actionId]. O dono é o srcSlot
+            // (offset 6) — NÃO o IP (no loopback bot e humano colidem em 127.0.0.1). Dois casos:
+            //  - srcSlot = BOT: é o ataque do BOT -> RELAY aos humanos (o cliente do alvo prevê o próprio hit/morte,
+            //    modelo cliente-autoritativo). NÃO arbitrar, senão o bot se auto-mata (bug do loopback).
+            //  - srcSlot = HUMANO: o servidor ARBITRA o hit nos BOTS inimigos (o bot não tem cliente p/ reportar a
+            //    própria morte) via Field.ResolveBotHitByHuman e, na morte, broadcasta o 0x4f sintetizado.
+            if (pkt.Length >= 10 && pkt[0] == 0x11 && pkt[1] == 0x03)
+            {
+                var attacker = ResolveSender(from);
+                var f = attacker != null ? _world.GetField(attacker.FieldId) : null;
+                byte srcSlot = pkt[6];
+                if (f != null && f.RecAt(srcSlot)?.IsBot == true)
+                {
+                    Log.Ok("udp", "RELAY golpe do bot 0x0311 srcSlot={0} de {1}", srcSlot, from);
+                    RelayToAllFields(pkt, from);   // ataque do BOT -> alvo prevê própria morte; não arbitrar
+                    return;
+                }
+                var arec = f != null ? f.FindRec(attacker!) : null;
+                if (f != null && arec != null && !arec.IsBot && f.BotCount > 0)
+                {
+                    ushort actionId = BinaryPrimitives.ReadUInt16LittleEndian(pkt.AsSpan(8));
+                    Log.Ok("udp", "golpe 0x0311 do humano seat {0} (field {1} bots {2}) action=0x{3:X4}", arec.Slot, f.Id, f.BotCount, actionId);
+                    int? killed = f.ResolveBotHitByHuman(arec.Slot, actionId, out int hitBotSlot);
+                    if (hitBotSlot >= 0) BridgeIo.SignalHit(hitBotSlot);   // ponte: dispara o contador HIT×N nativo no cliente
+                    if (killed is int botSeat)
+                        f.BroadcastField(0x4f, new byte[] { (byte)botSeat, 0, (byte)arec.Slot, f.Score0, f.Score1 });
+                }
+                else if (f != null)
+                {
+                    Log.Ok("udp", "golpe 0x0311 srcSlot={0} NÃO arbitrado (arec={1} isBot={2} bots={3})",
+                        srcSlot, arec?.Slot ?? -1, arec?.IsBot == true, f.BotCount);
+                }
+                return;
+            }
+
             // ACAO DE CAMPO (combate/objetos): markers 0x0401(0104 destroy/ataque), 0x0203, 0x0305,
             // 0x0304. O world original (FUN_00411760) PROCESSA + BROADCASTA aos OUTROS membros do field
             // via SendData_Unreliable. FUN_00426b30 confirma: o broadcast EXCLUI o proprio sender
@@ -178,12 +448,14 @@ namespace RakionServer.World.Network
                 int n = 0;
                 foreach (var sess in _world.Sessions)
                 {
-                    if (!sess.InField || sess.UdpEndpoint == null) continue;
+                    if (sess.UdpEndpoint == null || (!sess.InField && sess.Status != 3)) continue; // Status 3 = stage (UserStatus.InField): robusto a relog que zera o bool InField
                     if (sess == sender) continue;                       // FUN_00426b30: exclui o proprio sender
                     if (sess.UdpEndpoint.Equals(from)) continue;        // fallback de exclusao por endpoint
                     if (senderField >= 0 && sess.FieldId != senderField) continue; // so peers do mesmo field
                     try { _sock!.SendTo(pkt, sess.UdpEndpoint); n++; } catch { }
                 }
+                // O melee do humano chega por 0x0311 (confirmado no log: 0 pacotes 0x0401), arbitrado lá;
+                // este bloco só RELAYA a ação de campo aos outros peers (sem arbitrar = sem caminho duplo).
                 Log.Debug("udp", "acao de campo 0x{0:X2}{1:X2} relay p/ {2} outro(s) do field {3} (exclui sender)",
                     pkt[1], pkt[0], n, senderField);
                 return;
@@ -192,19 +464,28 @@ namespace RakionServer.World.Network
             // Formato REAL (capturado): [u16 type=0x0202][u8 counter][u16 pad][BODY...].
             // BODY (offset 5): [u16 slot][u32 key][...][u32 echoData @ body+0xc = pkt+17].
             // (FUN_00425d80: *body=slot, *(body+1)=key==user+0x1464; echo data = body[0xc].)
-            if (pkt.Length < 21) { Log.Debug("udp", "pkt curto {0}B", pkt.Length); return; }
+            // >= 23: o handler lê echoData em [19..22] (ReadUInt32 @19). Frames reliable curtos (21-22B) caíam aqui
+            // e estouravam IndexOutOfRange no AsSpan(19) — input externo nunca pode lançar (CLAUDE.md).
+            if (pkt.Length < 23) { Log.Debug("udp", "pkt curto {0}B", pkt.Length); return; }
             ushort slot = BinaryPrimitives.ReadUInt16LittleEndian(pkt.AsSpan(5));
-            // O 0x0C replayado fixa slot 0 -> o cliente manda slot 0 sempre. Resolve pelo slot;
-            // se nao casar com a sessao TCP real (slot incremental), cai pro IP do remetente.
-            var s = _world.GetSession(slot) ?? _world.GetSessionByIp(from.Address.ToString());
+            uint key = BinaryPrimitives.ReadUInt32LittleEndian(pkt.AsSpan(7));
+            // 2 CLIENTES NA MESMA MAQUINA: o cliente manda slot=0 FIXO (o 0x0C fixa slot 0), entao GetSession(0)
+            // daria o HOST p/ os DOIS -> o host ficava com o endpoint do ultimo ping e o 2o cliente nunca recebia
+            // endpoint (udp=-). O cliente JA resolve o conflito de PORTA sozinho (retry no bind, engine.dll
+            // 0x360ff826) -> cada um tem porta UNICA. Resolve o ping pela sessao que ainda ESPERA endpoint.
+            var s = ResolveUdpHandshake(from, slot, key);
             if (s == null) { Log.Debug("udp", "[{0}] UDP sem sessao (slot off5 nem IP {1})", slot, from.Address); return; } // UDP 0
             if (!s.Connected || !s.SlotActive) return;                                       // UDP 1/2 (status+slot ativo; NAO exige InField)
-            uint key = BinaryPrimitives.ReadUInt32LittleEndian(pkt.AsSpan(7));
             if (s.UdpKey != 0 && key != s.UdpKey) { Log.Debug("udp", "[{0}] UDP key mismatch (got {1:X8} exp {2:X8})", slot, key, s.UdpKey); return; } // UDP 4
+            if (s.UdpEndpoint == null) Log.Ok("udp", "[{0}] handshake UDP: endpoint {1} (key={2:X8} gameId={3})", s.Slot, from, key, s.GameInfoId);
 
             // Registra o endpoint UDP e dispara (1x) a msg TCP 0x10 que destrava a entrada no
             // campo (capturada do world ORIGINAL via MITM). Substitui o "msg5" que era errado.
-            s.NotifyUdpReady(from);  // registra endpoint UDP (FUN_0040ab90)
+            // LOOPBACK FIX (2026-07-01): um ping vindo de uma porta de BOT (41xxx) resolvia à sessão do humano
+            // por IP (GetSessionByIp em 127.0.0.1) e SOBRESCREVIA o UdpEndpoint dele com a porta do bot — daí o
+            // relay pulava o humano em `UdpEndpoint.Equals(from)` (achava que ele era o sender) e o create/move
+            // do bot NUNCA chegava. Só registra endpoint de porta de cliente real (< base de porta de bot).
+            if (from.Port < BotUdpPortBase) s.NotifyUdpReady(from);  // registra endpoint UDP (FUN_0040ab90)
             // echoData = ULTIMOS 4 bytes do ping (offset 19-22), nao offset 17. O world ecoa esse
             // valor de volta (confirmado na captura: echo data == ping[19:23]).
             uint echoData = BinaryPrimitives.ReadUInt32LittleEndian(pkt.AsSpan(19));
