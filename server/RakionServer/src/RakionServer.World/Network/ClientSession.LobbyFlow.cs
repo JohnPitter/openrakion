@@ -228,10 +228,8 @@ namespace RakionServer.World.Network
                     Status = 3;            // estado de CAMPO (Op_FieldUseItem exige Status==3; o 0x44/0x3A revertem p/ 2)
                     StartGameClock();
                     PaintQuickslot();      // re-registra as poções no campo — hipótese: o cliente zera o contador ao entrar no stage
-                    // SPAWN no stage (0x4b): broadcast+echo do entrante (host 2×, joiner 1× = captura). O echo do
-                    // PRÓPRIO 0x4b registra o cliente como jogador local autoritativo — sem ele ninguém assume o
-                    // clock P2P 1583 e o peer vira "modo observação". Clock do servidor gateado p/ 2 humanos (só
-                    // solo/bot dirige server-side); o peer é renderizado pelo reliable P2P 0x0304.
+                    // SPAWN no stage (0x4b): spawn MÚTUO humano↔humano (cada um vê o avatar do outro). O "modo
+                    // observação" do 2º humano NÃO está aqui — ver SpawnStageForHumans (é estado de mundo P2P 0x0304).
                     { var stf = _server.GetField(FieldId); if (stf != null) _server.SpawnStageForHumans(stf, this); }
                     Log.Ok("lobby", "[{0}] 0x4b (spawn) -> STAGE (Status=3, poções re-enviadas); relogio iniciado (udp={1})", Slot, UdpEndpoint?.ToString() ?? "-");
                     return true;
@@ -381,7 +379,14 @@ namespace RakionServer.World.Network
         /// </summary>
         public void SendLoginResponse()
         {
-            var list = (LoginCharList ?? new CharList()) with { SessionHandle = _invHandle };
+            // Handle de sessão do PEER (@9-10 do 0x0C) ÚNICO por conexão: o cliente o ecoa no connect P2P e na
+            // abertura do canal reliable. Fixo, os 2 humanos colidiam e o 2º virava observador — deriva do Slot
+            // (único por sessão conectada) mantendo o low-byte 0x2E conhecido-bom.
+            var list = (LoginCharList ?? new CharList()) with
+            {
+                SessionHandle = _invHandle,
+                SessionPeerHandle = (ushort)(0x042E + (Slot << 8)),
+            };
             byte[] f0c = LoginCharListWriter.Build(list);
             SendEncryptedFrame(f0c);
             byte[] f0d = new byte[1332]; f0d[0] = 0x0d; f0d[3] = 0x01;   // 0x0D = tabela zerada (sintetizada)

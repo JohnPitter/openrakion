@@ -29,11 +29,13 @@ namespace RakionServer.World
             return f;
         }
 
-        /// <summary>Spawn MÚTUO de humanos no STAGE: quando um humano entra no stage, cada OUTRO humano já no stage
-        /// (Status=InField) recebe o 0x4b AddPlayer do seat do novo, e o novo recebe o 0x4b de cada um deles. Análogo
-        /// a <see cref="SpawnFieldBotsInStage"/>, mas humano↔humano — sem isto cada cliente só vê a si mesmo
-        /// ("fantasma"). O movimento (0x30a) é relayado à parte (UdpGameplay). NOTA: o "modo observação" do 2º humano
-        /// tem causa DOWNSTREAM (abertura do canal reliable P2P / role=ff), não neste 0x4b — ver memória do sistema de salas.</summary>
+        /// <summary>Spawn MÚTUO de humanos no STAGE: cada humano já no stage recebe o 0x4b AddPlayer do seat do novo e
+        /// vice-versa, p/ um ver o avatar do outro como REMOTO (<see cref="BotMovement.BuildStageAddPlayer"/>, byte0=seat
+        /// 0-19). O movimento (0x30a) é relayado à parte (UdpGameplay). NOTA: o "modo observação" do 2º humano NÃO está
+        /// neste 0x4b — o probe de sessão prova que o joiner registra o PRÓPRIO player local (AddPlayer slot=seat, call
+        /// 0x361037e2) independentemente do eco, e ecoar o blob de spawn do cliente CRASHA o cliente (formato de
+        /// recebimento [seat][blobLen][blob] ≠ o upload [0x41][00][blob]). Causa provável = o joiner não recebe o estado
+        /// de mundo do host (golem/objetivo) pelo canal reliable P2P 0x0304. Ver docs/pvp-stage-re.md §10.</summary>
         public void SpawnStageForHumans(Domain.Field f, ClientSession joiner)
         {
             if (f == null || joiner.FieldSeat >= 0x14) return;

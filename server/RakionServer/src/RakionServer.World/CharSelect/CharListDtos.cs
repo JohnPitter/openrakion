@@ -39,6 +39,10 @@ namespace RakionServer.World.CharSelect
         public uint Cash { get; init; }                // @60 do 0x0C (cash / EX points)
         public ushort PowerLevelPoint { get; init; }
         public byte[] SessionHandle { get; init; } = new byte[4];
+        // @9-10 do header: handle de sessão do PEER — o cliente o ecoa no connect P2P (0x0201) e na abertura do
+        // canal reliable (role=0xff). Precisa ser ÚNICO por sessão: dois clientes com o mesmo valor colidem e o
+        // canal reliable não abre (2º humano vira observador). 0x042E = default legado (1 cliente); ver SpawnStageForHumans.
+        public ushort SessionPeerHandle { get; init; } = 0x042E;
         public IReadOnlyList<CharSummary> Chars { get; init; } = Array.Empty<CharSummary>();
     }
 }

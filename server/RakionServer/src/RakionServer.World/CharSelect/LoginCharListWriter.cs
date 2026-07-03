@@ -44,9 +44,10 @@ namespace RakionServer.World.CharSelect
         {
             buf[0] = 0x0c;
             buf[3] = 0x01;                                                  // result = sucesso
-            // @7-8 = userid (u16); @9-10 = valor de sessão (1-char, do original). Zerar isto trava o char-select.
+            // @7-8 = userid (u16); @9-10 = handle de sessão do PEER que o cliente ecoa no connect P2P + na abertura
+            // do canal reliable (role=0xff). ÚNICO por sessão — colisão faz o 2º humano virar observador. Zerar trava o char-select.
             BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(7), (ushort)list.UserId);
-            buf[9] = 0x2e; buf[10] = 0x04;
+            BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(9), list.SessionPeerHandle);
             if (list.SessionHandle is { Length: >= 4 })
                 Array.Copy(list.SessionHandle, 0, buf, 13, 4);             // @13 session handle
             WriteString(buf, 41, list.AccountName, AccountNameMax);        // @41 account name (campo fixo)
