@@ -43,11 +43,12 @@ Comparação-ouro byte-a-byte contra `orig_capture2` (S>C ao joiner) cravou **do
   `0x38`). Usar 88B no roster alonga o slot e desalinha os seguintes = fantasma. Fix: `rosterForm` no
   `BuildPlayerRecord` (observer-fix do 0x38 preservado). Ver [[room-state-0x37-master-offset]].
 
-## Gap ADICIONAL identificado (não patchado — precisa validar junto)
-O handler de **sair da sala** (`ClientSession.LobbyFlow` `case 0x3A`) reseta só a própria sessão: **não
-libera o seat** do membro no field nem faz broadcast `0x3a` de member-leave aos demais → o master mantém
-o card de quem saiu (fantasma pós-saída). `LeaveField` já existe mas não é chamado aqui, e não emite o
-`0x3a`. NÃO corrigido às cegas: o `case 0x3A` é dual-purpose (sair da sala **e** voltar ao lobby pós-partida,
-este validado in-game). Fix seguro = liberar seat + broadcast `[3a 00][seat]` aos membros restantes SÓ no
-caminho de sala pré-partida — a validar junto com o fix do header (se o header já fizer o client 2 mandar o
-opcode certo de leave, este gap some sozinho; se o card persistir após a saída, é aqui).
+## Gap ADICIONAL — PATCHADO server-side (`cab3dfd`, pendente validação)
+O handler de **sair da sala** (`ClientSession.LobbyFlow` `case 0x3A`) resetava só a própria sessão: **não
+liberava o seat** do membro no field nem avisava os demais → o master mantinha o card de quem saiu (fantasma
+pós-saída). **Corrigido:** SÓ na sala pré-partida com outros membros (guard `Settled && Count>1`, que blinda
+o fluxo pós-partida solo validado), libera o rec, reatribui o master se o host saiu, e faz broadcast
+`[3a 00][seat]` aos restantes (remoção inline, sem acionar o W.O.). NOTA: se o client 2 (achando-se master
+pelo bug do header, já corrigido) não mandava o `0x3A`, este fix só surte efeito após o fix do header fazer
+ele mandar o opcode certo de leave. Vazamento pré-existente NÃO tratado: último membro saindo de sala
+`Settled` (Count==1) — o tick não liquida sala Settled; fora de escopo aqui.
