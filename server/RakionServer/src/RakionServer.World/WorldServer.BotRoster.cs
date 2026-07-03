@@ -112,19 +112,26 @@ namespace RakionServer.World
         internal static byte[] BuildRoomState(Domain.Field f)
         {
             using var w = new PacketWriter();
-            w.WriteWord(0x37);                          // 0..1 opcode
-            w.WriteWord((ushort)f.Id);                  // 2..3 *(u16)this (id do field)
-            w.WriteByte(f.State);                       // 4    field state (this+8)
-            w.WriteByte((byte)(f.MasterSlot & 0xff));   // 5    host slot (this+0x121)
-            w.WriteByte(f.MapId);                       // 6    map (this+0x118)
-            w.WriteByte(f.Mode);                        // 7    mode (this+0x119)
-            w.WriteByte(f.MinLevel);                    // 8    minLevel (this+0x111)
-            w.WriteByte(f.MaxLevel);                    // 9    maxLevel (this+0x112)
-            w.WriteByte(0);                             // 10   (this+0x113)
-            w.WriteByte(f.Round);                       // 11   (this+0x2bc)
-            w.WriteByte(f.MaxRounds);                   // 12   maxRounds (this+0x11a)
-            w.WriteWord(f.MapSlot);                     // 13..14 mapSlot (this+0x11c)
-            w.WriteByte(f.FragLimit);                   // 15   fragLimit (this+0x11e)
+            // Header de 16B CRAVADO da captura do original (orig_capture2, S>C 0x37 ao joiner):
+            //   37 00 | 00 00 | 01 00 | d2 03 | 01 | 0a | 00 | 01 | 0b | 2c 01 | 14
+            // O MASTER SLOT vem em +2 (NÃO o fieldId, que fica em +6). Isto é o que conserta o bug do "joiner vira
+            // master": o joiner processa o PRÓPRIO 0x38 (master=0x14 sem-init -> self-designa) ANTES do 0x37; o 0x37
+            // é quem CORRIGE o master lendo-o de +2. Eu escrevia o fieldId em +2, então o cliente nunca lia o master
+            // real (0) e o joiner ficava com START. Campos +8.. inferidos do bloco de params compartilhado 0x36/0x37
+            // (`d2 03 01 0a 00 01 0b` = id, mode, maxPlayers, map, minLvl, maxLvl); todos vêm do DOMÍNIO.
+            w.WriteWord(0x37);                          // +0  opcode
+            w.WriteByte((byte)(f.MasterSlot & 0xff));   // +2  MASTER slot (this+0x121) — cap 00
+            w.WriteByte(0);                             // +3  pad (high byte do master u16)
+            w.WriteByte(f.State);                       // +4  field state (this+8) — cap 01
+            w.WriteByte(0);                             // +5  pad
+            w.WriteWord((ushort)f.Id);                  // +6  fieldId (*(u16)this) — cap d2 03
+            w.WriteByte(f.Mode);                        // +8  mode (this+0x119) — cap 01
+            w.WriteByte(f.MaxPlayers);                  // +9  maxPlayers (this+0x114) — cap 0a
+            w.WriteByte(f.MapId);                       // +a  map (this+0x118) — cap 00
+            w.WriteByte(f.MinLevel);                    // +b  minLevel (this+0x111) — cap 01
+            w.WriteByte(f.MaxLevel);                    // +c  maxLevel (this+0x112) — cap 0b
+            w.WriteWord(f.MapSlot);                     // +d  mapSlot (this+0x11c) — cap 2c 01
+            w.WriteByte(f.FragLimit);                   // +f  fragLimit (this+0x11e) — cap 14
             w.WriteCString(f.Name);                     // nome\0  (this+0x16)
             w.WriteCString(f.Password);                 // senha\0 (this+0x3f)
             w.WriteCString("");                         // desc\0  (this+0x48) vazio
