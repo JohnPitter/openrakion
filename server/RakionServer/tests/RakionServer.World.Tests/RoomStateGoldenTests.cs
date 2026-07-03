@@ -41,5 +41,18 @@ namespace RakionServer.World.Tests
             Assert.Equal(0x01, frame[4]);   // state em +4
             Assert.Equal(0x01, frame[6]);   // fieldId (=1) em +6, LE
         }
+
+        [Fact]
+        public void RosterRecord_Is78Bytes_TenShorterThanMemberJoin()
+        {
+            // Cravado da captura: o record do ROSTER (0x37) e 10B mais curto que o do member-join (0x38).
+            // Nome "JP" (2 chars): roster=78B, member-join=88B. A forma de 88B no roster desalinha os slots
+            // seguintes (card fantasma). Ver memória room-state-0x37-master-offset.
+            byte[] roster = WorldServer.BuildPlayerRecord("JP", 0, 1, rosterForm: true);
+            byte[] memberJoin = WorldServer.BuildPlayerRecord("JP", 0, 1, rosterForm: false);
+            Assert.Equal(78, roster.Length);
+            Assert.Equal(88, memberJoin.Length);
+            Assert.Equal(memberJoin.Length - 10, roster.Length);
+        }
     }
 }

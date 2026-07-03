@@ -96,12 +96,15 @@ namespace RakionServer.World
         private static ushort RecUid(Domain.PlayerRec rec) =>
             rec.Bot != null ? BotUserId(rec.Slot) : (ushort)(rec.Session?.GameInfoId ?? 0);
 
-        /// <summary>Registro de jogador (FUN_0040b7f0) de QUALQUER ocupante (host/humano/bot).</summary>
+        /// <summary>Registro de jogador (FUN_0040b7f0) de QUALQUER ocupante (host/humano/bot) NO ROSTER do 0x37.
+        /// rosterForm=true: 10 bytes MAIS CURTO que o registro do 0x38 member-join (78B vs 88B p/ nome de 2 chars),
+        /// cravado da captura (o parse do roster no 0x37 e do member-join no 0x38 sao funcoes diferentes com caudas
+        /// diferentes). Usar a forma de 88B aqui alonga cada slot -> desalinha os slots seguintes = card fantasma.</summary>
         private static byte[] RecordFor(Domain.PlayerRec rec) =>
             rec.Bot != null
-                ? BuildPlayerRecord(rec.Bot.Name, (byte)rec.Bot.CharClass, (byte)rec.Bot.Level)
+                ? BuildPlayerRecord(rec.Bot.Name, (byte)rec.Bot.CharClass, (byte)rec.Bot.Level, rosterForm: true)
                 : BuildPlayerRecord(rec.Session?.CharName ?? "", (byte)(rec.Session?.CharClass ?? 0),
-                                    (byte)(rec.Session?.CharLevel ?? 1), 0, rec.Session?.UdpEndpoint);   // endereço P2P do peer
+                                    (byte)(rec.Session?.CharLevel ?? 1), 0, rec.Session?.UdpEndpoint, rosterForm: true);   // endereço P2P do peer
 
         /// <summary>
         /// 0x37 = estado COMPLETO da sala p/ o JOINER (worldserv FUN_00406f40 @0x407280..0x407360). É o frame
@@ -194,7 +197,7 @@ namespace RakionServer.World
         /// nunca se achavam. Os 2 blocos de equip vão ZERADOS (sem gear; item id 0 = slot vazio, evita AV no render).
         /// </summary>
         internal static byte[] BuildPlayerRecord(string name, byte charClass, byte level, byte slotInBlob = 0,
-                                                 System.Net.IPEndPoint? peerEp = null)
+                                                 System.Net.IPEndPoint? peerEp = null, bool rosterForm = false)
         {
             using var w = new PacketWriter();
             w.WriteBytes(Encoding.ASCII.GetBytes(name ?? "")); w.WriteByte(0);  // nome + NUL  (+0x14a8)
@@ -206,11 +209,14 @@ namespace RakionServer.World
             w.WriteByte(0);                     // +0x1473
             w.WriteBytes(new byte[0x26]);       // +0x1da4  equip/aparência (38B) — sem gear
             w.WriteBytes(new byte[0x13]);       // +0x1dca  equip2/stat (19B) — sem gear
-            // +11B: bloco de equip/arma DEFAULT. O registro do original tem 88B (pós-nome fixo 85B); sem estes 11B
-            // o registro fica curto (82B) e o cliente lê o PRÓXIMO slot do roster no offset errado -> não adiciona o
-            // peer -> 2º humano vira "observador". Bytes do 0x38 real do original (char default 'JP'): 5 zeros já
-            // acima + [11 00 01 01 01 01] + 5 zeros. Semântica exata (equip slots) por RE de FUN_0040b7f0 = futuro.
-            w.WriteBytes(new byte[] { 0x11, 0x00, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 });
+            // CAUDA divergente por frame (cravado da captura, comparando o record de JP no 0x38 vs no 0x37):
+            //  - 0x37 ROSTER: só +1 byte 00 (record de 78B p/ nome de 2 chars). O parse do roster (FUN_00405440) lê
+            //    exatamente isto; a forma de 88B alonga o slot e desalinha os seguintes -> card fantasma no client 2.
+            //  - 0x38 MEMBER-JOIN: bloco de equip DEFAULT de 11B [11 00 01 01 01 01 00 00 00 00 00] (record de 88B).
+            //    Sem estes 11B o cliente lê o 0x38 curto e o 2º humano vira "observador" no stage (observer-fix).
+            w.WriteBytes(rosterForm
+                ? new byte[] { 0x00 }
+                : new byte[] { 0x11, 0x00, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 });
             return w.ToArray();
         }
     }
