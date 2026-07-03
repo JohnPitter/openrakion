@@ -242,6 +242,7 @@ namespace RakionServer.World.Tests
             f.State = 2; f.Phase = MatchPhase.Playing;            // PvP em jogo (gate do hit)
             var human = f.RecAt(0)!;                              // seat 0 = time 0 (inimigo do bot)
             human.State = 4; human.LastX = 0; human.LastZ = 0; human.LastPositionMs = 1;
+            human.LastHeading = 180;                             // olha p/ +Z (onde os bots são posicionados) — cone de mira
             return (f, added.Seat, added.Bot, human);
         }
 
