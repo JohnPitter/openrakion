@@ -208,17 +208,18 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
-        /// <summary>0x43 ack de start do match. RE FUN_004079d0 (@0x4079d0): a resposta REAL tem LEN=3 =
-        /// [43 00][status], enviada via FUN_0041b8a0(...,3,...). status 0 = partida inicia (seta o timer
-        /// this+0x2b8 = tick+40000ms); 1/2/3 = não pôde iniciar (faltam players/prontidão). O [handle 5B]
-        /// [3b 00 00 00] do blob antigo (e o [0003000000 3b000000] da captura) era LIXO DE STACK — varia
-        /// entre sessões, não é handle nem opcode ecoado. 3 reais + zero-pad.</summary>
+        /// <summary>0x43 ack de start do match. status 0 = partida inicia (seta o timer this+0x2b8). O original
+        /// manda um body estruturado [00 01 42 00 0a sess 00 01] (diff verificado 2026-07-03), mas a sonda runtime
+        /// PROVOU que replicá-lo NÃO muda o observador: os 2 humanos entram no stage com ctLocalPlayers=1 (=JOGADOR,
+        /// não observador) de qualquer forma — o gap real é a sync do game-stream SE1 (7B UDP de :2302/:2303
+        /// descartados + 0x4C sem resposta), não este frame. Semântica per-byte por RE (FUN_004079d0) fica pendente;
+        /// zerado até então (não shippar constante capturada com o byte per-sessão).</summary>
         public static byte[] MatchStartAck()
         {
             using var w = new PacketWriter();
             w.WriteWord(0x43);
             w.WriteByte(0);                 // status (0 = partida inicia)
-            w.WriteBytes(new byte[9]);      // padding do bloco de 12B (era lixo de stack)
+            w.WriteBytes(new byte[9]);      // body: semântica pendente de RE; zerado (não é lixo de stack)
             return w.ToArray();
         }
 

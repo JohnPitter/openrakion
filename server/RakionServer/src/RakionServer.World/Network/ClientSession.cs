@@ -101,6 +101,7 @@ namespace RakionServer.World.Network
         public ushort FieldTargetB;       // playerRecord +0x2ca (alvo/objetivo, arg0>=10)
         public ushort FieldObjectIndex; // user+0x14a0 (indice deste user no array de field-objects, lido por FUN_0040b7d0)
         public byte FieldSeat;          // user+0x14a2 (byte de seat/owner do user no field, lido por FUN_0040b7d0)
+        public byte[]? StageSpawnUpload;  // os bytes do 0x4b que ESTE humano subiu (posição/stats reais) — relayados ao peer p/ o avatar aparecer no lugar certo
         public bool ExpBonusActive;     // user+0x236c != 0 (bônus de exp ativo; no nosso server = PU ativo)
         public bool PuActive;           // PU vigente (usergameinfo.powertimedate futuro)
 
@@ -280,6 +281,7 @@ namespace RakionServer.World.Network
         /// </summary>
         public void SendLobby(byte[] payload)
         {
+            Log.Debug("tx", "[{0}] LOBBY(SendLobby) {1}B: {2}", Slot, payload.Length, Convert.ToHexString(payload));
             byte[] body = Crypto.Enabled ? Crypto.Encrypt(payload) : payload;
             int size = 2 + body.Length;
             byte[] frame = new byte[size];

@@ -44,8 +44,9 @@ namespace RakionServer.World
             foreach (var other in members)
             {
                 if (other == joiner || !other.Connected || other.Status != 3 || other.FieldSeat >= 0x14) continue;   // Status 3 = stage
-                try { other.SendMessage(0x4b, Network.BotMovement.BuildStageAddPlayer(joiner.FieldSeat)); } catch { }
-                try { joiner.SendMessage(0x4b, Network.BotMovement.BuildStageAddPlayer(other.FieldSeat)); } catch { }
+                // relay do blob REAL de cada peer (posição/stats que ele subiu), não o spawn constante
+                try { other.SendMessage(0x4b, Network.BotMovement.BuildStageAddPlayerFromUpload(joiner.FieldSeat, joiner.StageSpawnUpload)); } catch { }
+                try { joiner.SendMessage(0x4b, Network.BotMovement.BuildStageAddPlayerFromUpload(other.FieldSeat, other.StageSpawnUpload)); } catch { }
                 Log.Ok("field", "spawn mútuo no stage: seat {0} <-> {1} (field {2})", joiner.FieldSeat, other.FieldSeat, f.Id);
             }
         }

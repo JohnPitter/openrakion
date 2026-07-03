@@ -195,6 +195,11 @@ namespace RakionServer.World
             w.WriteByte(0);                     // +0x1473
             w.WriteBytes(new byte[0x26]);       // +0x1da4  equip/aparência (38B) — sem gear
             w.WriteBytes(new byte[0x13]);       // +0x1dca  equip2/stat (19B) — sem gear
+            // +11B: bloco de equip/arma DEFAULT. O registro do original tem 88B (pós-nome fixo 85B); sem estes 11B
+            // o registro fica curto (82B) e o cliente lê o PRÓXIMO slot do roster no offset errado -> não adiciona o
+            // peer -> 2º humano vira "observador". Bytes do 0x38 real do original (char default 'JP'): 5 zeros já
+            // acima + [11 00 01 01 01 01] + 5 zeros. Semântica exata (equip slots) por RE de FUN_0040b7f0 = futuro.
+            w.WriteBytes(new byte[] { 0x11, 0x00, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 });
             return w.ToArray();
         }
     }

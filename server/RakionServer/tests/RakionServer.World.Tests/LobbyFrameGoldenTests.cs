@@ -55,7 +55,7 @@ namespace RakionServer.World.Tests
             Assert.Equal("3b0000000000000000000000", Hex(LobbyFrames.RoomCreateAck()));
 
         [Fact]
-        public void MatchStartAck_RealLen3_ZeroPad() =>      // RE FUN_004079d0: LEN=3 [43 00][status]; [handle][3b...] era lixo
+        public void MatchStartAck_StatusZero_BodyPendingRE() =>   // status 0; body zerado (semântica per-byte pendente de RE; não afeta o observador)
             Assert.Equal("430000000000000000000000", Hex(LobbyFrames.MatchStartAck()));
 
         [Fact]

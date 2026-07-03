@@ -589,6 +589,20 @@ namespace RakionServer.World.Domain
                     EndRound(Score0 > Score1 ? (byte)0 : Score1 > Score0 ? (byte)1 : (byte)2);
                 }
             }
+
+            // GOLEM WAR (regra oficial softnyx): mortos NÃO renascem e um time PERDE O ROUND quando TODOS os seus
+            // jogadores morrem. Vale p/ os modos com TIME (Golem/TeamDeath/Boss). Conta ocupantes do time p/ não
+            // disparar com bloco vazio; empate (os 2 zerados no mesmo golpe) = winner 2.
+            if (Phase == MatchPhase.Playing && !ObjectiveDecided && Mode != (byte)GameMode.Deathmatch && Mode != 0)
+            {
+                int occ0 = 0, occ1 = 0;
+                foreach (var r in Slots)
+                    if (r.Occupied && (r.Session != null || r.Bot != null)) { if (r.Team == 0) occ0++; else occ1++; }
+                bool t0dead = occ0 > 0 && CountAlive(0) == 0;
+                bool t1dead = occ1 > 0 && CountAlive(1) == 0;
+                if (t0dead || t1dead)
+                    EndRoundObjective(t0dead && t1dead ? (byte)2 : t0dead ? (byte)1 : (byte)0);
+            }
         }
 
         /// <summary>Alcance do golpe do humano no plano XZ (coord) p/ a arbitragem humano→bot. Aproximação do

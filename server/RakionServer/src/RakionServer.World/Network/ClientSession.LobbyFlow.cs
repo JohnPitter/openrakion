@@ -228,8 +228,9 @@ namespace RakionServer.World.Network
                     Status = 3;            // estado de CAMPO (Op_FieldUseItem exige Status==3; o 0x44/0x3A revertem p/ 2)
                     StartGameClock();
                     PaintQuickslot();      // re-registra as poções no campo — hipótese: o cliente zera o contador ao entrar no stage
-                    // SPAWN no stage (0x4b): spawn MÚTUO humano↔humano (cada um vê o avatar do outro). O "modo
-                    // observação" do 2º humano NÃO está aqui — ver SpawnStageForHumans (é estado de mundo P2P 0x0304).
+                    // SPAWN no stage (0x4b): guarda o blob REAL que este humano subiu (posição/stats) e faz o spawn
+                    // MÚTUO humano↔humano relayando o blob real de cada peer (cada um vê o avatar do outro no lugar certo).
+                    StageSpawnUpload = data;
                     { var stf = _server.GetField(FieldId); if (stf != null) _server.SpawnStageForHumans(stf, this); }
                     Log.Ok("lobby", "[{0}] 0x4b (spawn) -> STAGE (Status=3, poções re-enviadas); relogio iniciado (udp={1})", Slot, UdpEndpoint?.ToString() ?? "-");
                     return true;

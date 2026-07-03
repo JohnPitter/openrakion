@@ -1,3 +1,5 @@
+using System;
+using System.Buffers.Binary;
 using RakionServer.Common;
 using RakionServer.World.Domain;
 
@@ -387,9 +389,40 @@ namespace RakionServer.World.Network
         /// </summary>
         public static byte[] BuildStageAddPlayer(BotPlayer bot, int seat) => BuildStageAddPlayer(seat);
 
-        /// <summary>0x4b AddPlayer por SEAT (sem bot) — instancia o avatar no spawn do field. Usado tanto p/ o bot
-        /// quanto p/ o SPAWN MÚTUO de 2 humanos (cada humano recebe o 0x4b do seat do outro). Posição/stats literais
-        /// da captura (o cliente move o avatar depois via 0x30a relayado).</summary>
+        /// <summary>
+        /// 0x4b AddPlayer de um HUMANO relayado a OUTRO humano — usa a POSIÇÃO e os STATS REAIS que o peer subiu no
+        /// próprio 0x4b (<paramref name="upload"/> = os 68B do <c>data</c> do handler), montados na estrutura 67B
+        /// known-good (a mesma do bot, que o cliente aceita). O upload é <c>[0x41][00][blob 66B]</c>: o blob (offset 2)
+        /// tem o MESMO layout do frame de recebimento (só o par 0x41/00 e o pad de cauda diferem). Relay de estado VIVO
+        /// do peer (papel do servidor), não replay de blob. Fallback ao spawn constante se o upload for curto/ausente.
+        /// </summary>
+        public static byte[] BuildStageAddPlayerFromUpload(int seat, byte[]? upload)
+        {
+            const int b = 2;                       // blob começa após [0x41][00]
+            if (upload == null || upload.Length < b + 0x3a) return BuildStageAddPlayer(seat);
+            float ReadF(int o) => BinaryPrimitives.ReadSingleLittleEndian(upload.AsSpan(b + o));
+            uint ReadU(int o) => BinaryPrimitives.ReadUInt32LittleEndian(upload.AsSpan(b + o));
+
+            using var w = new PacketWriter();
+            w.WriteByte((byte)seat);
+            w.WriteWord(67);
+            w.WriteByte(StageSpawnLead);
+            w.WriteSingle(ReadF(0x01)); w.WriteSingle(ReadF(0x05)); w.WriteSingle(ReadF(0x09)); // posX/Y/Z reais
+            w.WriteSingle(ReadF(0x0d));
+            w.WriteUInt32(ReadU(0x11));                  // animId
+            w.WriteUInt32(ReadU(0x15));                  // flag ativo/visível
+            w.WriteByte(0);
+            w.WriteSingle(ReadF(0x1a)); w.WriteSingle(ReadF(0x1e));   // anchor X/Y reais
+            w.WriteSingle(ReadF(0x22));                  // facing
+            w.WriteUInt32(ReadU(0x26)); w.WriteUInt32(ReadU(0x2a)); w.WriteUInt32(ReadU(0x2e)); // stats reais
+            w.WriteUInt32(ReadU(0x32)); w.WriteUInt32(ReadU(0x36));
+            w.WriteBytes(new byte[9]);
+            return w.ToArray();
+        }
+
+        /// <summary>0x4b AddPlayer por SEAT (sem bot) — instancia o avatar no spawn do field. Usado p/ o BOT (que não
+        /// tem cliente p/ subir a própria posição). Posição/stats literais da captura (o cliente move o avatar depois
+        /// via 0x30a relayado). P/ 2 humanos ver <see cref="BuildStageAddPlayerFromUpload"/> (posição real do peer).</summary>
         public static byte[] BuildStageAddPlayer(int seat)
         {
             using var w = new PacketWriter();

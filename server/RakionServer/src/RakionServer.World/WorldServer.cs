@@ -830,7 +830,9 @@ namespace RakionServer.World
                 s.Stats[0] = ch.Hit1; s.Stats[1] = ch.Hit2; s.Stats[2] = ch.Hit3; s.Stats[3] = ch.Hit4;
                 s.Stats[4] = ch.Chit; s.Stats[5] = ch.Hp; s.Stats[6] = ch.Ap; s.Stats[7] = ch.AttackSpeed;
                 s.Stats[8] = ch.Speed; s.Stats[9] = ch.Maxcp;
-                if (s.CharName.Length == 0) s.CharName = ch.Name;
+                // nome do PERSONAGEM (characterinfo.name) é autoritativo: o CharName provisório do login era o
+                // login da CONTA ("test") — sem sobrescrever aqui, o roster 0x38 e o nome no stage mostravam a conta.
+                if (!string.IsNullOrEmpty(ch.Name)) s.CharName = ch.Name;
                 s.Items = await _db.LoadItemsAsync(ch.Id);              // inventario do char p/ o Box (0x2f)
                 // armazem (itembox) -> exibido no box + slot da compra. FILTRA p/ só gear (type<=5): itens
                 // não-gear (transform/especial/lotto) ficam no DB mas NÃO carregam no box -> sem célula
