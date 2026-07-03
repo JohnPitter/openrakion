@@ -116,9 +116,10 @@ namespace RakionServer.World.Network
             Log.Ok("field", "[{0}] 0x4f Die — seat {1} cause {2} killer {3} (s0={4} s1={5})",
                 u.Slot, seat, cause, killer, field.Score0, field.Score1);
 
-            // frag-limit atingido -> OnPlayerDeath ja chamou EndRound; emite 0x4a (fim de round).
-            // golden source / layout validado em Field.Build0x4a() (antes este sitio invertia a ordem).
-            if (field.Phase == MatchPhase.RoundEnd)
+            // frag-limit atingido -> OnPlayerDeath ja chamou EndRound; emite 0x4a (fim de round). MAS se encerrou por
+            // OBJETIVO/ELIMINACAO (Golem/Boss), o EndRoundObjective JA broadcastou o 0x4a -> nao duplicar (a dupla dava
+            // DUAS mensagens de round + resultado errado na tela). ObjectiveDecided distingue os dois caminhos.
+            if (field.Phase == MatchPhase.RoundEnd && !field.ObjectiveDecided)
                 field.BroadcastFieldPlaying(0x4a, field.Build0x4a());
         }
 

@@ -130,9 +130,13 @@ namespace RakionServer.World
             w.WriteCString("");                         // desc\0  (this+0x48) vazio
             foreach (var rec in f.Slots)                // roster: 20 slots (this+0x126, stride 0x14)
             {
-                bool occ = rec.State != 0 && rec.State != 5 && (rec.Session != null || rec.Bot != null);
-                // wire state: 1 = na sala (não-ready), 5 = locked, 0 = vazio. O interno 3/4 vira 1 (worldserv).
-                byte wire = rec.State == 0 ? (byte)0 : rec.State == 5 ? (byte)5 : (byte)1;
+                // Ocupante REAL: sessão CONECTADA com char carregado (nome não-vazio) OU bot. Sessão desconectada/sem
+                // char não conta (senão vira card FANTASMA Lv0/vazio no roster).
+                bool occ = rec.State != 0 && rec.State != 5 &&
+                           ((rec.Session != null && rec.Session.Connected && !string.IsNullOrEmpty(rec.Session.CharName)) || rec.Bot != null);
+                // wire: 5 = locked; 1 = ocupado (com registro a seguir); 0 = vazio. TEM de bater com occ — escrever
+                // wire=1 sem registro desalinhava o cliente (lia o próximo slot como registro) = card fantasma.
+                byte wire = rec.State == 5 ? (byte)5 : occ ? (byte)1 : (byte)0;
                 w.WriteByte(wire);                      // [state] sempre
                 if (occ)
                 {
