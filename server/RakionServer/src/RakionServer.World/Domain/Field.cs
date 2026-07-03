@@ -119,6 +119,11 @@ namespace RakionServer.World.Domain
         public ushort Golem1Hp = 100;   // energia do Master Golem do time 1
         public ushort GoldGolemHp = 100; // energia do golem DOURADO central (neutro) — gate da rota de objetivo do bot
         public bool ObjectiveDecided;   // ja houve vencedor por objetivo (Golem destruido)
+        // GOLD SWORD (regra oficial): quem dá o ÚLTIMO golpe no golem dourado pega a espada por 1min30; SÓ ela dana o
+        // Master Golem inimigo; se o portador morre, o golem dourado revive. Reset por round.
+        public int GoldSwordHolder = -1;         // seat portador; -1 = ninguém
+        public long GoldSwordExpiryMs;           // expira em now + GoldSwordDurationMs
+        public const long GoldSwordDurationMs = 90_000;  // 1min30
 
         public bool Settled;            // resultado do match ja liquidado no DB (WorldServer.SettleMatch)
 
@@ -491,7 +496,11 @@ namespace RakionServer.World.Domain
             // reset por ROUND (nao por match): cada round do Golem/Boss comeca com os Master Golens
             // cheios e o objetivo em aberto de novo.
             Golem0Hp = 100; Golem1Hp = 100; GoldGolemHp = 100; ObjectiveDecided = false;
-            foreach (var r in Slots) if (r.Occupied) { r.Dead = false; if (r.State == 3) r.State = 4; r.Bot?.ResetForRound(); }
+            GoldSwordHolder = -1; GoldSwordExpiryMs = 0;
+            // REVIVE todos os ocupantes do match no início do round (cada round é um começo fresco — os mortos do
+            // round anterior renascem). Antes só revivia State==3, deixando os mortos (State==1) fora do round seguinte
+            // -> sem "evento de morte" o fim de round não disparava (round intermitente não encerrando).
+            foreach (var r in Slots) if (r.Occupied) { r.Dead = false; if (r.State == 3 || r.State == 1) r.State = 4; r.Bot?.ResetForRound(); }
             RecomputeMvp();
             Log.Ok("field", "field {0} round {1} iniciado (dur={2}s mode={3})", Id, Round, RoundDurationSec, Mode);
         }
@@ -506,6 +515,7 @@ namespace RakionServer.World.Domain
             Round = 0; Wins0 = 0; Wins1 = 0; Score0 = 0; Score1 = 0;
             WinnerSide = 0; LastRoundWinner = 0; Warned30 = 0;
             Golem0Hp = 100; Golem1Hp = 100; GoldGolemHp = 100; ObjectiveDecided = false;
+            GoldSwordHolder = -1; GoldSwordExpiryMs = 0;
             Settled = false;
             foreach (var r in Slots) if (r.Occupied) r.Score = 0;
         }
@@ -560,6 +570,15 @@ namespace RakionServer.World.Domain
             v.Dead = true;
             v.Cause = cause;
             v.State = 1; // eliminado/aguardando respawn
+            Log.Info("field", "field {0} MORTE seat {1} (team {2}) killer {3} mode {4} round {5} vivos[0={6} 1={7}]",
+                Id, victimSeat, v.Team, killerSeat, Mode, Round, CountAlive(0), CountAlive(1));
+
+            // GOLD SWORD: se o PORTADOR morre, o golem dourado REVIVE (regra oficial) e a espada é perdida.
+            if (victimSeat == GoldSwordHolder)
+            {
+                GoldSwordHolder = -1; GoldGolemHp = 100;
+                Log.Ok("field", "field {0} portador da Gold Sword (seat {1}) morreu -> golem dourado revive", Id, victimSeat);
+            }
 
             var k = RecAt(killerSeat);
             if (k != null && k.Occupied && k != v)
@@ -756,9 +775,27 @@ namespace RakionServer.World.Domain
         /// sala (MaxRounds, do 0x3b); quem fecha o match e' o motor (MatchTick). Dano placeholder
         /// (formula/energia exata = RE/balanceamento; broadcast de "Master Golem has X%% energy" pendente).
         /// </summary>
-        public void DamageGolem(int golemTeam, ushort dmg)
+        /// <summary>True se o seat segura a Gold Sword VÁLIDA (não expirada). Regra oficial: SÓ ela dana o Master Golem.</summary>
+        public bool HasGoldSword(int seat, long now) => seat >= 0 && seat == GoldSwordHolder && now < GoldSwordExpiryMs;
+
+        /// <summary>Concede a Gold Sword ao seat (quem deu o ÚLTIMO golpe no golem dourado). Dura 1min30.</summary>
+        public void GrantGoldSword(int seat, long now)
+        {
+            GoldSwordHolder = seat;
+            GoldSwordExpiryMs = now + GoldSwordDurationMs;
+            Log.Ok("field", "field {0} GOLD SWORD -> seat {1} ({2}s; só ela dana o Master Golem)", Id, seat, GoldSwordDurationMs / 1000);
+        }
+
+        public void DamageGolem(int golemTeam, ushort dmg, int attackerSeat = -1)
         {
             if (ObjectiveDecided) return;
+            // GATE Gold Sword (regra oficial): só quem segura a espada dana o Master Golem inimigo. attackerSeat<0 =
+            // via legado/interno sem gate. O atacante não pode danar o próprio golem (só o inimigo).
+            if (attackerSeat >= 0)
+            {
+                if (!HasGoldSword(attackerSeat, Environment.TickCount64)) return;
+                if (SeatTeam(attackerSeat) == golemTeam) return;   // não bate no golem do próprio time
+            }
             if (golemTeam == 0) Golem0Hp = (ushort)Math.Max(0, Golem0Hp - dmg);
             else Golem1Hp = (ushort)Math.Max(0, Golem1Hp - dmg);
             Log.Ok("field", "field {0} Master Golem time{1} energia={2}%", Id, golemTeam, golemTeam == 0 ? Golem0Hp : Golem1Hp);
@@ -766,25 +803,28 @@ namespace RakionServer.World.Domain
             else if (Golem1Hp == 0) EndRoundObjective(0);  // golem do time1 destruido -> time0 vence o round
         }
 
-        /// <summary>Aplica dano ao golem DOURADO central (neutro) — gate da rota de objetivo do bot. Devolve
-        /// true ao zerar (derrotado); NÃO encerra round (o dourado é passo da rota, não o win-condition).</summary>
-        public bool DamageGoldGolem(ushort dmg)
+        /// <summary>Time (0/1) de um seat pelo bloco (0-9=0, 10-19=1).</summary>
+        private static int SeatTeam(int seat) => seat < 10 ? 0 : 1;
+
+        /// <summary>Aplica dano ao golem DOURADO central (neutro). Ao ZERAR, o <paramref name="attackerSeat"/> (quem
+        /// deu o último golpe) GANHA a Gold Sword (regra oficial). Devolve true ao zerar. NÃO encerra o round.</summary>
+        public bool DamageGoldGolem(ushort dmg, int attackerSeat = -1)
         {
             if (GoldGolemHp == 0) return false;
             GoldGolemHp = (ushort)Math.Max(0, GoldGolemHp - dmg);
             if (GoldGolemHp != 0) return false;
-            Log.Ok("field", "field {0} golem DOURADO derrotado (rota de objetivo do bot)", Id);
+            Log.Ok("field", "field {0} golem DOURADO derrotado", Id);
+            if (attackerSeat >= 0) GrantGoldSword(attackerSeat, Environment.TickCount64);
             return true;
         }
 
-        /// <summary>Despacha o dano da rota de objetivo do bot ao golem-alvo: <paramref name="target"/>
-        /// 0/1 = Master Golem do time (via <see cref="DamageGolem"/>, que ao zerar dispara
-        /// <see cref="EndRoundObjective"/> = vitória), 2 = golem dourado neutro. Devolve true quando o
-        /// golem-alvo é derrotado neste golpe.</summary>
-        public bool DamageGolemTarget(int target, ushort dmg)
+        /// <summary>Despacha o dano ao golem-alvo: <paramref name="target"/> 0/1 = Master Golem do time (gated pela Gold
+        /// Sword; ao zerar dispara <see cref="EndRoundObjective"/>), 2 = golem dourado (ao zerar concede a espada ao
+        /// atacante). <paramref name="attackerSeat"/> = quem golpeia (-1 = legado sem gate). Devolve true ao derrotar o alvo.</summary>
+        public bool DamageGolemTarget(int target, ushort dmg, int attackerSeat = -1)
         {
-            if (target == 2) return DamageGoldGolem(dmg);
-            DamageGolem(target, dmg);
+            if (target == 2) return DamageGoldGolem(dmg, attackerSeat);
+            DamageGolem(target, dmg, attackerSeat);
             return (target == 0 ? Golem0Hp : Golem1Hp) == 0;
         }
 

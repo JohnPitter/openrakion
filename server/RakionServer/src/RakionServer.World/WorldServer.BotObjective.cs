@@ -99,7 +99,8 @@ namespace RakionServer.World
             if (now < bot.NextAttackMs) return false;
             bot.NextAttackMs = now + bot.Profile.ComboRecoveryMs;
             EmitBotAttack(rec, bot, 0x0001);                       // swing visível no golem (aim já aponta)
-            bool destroyed = f.DamageGolemTarget(golemTarget, GolemHitDmg);
+            // passa o seat do bot: ao derrubar o golem dourado (target 2) ele GANHA a Gold Sword; só então dana o Master.
+            bool destroyed = f.DamageGolemTarget(golemTarget, GolemHitDmg, rec.Slot);
             if (destroyed)
                 Log.Ok("bot", "field {0}: '{1}' DERROTOU golem alvo {2} (rota avança)", f.Id, bot.Name, golemTarget);
             return destroyed;
