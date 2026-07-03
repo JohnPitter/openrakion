@@ -335,6 +335,15 @@ namespace RakionServer.World.Domain
             return n;
         }
 
+        /// <summary>Ocupantes REAIS de um time (jogador/bot no slot, vivo ou morto) — usado p/ detectar abandono
+        /// (time esvaziou) e decidir vitória por W.O.</summary>
+        public int CountOccupiedTeam(int team)
+        {
+            int n = 0;
+            foreach (var r in Slots) if (r.Occupied && (r.Session != null || r.Bot != null) && r.Team == team) n++;
+            return n;
+        }
+
         /// <summary>
         /// Serializa a entrada deste field para a lista de salas (FUN_00405790): registro
         /// de tamanho variavel — campos fixos + nome (nul-term) + u16.

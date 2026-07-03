@@ -179,8 +179,23 @@ namespace RakionServer.World
         {
             var f = GetField(s.FieldId);
             if (f == null) return;
+            bool wasInPvpMatch = f.State == 2 && f.Mode != 0;   // saiu no meio de uma partida PvP
             f.Remove(s);
             s.FieldId = -1;
+            // ABANDONO no meio do stage: o adversário saiu e deixou um time VAZIO (mas ainda há humano) -> o time que
+            // ficou VENCE o game (regra: sair = derrota). Fim de match + volta ao lobby (0x44), como no original.
+            if (wasInPvpMatch && f.Count > 0 && !f.ObjectiveDecided)
+            {
+                int occ0 = f.CountOccupiedTeam(0), occ1 = f.CountOccupiedTeam(1);
+                if (occ0 == 0 || occ1 == 0)
+                {
+                    byte winner = occ0 == 0 ? (byte)1 : (byte)0;
+                    f.EndRoundObjective(winner);                 // credita o round + broadcasta o 0x4a de vitória
+                    f.EndMatch(2);
+                    f.BroadcastLobby(f.BuildMatchEnd(2));         // 0x44 -> devolve o vencedor ao lobby
+                    Log.Ok("field", "field {0}: adversário abandonou o stage -> time {1} VENCE o game (volta ao lobby)", f.Id, winner);
+                }
+            }
             // O último HUMANO saiu (Count = só humanos; bots não entram em Players): descarta os bots
             // e libera o field. Bots nunca mantêm uma sala viva — sem humano, a sala morre.
             if (f.Count == 0)
