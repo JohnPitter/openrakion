@@ -517,6 +517,10 @@ namespace RakionServer.World.Domain
         /// </summary>
         public byte DecideRoundWinnerByScore()
         {
+            // GOLEM WAR: se o tempo acaba com os 2 Master Golens vivos, vence o time cujo golem tem MAIS energia
+            // (regra oficial softnyx) — NÃO por placar de kills.
+            if (Mode == (byte)GameMode.Golem)
+                return Golem0Hp > Golem1Hp ? (byte)0 : Golem1Hp > Golem0Hp ? (byte)1 : (byte)2;
             if (Mode == (byte)GameMode.Deathmatch)
             {
                 uint best = 0; int atBest = 0; byte side = 2;
@@ -590,19 +594,38 @@ namespace RakionServer.World.Domain
                 }
             }
 
-            // GOLEM WAR (regra oficial softnyx): mortos NÃO renascem e um time PERDE O ROUND quando TODOS os seus
-            // jogadores morrem. Vale p/ os modos com TIME (Golem/TeamDeath/Boss). Conta ocupantes do time p/ não
-            // disparar com bloco vazio; empate (os 2 zerados no mesmo golpe) = winner 2.
-            if (Phase == MatchPhase.Playing && !ObjectiveDecided && Mode != (byte)GameMode.Deathmatch && Mode != 0)
+            // Fim de round por ELIMINAÇÃO — só nos modos SEM respawn (regra oficial softnyx). Deathmatch/TeamDeath
+            // têm respawn (5s), então NÃO encerram por morte; Golem/Boss = mortos não renascem.
+            if (Phase == MatchPhase.Playing && !ObjectiveDecided)
             {
-                int occ0 = 0, occ1 = 0;
-                foreach (var r in Slots)
-                    if (r.Occupied && (r.Session != null || r.Bot != null)) { if (r.Team == 0) occ0++; else occ1++; }
-                bool t0dead = occ0 > 0 && CountAlive(0) == 0;
-                bool t1dead = occ1 > 0 && CountAlive(1) == 0;
-                if (t0dead || t1dead)
-                    EndRoundObjective(t0dead && t1dead ? (byte)2 : t0dead ? (byte)1 : (byte)0);
+                if (Mode == (byte)GameMode.Boss)
+                {
+                    // BOSS WAR: cada time tem um "boss"; se o boss morre, o time PERDE o round na hora (mesmo com aliados vivos).
+                    if (victimSeat == BossSeat(v.Team)) EndRoundObjective((byte)(v.Team ^ 1));
+                }
+                else if (Mode == (byte)GameMode.Golem)
+                {
+                    // GOLEM WAR: um time perde quando TODOS os seus jogadores morrem. Conta ocupantes p/ não disparar
+                    // com bloco vazio; empate (os 2 zeram no mesmo golpe) = winner 2.
+                    int occ0 = 0, occ1 = 0;
+                    foreach (var r in Slots)
+                        if (r.Occupied && (r.Session != null || r.Bot != null)) { if (r.Team == 0) occ0++; else occ1++; }
+                    bool t0dead = occ0 > 0 && CountAlive(0) == 0;
+                    bool t1dead = occ1 > 0 && CountAlive(1) == 0;
+                    if (t0dead || t1dead)
+                        EndRoundObjective(t0dead && t1dead ? (byte)2 : t0dead ? (byte)1 : (byte)0);
+                }
             }
+        }
+
+        /// <summary>Boss War: o "boss" do time = o 1º slot ocupado do bloco do time (0-9 = time0, 10-19 = time1).
+        /// Protegê-lo é o objetivo; sua morte encerra o round. Designação exata (líder/sorteio) = RE/captura pendente.</summary>
+        private int BossSeat(int team)
+        {
+            int lo = team == 0 ? 0 : 10, hi = team == 0 ? 10 : 20;
+            for (int i = lo; i < hi && i < Slots.Length; i++)
+                if (Slots[i].Occupied && (Slots[i].Session != null || Slots[i].Bot != null)) return i;
+            return -1;
         }
 
         /// <summary>Alcance do golpe do humano no plano XZ (coord) p/ a arbitragem humano→bot. Aproximação do
