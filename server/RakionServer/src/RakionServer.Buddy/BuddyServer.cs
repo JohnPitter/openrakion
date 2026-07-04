@@ -51,6 +51,7 @@ namespace RakionServer.Buddy
                 _ = Task.Run(() => AcceptLoopAsync(l, port, _cts.Token));
                 StartUdpListener(port);   // brokering P2P na MESMA porta UDP (ver BuddyServer.Presence)
             }
+            StartBuddyListSync();   // refresh VIVO da lista (o add nasce no World; ver BuddyServer.Sync)
         }
 
         public void Stop()
