@@ -74,7 +74,9 @@ namespace RakionServer.World
 
         /// <summary>Join 0x38: adiciona o <paramref name="joiner"/> à sala <paramref name="fieldIndex"/>, aloca
         /// assento e vincula estado (room lobby). Devolve o Field + assento; err != 0 = falha (0x4c=inexistente,
-        /// 0x4b=cheia, 0x53=senha).</summary>
+        /// 0x4b=cheia, 0x53=senha, 0x06=partida em andamento, 0x07=level fora da faixa — os dois últimos
+        /// cravados do worldserv FUN_00406f40: al=6 se field+8==2; al=7 se FUN_00405920 reprova o level
+        /// (faixa INCLUSIVE field+0x111..+0x112) — reply [0x38][err]).</summary>
         public Domain.Field? TryJoinRoom(ClientSession joiner, ushort fieldIndex, string pass, out int seat, out byte err)
         {
             seat = -1; err = 0;
@@ -82,6 +84,8 @@ namespace RakionServer.World
             lock (Fields) f = Fields.Find(x => x.Id == fieldIndex && x.IsRoom);
             if (f == null || f.Master == null) { err = 0x4c; return null; }
             if (!string.IsNullOrEmpty(f.Password) && f.Password != (pass ?? "")) { err = 0x53; return null; }
+            if (joiner.CharLevel < f.MinLevel || joiner.CharLevel > f.MaxLevel) { err = 0x07; return null; }
+            if (f.State == 2) { err = 0x06; return null; }   // partida em andamento
             seat = f.AssignSeatBalanced(joiner);   // 2º jogador cai no time vazio (1-1) -> Ready destravado
             if (seat < 0) { err = 0x4b; return null; }
             f.Add(joiner);

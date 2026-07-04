@@ -197,11 +197,9 @@ namespace RakionServer.World
                     // tempo esgotado -> fim de round por placar (FUN_00409940 deadline)
                     if (now >= f.DeadlineMs)
                     {
-                        f.EndRound(f.DecideRoundWinnerByScore());
-                        // FIELD 0x4a aos playing: body=[cause/2bd][2bf][2c0][2c1] (mesmo layout dos
-                        // handlers 0x4a/0x4d de fim-de-round)
-                        f.BroadcastFieldPlaying(0x4a,
-                            new byte[] { f.LastRoundWinner, f.WinnerSide, f.Wins0, f.Wins1 });
+                        f.EndRound(f.DecideRoundWinnerByScore(), cause: 2);   // 2 = placar/tempo (+0x2bd)
+                        // FIELD 0x4a aos playing: body=[causa/2bd][winner-wire/2bf][2c0][2c1]
+                        f.BroadcastFieldPlaying(0x4a, f.Build0x4a());
                     }
                     else
                     {

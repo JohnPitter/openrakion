@@ -105,8 +105,12 @@ namespace RakionServer.World.Domain
         public ushort RoundDurationSec = DefaultRoundDurationSec; // +0x11c (432 -> RemainingSec ~435, ground truth do original)
         public byte FragLimit;          // +0x11e (kills/score p/ vencer o round; 0 = sem limite)
         public byte Warned30;           // +0x2be (flag aviso de 30s)
-        public byte LastRoundWinner;    // +0x2bd
-        public byte WinnerSide;         // +0x2bf (0/1/2=empate)
+        /// <summary>+0x2bd = CÓDIGO da causa do fim de round (1=eliminação/objetivo, 2=placar/tempo; no stage
+        /// mode0 ecoa o dir 2/3). NÃO é "quem venceu" — chamar isto de winner foi o bug do "vencedor vê DERROTA".</summary>
+        public byte RoundEndCause;
+        /// <summary>+0x2bf = vencedor NO WIRE, cravado do worldserv (3 caminhos: 0x405dc7/0x405e16, 0x40804e/0x4080a1,
+        /// 0x405ade/0x405b25): **1 = time0 (RED) venceu, 0 = time1 (BLUE) venceu** — invertido do índice do time!</summary>
+        public byte WinnerSide;
         public byte Wins0;              // +0x2c0 (rounds ganhos time0)
         public byte Wins1;              // +0x2c1 (rounds ganhos time1)
         public byte Score0;             // +0x11f (placar/kills time0 do round)
@@ -444,9 +448,9 @@ namespace RakionServer.World.Domain
         /// <summary>0x49 NovoRound (5B): [49 00][round][mvp0][mvp1].</summary>
         public byte[] Build0x49() => new byte[] { 0x49, 0x00, Round, Mvp0, Mvp1 };
 
-        /// <summary>0x4a FimRound — corpo (4B) p/ BroadcastFieldPlaying(0x4a, ...): [lastWinner][winnerSide][wins0][wins1].
-        /// layout fiel ao caminho validado in-game (Golem War); modos 2-clientes precisam re-teste.</summary>
-        public byte[] Build0x4a() => new byte[] { LastRoundWinner, WinnerSide, Wins0, Wins1 };
+        /// <summary>0x4a FimRound — corpo (4B) p/ BroadcastFieldPlaying(0x4a, ...): [causa/2bd][winner/2bf]
+        /// [wins0][wins1]. winner JÁ em encoding de wire (1=time0, 0=time1 — ver <see cref="WinnerSide"/>).</summary>
+        public byte[] Build0x4a() => new byte[] { RoundEndCause, WinnerSide, Wins0, Wins1 };
 
         /// <summary>
         /// 0x44 FimMatch (formato CAPTURADO do original, _r44 do fluxo solo que FUNCIONA):
@@ -522,7 +526,7 @@ namespace RakionServer.World.Domain
         public void ResetMatch()
         {
             Round = 0; Wins0 = 0; Wins1 = 0; Score0 = 0; Score1 = 0;
-            WinnerSide = 0; LastRoundWinner = 0; Warned30 = 0;
+            WinnerSide = 0; RoundEndCause = 0; Warned30 = 0;
             Golem0Hp = 100; Golem1Hp = 100; GoldGolemHp = 100; ObjectiveDecided = false;
             GoldSwordHolder = -1; GoldSwordExpiryMs = 0;
             Settled = false;
@@ -613,12 +617,12 @@ namespace RakionServer.World.Domain
                     // DEATHMATCH (FFA): o primeiro JOGADOR a atingir o frag-limit vence o round.
                     PlayerRec? top = null;
                     foreach (var r in Slots) if (r.Occupied && (top == null || r.Score > top.Score)) top = r;
-                    if (top != null && top.Score >= FragLimit) EndRound(top.Team);
+                    if (top != null && top.Score >= FragLimit) EndRound(top.Team, cause: 2);
                 }
                 else if (Score0 >= FragLimit || Score1 >= FragLimit)
                 {
                     // TEAMDEATH/GOLEM/BOSS: placar por TIME atinge o frag-limit.
-                    EndRound(Score0 > Score1 ? (byte)0 : Score1 > Score0 ? (byte)1 : (byte)2);
+                    EndRound(Score0 > Score1 ? (byte)0 : Score1 > Score0 ? (byte)1 : (byte)2, cause: 2);
                 }
             }
 
@@ -757,16 +761,20 @@ namespace RakionServer.World.Domain
         /// 40 ⇒ ~3 golpes p/ derrubar o bot de 100 de energia (balanceamento provisório).</summary>
         private static ushort MeleeDamageFor(ushort actionId) => 40;
 
-        /// <summary>Encerra o round atual: contabiliza wins, vai p/ fase RoundEnd (intermissao 15s).</summary>
-        public void EndRound(byte winnerSide)
+        /// <summary>Encerra o round atual: contabiliza wins, vai p/ fase RoundEnd (intermissao 15s).
+        /// <paramref name="winnerTeam"/> = ÍNDICE do time (0/1; 2=empate); <paramref name="cause"/> = código
+        /// +0x2bd (1=eliminação/objetivo, 2=placar/tempo). O encoding de wire do vencedor (+0x2bf: time0→1,
+        /// time1→0) é feito AQUI — mandar o índice cru fazia o VENCEDOR ver a tela de DERROTA (bug 2026-07-04).</summary>
+        public void EndRound(byte winnerTeam, byte cause = 1)
         {
-            WinnerSide = winnerSide;
-            LastRoundWinner = winnerSide;
-            if (winnerSide == 0) Wins0++;
-            else if (winnerSide == 1) Wins1++;
+            WinnerSide = winnerTeam == 0 ? (byte)1 : winnerTeam == 1 ? (byte)0 : (byte)2;
+            RoundEndCause = cause;
+            if (winnerTeam == 0) Wins0++;
+            else if (winnerTeam == 1) Wins1++;
             Phase = MatchPhase.RoundEnd;
             DeadlineMs = Environment.TickCount64 + 15000;
-            Log.Ok("field", "field {0} round {1} encerrado (winner={2} w0={3} w1={4})", Id, Round, winnerSide, Wins0, Wins1);
+            Log.Ok("field", "field {0} round {1} encerrado (time {2} venceu, causa={3}, wire 2bf={4}, w0={5} w1={6})",
+                Id, Round, winnerTeam, cause, WinnerSide, Wins0, Wins1);
         }
 
         /// <summary>FUN_00407be0: fim de match (motivo). field+8=1, players -> state 1.</summary>
