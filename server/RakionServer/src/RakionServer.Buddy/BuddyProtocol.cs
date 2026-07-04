@@ -60,6 +60,7 @@ namespace RakionServer.Buddy
         public const ushort SVC_SMS_SEND        = 0x2030;
         public const ushort SVC_TUNNEL_PACKET   = 0x2020;   // PM via tunnel TCP (relay) — IGNORADO: o PM é P2P puro (UDP direto)
         public const ushort SVC_USER_STATE      = 0x3010;   // cliente pergunta o status (presença) de um id
+        public const ushort SVC_SET_EXTLIST     = 0x3110;   // cliente seta/pinga a ext-list (nick 0x14 + 32B); RET 0x3111 (o cliente repetia sem parar sem o ack)
 
         private static readonly IReadOnlyDictionary<int, string> Names = new Dictionary<int, string>
         {

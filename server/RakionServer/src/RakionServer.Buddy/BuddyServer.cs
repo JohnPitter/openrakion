@@ -135,6 +135,9 @@ namespace RakionServer.Buddy
                 // no shop trava sem o RET_SET_NICK). GROUP_GETLIST: sem grupos.
                 case BuddyProtocol.SVC_SET_NICK:      ReplyOk(conn, BuddyProtocol.RET_SET_NICK); break;
                 case BuddyProtocol.SVC_SET_EXTUSER:   ReplyOk(conn, BuddyProtocol.RET_SET_EXTUSER); break;
+                // SET_EXTLIST: o cliente pinga a ext-list constantemente (818x no teste) e RE-ENVIA sem o ack ->
+                // confirma p/ parar o flood (o RET_SET_EXTLIST só checa wRtc==0).
+                case BuddyProtocol.SVC_SET_EXTLIST:   ReplyOk(conn, BuddyProtocol.RET_SET_EXTLIST); break;
                 case BuddyProtocol.SVC_GROUP_GETLIST: SendGroupListEmpty(conn); break;
 
                 // PM é P2P PURO -> o tunnel TCP (relay) NÃO é usado. Se o cliente cair no fallback, ignora.
