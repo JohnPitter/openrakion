@@ -13,12 +13,19 @@ namespace RakionServer.World
     public sealed partial class WorldServer
     {
         /// <summary>Registra a sala do host (do 0x3b) como Field DESCOBRÍVEL: reusa o field da sala e o decora com
-        /// os metadados (mapSlot/senha/nível). IsRoom=true = publicável no 0x36.</summary>
+        /// os metadados (mapSlot/senha/nível). IsRoom=true = publicável no 0x36. Os params vêm SEMPRE do 0x3b
+        /// RECÉM-parseado — um field reusado (host recriou a sala) não pode manter nome/mode/level da sala antiga.</summary>
         public Domain.Field? RegisterRoom(ClientSession host)
         {
             var f = GetOrCreateRoomField(host);
             if (f == null) return null;
             f.IsRoom = true;
+            f.Name = host.PendingRoomName;
+            f.Mode = host.PendingRoomMode;
+            f.MapId = host.PendingRoomMap;
+            f.MinLevel = host.PendingRoomMinLevel;
+            f.MaxLevel = host.PendingRoomMaxLevel;
+            f.FragLimit = host.PendingRoomFrag;
             f.MapSlot = host.PendingRoomSlot;
             f.Password = host.PendingRoomPass ?? "";
             if (host.PendingRoomRounds != 0) f.MaxRounds = host.PendingRoomRounds;

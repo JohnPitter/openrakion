@@ -81,14 +81,22 @@ namespace RakionServer.World
         public IEnumerable<ClientSession> Sessions => _sessions.Values;
 
         /// <summary>Snapshot dos USUÁRIOS ONLINE (conectados com char carregado) p/ a user list do canal (0x1e).
-        /// DTO de borda — só uid/nome/classe, sem expor a sessão crua.</summary>
+        /// DTO de borda — só uid/nome/classe, sem expor a sessão crua. DEDUP por nome de char (fica a sessão
+        /// mais recente = maior Slot): uma reconexão deixa a sessão velha ainda "Connected" até o TCP notar,
+        /// e o char aparecia DUPLICADO na lista.</summary>
         public IReadOnlyList<Network.LobbyFrames.UserListEntry> SnapshotChannelUsers()
         {
-            var list = new List<Network.LobbyFrames.UserListEntry>();
+            var byName = new Dictionary<string, (ushort Slot, Network.LobbyFrames.UserListEntry Entry)>();
             foreach (var s in _sessions.Values)
-                if (s.Connected && !string.IsNullOrEmpty(s.CharName))
-                    list.Add(new Network.LobbyFrames.UserListEntry(
-                        (ushort)(s.GameInfoId > 0 ? s.GameInfoId : s.Slot), s.CharName, s.CharClass));
+            {
+                if (!s.Connected || string.IsNullOrEmpty(s.CharName)) continue;
+                var e = new Network.LobbyFrames.UserListEntry(
+                    (ushort)(s.GameInfoId > 0 ? s.GameInfoId : s.Slot), s.CharName, s.CharClass);
+                if (!byName.TryGetValue(s.CharName, out var cur) || s.Slot > cur.Slot)
+                    byName[s.CharName] = (s.Slot, e);
+            }
+            var list = new List<Network.LobbyFrames.UserListEntry>(byName.Count);
+            foreach (var v in byName.Values) list.Add(v.Entry);
             return list;
         }
 

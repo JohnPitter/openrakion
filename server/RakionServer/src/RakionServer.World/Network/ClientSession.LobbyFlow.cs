@@ -152,21 +152,34 @@ namespace RakionServer.World.Network
                             Log.Ok("lobby", "[{0}] 0x3A ABANDONO do stage (field {1} seat {2}) -> W.O. processado",
                                 Slot, lf.Id, abandonedSeat);
                         }
-                        else if (lf != null && myRec != null && lf.Settled && lf.Count > 1)
+                        else if (lf != null && myRec != null && lf.Settled)
                         {
                             int leftSeat = myRec.Slot;
                             bool wasMaster = lf.MasterSlot == leftSeat;
                             lf.Remove(this);                                   // libera o rec (State=0, Session=null)
-                            if (wasMaster)                                     // host saiu -> reatribui ao 1º ocupado
-                            {
-                                lf.MasterSlot = -1;
-                                foreach (var r in lf.Slots) if (r.Occupied) { lf.MasterSlot = r.Slot; break; }
-                            }
-                            byte[] memberLeave = { 0x3a, 0x00, (byte)leftSeat };
-                            lock (lf.Players) foreach (var m in lf.Players) if (m.Connected) m.SendLobby(memberLeave);
                             FieldId = -1;
-                            Log.Ok("lobby", "[{0}] saiu da sala {1} seat {2} -> 0x3a member-leave a {3} restante(s){4}",
-                                Slot, lf.Id, leftSeat, lf.Count, wasMaster ? " (novo master seat " + lf.MasterSlot + ")" : "");
+                            if (lf.Count == 0)
+                            {
+                                // ÚLTIMO membro saiu da sala pré-partida: LIBERA o field. Sem isto a sala ficava
+                                // FANTASMA na game list (o tick não liquida Settled) e o FieldId/field velho
+                                // fazia o próximo 0x3b REUSAR a sala antiga (não dava pra criar outra).
+                                _server.Bots.DiscardBots(lf);
+                                lock (_server.Fields) _server.Fields.Remove(lf);
+                                Log.Ok("lobby", "[{0}] último membro saiu da sala {1} '{2}' -> field liberado", Slot, lf.Id, lf.Name);
+                            }
+                            else
+                            {
+                                if (wasMaster)                                 // host saiu -> reatribui ao 1º ocupado
+                                {
+                                    lf.MasterSlot = -1;
+                                    foreach (var r in lf.Slots) if (r.Occupied) { lf.MasterSlot = r.Slot; break; }
+                                    lf.Master = lf.RecAt(lf.MasterSlot)?.Session ?? lf.Master;   // publicação 0x36 usa Master
+                                }
+                                byte[] memberLeave = { 0x3a, 0x00, (byte)leftSeat };
+                                lock (lf.Players) foreach (var m in lf.Players) if (m.Connected) m.SendLobby(memberLeave);
+                                Log.Ok("lobby", "[{0}] saiu da sala {1} seat {2} -> 0x3a member-leave a {3} restante(s){4}",
+                                    Slot, lf.Id, leftSeat, lf.Count, wasMaster ? " (novo master seat " + lf.MasterSlot + ")" : "");
+                            }
                         }
                     }
                     InField = true; FieldSecondary = true; SecondActive = true; Status = 2; // volta ao channel lobby (shop segue ok)
