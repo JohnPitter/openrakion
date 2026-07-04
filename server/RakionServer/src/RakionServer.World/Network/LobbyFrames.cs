@@ -46,10 +46,6 @@ namespace RakionServer.World.Network
         private static readonly byte[] GameGuardChallenge =
             { 0x4e, 0x95, 0xdd, 0x29, 0xce, 0x3a, 0x55, 0xdb, 0x20, 0xb6, 0xad, 0x97, 0xa6, 0x5c, 0xc0, 0x1c };
 
-        /// <summary>Registro do player no 0x1f/0x1e (FUN_0040afb0), na ordem [nome-NUL][class@1531][team@146c]
-        /// [dword@14d0]. O nome (2B) é escrito antes; aqui vêm o NUL terminador + os campos do char solo
-        /// (class=1, team/stats=0).</summary>
-        private static readonly byte[] PlayerRecordTail = { 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
         /// <summary>Resposta do 0x19 CharacterGetUserName (messenger "add buddy"): o WORLD informa o account-id
         /// do dono de um nick, que o cliente exige antes de adicionar amigo — sem isso ele trava em "Waiting for
@@ -159,20 +155,20 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
-        /// <summary>0x1f info de sessão/char. RE FUN_00404fc0: a ENTRADA (sucesso) tem LEN=15 =
-        /// [1f 00][00][00][userid:u16][registro do player]. O registro (FUN_0040afb0) = [nome\0][class][team]
-        /// [dword]. O byte 15+ do bloco era LIXO DE STACK — VARIOU entre sessões (06/64/08 no diff golden×log),
-        /// logo zero-pad (LEN real=15). Userid e nome vêm do domínio. A volta-à-lista pós-clear re-manda ESTE
-        /// MESMO frame (mitm_move_133859 l.460 == entrada l.19; só o byte de lixo difere — sem handle/marker).</summary>
-        public static byte[] SessionInfo(ushort userId, string name)
+        /// <summary>0x1f info de sessão/char. RE FUN_00404fc0: a ENTRADA (sucesso) = [1f 00][00 00][userid:u16]
+        /// [registro FUN_0040afb0]. O registro = [nome COMPLETO\0][class][team][dword]. Cravado da captura
+        /// (orig_capture2: `1f00 0000 0600 4a503200 01 00 00000000`) — o `WriteName` de 2 bytes CORTAVA o nome
+        /// ("Heroi2"→"He" na identidade da sessão/messenger). O byte após o dword era LIXO DE STACK, zero-pad.</summary>
+        public static byte[] SessionInfo(ushort userId, string name, byte charClass = 1)
         {
             using var w = new PacketWriter();
             w.WriteWord(0x1f);
             w.WriteWord(0);
             w.WriteWord(userId);
-            WriteName(w, name);
-            w.WriteBytes(PlayerRecordTail);
-            w.WriteBytes(new byte[9]);              // bloco de 24B: byte 15+ era lixo de stack (LEN real=15)
+            w.WriteCString(name);                   // nome COMPLETO + NUL (FUN_0040afb0 user+0x14a8)
+            w.WriteByte(charClass);                 // class (user+0x1531) — solo default 1
+            w.WriteByte(0);                         // team (user+0x146c)
+            w.WriteInt32(0);                        // dword (user+0x14d0)
             return w.ToArray();
         }
 
@@ -306,13 +302,6 @@ namespace RakionServer.World.Network
             }
             w.WriteBytes(new byte[9]);              // trailer zeros
             return w.ToArray();
-        }
-
-        private static void WriteName(PacketWriter w, string name)
-        {
-            byte[] nb = Encoding.ASCII.GetBytes(name ?? "");
-            w.WriteByte(nb.Length > 0 ? nb[0] : 0);
-            w.WriteByte(nb.Length > 1 ? nb[1] : 0);
         }
     }
 }

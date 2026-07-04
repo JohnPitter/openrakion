@@ -51,7 +51,7 @@ namespace RakionServer.World.Network
                     // o gate a partir do Game List (Roomstate Fase A — habilita o inventario/shop).
                     InField = true; FieldSecondary = true; SecondActive = true; Status = 2;
                     SendEncryptedFrame(LobbyFrames.SpawnAck());
-                    SendEncryptedFrame(LobbyFrames.SessionInfo(LobbyUid, LobbyName));
+                    SendEncryptedFrame(LobbyFrames.SessionInfo(LobbyUid, CharName.Length > 0 ? CharName : LobbyName, CharClass));
                     SendEncryptedFrame(LobbyFrames.ChannelList(_server.SnapshotChannelUsers()));
                     Log.Ok("lobby", "[{0}] 0x14 + 0x1f + 0x1e (canais) + channel-lobby (Status=2)", Slot);
                     // POPULA o espelho do box (AccountInfo+0x78) JA no login — o painel do box no lobby (menu 0x14)
@@ -186,7 +186,7 @@ namespace RakionServer.World.Network
                     InField = true; FieldSecondary = true; SecondActive = true; Status = 2; // volta ao channel lobby (shop segue ok)
                     // RE confirmada (mitm_move_133859 l.460/461 == entrada l.19/20): a volta-à-lista re-manda
                     // os MESMOS 0x1f/0x1e/0x36 da entrada, sintetizados do estado — sem frame "clear" distinto.
-                    SendEncryptedFrame(LobbyFrames.SessionInfo(LobbyUid, LobbyName));
+                    SendEncryptedFrame(LobbyFrames.SessionInfo(LobbyUid, CharName.Length > 0 ? CharName : LobbyName, CharClass));
                     SendEncryptedFrame(LobbyFrames.ChannelList(_server.SnapshotChannelUsers()));
                     SendEncryptedFrame(LobbyFrames.GameList(_server.SnapshotRooms()));
                     Log.Ok("lobby", "[{0}] 0x3A FieldLeaveGame -> lista de games (channel lobby Status=2)", Slot);
@@ -371,7 +371,15 @@ namespace RakionServer.World.Network
                     }
                     // No lobby/stage o cliente manda varios opcodes que o world original so consome
                     // sem responder. Evita DISC enquanto a fase de gameplay nao esta toda portada.
-                    if (InField) { Log.Debug("lobby", "[{0}] opcode {1:X2} em campo (sem resp)", Slot, opcode); return true; }
+                    if (InField)
+                    {
+                        // TRACE de RE (invite da sala/messenger etc.): loga o opcode + payload dos opcodes ainda
+                        // não portados, p/ cravar qual o botão Invite dispara ao vivo (a captura de fluxo único
+                        // não o tinha). Ver [[diagnostico-runtime-quebra-loop-de-RE]].
+                        Log.Info("lobby", "[{0}] opcode NAO-PORTADO {1:X2} em campo (sem resp) — {2}B: {3}",
+                            Slot, opcode, data.Length, Convert.ToHexString(data.AsSpan(0, Math.Min(data.Length, 48))));
+                        return true;
+                    }
                     return false;
             }
         }

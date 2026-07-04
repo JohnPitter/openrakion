@@ -69,9 +69,15 @@ namespace RakionServer.World.Tests
         // ---- Frames com registro de player (entrada E volta-à-lista): LEN real + zero-pad (cauda era lixo) ----
 
         [Fact]
-        public void SessionInfo_RealLen15_ZeroPad() =>  // RE FUN_00404fc0: ok=LEN15 [1f 00][00][00][uid][registro]; byte15+ lixo
-            Assert.Equal("1f000000e7034a5000010000000000000000000000000000",
-                Hex(LobbyFrames.SessionInfo(RefUserId, RefName)));
+        public void SessionInfo_FullName_MatchesOriginalCapture() =>
+            // RE FUN_00404fc0 + captura (uid6 "JP2" classe1): [1f 00][00 00][uid][nome COMPLETO\0][class][team][u32].
+            // Nome COMPLETO (o WriteName de 2 bytes cortava "Heroi2"→"He" na identidade da sessão/messenger).
+            Assert.Equal("1f000000" + "0600" + "4a503200" + "01" + "00" + "00000000",
+                Hex(LobbyFrames.SessionInfo(6, "JP2", 1)));
+
+        [Fact]
+        public void SessionInfo_LongName_NotTruncated() =>
+            Assert.Contains("4865726f693200", Hex(LobbyFrames.SessionInfo(1, "Heroi2", 1)));   // "Heroi2\0" inteiro
 
         [Fact]
         public void ChannelList_OneUser_MatchesOriginalCapture()
