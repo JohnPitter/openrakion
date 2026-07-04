@@ -13,11 +13,6 @@ namespace RakionServer.World
     /// </summary>
     public sealed partial class WorldServer
     {
-        /// <summary>Tamanho FIXO do registro de jogador = 88B, o MESMO no member-join (0x38) e no roster (0x37): o
-        /// cliente usa o mesmo parser e avança um passo constante por slot. Encurtar o roster p/ 78B CRASHAVA o
-        /// cliente in-game (2026-07-03); record variável (crescia com o nome) desalinhava (card fantasma).</summary>
-        private const int PlayerRecordLen = 88;
-
         /// <summary>userid sintético do bot no frame (faixa alta p/ não colidir com usuários reais 1..MaxUser). É
         /// detalhe de SERIALIZAÇÃO (como um bot é codificado no frame), por isso mora aqui e não no BotManager.</summary>
         internal static ushort BotUserId(int seat) => (ushort)(0xB000 + seat);
@@ -120,13 +115,13 @@ namespace RakionServer.World
         }
 
         /// <summary>
-        /// Registro de jogador — espelho EXATO de FUN_0040b7f0: [nome\0][tag\0][slotInBlob] + [ENDEREÇO UDP do peer]
-        /// + class/level + cauda de equip default (11B). TAMANHO FIXO de <see cref="PlayerRecordLen"/>=88B: o mesmo
-        /// parser do cliente lê o record no 0x38 (member-join) E no 0x37 (roster), então o passo por slot tem de ser
-        /// CONSTANTE 88B, independente do nome — record variável (crescia com o nome) desalinhava os slots seguintes
-        /// (card FANTASMA); encurtar p/ 78B CRASHAVA o cliente (2026-07-03). O ENDEREÇO P2P (ver
-        /// <see cref="WritePeerAddr"/>) é o que o cliente usa p/ o 0x30a direto; a cauda de 11B é o observer-fix
-        /// (sem ela o 2º humano vira "observador" no stage).
+        /// Registro de jogador — espelho de FUN_0040b7f0: [nome\0][tag\0][slotInBlob] + [ENDEREÇO UDP do peer] +
+        /// class/level + 2 blocos de equip (zerados) + cauda de equip default (11B). O cliente lê o record de forma
+        /// VARIÁVEL (nome até \0 + resto de tamanho FIXO), então NÃO forçar um total fixo por buffer — tentar isso
+        /// (88/78B com a cauda em offset fixo) CRASHAVA o cliente in-game p/ nomes longos (2026-07-04). O ENDEREÇO
+        /// P2P (ver <see cref="WritePeerAddr"/>) é o que o cliente usa p/ o 0x30a direto; a cauda de 11B é o
+        /// observer-fix (sem ela o 2º humano vira "observador" no stage). NOTA: o card FANTASMA no roster do 2º
+        /// cliente é problema SEPARADO — a investigar com captura do original, NÃO com o tamanho do record.
         /// </summary>
         internal static byte[] BuildPlayerRecord(string name, byte charClass, byte level, byte slotInBlob = 0,
                                                  System.Net.IPEndPoint? peerEp = null)
@@ -139,13 +134,11 @@ namespace RakionServer.World
             w.WriteByte(charClass);             // +0x1530  CLASSE
             w.WriteByte(level);                 // +0x1531  LEVEL
             w.WriteByte(0);                     // +0x1473
-            byte[] content = w.ToArray();
-            var rec = new byte[PlayerRecordLen];
-            Array.Copy(content, rec, Math.Min(content.Length, PlayerRecordLen));   // conteúdo no início; resto = zero-pad
-            // bloco de equip DEFAULT nos ÚLTIMOS 11B (offset fixo) — observer-fix.
-            byte[] tail = { 0x11, 0x00, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 };
-            Array.Copy(tail, 0, rec, PlayerRecordLen - tail.Length, tail.Length);
-            return rec;
+            w.WriteBytes(new byte[0x26]);       // +0x1da4  equip/aparência (38B) — sem gear
+            w.WriteBytes(new byte[0x13]);       // +0x1dca  equip2/stat (19B) — sem gear
+            // cauda de equip DEFAULT (11B) — observer-fix (sem ela o 2º humano vira "observador" no stage).
+            w.WriteBytes(new byte[] { 0x11, 0x00, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 });
+            return w.ToArray();
         }
     }
 }
