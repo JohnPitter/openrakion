@@ -143,7 +143,6 @@ namespace RakionServer.World.Network
         private bool _potionPainted;          // quickslot pintado no 1o open (0x2c) da sessao — fallback do auto-render
         private bool _potionLoginPainted;     // quickslot pintado na entrada do lobby (0x14) — auto-render no relog (CONFIRMADO)
         private bool _chanJoinAnnounced;      // 0x1e-append do novato já broadcastado (1x por sessão; o widget acumula)
-        private bool _buddyNameAnnounced;     // 0x15 proativo do nome do messenger já enviado (1x; título "X's messenger")
 
         /// <summary>
         /// Cifra do canal lobby/field (AES-128, chave/IV reais do worldserv.exe). No original
