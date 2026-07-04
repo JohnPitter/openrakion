@@ -45,7 +45,7 @@ namespace RakionServer.World.Network
             if (isRemove)
             {
                 bool all = lower.Contains("all") || lower.StartsWith("/clearbot");
-                int removed = world.RemoveBotsFromField(field, u, all);
+                int removed = world.Bots.RemoveBotsFromField(field, u, all);
                 BotChatFeedback(u, removed > 0 ? $"{removed} bot(s) removido(s)" : "nenhum bot para remover");
                 return true;
             }
@@ -89,7 +89,7 @@ namespace RakionServer.World.Network
             int ok = 0; string lastMsg = "";
             for (int i = 0; i < count; i++)
             {
-                var r = world.AddBotToField(field, u, diff);
+                var r = world.Bots.AddBotToField(field, u, diff);
                 if (r.Ok)
                 {
                     if (npcCls != 0 && r.Bot != null) r.Bot.NpcClassId = npcCls;   // override da classe do avatar

@@ -11,7 +11,7 @@ namespace RakionServer.World
     /// <see cref="Domain.Field.EndRoundObjective"/> = vitória do round (= "ganhar o mapa"). Geometria
     /// por mapa em <see cref="GolemWarLayouts"/> (coords do .wld; calibração pela sonda do BotAi).
     /// </summary>
-    public sealed partial class WorldServer
+    public sealed partial class BotManager
     {
         /// <summary>Distância XZ (coord) p/ um waypoint de passagem/pad ser "alcançado".</summary>
         private const float WaypointReachDist = 2.5f;

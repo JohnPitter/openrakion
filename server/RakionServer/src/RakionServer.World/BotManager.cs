@@ -6,13 +6,22 @@ using RakionServer.World.Network;
 namespace RakionServer.World
 {
     /// <summary>
-    /// Serviço de domínio dos BOTS (parte do WorldServer, fora dos handlers de rede). Regra de
-    /// negócio: adicionar/remover bot, escolher time/level/classe, e o ciclo efêmero (bots somem
-    /// no fim do match ou quando o último humano sai). O comportamento in-field (spawn/IA/morte) é
-    /// SINTETIZADO do estado — ver WorldServer.BotAi / o motor de partida —, nunca relay.
+    /// Serviço de domínio dos BOTS — subsistema AUTÔNOMO, extraído do <see cref="WorldServer"/> p/ isolar o
+    /// acoplamento. Regra de negócio: adicionar/remover bot, escolher time/level/classe, o ciclo efêmero (bots
+    /// somem no fim do match ou quando o último humano sai), o motor de IA/combate (partials .Ai/.Objective) e o
+    /// render no cliente (.Roster/.Npc/.Peer). O comportamento in-field é SINTETIZADO do estado (nunca relay).
+    /// Depende do <see cref="WorldServer"/> APENAS pela porta do gameplay UDP (<see cref="_gameplayPort"/>); todo
+    /// o resto trafega por <see cref="Domain.Field"/> (parâmetro), domínio (<see cref="BotPlayer"/>) e estáticos
+    /// (BotMovement/BotProfile/BridgeIo/GolemWarLayouts). Instância única, dona do <see cref="WorldServer.Bots"/>.
     /// </summary>
-    public sealed partial class WorldServer
+    public sealed partial class BotManager
     {
+        /// <summary>Única dependência do servidor: a porta do gameplay UDP (destino loopback dos datagramas do bot).
+        /// Lazy pois o <see cref="Network.UdpGameplay"/> nasce no Start, após a construção do BotManager.</summary>
+        private readonly Func<int> _gameplayPort;
+
+        public BotManager(Func<int> gameplayPort) => _gameplayPort = gameplayPort;
+
         /// <summary>Resultado de uma tentativa de adicionar bot (p/ feedback ao host).</summary>
         public readonly record struct AddBotResult(bool Ok, string Message, int Seat, BotPlayer? Bot);
 

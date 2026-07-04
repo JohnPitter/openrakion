@@ -442,7 +442,7 @@ namespace RakionServer.World.Network
             // deixava Phase=Pre → o bot nunca spawnava. Com bots o host é o único humano, então o round começa
             // no load dele (2 humanos usariam o all-loaded 0x54 do original).
             if (f.Mode != 0 && f.BotCount > 0 && f.Phase != Domain.MatchPhase.Playing) f.StartRound();
-            _server.SpawnFieldBotsInStage(f); // 0x45 dos bots + 0x54 begin AGORA (no load do host): timing + o begin que faltava
+            _server.Bots.SpawnFieldBotsInStage(f); // 0x45 dos bots + 0x54 begin AGORA (no load do host): timing + o begin que faltava
             Log.Ok("field", "[{0}] sala aplicada ao field {1}: mode={2} map={3} dur={4}s rounds={5}",
                 Slot, f.Id, f.Mode, f.MapId, f.RoundDurationSec, f.MaxRounds);
             // Sala Battle/PvP (mode != 0) = fluxo NETWORKED: o SERVER inicia o loop UDP com o 1o

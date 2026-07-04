@@ -15,7 +15,7 @@ namespace RakionServer.World
     /// O handshake (REQ_CONNECTREMOTE→…→CRC→SEQ_ADDPLAYER) sai deste socket; o host registra
     /// o endpoint como peer e aceita 0x30a como gameplay válido.
     /// </summary>
-    public sealed partial class WorldServer
+    public sealed partial class BotManager
     {
         private const string BotPeerModName = "";
         private const uint BotPeerFileCrcSentinel = 0x12345678;

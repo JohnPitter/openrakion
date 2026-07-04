@@ -2,104 +2,32 @@ using System;
 using System.Text;
 using RakionServer.Common;
 using RakionServer.World.Domain;
-using RakionServer.World.Network;
 
 namespace RakionServer.World
 {
     /// <summary>
-    /// Renderização do bot no ROSTER da sala (os slots RED/BLUE do game room). SÍNTESE do member-join do
-    /// worldserv ORIGINAL (RE em rakion-work/ghidra-proj/joinflow*.out.txt + joinasm.out.txt):
-    ///   - broadcast 0x38 montado em FUN_00406f40 @0x40735a (header 8B + registro);
-    ///   - registro de jogador serializado por FUN_0040b7f0 @0x40b7f0 ([nome\0][tag\0] + cauda fixa 0x49B).
-    /// O cliente JÁ tem o caminho de RECEBER 0x38 (quando um humano entra na sala), então o frame sintetizado
-    /// do estado do bot o desenha no slot — não é replay de captura.
+    /// SERIALIZAÇÃO dos frames de ROSTER da sala (0x37 room-state, 0x38 member-join, registro de jogador
+    /// FUN_0040b7f0) — golden source, usada por QUALQUER ocupante (host/humano/bot). NÃO é bot-específico: o
+    /// join de humano (<see cref="TryJoinRoom"/>) e o render do bot (<see cref="BotManager"/>) montam os MESMOS
+    /// frames a partir do estado do <see cref="Domain.Field"/>. Layout cravado byte-a-byte da captura do original.
     /// </summary>
     public sealed partial class WorldServer
     {
-        /// <summary>userid sintético do bot no frame (faixa alta p/ não colidir com usuários reais 1..MaxUser).</summary>
-        private static ushort BotUserId(int seat) => (ushort)(0xB000 + seat);
+        /// <summary>Tamanho FIXO do registro de jogador: o cliente avança um passo constante por slot (cravado da
+        /// captura: "JP2"/nome-3 e "JP"/nome-2 têm AMBOS 78B no roster e 88B no member-join). ROSTER (0x37) = 78B;
+        /// MEMBER-JOIN (0x38) = 88B (os 10B extras = bloco de equip default nos últimos 11B, do observer-fix).</summary>
+        private const int RosterRecordLen = 78, MemberJoinRecordLen = 88;
 
-        /// <summary>
-        /// Member-join 0x38 ao host: faz o cliente desenhar o bot no slot. RE (FUN_00406f40 @0x40735a, offsets
-        /// confirmados pelas anotações Stack[] do disassembly): [38 00][status][slot][state][uid:u16][slotFlag]
-        /// [registro], len = registroLen + 8.
-        /// </summary>
-        private void NotifyBotJoinedRoom(Domain.Field f, BotPlayer bot, int seat, ClientSession host)
-        {
-            try { host.SendLobby(BuildRoomMemberJoin(bot, seat)); }
-            catch (Exception ex) { Log.Debug("bot", "roster 0x38 falhou: {0}", ex.Message); return; }
-            Log.Ok("bot", "roster: 0x38 member-join '{0}' seat {1} (cls {2} lvl {3}) -> host [{4}]",
-                bot.Name, seat, bot.CharClass, bot.Level, host.Slot);
-        }
-
-        /// <summary>Member-leave 0x3a ao host: esvazia o slot do bot. RE FUN_004091e0 @0x409403: [3a 00][slot], len 3.</summary>
-        private void NotifyBotLeftRoom(Domain.Field f, int seat, ClientSession host)
-        {
-            using var w = new PacketWriter();
-            w.WriteWord(0x3a);
-            w.WriteByte((byte)seat);
-            try { host.SendLobby(w.ToArray()); } catch { }
-            Log.Debug("bot", "roster: 0x3a member-leave seat {0} -> host [{1}]", seat, host.Slot);
-        }
-
-        /// <summary>
-        /// Spawn 3D do bot no STAGE — emite o 0x4b AddPlayer (canal FIELD via SendMessage; NÃO o LOBBY) que
-        /// INSTANCIA o avatar no host. O corpo (decode byte-a-byte da captura MITM) é sintetizado pelo codec
-        /// <see cref="BotMovement.BuildStageAddPlayer"/>; aqui só se traduz estado→chamada e serializa.
-        /// </summary>
-        private void NotifyBotAddPlayer(Domain.Field f, int seat, BotPlayer bot)
-        {
-            var host = f.Master;
-            if (host == null) return;
-            try { host.SendMessage(0x4b, BotMovement.BuildStageAddPlayer(bot, seat)); } catch { return; }
-            Log.Ok("bot", "stage: 0x4b AddPlayer seat {0} (cls {1} lvl {2}) -> host [{3}]",
-                seat, bot.CharClass, bot.Level, host.Slot);
-        }
-
-        /// <summary>
-        /// Spawna os bots no STAGE no load do host (chamado do StartGameClock/0x4b). Sequência CRAVADA da
-        /// captura MITM real (stage_capture.txt): o servidor manda 0x48 FieldGameStart UMA vez e, em seguida,
-        /// 0x4b AddPlayer por bot — no canal FIELD. O 0x4b é o que INSTANCIA o avatar 3D do bot no mundo do
-        /// host. Gated por ClientFramesEnabled.
-        /// </summary>
-        public void SpawnFieldBotsInStage(Domain.Field f)
-        {
-            if (!BotMovement.ClientFramesEnabled || f.BotCount == 0) return;
-            var host = f.Master;
-            if (host == null) return;
-            try { host.SendMessage(0x48, BotMovement.BuildFieldGameStart()); } catch { }   // round-load (1x)
-            foreach (var rec in f.BotRecs())
-            {
-                var bot = rec.Bot!;
-                bot.SpawnedThisRound = true;
-                bot.SpawnedMs = Environment.TickCount64;
-                bot.InitStagePosition();
-                rec.State = 4; rec.Dead = false; bot.Dead = false;
-                bot.SpawnGen++;                                  // nova entidade na engine -> a ponte invalida o cache e re-acha (anti-crash)
-                if (BotMovement.UseNpcAvatar)
-                {
-                    SpawnBotAsNpc(f, rec, bot);                  // 0x307 NPC (descartado: classes auto-vivas não registram)
-                }
-                else
-                {
-                    NotifyBotAddPlayer(f, rec.Slot, bot);        // 0x45 fantasma CPlayer (RENDERIZA) — movido pela ponte de injeção
-                    EnsureBotPeerConnected(f, rec, bot);
-                }
-            }
-        }
-
-        /// <summary>Header do 0x38 (8B) + registro do jogador. Veja o disassembly em joinasm.out.txt.</summary>
-        private static byte[] BuildRoomMemberJoin(BotPlayer bot, int seat) =>
-            BuildMemberJoin(bot.Name, (byte)bot.CharClass, (byte)bot.Level, BotUserId(seat), seat);
+        /// <summary>userid sintético do bot no frame (faixa alta p/ não colidir com usuários reais 1..MaxUser). É
+        /// detalhe de SERIALIZAÇÃO (como um bot é codificado no frame), por isso mora aqui e não no BotManager.</summary>
+        internal static ushort BotUserId(int seat) => (ushort)(0xB000 + seat);
 
         /// <summary>Userid do ocupante no frame (bot = faixa alta 0xB000+seat; humano = usergameinfo.id).</summary>
         private static ushort RecUid(Domain.PlayerRec rec) =>
             rec.Bot != null ? BotUserId(rec.Slot) : (ushort)(rec.Session?.GameInfoId ?? 0);
 
-        /// <summary>Registro de jogador (FUN_0040b7f0) de QUALQUER ocupante (host/humano/bot) NO ROSTER do 0x37.
-        /// rosterForm=true: 10 bytes MAIS CURTO que o registro do 0x38 member-join (78B vs 88B p/ nome de 2 chars),
-        /// cravado da captura (o parse do roster no 0x37 e do member-join no 0x38 sao funcoes diferentes com caudas
-        /// diferentes). Usar a forma de 88B aqui alonga cada slot -> desalinha os slots seguintes = card fantasma.</summary>
+        /// <summary>Registro de jogador (FUN_0040b7f0) de QUALQUER ocupante (host/humano/bot) NO ROSTER do 0x37
+        /// (forma de 78B — 10B mais curta que o member-join do 0x38).</summary>
         private static byte[] RecordFor(Domain.PlayerRec rec) =>
             rec.Bot != null
                 ? BuildPlayerRecord(rec.Bot.Name, (byte)rec.Bot.CharClass, (byte)rec.Bot.Level, rosterForm: true)
@@ -192,22 +120,14 @@ namespace RakionServer.World
 
         /// <summary>
         /// Registro de jogador — espelho EXATO de FUN_0040b7f0: [nome\0][tag\0][slotInBlob] + [ENDEREÇO UDP do peer]
-        /// + class/level + cauda de equip (zerada). O ENDEREÇO (4 campos +0x1450/+0x1458/+0x1454/+0x145a) É o que o
-        /// original preenche p/ o P2P direto (ver <see cref="WritePeerAddr"/>); eu zerava e por isso os 2 humanos
-        /// nunca se achavam. Os 2 blocos de equip vão ZERADOS (sem gear; item id 0 = slot vazio, evita AV no render).
+        /// + class/level + cauda de equip. TAMANHO FIXO (78 roster / 88 member-join): escrever tamanho VARIÁVEL
+        /// alongava o registro p/ nomes >2 chars (ex.: "Heroi2" -> 82B) e DESALINHAVA os slots seguintes do roster
+        /// 0x37 -> card FANTASMA. O passo por slot tem de ser constante, independente do tamanho do nome. O ENDEREÇO
+        /// P2P (ver <see cref="WritePeerAddr"/>) é o que o cliente usa p/ o 0x30a direto.
         /// </summary>
-        /// <summary>Tamanho FIXO do registro de jogador: o cliente avança um passo constante por slot (cravado da
-        /// captura: "JP2"/nome-3 e "JP"/nome-2 têm AMBOS 78B no roster e 88B no member-join). ROSTER (0x37) = 78B;
-        /// MEMBER-JOIN (0x38) = 88B (os 10B extras = bloco de equip default nos últimos 11B, do observer-fix).</summary>
-        private const int RosterRecordLen = 78, MemberJoinRecordLen = 88;
-
         internal static byte[] BuildPlayerRecord(string name, byte charClass, byte level, byte slotInBlob = 0,
                                                  System.Net.IPEndPoint? peerEp = null, bool rosterForm = false)
         {
-            // Registro de TAMANHO FIXO. O conteúdo (nome\0 + campos) vai no INÍCIO e o resto é zero-pad até o total.
-            // CRÍTICO: escrever tamanho VARIÁVEL (nome + pad fixo) alongava o registro p/ nomes >2 chars (ex.:
-            // "Heroi2" -> 82B) e DESALINHAVA os slots seguintes do roster 0x37 -> card FANTASMA. O passo por slot
-            // tem de ser constante (78/88), independente do tamanho do nome.
             int total = rosterForm ? RosterRecordLen : MemberJoinRecordLen;
             using var w = new PacketWriter();
             w.WriteBytes(Encoding.ASCII.GetBytes(name ?? "")); w.WriteByte(0);  // nome + NUL  (+0x14a8)

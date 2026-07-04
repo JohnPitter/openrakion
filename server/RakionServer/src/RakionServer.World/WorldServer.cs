@@ -201,7 +201,7 @@ namespace RakionServer.World
             if (f.Count == 0)
             {
                 int bots = f.BotCount;
-                DiscardBots(f);
+                Bots.DiscardBots(f);
                 lock (Fields) Fields.Remove(f);
                 Log.Info("field", "field {0} '{1}' liberado (sem humanos; {2} bot(s) descartado(s))",
                     f.Id, f.Name, bots);
@@ -212,7 +212,13 @@ namespace RakionServer.World
         {
             _cfg = cfg;
             _db = db;
+            Bots = new BotManager(() => _udpGame?.Port ?? 40708);
         }
+
+        /// <summary>Subsistema de BOTS (IA, roster, peer, ciclo de vida) — extraído do WorldServer p/ isolar o
+        /// acoplamento; depende só da porta do gameplay UDP. Entradas: BotTick/SpawnFieldBotsInStage/DiscardBots
+        /// (motor de partida) e AddBotToField/RemoveBotsFromField (chat /addbot).</summary>
+        public BotManager Bots { get; }
 
         public bool Locked { get; private set; }                 // this+0x50 (servidor fechado p/ GM)
         public PuConfig PuConfig { get; private set; } = new();   // pu_config: preço/bônus/multiplicadores do PU (lida no boot)
@@ -349,7 +355,7 @@ namespace RakionServer.World
                     else
                     {
                         // IA dos bots (spawn 0x45 + decisão/movimento/ataque sintetizados) durante o round.
-                        BotTick(f);
+                        Bots.BotTick(f);
                     }
                     break;
 
@@ -397,7 +403,7 @@ namespace RakionServer.World
             f.Settled = true;
             // Fim de match (rounds acabaram / sem players): descarta TODOS os bots — eles nunca
             // persistem no roster pós-partida; a volta à sala mostra só humanos (re-adicionar refaz).
-            DiscardBots(f);
+            Bots.DiscardBots(f);
             if (f.Mode == 0) return;
             byte winner = f.Wins0 > f.Wins1 ? (byte)0 : f.Wins1 > f.Wins0 ? (byte)1 : (byte)2;
             foreach (var r in f.Slots)

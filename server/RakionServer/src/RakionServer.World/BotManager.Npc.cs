@@ -15,7 +15,7 @@ namespace RakionServer.World
     /// (<see cref="BotMovement.NpcClassBot"/> = um CEnemyBase do Rakion: anda/colide sozinho, ≠ Player-fantasma).
     /// RE byte-a-byte em engine.dll (handler 0x307 @0x3610d80a, 0x30b @0x3610dd6c). Substitui o boneco-fantasma.
     /// </summary>
-    public sealed partial class WorldServer
+    public sealed partial class BotManager
     {
         /// <summary>Spawn do bot como NPC: define a chave (owner=seat do bot, sub=0 — 1 NPC por owner evita
         /// colisão de tabela), garante o socket e emite o 0x8307 CreateNpc (reliable) UMA vez. O TIME de combate
@@ -72,7 +72,7 @@ namespace RakionServer.World
         {
             var sock = bot.UdpSocket;
             if (sock == null) return;
-            var serverEp = new IPEndPoint(IPAddress.Loopback, _udpGame?.Port ?? 40708);
+            var serverEp = new IPEndPoint(IPAddress.Loopback, _gameplayPort());
             try { sock.SendTo(pkt, serverEp); } catch { }
         }
     }

@@ -15,7 +15,7 @@ namespace RakionServer.World
     /// pelo servidor (o bot não tem cliente p/ reportar a própria morte); a morte do humano é nativa
     /// (o cliente reporta 0x4f).
     /// </summary>
-    public sealed partial class WorldServer
+    public sealed partial class BotManager
     {
         private const long BotMoveIntervalMs = 100;   // taxa real da captura (~100ms entre 0x30a do mesmo sender)
 
@@ -378,7 +378,7 @@ namespace RakionServer.World
             byte[] key = BotMovement.BuildKeystateDatagram(bot, rec.Slot, moving);
 
             // Envia para o servidor (loopback:40708) — o UdpGameplay.Process recebe e relaya ao host
-            var serverEp = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, _udpGame?.Port ?? 40708);
+            var serverEp = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, _gameplayPort());
             try { sock.SendTo(action, serverEp); } catch { }
             try { sock.SendTo(key, serverEp); } catch { }
 
@@ -402,33 +402,8 @@ namespace RakionServer.World
         {
             var sock = bot.UdpSocket;
             if (sock == null) return;
-            var serverEp = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, _udpGame?.Port ?? 40708);
+            var serverEp = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, _gameplayPort());
             try { sock.SendTo(BotMovement.BuildAttackDatagram(bot, rec.Slot, actionId), serverEp); } catch { }
-        }
-
-        /// <summary>
-        /// O HUMANO acertou o bot: o servidor SINTETIZA o dano (o bot não tem cliente p/ reportar morte).
-        /// Ao zerar o HP, marca morto, credita o killer/placar (OnPlayerDeath) e broadcasta 0x4f
-        /// (victim=botSeat) — o MESMO frame de morte de um jogador. Ponto de integração da detecção de
-        /// hit (task #6: parsear a ação de ataque do humano que o servidor já vê no UDP).
-        /// </summary>
-        public void BotTakeDamage(Domain.Field f, PlayerRec rec, int killerSeat, ushort dmg, byte cause)
-        {
-            var bot = rec.Bot;
-            if (bot == null || bot.Dead || rec.Dead) return;
-            bot.Hp = (ushort)Math.Max(0, bot.Hp - dmg);
-            if (bot.Hp > 0) return;
-
-            bot.Dead = true;
-            f.OnPlayerDeath(rec.Slot, killerSeat, cause);   // dead + crédito ao killer + placar/round (domínio)
-            if (BotMovement.ClientFramesEnabled)
-            {
-                f.BroadcastFieldPlaying(0x4f,
-                    new byte[] { (byte)rec.Slot, cause, (byte)killerSeat, f.Score0, f.Score1 });
-                if (f.Phase == MatchPhase.RoundEnd)
-                    f.BroadcastFieldPlaying(0x4a, f.Build0x4a());
-            }
-            Log.Ok("bot", "field {0}: '{1}' morto por seat {2} (cause {3})", f.Id, bot.Name, killerSeat, cause);
         }
     }
 }
