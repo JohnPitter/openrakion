@@ -215,6 +215,8 @@ namespace RakionServer.World
             Bots = new BotManager(() => _udpGame?.Port ?? 40708);
             Items = new ItemCatalog(db);
             Progression = new ProgressionService(db);
+            Enchant = new EnchantService(db, () => EnchantConfig);   // config recarregável — lê a vigente
+            Buddy = new BuddyService(db);
         }
 
         /// <summary>Catálogo de itens (iteminfo) — serviço extraído; carregado no boot, consultado por shop/login.</summary>
@@ -222,6 +224,12 @@ namespace RakionServer.World
 
         /// <summary>Progressão (exp/level/stage-result) — serviço extraído; opera sobre a sessão + DB.</summary>
         public ProgressionService Progression { get; }
+
+        /// <summary>Refino/enchant (0x74) — serviço extraído; opera sobre o box da sessão + DB + config recarregável.</summary>
+        public EnchantService Enchant { get; }
+
+        /// <summary>Buddy/messenger (add buddy 0x19) — serviço extraído; persistência de amizade recíproca.</summary>
+        public BuddyService Buddy { get; }
 
         /// <summary>Subsistema de BOTS (IA, roster, peer, ciclo de vida) — extraído do WorldServer p/ isolar o
         /// acoplamento; depende só da porta do gameplay UDP. Entradas: BotTick/SpawnFieldBotsInStage/DiscardBots
@@ -544,95 +552,7 @@ namespace RakionServer.World
         public WorldDatabase Db => _db;
 
 
-        /// <summary>Domínio do messenger (add buddy, 0x19): resolve o nick -> conta dona e, se existe e não é o
-        /// próprio jogador, persiste a amizade RECÍPROCA (buddylist nos 2 sentidos). Devolve (status, accountId do
-        /// dono) p/ o handler serializar a resposta — status 0=ok, 2=char não existe (lang 598). O AddBuddy do
-        /// cliente é MUDO (não emite SVC_ADD_BUDDY), então a amizade é persistida aqui, não no Buddy.</summary>
-        public async Task<(byte Status, string Account)> ResolveAndAddBuddyAsync(ClientSession s, string targetNick)
-        {
-            string? targetAccount = await _db.GetCharOwnerByNickAsync(targetNick);
-            if (targetAccount == null) return ((byte)2, "");                 // char não existe (lang 598)
-            if (!string.Equals(targetAccount, s.UserId, StringComparison.OrdinalIgnoreCase))
-            {
-                await _db.AddBuddyReciprocalAsync(s.UserId, targetAccount);
-                Log.Ok("buddy", "[{0}] amizade '{1}' <-> '{2}' (nick '{3}') persistida", s.Slot, s.UserId, targetAccount, targetNick);
-            }
-            return ((byte)0, targetAccount);
-        }
 
-        /// <summary>Aplica o UPGRADE do refino (handler 0x74 = clique de upgrade). SERVER-AUTHORITATIVE: este build do
-        /// worldserv DESCARTAVA o roll de FUN_0040c310 (o cliente fica em "Upgrading Now" esperando o resultado), então
-        /// reconstruímos o comportamento pretendido — valida (CUser::CheckEnchantReinforce), ROLA a probabilidade,
-        /// aplica o delta de nível na arma (persiste itembox.level) e consome catalyzer + materiais. Regra do motor de
-        /// refino — fora do handler de rede. Devolve o result code (0=+1, 1=nada, 2=-1; 6/7/8 = erro de validação).</summary>
-        public byte ApplyEnchant(ClientSession s, byte weaponSlot, byte catalyzerSlot,
-            System.Collections.Generic.IReadOnlyList<byte> materialSlots)
-        {
-            // VALIDAÇÃO (FUN_0040c310): arma presente e <8000, catalyzer 0x32c9..0x32cd, materiais 0x36b1..0x36b3,
-            // caps de nível. Erro -> 6/7/8 (o cliente mostra "não dá"), sem mexer no estado.
-            int weaponId = BoxItemAt(s, weaponSlot);
-            int catId = BoxItemAt(s, catalyzerSlot);
-            if (weaponId == 0 || weaponId >= 8000) return 6;
-            if (!EnchantConfig.TryGetCatalyzer(catId, out var cat)) return 7;   // catalisador desconhecido
-            int curLevel = weaponSlot < s.BoxLevel.Count ? s.BoxLevel[weaponSlot] : 0;
-            if (curLevel >= 15) return 6;
-            if (curLevel > cat.LevelCap) return 8;             // arma acima do teto do catalisador (Mithril +4, etc.)
-            int j1 = 0, j2 = 0, j3 = 0;
-            foreach (byte ms in materialSlots)
-            {
-                int mid = BoxItemAt(s, ms);
-                if (mid == 0x36b1) j1++;
-                else if (mid == 0x36b2) j2++;
-                else if (mid == 0x36b3) j3++;
-                else return 7;
-            }
-
-            // ROLL server-authoritative (a fórmula de probabilidade roda no servidor) -> delta de nível.
-            // s.PuActive entra no roll: a EnchantConfig aplica o multiplicador de Power User (e o de evento).
-            byte result = RollEnchant(catId, curLevel, j1, j2, j3, s.PuActive);
-            int delta = EnchantDelta(result);
-            int newLevel = System.Math.Clamp(curLevel + delta, 0, 15);
-            if (weaponSlot < s.BoxLevel.Count) s.BoxLevel[weaponSlot] = newLevel;
-            int wRow = weaponSlot < s.BoxRowId.Count ? s.BoxRowId[weaponSlot] : 0;
-            if (wRow > 0) _ = _db.UpdateItemBoxLevelAsync(wRow, newLevel);          // persiste o +N
-
-            // CONSOME catalyzer + materiais (some do box; remoção persistida pela linha EXATA do itembox)
-            Consume(s, catalyzerSlot);
-            foreach (byte ms in materialSlots) Consume(s, ms);
-
-            Log.Ok("enchant", "[{0}] refino: arma slot {1} +{2}->+{3} (result={4}); catalyzer {5:x} + {6} joia(s) [j1={7} j2={8} j3={9}] consumidos",
-                s.Slot, weaponSlot, curLevel, newLevel, result, catId, materialSlots.Count, j1, j2, j3);
-            return result;
-        }
-
-        /// <summary>Lê o itemId de uma célula do box (0 = vazia/fora de faixa).</summary>
-        private static int BoxItemAt(ClientSession s, byte slot) => slot < s.BoxItems.Count ? s.BoxItems[slot] : 0;
-
-        /// <summary>Esvazia a célula e persiste a remoção da linha EXATA do itembox.</summary>
-        private void Consume(ClientSession s, byte slot)
-        {
-            var (_, rowId) = s.ClearBoxCell(slot);
-            if (rowId > 0) _ = _db.DeleteItemBoxByIdAsync(rowId);
-        }
-
-        /// <summary>Roleta do refino: a probabilidade de sucesso vem da <see cref="EnchantConfig"/> (banco —
-        /// coeficientes por catalisador + multiplicadores de evento/PU; estrutura do polinômio fiel ao FUN_0040c310).
-        /// Aqui só sorteamos sucesso vs falha e, na falha, se vira downgrade (-1) ou nada. Destroy (result 5) é
-        /// neutralizado neste build. Devolve o result code (0=+1, 1=nada, 2=-1).</summary>
-        private byte RollEnchant(int catalyzerId, int curLevel, int j1, int j2, int j3, bool puActive)
-        {
-            double p0 = EnchantConfig.SuccessChance(catalyzerId, curLevel, j1, j2, j3, puActive);
-            if (_rng.NextDouble() < p0) return 0;   // SUCESSO +1
-            double downgrade = (1.0 - p0) * EnchantConfig.DowngradeFactor(curLevel);
-            return _rng.NextDouble() < downgrade ? (byte)2 : (byte)1;   // 2=-1 (downgrade) ou 1=nada
-        }
-
-        private static int EnchantDelta(byte resultCode) => resultCode switch
-        {
-            0 => +1, 2 => -1, 3 => -2, 4 => -3, _ => 0,
-        };
-
-        private readonly System.Random _rng = new();
 
 
         public void Stop()

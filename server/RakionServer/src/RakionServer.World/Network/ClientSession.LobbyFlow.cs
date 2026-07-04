@@ -362,7 +362,7 @@ namespace RakionServer.World.Network
 
             // Domínio: resolve o dono do nick E persiste a amizade RECÍPROCA (o AddBuddy do cliente é mudo, então
             // a amizade nasce aqui). O cliente não valida o accountId, só o status byte (0=ok, 2=não existe).
-            var (status, account) = await _server.ResolveAndAddBuddyAsync(this, nick);
+            var (status, account) = await _server.Buddy.ResolveAndAddBuddyAsync(this, nick);
             SendEncryptedFrame(LobbyFrames.GetUserNameResult(status, account, nick));
             Log.Ok("lobby", "[{0}] 0x19 GetUserName('{1}') -> status={2} account='{3}'", Slot, nick, status, account);
         }
