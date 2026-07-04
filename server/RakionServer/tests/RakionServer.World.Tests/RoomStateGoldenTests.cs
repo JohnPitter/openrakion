@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using RakionServer.World;
 using RakionServer.World.Domain;
 using Xunit;
@@ -75,6 +76,46 @@ namespace RakionServer.World.Tests
             byte[] mj = WorldServer.BuildPlayerRecord("Heroi2", 0, 1, rosterForm: false);
             byte[] tail = { 0x11, 0x00, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 };
             Assert.Equal(tail, mj[^11..]);
+        }
+
+        /// <summary>Faz o parse do roster do 0x37 EXATAMENTE como o cliente: header 16B + 3 C-strings + 20 slots
+        /// (vazio/locked = 1B; ocupado = [state][uid u16][team][record 78B FIXO]). Devolve (slotIndex, name) dos
+        /// ocupados. Se o record NÃO for de tamanho fixo, o passo desalinha e um slot vazio vira "ocupado" = fantasma.</summary>
+        private static List<(int slot, string name)> ParseRosterOccupied(byte[] frame)
+        {
+            int p = 16;                                   // header
+            for (int c = 0; c < 3; c++) { while (frame[p] != 0) p++; p++; }   // name\0 pw\0 desc\0
+            var occ = new List<(int, string)>();
+            for (int slot = 0; slot < 20; slot++)
+            {
+                byte st = frame[p];
+                if (st == 1)
+                {
+                    int recStart = p + 4;                 // [state][uid u16][team] = 4B
+                    int nameEnd = recStart; while (frame[nameEnd] != 0) nameEnd++;
+                    occ.Add((slot, System.Text.Encoding.ASCII.GetString(frame, recStart, nameEnd - recStart)));
+                    p = recStart + 78;                    // passo FIXO de 78B por record
+                }
+                else p += 1;                              // vazio (0) ou locked (5)
+            }
+            return occ;
+        }
+
+        [Fact]
+        public void RoomStateRoster_AlignsWithLongNames_NoPhantom()
+        {
+            // Reproduz o cenário do teste in-game que gerou o fantasma: master "Heroi2" (6 chars) no RED slot 0,
+            // um rival no BLUE slot 10. Se o record for de tamanho variável, o nome de 6 chars desalinha e o parse
+            // acha um slot ocupado a mais (fantasma). Com o record FIXO, alinha: exatamente slot 0 e 10.
+            var f = new Field(1) { Mode = 1, MaxPlayers = 10, State = 1, MasterSlot = 0 };
+            f.AddBot("Heroi2", 5, 1, team: 0);            // RED  -> slot 0
+            f.AddBot("Rival", 3, 1, team: 1);             // BLUE -> slot 10
+
+            var occ = ParseRosterOccupied(WorldServer.BuildRoomState(f));
+
+            Assert.Equal(2, occ.Count);                   // SEM fantasma (nem um 3º slot "ocupado")
+            Assert.Equal((0, "Heroi2"), occ[0]);          // master no RED slot 0
+            Assert.Equal((10, "Rival"), occ[1]);          // rival no BLUE slot 10
         }
     }
 }
