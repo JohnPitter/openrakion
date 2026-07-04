@@ -54,3 +54,37 @@ PRECREDENTIAL→LOGIN (login OK com lista vazia → client prossegue). Os demais
 são logados como stub (ADD/REMOVE buddy, grupos, SMS, tunnel) — cada um precisa do
 layout de payload (RE incremental do handler correspondente no OnMsg). O canal P2P
 (UDP, `P2P_SVC_*`) é entre clients e não passa pelo servidor.
+
+## Render da janela F9 (RE client-side `rakion.exe`, ImageBase 0x400000) — 2026-07-04
+
+**Por que a lista/título nasce VAZIA na abertura e só popula após um "nick change".**
+Cadeia do F9, cravada por decomp (cliproj/rakion_orig.exe):
+
+- **Criação (login, NÃO F9):** `FUN_0047bce0` (handler da resposta de login do World) chama
+  `FUN_0040bf90`, que **cria a janela do messenger + o host CBuddy2** (que conecta ao Buddy),
+  e a deixa **oculta** (`+0x128` vtable `+0x54` = `csComponent::Hide`). Objeto vive em
+  `outer+0x4a60` (`DAT_004feed0+0x4a60`); getter = `FUN_0040b9b0`.
+- **Toggle F9:** `FUN_0040e8e0` (key handler) em `WM_KEYUP(0x101)` + `VK_F9(0x78)` →
+  `FUN_00482020(GetMessenger())` → `FUN_00489120` (flip do byte de visível em `+0x124`).
+  No SHOW chama só: vtable `+0x88` `FUN_00482ec0` (`csComponent::IsShow(+0x128,1)` + `Select`)
+  e `FUN_004890c0` (itera os widgets-filho em `+0xd4` chamando `+0x10`). Depois `FUN_0040bc10`
+  (pause/resume do jogo).
+- **NENHUM** desses reconstrói a lista a partir do store do CBuddy2. As linhas e o contador
+  de online só entram por **eventos assíncronos**:
+  - presença `FUN_00489590` (host cb): acha o buddy (`FUN_004891c0`), seta flag online em
+    `+0x54`, ajusta o **contador de online em `host+0xe8`** (1º número do título "on/total"),
+    adiciona à lista visível (`FUN_00488d10`), repintando (vtable `+0x78`).
+  - nick/list callbacks → primitiva de add `FUN_00489c90` (switch por categoria de grupo).
+
+**Consequência:** o `RET_LOGIN` (registra o roster, byte-perfeito) e o `NTF_USER_STATE`
+(acende) chegam no **login**, ANTES do F9. A janela, ao abrir, só reexibe os widgets que já
+existem — não relê o store. O "nick change" funciona porque dispara um evento tardio (janela
+já montada) que força o rebuild/repaint. **O servidor não tem sinal de F9-open** (o SHOW é
+100% client-side `csComponent`), então push server-side não conserta (e re-push de presença
+OFFLINE *desregistra* — `FUN_10009aa0` "Unregister User" — esvaziando a lista).
+
+**Fix = patch no client** (mesmo mecanismo do botão Add Bot / janela): fazer o caminho de SHOW
+(`FUN_00489120` / site do F9 em `0x40e8e0`) forçar rebuild-a-partir-do-store + repaint. Aberto:
+distinguir **modelo-vazio** (re-popular via `FUN_00489c90` iterando o store) de **só-repaint**
+(dado presente, falta invalidar) — resolver com diagnóstico em runtime antes de gravar bytes
+(patches cegos aqui têm histórico de AV).
