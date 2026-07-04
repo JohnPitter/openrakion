@@ -80,6 +80,28 @@ namespace RakionServer.World
         /// <summary>Sessoes ativas (iteracao thread-safe sobre o dicionario).</summary>
         public IEnumerable<ClientSession> Sessions => _sessions.Values;
 
+        /// <summary>Snapshot dos USUÁRIOS ONLINE (conectados com char carregado) p/ a user list do canal (0x1e).
+        /// DTO de borda — só uid/nome/classe, sem expor a sessão crua.</summary>
+        public IReadOnlyList<Network.LobbyFrames.UserListEntry> SnapshotChannelUsers()
+        {
+            var list = new List<Network.LobbyFrames.UserListEntry>();
+            foreach (var s in _sessions.Values)
+                if (s.Connected && !string.IsNullOrEmpty(s.CharName))
+                    list.Add(new Network.LobbyFrames.UserListEntry(
+                        (ushort)(s.GameInfoId > 0 ? s.GameInfoId : s.Slot), s.CharName, s.CharClass));
+            return list;
+        }
+
+        /// <summary>Reenvia a user list (0x1e) a TODAS as sessões no channel lobby (Status=2, não em stage) — p/ a
+        /// lista ficar viva quando alguém entra/sai. Chamado na entrada (0x14) e na saída de sessão.</summary>
+        public void BroadcastChannelUserList()
+        {
+            byte[] frame = Network.LobbyFrames.ChannelList(SnapshotChannelUsers());
+            foreach (var s in _sessions.Values)
+                if (s.Connected && s.Status == Domain.UserStatus.FieldLobby && !string.IsNullOrEmpty(s.CharName))
+                    try { s.SendEncryptedFrame(frame); } catch { }
+        }
+
         /// <summary>Sessao por slot (indice do pacote UDP de gameplay).</summary>
         public ClientSession? GetSession(ushort slot) => _sessions.TryGetValue(slot, out var s) ? s : null;
 

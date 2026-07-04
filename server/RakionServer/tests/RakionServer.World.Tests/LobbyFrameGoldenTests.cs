@@ -74,9 +74,29 @@ namespace RakionServer.World.Tests
                 Hex(LobbyFrames.SessionInfo(RefUserId, RefName)));
 
         [Fact]
-        public void ChannelList_RealLen28_ZeroPad() =>  // RE FUN_00404da0: solo=LEN28 [1e..][nome][registro]; bytes28+ lixo
-            Assert.Equal("1e000001646368616e6e656c3031000000e7034a50000100000000000000000000000000",
-                Hex(LobbyFrames.ChannelList(RefUserId, RefName)));
+        public void ChannelList_OneUser_MatchesOriginalCapture()
+        {
+            // Captura orig_capture2 (S>C 0x1e ao logar, 1 user "JP2" uid6 classe1): header + record COM nome
+            // COMPLETO (nul-terminado). A cauda de lixo após o LEN real não é replicada. NOME COMPLETO conserta
+            // o "Heroi2"→"He" da tela (o WriteName de 2 bytes cortava).
+            var users = new[] { new LobbyFrames.UserListEntry(6, "JP2", 1) };
+            Assert.Equal("1e000001646368616e6e656c303100000006004a503200010000000000",
+                Hex(LobbyFrames.ChannelList(users)));
+        }
+
+        [Fact]
+        public void ChannelList_ManyUsers_OneRecordEach_WithFullNames()
+        {
+            var users = new[]
+            {
+                new LobbyFrames.UserListEntry(6, "Heroi2", 1),
+                new LobbyFrames.UserListEntry(7, "oHeroi", 2),
+            };
+            byte[] f = LobbyFrames.ChannelList(users);
+            Assert.Equal(0x02, f[3]);                                   // count = 2
+            Assert.Contains("4865726f693200", Hex(f));                  // "Heroi2\0" COMPLETO (não "He")
+            Assert.Contains("6f4865726f6900", Hex(f));                  // "oHeroi\0" COMPLETO
+        }
 
         // ---- Prova de que userid/nome vêm do DOMÍNIO (síntese, não blob cravado nem handle de captura) ----
 
@@ -88,7 +108,8 @@ namespace RakionServer.World.Tests
             Assert.Contains("e7034a50", a);    // userid 999 (e703) + nome "JP" (4a50)
             Assert.Contains("d2045a5a", b);    // userid 1234 (d204) + nome "ZZ" (5a5a)
             Assert.NotEqual(a, b);             // entradas distintas -> frames distintos (não é blob fixo)
-            Assert.Contains("646368616e6e656c3031", Hex(LobbyFrames.ChannelList(1234, "ZZ"))); // "dchannel01" é const
+            var users = new[] { new LobbyFrames.UserListEntry(1234, "ZZ", 0) };
+            Assert.Contains("646368616e6e656c3031", Hex(LobbyFrames.ChannelList(users))); // "dchannel01" é const
         }
     }
 }

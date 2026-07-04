@@ -176,22 +176,32 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
-        /// <summary>0x1e lista de canais ("dchannel01"). RE FUN_00404da0: [1e 00][type][count][nome1\0][nome2\0]
-        /// [N registros de player]. No solo: type=0, count=1, 1 registro (userid + nome + stats) -> LEN real=28.
-        /// A cauda (bytes 28+) era LIXO DE STACK — VARIOU entre sessões (5e735fb8.../648c0509...), logo zero-pad.
-        /// userid e nome vêm do domínio. A volta-à-lista pós-clear re-manda ESTE MESMO frame (mitm_move l.461 ==
-        /// entrada l.20, byte-a-byte).</summary>
-        public static byte[] ChannelList(ushort userId, string name)
+        /// <summary>Uma entrada da user list do canal (0x1e) — DTO de borda: userid + nome do char + classe.</summary>
+        public readonly record struct UserListEntry(ushort UserId, string Name, byte CharClass);
+
+        /// <summary>0x1e lista de USUÁRIOS ONLINE do canal ("dchannel01"). RE FUN_00404da0 + FUN_0040afb0:
+        /// [1e 00][type=0][count][nome-canal\0] + count×[relIdx u16][uid u16][nome\0][classe][time][dword u32].
+        /// Cravado da captura (orig_capture2, S>C 0x1e ao logar): 1 user "JP2" uid6 = `...00 00 06 00 4a503200 01
+        /// 00 00000000` (a cauda após o LEN real é lixo de stack, ignorada). O nome vai COMPLETO (nul-terminado) —
+        /// o `WriteName` de 2 bytes cortava o nome ("Heroi2"→"He" na tela). userid/nome/classe vêm do domínio.</summary>
+        public static byte[] ChannelList(IReadOnlyList<UserListEntry> users)
         {
             using var w = new PacketWriter();
             w.WriteWord(0x1e);
-            w.WriteWord(0x0100);
+            w.WriteByte(0);                                  // type
+            w.WriteByte((byte)Math.Min(users.Count, 255));   // count
             w.WriteCString(ChannelName);
-            w.WriteWord(0);
-            w.WriteWord(userId);
-            WriteName(w, name);
-            w.WriteBytes(PlayerRecordTail);
-            w.WriteBytes(new byte[8]);   // bloco de 36B: bytes 28+ eram lixo de stack (LEN real=28)
+            for (int i = 0; i < users.Count; i++)
+            {
+                var u = users[i];
+                w.WriteWord((ushort)i);          // relIdx (posição no canal)
+                w.WriteWord(u.UserId);           // uid u16
+                w.WriteCString(u.Name);          // nome COMPLETO + NUL (FUN_0040afb0 user+0x14a8)
+                w.WriteByte(u.CharClass);        // classe (user+0x1531)
+                w.WriteByte(0);                  // time (user+0x146c) — 0 no canal (sem times fora do field)
+                w.WriteInt32(0);                 // dword (user+0x14d0)
+            }
+            if (users.Count == 0) w.WriteBytes(new byte[8]);   // canal vazio: pad mínimo
             return w.ToArray();
         }
 
