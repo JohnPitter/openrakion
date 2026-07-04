@@ -21,14 +21,33 @@ namespace RakionServer.World
         private static ushort RecUid(Domain.PlayerRec rec) =>
             rec.Bot != null ? BotUserId(rec.Slot) : (ushort)(rec.Session?.GameInfoId ?? 0);
 
-        /// <summary>Registro de jogador (FUN_0040b7f0) de QUALQUER ocupante (host/humano/bot) NO ROSTER do 0x37.
-        /// MESMO formato FIXO de 88B do member-join (0x38): o cliente usa o MESMO parser p/ os dois. A tentativa
-        /// de encurtar p/ 78B desalinhava e CRASHAVA o cliente in-game (2026-07-03) — o record do roster é 88B.</summary>
-        private static byte[] RecordFor(Domain.PlayerRec rec) =>
-            rec.Bot != null
-                ? BuildPlayerRecord(rec.Bot.Name, (byte)rec.Bot.CharClass, (byte)rec.Bot.Level)
-                : BuildPlayerRecord(rec.Session?.CharName ?? "", (byte)(rec.Session?.CharClass ?? 0),
-                                    (byte)(rec.Session?.CharLevel ?? 1), 0, rec.Session?.UdpEndpoint);   // endereço P2P do peer
+        /// <summary>Tamanho FIXO do record no ROSTER (0x37) = 78B, CRAVADO da captura do original (os records de
+        /// "JP2" e "JP" tem AMBOS 78B; conteudo = nome ate \0 + campos, resto ZERO ate 78 — SEM a cauda de equip
+        /// `11 00 01 01 01 01` que so o member-join 0x38 carrega). O cliente pula 78B por slot ocupado.</summary>
+        private const int RosterRecordLen = 78;
+
+        /// <summary>Registro de jogador NO ROSTER do 0x37 (host/humano/bot). Formato DIFERENTE do member-join 0x38:
+        /// 78B FIXO, SEM a cauda de equip (o roster do original é só [nome\0][tag\0][slot][addr 12][class][level] +
+        /// ZEROS até 78). Montado direto (não reusa o member-join, que carrega a cauda `11 00 01 01 01 01`).
+        /// Ver <see cref="BuildPlayerRecord"/> (0x38) e a captura orig_capture2 (records de JP2 e JP = 78B).</summary>
+        private static byte[] RecordFor(Domain.PlayerRec rec)
+        {
+            string name = rec.Bot != null ? rec.Bot.Name : (rec.Session?.CharName ?? "");
+            byte cls = rec.Bot != null ? (byte)rec.Bot.CharClass : (byte)(rec.Session?.CharClass ?? 0);
+            byte lvl = rec.Bot != null ? (byte)rec.Bot.Level : (byte)(rec.Session?.CharLevel ?? 1);
+            System.Net.IPEndPoint? ep = rec.Bot != null ? null : rec.Session?.UdpEndpoint;   // endereço P2P do peer
+            using var w = new PacketWriter();
+            w.WriteBytes(Encoding.ASCII.GetBytes(name ?? "")); w.WriteByte(0);  // nome + NUL  (+0x14a8)
+            w.WriteByte(0);                     // tag/clan vazio + NUL        (+0x14c2)
+            w.WriteByte(0);                     // slotInBlob (0 no roster)     (+0x1478)
+            WritePeerAddr(w, ep);               // endereço P2P (12B)          (+0x1450)
+            w.WriteByte(cls);                   // CLASSE                       (+0x1530)
+            w.WriteByte(lvl);                   // LEVEL                        (+0x1531)
+            byte[] content = w.ToArray();
+            var roster = new byte[RosterRecordLen];
+            Array.Copy(content, roster, Math.Min(content.Length, RosterRecordLen));   // nome+campos no inicio; resto ZERO até 78 (sem cauda)
+            return roster;
+        }
 
         /// <summary>
         /// 0x37 = estado COMPLETO da sala p/ o JOINER (worldserv FUN_00406f40 @0x407280..0x407360). É o frame
