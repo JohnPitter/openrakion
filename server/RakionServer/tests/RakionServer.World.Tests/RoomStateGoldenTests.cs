@@ -54,5 +54,27 @@ namespace RakionServer.World.Tests
             Assert.Equal(88, memberJoin.Length);
             Assert.Equal(memberJoin.Length - 10, roster.Length);
         }
+
+        [Theory]
+        [InlineData("JP")]         // 2 chars (o da captura)
+        [InlineData("Heroi2")]     // 6 chars (o do teste in-game que gerou o fantasma)
+        [InlineData("NomeBemLongo")] // 12 chars
+        [InlineData("")]           // vazio
+        public void PlayerRecord_IsFixedSize_RegardlessOfNameLength(string name)
+        {
+            // A REGRESSÃO do fantasma: record de tamanho VARIÁVEL (nome + pad fixo) alongava o slot p/ nomes >2
+            // chars e desalinhava o roster. O passo por slot TEM de ser constante (78/88), qualquer que seja o nome.
+            Assert.Equal(78, WorldServer.BuildPlayerRecord(name, 0, 1, rosterForm: true).Length);
+            Assert.Equal(88, WorldServer.BuildPlayerRecord(name, 0, 1, rosterForm: false).Length);
+        }
+
+        [Fact]
+        public void MemberJoinRecord_KeepsEquipTailAtEnd_ForObserverFix()
+        {
+            // O bloco de equip default (observer-fix) deve ficar nos ÚLTIMOS 11B do 0x38, offset fixo, p/ qualquer nome.
+            byte[] mj = WorldServer.BuildPlayerRecord("Heroi2", 0, 1, rosterForm: false);
+            byte[] tail = { 0x11, 0x00, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 };
+            Assert.Equal(tail, mj[^11..]);
+        }
     }
 }

@@ -196,9 +196,19 @@ namespace RakionServer.World
         /// original preenche p/ o P2P direto (ver <see cref="WritePeerAddr"/>); eu zerava e por isso os 2 humanos
         /// nunca se achavam. Os 2 blocos de equip vão ZERADOS (sem gear; item id 0 = slot vazio, evita AV no render).
         /// </summary>
+        /// <summary>Tamanho FIXO do registro de jogador: o cliente avança um passo constante por slot (cravado da
+        /// captura: "JP2"/nome-3 e "JP"/nome-2 têm AMBOS 78B no roster e 88B no member-join). ROSTER (0x37) = 78B;
+        /// MEMBER-JOIN (0x38) = 88B (os 10B extras = bloco de equip default nos últimos 11B, do observer-fix).</summary>
+        private const int RosterRecordLen = 78, MemberJoinRecordLen = 88;
+
         internal static byte[] BuildPlayerRecord(string name, byte charClass, byte level, byte slotInBlob = 0,
                                                  System.Net.IPEndPoint? peerEp = null, bool rosterForm = false)
         {
+            // Registro de TAMANHO FIXO. O conteúdo (nome\0 + campos) vai no INÍCIO e o resto é zero-pad até o total.
+            // CRÍTICO: escrever tamanho VARIÁVEL (nome + pad fixo) alongava o registro p/ nomes >2 chars (ex.:
+            // "Heroi2" -> 82B) e DESALINHAVA os slots seguintes do roster 0x37 -> card FANTASMA. O passo por slot
+            // tem de ser constante (78/88), independente do tamanho do nome.
+            int total = rosterForm ? RosterRecordLen : MemberJoinRecordLen;
             using var w = new PacketWriter();
             w.WriteBytes(Encoding.ASCII.GetBytes(name ?? "")); w.WriteByte(0);  // nome + NUL  (+0x14a8)
             w.WriteByte(0);                     // tag/clan vazio + NUL        (+0x14c2)
@@ -207,17 +217,17 @@ namespace RakionServer.World
             w.WriteByte(charClass);             // +0x1530  CLASSE
             w.WriteByte(level);                 // +0x1531  LEVEL
             w.WriteByte(0);                     // +0x1473
-            w.WriteBytes(new byte[0x26]);       // +0x1da4  equip/aparência (38B) — sem gear
-            w.WriteBytes(new byte[0x13]);       // +0x1dca  equip2/stat (19B) — sem gear
-            // CAUDA divergente por frame (cravado da captura, comparando o record de JP no 0x38 vs no 0x37):
-            //  - 0x37 ROSTER: só +1 byte 00 (record de 78B p/ nome de 2 chars). O parse do roster (FUN_00405440) lê
-            //    exatamente isto; a forma de 88B alonga o slot e desalinha os seguintes -> card fantasma no client 2.
-            //  - 0x38 MEMBER-JOIN: bloco de equip DEFAULT de 11B [11 00 01 01 01 01 00 00 00 00 00] (record de 88B).
-            //    Sem estes 11B o cliente lê o 0x38 curto e o 2º humano vira "observador" no stage (observer-fix).
-            w.WriteBytes(rosterForm
-                ? new byte[] { 0x00 }
-                : new byte[] { 0x11, 0x00, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 });
-            return w.ToArray();
+            byte[] content = w.ToArray();
+            var rec = new byte[total];
+            Array.Copy(content, rec, Math.Min(content.Length, total));   // conteúdo no início; resto = zero-pad
+            if (!rosterForm)
+            {
+                // 0x38 MEMBER-JOIN: bloco de equip DEFAULT nos ÚLTIMOS 11B (offset fixo 77). Sem ele o cliente lê o
+                // 0x38 curto e o 2º humano vira "observador" no stage (observer-fix). No ROSTER o final é só zero.
+                byte[] tail = { 0x11, 0x00, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 };
+                Array.Copy(tail, 0, rec, total - tail.Length, tail.Length);
+            }
+            return rec;
         }
     }
 }
