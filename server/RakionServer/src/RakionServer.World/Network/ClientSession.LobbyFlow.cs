@@ -67,6 +67,15 @@ namespace RakionServer.World.Network
                     // user list INCREMENTAL: avisa os já-online SÓ do novato (o widget do cliente ACUMULA 0x1e —
                     // reenviar a lista cheia duplicava as entradas), 1x por sessão. Este recebeu a lista cheia acima.
                     if (!_chanJoinAnnounced) { _chanJoinAnnounced = true; _server.AnnounceChannelUserJoined(this); }
+                    // NOME DO MESSENGER (título "X's Rakion messenger"): o RET_LOGIN do Buddy está byte-correto
+                    // (nome completo), mas o TÍTULO só popula certo quando o cliente processa um 0x15
+                    // (ChangeBuddyNameResult) — sem ele vem um default truncado ("Heroi2"→"He"). Mandamos um 0x15
+                    // PROATIVO no login com o nome do char, 1x, p/ o título nascer completo sem o usuário trocar nick.
+                    if (!_buddyNameAnnounced && CharName.Length > 0)
+                    {
+                        _buddyNameAnnounced = true;
+                        SendEncryptedFrame(LobbyFrames.ChangeBuddyNameResult(0, CharName));
+                    }
                     return true;
                 case 0x36:
                 {
