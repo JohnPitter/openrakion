@@ -13,10 +13,10 @@ namespace RakionServer.World
     /// </summary>
     public sealed partial class WorldServer
     {
-        /// <summary>Tamanho FIXO do registro de jogador: o cliente avança um passo constante por slot (cravado da
-        /// captura: "JP2"/nome-3 e "JP"/nome-2 têm AMBOS 78B no roster e 88B no member-join). ROSTER (0x37) = 78B;
-        /// MEMBER-JOIN (0x38) = 88B (os 10B extras = bloco de equip default nos últimos 11B, do observer-fix).</summary>
-        private const int RosterRecordLen = 78, MemberJoinRecordLen = 88;
+        /// <summary>Tamanho FIXO do registro de jogador = 88B, o MESMO no member-join (0x38) e no roster (0x37): o
+        /// cliente usa o mesmo parser e avança um passo constante por slot. Encurtar o roster p/ 78B CRASHAVA o
+        /// cliente in-game (2026-07-03); record variável (crescia com o nome) desalinhava (card fantasma).</summary>
+        private const int PlayerRecordLen = 88;
 
         /// <summary>userid sintético do bot no frame (faixa alta p/ não colidir com usuários reais 1..MaxUser). É
         /// detalhe de SERIALIZAÇÃO (como um bot é codificado no frame), por isso mora aqui e não no BotManager.</summary>
@@ -26,13 +26,14 @@ namespace RakionServer.World
         private static ushort RecUid(Domain.PlayerRec rec) =>
             rec.Bot != null ? BotUserId(rec.Slot) : (ushort)(rec.Session?.GameInfoId ?? 0);
 
-        /// <summary>Registro de jogador (FUN_0040b7f0) de QUALQUER ocupante (host/humano/bot) NO ROSTER do 0x37
-        /// (forma de 78B — 10B mais curta que o member-join do 0x38).</summary>
+        /// <summary>Registro de jogador (FUN_0040b7f0) de QUALQUER ocupante (host/humano/bot) NO ROSTER do 0x37.
+        /// MESMO formato FIXO de 88B do member-join (0x38): o cliente usa o MESMO parser p/ os dois. A tentativa
+        /// de encurtar p/ 78B desalinhava e CRASHAVA o cliente in-game (2026-07-03) — o record do roster é 88B.</summary>
         private static byte[] RecordFor(Domain.PlayerRec rec) =>
             rec.Bot != null
-                ? BuildPlayerRecord(rec.Bot.Name, (byte)rec.Bot.CharClass, (byte)rec.Bot.Level, rosterForm: true)
+                ? BuildPlayerRecord(rec.Bot.Name, (byte)rec.Bot.CharClass, (byte)rec.Bot.Level)
                 : BuildPlayerRecord(rec.Session?.CharName ?? "", (byte)(rec.Session?.CharClass ?? 0),
-                                    (byte)(rec.Session?.CharLevel ?? 1), 0, rec.Session?.UdpEndpoint, rosterForm: true);   // endereço P2P do peer
+                                    (byte)(rec.Session?.CharLevel ?? 1), 0, rec.Session?.UdpEndpoint);   // endereço P2P do peer
 
         /// <summary>
         /// 0x37 = estado COMPLETO da sala p/ o JOINER (worldserv FUN_00406f40 @0x407280..0x407360). É o frame
@@ -120,15 +121,16 @@ namespace RakionServer.World
 
         /// <summary>
         /// Registro de jogador — espelho EXATO de FUN_0040b7f0: [nome\0][tag\0][slotInBlob] + [ENDEREÇO UDP do peer]
-        /// + class/level + cauda de equip. TAMANHO FIXO (78 roster / 88 member-join): escrever tamanho VARIÁVEL
-        /// alongava o registro p/ nomes >2 chars (ex.: "Heroi2" -> 82B) e DESALINHAVA os slots seguintes do roster
-        /// 0x37 -> card FANTASMA. O passo por slot tem de ser constante, independente do tamanho do nome. O ENDEREÇO
-        /// P2P (ver <see cref="WritePeerAddr"/>) é o que o cliente usa p/ o 0x30a direto.
+        /// + class/level + cauda de equip default (11B). TAMANHO FIXO de <see cref="PlayerRecordLen"/>=88B: o mesmo
+        /// parser do cliente lê o record no 0x38 (member-join) E no 0x37 (roster), então o passo por slot tem de ser
+        /// CONSTANTE 88B, independente do nome — record variável (crescia com o nome) desalinhava os slots seguintes
+        /// (card FANTASMA); encurtar p/ 78B CRASHAVA o cliente (2026-07-03). O ENDEREÇO P2P (ver
+        /// <see cref="WritePeerAddr"/>) é o que o cliente usa p/ o 0x30a direto; a cauda de 11B é o observer-fix
+        /// (sem ela o 2º humano vira "observador" no stage).
         /// </summary>
         internal static byte[] BuildPlayerRecord(string name, byte charClass, byte level, byte slotInBlob = 0,
-                                                 System.Net.IPEndPoint? peerEp = null, bool rosterForm = false)
+                                                 System.Net.IPEndPoint? peerEp = null)
         {
-            int total = rosterForm ? RosterRecordLen : MemberJoinRecordLen;
             using var w = new PacketWriter();
             w.WriteBytes(Encoding.ASCII.GetBytes(name ?? "")); w.WriteByte(0);  // nome + NUL  (+0x14a8)
             w.WriteByte(0);                     // tag/clan vazio + NUL        (+0x14c2)
@@ -138,15 +140,11 @@ namespace RakionServer.World
             w.WriteByte(level);                 // +0x1531  LEVEL
             w.WriteByte(0);                     // +0x1473
             byte[] content = w.ToArray();
-            var rec = new byte[total];
-            Array.Copy(content, rec, Math.Min(content.Length, total));   // conteúdo no início; resto = zero-pad
-            if (!rosterForm)
-            {
-                // 0x38 MEMBER-JOIN: bloco de equip DEFAULT nos ÚLTIMOS 11B (offset fixo 77). Sem ele o cliente lê o
-                // 0x38 curto e o 2º humano vira "observador" no stage (observer-fix). No ROSTER o final é só zero.
-                byte[] tail = { 0x11, 0x00, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 };
-                Array.Copy(tail, 0, rec, total - tail.Length, tail.Length);
-            }
+            var rec = new byte[PlayerRecordLen];
+            Array.Copy(content, rec, Math.Min(content.Length, PlayerRecordLen));   // conteúdo no início; resto = zero-pad
+            // bloco de equip DEFAULT nos ÚLTIMOS 11B (offset fixo) — observer-fix.
+            byte[] tail = { 0x11, 0x00, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 };
+            Array.Copy(tail, 0, rec, PlayerRecordLen - tail.Length, tail.Length);
             return rec;
         }
     }
