@@ -88,6 +88,9 @@ namespace RakionServer.World.Network
         public string PendingRoomName = "";                  // nome da sala (0x3b) -> match-end 0x44 (era "asdd" hardcoded)
         public ushort PendingRoomSlot;                       // mapSlot (u16 0x122..0x4ba) do 0x3b -> Field.MapSlot (entry 0x36)
         public string PendingRoomPass = "";                  // senha da sala (0x3b, <9) -> validada no join 0x38
+        public byte PendingRoomFrag;                         // b3 do 0x3b (frag/points limit) -> Field.FragLimit (0x37 +f)
+        public byte PendingRoomMinLevel;                     // b4 do 0x3b -> Field.MinLevel (0x37 +8)
+        public byte PendingRoomMaxLevel;                     // b5 do 0x3b -> Field.MaxLevel (0x37 +9)
 
         // estado de combate/field (campos do user[slot] resolvidos por FUN_0040b7d0 e helpers de field)
         public ushort FieldTargetIndex; // user+0x14a0 (indice do field-objeto alvo resolvido por FUN_0040b7d0)

@@ -482,6 +482,14 @@ namespace RakionServer.World.Network
                     // Stage 2 (432s) passava no range antigo e por isso só ele funcionava. Floor 30s = anti-lixo.
                     if (dur >= 0x1e && dur <= 0xE10) PendingRoomDurationSec = dur;
                 }
+                if (p.Remaining >= 3)
+                {
+                    // cauda do 0x3b (captura `... 14 01 0a`): b3=frag/points limit, b4=minLevel, b5=maxLevel —
+                    // ecoados de volta ao joiner no header do 0x37 (+f/+8/+9) e no entry do 0x36.
+                    PendingRoomFrag = p.Byte();
+                    PendingRoomMinLevel = p.Byte();
+                    PendingRoomMaxLevel = p.Byte();
+                }
             }
             catch { PendingRoomMap = 0; PendingRoomMode = 0; PendingRoomDurationSec = 0; PendingRoomRounds = 0; }
         }

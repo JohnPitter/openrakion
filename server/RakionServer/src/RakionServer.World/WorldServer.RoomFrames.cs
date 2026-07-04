@@ -21,66 +21,74 @@ namespace RakionServer.World
         private static ushort RecUid(Domain.PlayerRec rec) =>
             rec.Bot != null ? BotUserId(rec.Slot) : (ushort)(rec.Session?.GameInfoId ?? 0);
 
-        /// <summary>Registro de jogador NO ROSTER do 0x37 (host/humano/bot). USA O MESMO record do member-join 0x38
-        /// (<see cref="BuildPlayerRecord"/>, variável com cauda). Testado in-game (rakion-final): QUALQUER tamanho
-        /// FIXO (78/88B) CRASHAVA o cliente — o cliente deste build quer o record variável (nome até \0 + campos +
-        /// equip + cauda), NÃO os "78B" derivados da captura antiga (cliente diferente). O card FANTASMA no roster
-        /// do 2º cliente é problema SEPARADO — NÃO se resolve mexendo no tamanho do record (já crashou 3x).</summary>
+        /// <summary>Registro de jogador NO ROSTER do 0x37 (host/humano/bot). MESMA forma VARIÁVEL do 0x38, mas SEM
+        /// a cauda de equip de 11B — cravado do 0x37 de 216B da captura: record do roster = nome\0 + 74B fixos
+        /// (JP=77B), enquanto o do member-join 0x38 tem os mesmos 74B + cauda (JP=88B). Mandar a cauda no 0x37
+        /// alongava cada slot ocupado em 11B → o parse do roster do joiner desalinhava (lia lixo como slot-state).
+        /// NOTA: tamanho FIXO por buffer (78/88B) também crashava — a forma é VARIÁVEL (nome até \0).</summary>
         private static byte[] RecordFor(Domain.PlayerRec rec) =>
             rec.Bot != null
-                ? BuildPlayerRecord(rec.Bot.Name, (byte)rec.Bot.CharClass, (byte)rec.Bot.Level)
+                ? BuildPlayerRecord(rec.Bot.Name, (byte)rec.Bot.CharClass, (byte)rec.Bot.Level, equipTail: false)
                 : BuildPlayerRecord(rec.Session?.CharName ?? "", (byte)(rec.Session?.CharClass ?? 0),
-                                    (byte)(rec.Session?.CharLevel ?? 1), 0, rec.Session?.UdpEndpoint);   // endereço P2P do peer
+                                    (byte)(rec.Session?.CharLevel ?? 1), 0, rec.Session?.UdpEndpoint, equipTail: false);
 
         /// <summary>
         /// 0x37 = estado COMPLETO da sala p/ o JOINER (worldserv FUN_00406f40 @0x407280..0x407360). É o frame
         /// que TRANSICIONA o cliente do game-list p/ a tela da sala (RED/BLUE). Enviado SÓ ao joiner (LOBBY).
-        /// Header 16B + nome\0 + senha\0 + desc\0 + roster (20 slots: [state]; se ocupado += [uid u16][team]
-        /// [registro FUN_0040b7f0]).
+        /// Header 16B + nome\0 + senha\0 + desc\0 + 20 slots ([state]; ocupado += [uid u16][slotFlag][registro
+        /// SEM cauda]) + 3 slots observer trancados + u32 0. Cravado do 0x37 de 216B da captura.
         /// </summary>
         internal static byte[] BuildRoomState(Domain.Field f)
         {
             using var w = new PacketWriter();
-            // Header de 16B CRAVADO da captura do original (orig_capture2, S>C 0x37 ao joiner):
-            //   37 00 | 00 00 | 01 00 | d2 03 | 01 | 0a | 00 | 01 | 0b | 2c 01 | 14
-            // O MASTER SLOT vem em +2 (NÃO o fieldId, que fica em +6). Isto é o que conserta o bug do "joiner vira
-            // master": o joiner processa o PRÓPRIO 0x38 (master=0x14 sem-init -> self-designa) ANTES do 0x37; o 0x37
-            // é quem CORRIGE o master lendo-o de +2. Eu escrevia o fieldId em +2, então o cliente nunca lia o master
-            // real (0) e o joiner ficava com START. Campos +8.. inferidos do bloco de params compartilhado 0x36/0x37
-            // (`d2 03 01 0a 00 01 0b` = id, mode, maxPlayers, map, minLvl, maxLvl); todos vêm do DOMÍNIO.
+            // Header de 16B CRAVADO da captura (orig_capture2, S>C 0x37 ao joiner; sala Gravity mode3 1~10 12max):
+            //   37 00 | 00 00 | 01 00 | d2 | 03 | 01 | 0a | 00 | 01 | 0b | 2c 01 | 14
+            // +2 = MASTER slot (validado in-game: conserta o "joiner vira master"/START). A SEMÂNTICA de +6.. foi
+            // cravada cruzando o C>S 0x3b (map d2, mode 03, rounds 0b, dur 2c01, frag 14, minLvl 01, maxLvl 0a) com
+            // o S>C 0x36 (entry: map=d2, mode=03, 1~10, max=0x0c): **+6 é o MAPA (byte) e +7 o MODE** — NÃO um
+            // fieldId u16! Escrever o f.Id ali fazia o joiner ler map=idLow/mode=idHigh (sala Gravity/PvP virava
+            // "map 0 mode 0") → cliente TRAVAVA segundos após entrar na sala.
             w.WriteWord(0x37);                          // +0  opcode
             w.WriteByte((byte)(f.MasterSlot & 0xff));   // +2  MASTER slot (this+0x121) — cap 00
             w.WriteByte(0);                             // +3  pad (high byte do master u16)
             w.WriteByte(f.State);                       // +4  field state (this+8) — cap 01
             w.WriteByte(0);                             // +5  pad
-            w.WriteWord((ushort)f.Id);                  // +6  fieldId (*(u16)this) — cap d2 03
-            w.WriteByte(f.Mode);                        // +8  mode (this+0x119) — cap 01
-            w.WriteByte(f.MaxPlayers);                  // +9  maxPlayers (this+0x114) — cap 0a
-            w.WriteByte(f.MapId);                       // +a  map (this+0x118) — cap 00
-            w.WriteByte(f.MinLevel);                    // +b  minLevel (this+0x111) — cap 01
-            w.WriteByte(f.MaxLevel);                    // +c  maxLevel (this+0x112) — cap 0b
-            w.WriteWord(f.MapSlot);                     // +d  mapSlot (this+0x11c) — cap 2c 01
-            w.WriteByte(f.FragLimit);                   // +f  fragLimit (this+0x11e) — cap 14
+            w.WriteByte(f.MapId);                       // +6  map (this+0x118) — cap d2 (210 = Gravity)
+            w.WriteByte(f.Mode);                        // +7  mode (this+0x119) — cap 03
+            w.WriteByte(f.MinLevel);                    // +8  minLevel (b4 do 0x3b) — cap 01
+            w.WriteByte(f.MaxLevel);                    // +9  maxLevel (b5 do 0x3b) — cap 0a
+            w.WriteByte(0);                             // +a  cap 00 (mesmo par desconhecido do entry 0x36 [6][7])
+            w.WriteByte(1);                             // +b  cap 01
+            w.WriteByte(f.MaxRounds);                   // +c  maxRounds (rounds do 0x3b) — cap 0b
+            w.WriteWord(f.MapSlot);                     // +d  u16 do 0x3b (duração/level-slot) — cap 2c 01 (300)
+            w.WriteByte(f.FragLimit);                   // +f  frag/points limit (b3 do 0x3b) — cap 14
             w.WriteCString(f.Name);                     // nome\0  (this+0x16)
             w.WriteCString(f.Password);                 // senha\0 (this+0x3f)
             w.WriteCString("");                         // desc\0  (this+0x48) vazio
-            foreach (var rec in f.Slots)                // roster: 20 slots (this+0x126, stride 0x14)
+            int openPerTeam = Math.Max(1, f.MaxPlayers / 2);   // cap: max=12 → 6 abertos/time (locked 6-9 e 16-19)
+            for (int i = 0; i < f.Slots.Length; i++)    // roster: 20 slots (this+0x126, stride 0x14)
             {
+                var rec = f.Slots[i];
                 // Ocupante REAL: sessão CONECTADA com char carregado (nome não-vazio) OU bot. Sessão desconectada/sem
                 // char não conta (senão vira card FANTASMA Lv0/vazio no roster).
                 bool occ = rec.State != 0 && rec.State != 5 &&
                            ((rec.Session != null && rec.Session.Connected && !string.IsNullOrEmpty(rec.Session.CharName)) || rec.Bot != null);
                 // wire: 5 = locked; 1 = ocupado (com registro a seguir); 0 = vazio. TEM de bater com occ — escrever
                 // wire=1 sem registro desalinhava o cliente (lia o próximo slot como registro) = card fantasma.
-                byte wire = rec.State == 5 ? (byte)5 : occ ? (byte)1 : (byte)0;
+                // Slots além da capacidade (índice no bloco do time >= MaxPlayers/2) vêm TRANCADOS no original.
+                bool beyondCap = (i % 10) >= openPerTeam;
+                byte wire = occ ? (byte)1 : (rec.State == 5 || beyondCap) ? (byte)5 : (byte)0;
                 w.WriteByte(wire);                      // [state] sempre
                 if (occ)
                 {
                     w.WriteWord(RecUid(rec));           // [uid u16]  (this+0x124)
-                    w.WriteByte(rec.Team);              // [team/flag] (this+0x127)
-                    w.WriteBytes(RecordFor(rec));       // [registro] (FUN_0040b7f0)
+                    w.WriteByte(0);                     // [slotFlag] (this+0x127) — cap 00 MESMO p/ o joiner do BLUE
+                    w.WriteBytes(RecordFor(rec));       // [registro] (FUN_0040b7f0, SEM cauda de 11B)
                 }
             }
+            // Cauda do frame (captura): 3 slots extra trancados (observers) + u32 zero.
+            w.WriteByte(5).WriteByte(5).WriteByte(5);
+            w.WriteInt32(0);
             return w.ToArray();
         }
 
@@ -118,15 +126,15 @@ namespace RakionServer.World
 
         /// <summary>
         /// Registro de jogador — espelho de FUN_0040b7f0: [nome\0][tag\0][slotInBlob] + [ENDEREÇO UDP do peer] +
-        /// class/level + 2 blocos de equip (zerados) + cauda de equip default (11B). O cliente lê o record de forma
-        /// VARIÁVEL (nome até \0 + resto de tamanho FIXO), então NÃO forçar um total fixo por buffer — tentar isso
-        /// (88/78B com a cauda em offset fixo) CRASHAVA o cliente in-game p/ nomes longos (2026-07-04). O ENDEREÇO
-        /// P2P (ver <see cref="WritePeerAddr"/>) é o que o cliente usa p/ o 0x30a direto; a cauda de 11B é o
-        /// observer-fix (sem ela o 2º humano vira "observador" no stage). NOTA: o card FANTASMA no roster do 2º
-        /// cliente é problema SEPARADO — a investigar com captura do original, NÃO com o tamanho do record.
+        /// class/level + 2 blocos de equip (zerados) [+ cauda de equip default de 11B]. O cliente lê o record de
+        /// forma VARIÁVEL (nome até \0 + resto de tamanho FIXO), então NÃO forçar um total fixo por buffer — tentar
+        /// isso (88/78B com a cauda em offset fixo) CRASHAVA o cliente in-game p/ nomes longos (2026-07-04). O
+        /// ENDEREÇO P2P (ver <see cref="WritePeerAddr"/>) é o que o cliente usa p/ o 0x30a direto. A cauda de 11B
+        /// (observer-fix: sem ela o 2º humano vira "observador" no stage) existe SÓ no record do 0x38 — o roster do
+        /// 0x37 vai SEM ela (<paramref name="equipTail"/>=false), cravado da captura (77B vs 88B p/ "JP").
         /// </summary>
         internal static byte[] BuildPlayerRecord(string name, byte charClass, byte level, byte slotInBlob = 0,
-                                                 System.Net.IPEndPoint? peerEp = null)
+                                                 System.Net.IPEndPoint? peerEp = null, bool equipTail = true)
         {
             using var w = new PacketWriter();
             w.WriteBytes(Encoding.ASCII.GetBytes(name ?? "")); w.WriteByte(0);  // nome + NUL  (+0x14a8)
@@ -138,8 +146,8 @@ namespace RakionServer.World
             w.WriteByte(0);                     // +0x1473
             w.WriteBytes(new byte[0x26]);       // +0x1da4  equip/aparência (38B) — sem gear
             w.WriteBytes(new byte[0x13]);       // +0x1dca  equip2/stat (19B) — sem gear
-            // cauda de equip DEFAULT (11B) — observer-fix (sem ela o 2º humano vira "observador" no stage).
-            w.WriteBytes(new byte[] { 0x11, 0x00, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 });
+            if (equipTail)                      // cauda de equip DEFAULT (11B) — SÓ no 0x38 (observer-fix)
+                w.WriteBytes(new byte[] { 0x11, 0x00, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 });
             return w.ToArray();
         }
     }

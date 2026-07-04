@@ -123,7 +123,12 @@ namespace RakionServer.World
                     Name = host.PendingRoomName,
                     Mode = host.PendingRoomMode,
                     MapId = host.PendingRoomMap,
-                    MaxPlayers = 16,            // 8v8; o bot só precisa de um assento livre no time oposto
+                    // Capacidade da SALA (captura: max=12 na Gravity — o 0x3b não a carrega; o original a deriva
+                    // do mapa). 12 = 6v6, os slots além disso vão TRANCADOS (05) no roster do 0x37.
+                    MaxPlayers = 12,
+                    MinLevel = host.PendingRoomMinLevel,
+                    MaxLevel = host.PendingRoomMaxLevel,
+                    FragLimit = host.PendingRoomFrag,
                     Master = host,
                     State = 1,                  // ocupado (pré-partida) — não 2 (em jogo)
                     // CRÍTICO: o tick liquida `State==1 && !Settled` (= partida ACABADA -> DiscardBots). A sala
