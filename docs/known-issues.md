@@ -32,16 +32,23 @@ provavelmente destrava os 3 de uma vez. O #1 (team change) pode ser separado (ac
 
 ---
 
-# Sala/PvP 2 humanos — wire do 0x37 (2026-07-03)
+# Sala/PvP 2 humanos — wire do 0x37 (2026-07-03, FECHADO 2026-07-04)
 
-Comparação-ouro byte-a-byte contra `orig_capture2` (S>C ao joiner) cravou **dois bugs de wire** no
-`0x37` room-state — CORRIGIDOS + golden-tested (`RoomStateGoldenTests`); pendente validação in-game:
+Comparação-ouro contra `orig_capture2` — agora com golden test do **frame COMPLETO de 216B**
+(`RoomJoinWireGoldenTests`, máscara só uid/endereço-NAT) — cravou o wire inteiro; pendente validação
+in-game da travada do joiner:
 
-- **Header:** o MASTER slot vai em **+2** (não o fieldId, que é +6). Eu punha o fieldId em +2 → o
-  joiner lia o master errado, se auto-designava master (START) + card fantasma. Fix em `BuildRoomState`.
-- **Record do roster:** cada slot ocupado tem **78B**, não 88B (o record de 88B é só do member-join
-  `0x38`). Usar 88B no roster alonga o slot e desalinha os seguintes = fantasma. Fix: `rosterForm` no
-  `BuildPlayerRecord` (observer-fix do 0x38 preservado). Ver [[room-state-0x37-master-offset]].
+- **Header:** MASTER slot em **+2** (validado in-game: consertou o joiner-vira-master/START).
+- **Header +6/+7 = MAP e MODE (bytes), NÃO fieldId u16.** Eu escrevia o f.Id ali → o joiner lia
+  map=idLow/mode=idHigh ("map 0 mode 0" numa sala Gravity/PvP) → TRAVAVA segundos após entrar.
+  Cravado cruzando o C>S 0x3b com o S>C 0x36/0x37 (a sala da captura ERA Gravity 210).
+- **Record do roster = a forma do 0x38 SEM a cauda de equip de 11B** (variável nome\0+74B; "JP"=77B vs
+  88B no 0x38). A cauda alongava cada slot e desalinhava o parse (o velho "78B" era isto — mas FIXO por
+  buffer crashava; a forma é VARIÁVEL). slotFlag pós-uid = 00 sempre (não o team).
+- **Slots trancados + observers:** índice no bloco do time >= MaxPlayers/2 → `05`; fim do frame =
+  `05 05 05` (3 observers) + u32 0. Capacidade default 12 (captura Gravity; o 0x3b não a carrega).
+- **0x3b:** cauda b3/b4/b5 = frag/minLevel/maxLevel — agora parseada e aplicada ao Field.
+  Ver [[room-state-0x37-master-offset]].
 
 ## Gap ADICIONAL — PATCHADO server-side (`cab3dfd`, pendente validação)
 O handler de **sair da sala** (`ClientSession.LobbyFlow` `case 0x3A`) resetava só a própria sessão: **não
