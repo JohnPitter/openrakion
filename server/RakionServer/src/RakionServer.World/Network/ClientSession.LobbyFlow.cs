@@ -138,7 +138,19 @@ namespace RakionServer.World.Network
                     {
                         var lf = _server.GetField(FieldId);
                         var myRec = lf?.FindRec(this);
-                        if (lf != null && myRec != null && lf.Settled && lf.Count > 1)
+                        // ABANDONO NO MEIO DA PARTIDA (State==2, PvP): NÃO é o member-leave da sala — roda o
+                        // W.O. completo (WorldServer.LeaveField): DERROTA persistida do desertor + vitória por
+                        // W.O. (0x4a + 0x44) ao time que ficou. Bug 2026-07-04: o 0x3A só voltava o desertor
+                        // ao lobby e o field ficava com o seat dele ocupado -> quem ficava não vencia nunca
+                        // (e o settle final podia até dar WIN ao desertor).
+                        if (lf != null && myRec != null && lf.State == 2 && lf.Mode != 0 && !lf.Settled)
+                        {
+                            int abandonedSeat = myRec.Slot;
+                            _server.LeaveField(this);
+                            Log.Ok("lobby", "[{0}] 0x3A ABANDONO do stage (field {1} seat {2}) -> W.O. processado",
+                                Slot, lf.Id, abandonedSeat);
+                        }
+                        else if (lf != null && myRec != null && lf.Settled && lf.Count > 1)
                         {
                             int leftSeat = myRec.Slot;
                             bool wasMaster = lf.MasterSlot == leftSeat;
@@ -433,9 +445,16 @@ namespace RakionServer.World.Network
             GameSeq = 5;
             var f = _server.EnsureFieldForSession(this);
             if (f.Settled) f.ResetMatch(); // field reaproveitado de um match concluido: zera Round/Wins/golens
-            if (PendingRoomMode != 0) { f.Mode = PendingRoomMode; f.MapId = PendingRoomMap; }
-            if (PendingRoomDurationSec != 0) f.RoundDurationSec = PendingRoomDurationSec; // tempo configurado na sala
-            if (PendingRoomRounds != 0) f.MaxRounds = PendingRoomRounds;                  // rounds configurados na sala
+            // Params da sala: SÓ O MASTER aplica os seus PendingRoom* ao field. O JOINER carrega os params
+            // VELHOS da última sala que ELE criou — aplicá-los sobrescrevia o field alheio (bug 2026-07-04:
+            // sala Golem mode=1 virou mode=3 no spawn do joiner → morte não encerrava round, vitória local
+            // do cliente + 0x4a atrasado = "duas mensagens").
+            if (f.Master == this || f.Master == null)
+            {
+                if (PendingRoomMode != 0) { f.Mode = PendingRoomMode; f.MapId = PendingRoomMap; }
+                if (PendingRoomDurationSec != 0) f.RoundDurationSec = PendingRoomDurationSec; // tempo da sala
+                if (PendingRoomRounds != 0) f.MaxRounds = PendingRoomRounds;                  // rounds da sala
+            }
             _server.NotifyPlayerReady(f, this);
             // PvP COM BOTS: inicia o 1º round (Phase=Pre→Playing) p/ o motor rodar o BotTick (spawn 0x45 + IA).
             // O MatchTick só roda BotTick na fase Playing; StartGameClock (guardado por _gameClockStarted, 1x)

@@ -148,7 +148,9 @@ namespace RakionServer.World
             }
         }
 
-        /// <summary>Remove o usuario do field; se ficar vazio, libera o field.</summary>
+        /// <summary>Remove o usuario do field; se ficar vazio, libera o field. Saída no MEIO de partida PvP
+        /// (State==2, mode!=0) = ABANDONO: o desertor leva DERROTA persistida na hora, e se o time dele esvaziou
+        /// o time que ficou vence por W.O. (round + fim de match + 0x44). Regra oficial: sair = derrota.</summary>
         public void LeaveField(ClientSession s)
         {
             var f = GetField(s.FieldId);
@@ -156,15 +158,23 @@ namespace RakionServer.World
             bool wasInPvpMatch = f.State == 2 && f.Mode != 0;   // saiu no meio de uma partida PvP
             f.Remove(s);
             s.FieldId = -1;
-            // ABANDONO no meio do stage: o adversário saiu e deixou um time VAZIO (mas ainda há humano) -> o time que
-            // ficou VENCE o game (regra: sair = derrota). Fim de match + volta ao lobby (0x44), como no original.
-            if (wasInPvpMatch && f.Count > 0 && !f.ObjectiveDecided)
+            if (wasInPvpMatch && s.ActiveCharId > 0)
+            {
+                // DERROTA do desertor persistida AQUI: o SettleMatch itera os SLOTS e o rec dele já foi
+                // limpo — sem isto quem abandonava não levava LOSE (e podia até levar o WIN da contagem).
+                s.CharLose++;
+                _ = _db.AddCharacterResultAsync(s.ActiveCharId, win: 0, lose: 1, draw: 0, exp: 0);
+                Log.Ok("field", "field {0}: char {1} ABANDONOU a partida -> LOSE persistido", f.Id, s.ActiveCharId);
+            }
+            // W.O.: o abandono deixou um time VAZIO (mas ainda há humano) -> o time que ficou VENCE.
+            if (wasInPvpMatch && f.Count > 0)
             {
                 int occ0 = f.CountOccupiedTeam(0), occ1 = f.CountOccupiedTeam(1);
                 if (occ0 == 0 || occ1 == 0)
                 {
                     byte winner = occ0 == 0 ? (byte)1 : (byte)0;
-                    f.EndRoundObjective(winner);                 // credita o round + broadcasta o 0x4a de vitória
+                    // round em aberto -> credita por objetivo (0x4a); round já decidido (intermissão) -> só encerra
+                    if (!f.ObjectiveDecided) f.EndRoundObjective(winner);
                     f.EndMatch(2);
                     f.BroadcastLobby(f.BuildMatchEnd(2));         // 0x44 -> devolve o vencedor ao lobby
                     Log.Ok("field", "field {0}: adversário abandonou o stage -> time {1} VENCE o game (volta ao lobby)", f.Id, winner);
