@@ -64,8 +64,9 @@ namespace RakionServer.World.Network
                     // o shop. Guard próprio (_potionLoginPainted) NÃO suprime o fallback do 0x2c — se o widget do
                     // potion-bar ainda não existir neste ponto, o 1o open do inventário repinta.
                     if (!_potionLoginPainted) { _potionLoginPainted = true; PaintQuickslot(); }
-                    // user list VIVA: avisa os já-online que este entrou (e este recebeu a lista cheia acima)
-                    _server.BroadcastChannelUserList();
+                    // user list INCREMENTAL: avisa os já-online SÓ do novato (o widget do cliente ACUMULA 0x1e —
+                    // reenviar a lista cheia duplicava as entradas), 1x por sessão. Este recebeu a lista cheia acima.
+                    if (!_chanJoinAnnounced) { _chanJoinAnnounced = true; _server.AnnounceChannelUserJoined(this); }
                     return true;
                 case 0x36:
                 {

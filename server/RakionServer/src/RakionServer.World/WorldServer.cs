@@ -80,33 +80,45 @@ namespace RakionServer.World
         /// <summary>Sessoes ativas (iteracao thread-safe sobre o dicionario).</summary>
         public IEnumerable<ClientSession> Sessions => _sessions.Values;
 
+        /// <summary>Entrada da user list de uma sessão (DTO de borda). ChanSlot = low-byte do Slot (estável;
+        /// é a chave do remove 0x20).</summary>
+        private static Network.LobbyFrames.UserListEntry UserEntryOf(ClientSession s) =>
+            new((byte)(s.Slot & 0xff), (ushort)(s.GameInfoId > 0 ? s.GameInfoId : s.Slot), s.CharName, s.CharClass);
+
         /// <summary>Snapshot dos USUÁRIOS ONLINE (conectados com char carregado) p/ a user list do canal (0x1e).
-        /// DTO de borda — só uid/nome/classe, sem expor a sessão crua. DEDUP por nome de char (fica a sessão
-        /// mais recente = maior Slot): uma reconexão deixa a sessão velha ainda "Connected" até o TCP notar,
-        /// e o char aparecia DUPLICADO na lista.</summary>
+        /// DEDUP por nome de char (fica a sessão mais recente = maior Slot): uma reconexão deixa a sessão velha
+        /// ainda "Connected" até o TCP notar, e o char aparecia DUPLICADO na lista.</summary>
         public IReadOnlyList<Network.LobbyFrames.UserListEntry> SnapshotChannelUsers()
         {
             var byName = new Dictionary<string, (ushort Slot, Network.LobbyFrames.UserListEntry Entry)>();
             foreach (var s in _sessions.Values)
             {
                 if (!s.Connected || string.IsNullOrEmpty(s.CharName)) continue;
-                var e = new Network.LobbyFrames.UserListEntry(
-                    (ushort)(s.GameInfoId > 0 ? s.GameInfoId : s.Slot), s.CharName, s.CharClass);
                 if (!byName.TryGetValue(s.CharName, out var cur) || s.Slot > cur.Slot)
-                    byName[s.CharName] = (s.Slot, e);
+                    byName[s.CharName] = (s.Slot, UserEntryOf(s));
             }
             var list = new List<Network.LobbyFrames.UserListEntry>(byName.Count);
             foreach (var v in byName.Values) list.Add(v.Entry);
             return list;
         }
 
-        /// <summary>Reenvia a user list (0x1e) a TODAS as sessões no channel lobby (Status=2, não em stage) — p/ a
-        /// lista ficar viva quando alguém entra/sai. Chamado na entrada (0x14) e na saída de sessão.</summary>
-        public void BroadcastChannelUserList()
+        /// <summary>User list INCREMENTAL (o widget do cliente ACUMULA 0x1e): avisa os DEMAIS no channel lobby
+        /// que <paramref name="joiner"/> entrou — um 0x1e só com o novato. A lista cheia vai só a quem entra
+        /// (senão cada rebroadcast duplicava todo mundo na tela de quem já estava).</summary>
+        public void AnnounceChannelUserJoined(ClientSession joiner)
         {
-            byte[] frame = Network.LobbyFrames.ChannelList(SnapshotChannelUsers());
+            byte[] frame = Network.LobbyFrames.ChannelList(new[] { UserEntryOf(joiner) });
             foreach (var s in _sessions.Values)
-                if (s.Connected && s.Status == Domain.UserStatus.FieldLobby && !string.IsNullOrEmpty(s.CharName))
+                if (s != joiner && s.Connected && s.Status == Domain.UserStatus.FieldLobby && !string.IsNullOrEmpty(s.CharName))
+                    try { s.SendEncryptedFrame(frame); } catch { }
+        }
+
+        /// <summary>Par do append: 0x20 [slotIdx] remove o membro da user list dos que ficam (deslogou).</summary>
+        public void AnnounceChannelUserLeft(ClientSession leaver)
+        {
+            byte[] frame = Network.LobbyFrames.ChannelUserRemove((byte)(leaver.Slot & 0xff));
+            foreach (var s in _sessions.Values)
+                if (s != leaver && s.Connected && s.Status == Domain.UserStatus.FieldLobby && !string.IsNullOrEmpty(s.CharName))
                     try { s.SendEncryptedFrame(frame); } catch { }
         }
 

@@ -76,27 +76,32 @@ namespace RakionServer.World.Tests
         [Fact]
         public void ChannelList_OneUser_MatchesOriginalCapture()
         {
-            // Captura orig_capture2 (S>C 0x1e ao logar, 1 user "JP2" uid6 classe1): header + record COM nome
-            // COMPLETO (nul-terminado). A cauda de lixo após o LEN real não é replicada. NOME COMPLETO conserta
-            // o "Heroi2"→"He" da tela (o WriteName de 2 bytes cortava).
-            var users = new[] { new LobbyFrames.UserListEntry(6, "JP2", 1) };
+            // Captura orig_capture2 (S>C 0x1e ao logar, 1 user "JP2" uid6 slot0 classe1): [1e 00][type][count]
+            // ["dchannel01\0"][str2\0] + [slotIdx 1B][uid u16][nome COMPLETO\0][classe][time][u32]. A cauda de
+            // lixo após o LEN real não é replicada.
+            var users = new[] { new LobbyFrames.UserListEntry(0, 6, "JP2", 1) };
             Assert.Equal("1e000001646368616e6e656c303100000006004a503200010000000000",
                 Hex(LobbyFrames.ChannelList(users)));
         }
 
         [Fact]
-        public void ChannelList_ManyUsers_OneRecordEach_WithFullNames()
+        public void ChannelList_ManyUsers_SlotIdxIsOneByte_WithFullNames()
         {
+            // 2 users: o slotIdx é 1 BYTE (u16 desalinhava o parse do 2º registro no cliente).
             var users = new[]
             {
-                new LobbyFrames.UserListEntry(6, "Heroi2", 1),
-                new LobbyFrames.UserListEntry(7, "oHeroi", 2),
+                new LobbyFrames.UserListEntry(3, 6, "Heroi2", 1),
+                new LobbyFrames.UserListEntry(9, 7, "oHeroi", 2),
             };
             byte[] f = LobbyFrames.ChannelList(users);
             Assert.Equal(0x02, f[3]);                                   // count = 2
-            Assert.Contains("4865726f693200", Hex(f));                  // "Heroi2\0" COMPLETO (não "He")
-            Assert.Contains("6f4865726f6900", Hex(f));                  // "oHeroi\0" COMPLETO
+            Assert.Contains("030600" + "4865726f693200", Hex(f));       // [slot 03][uid 0600]"Heroi2\0"
+            Assert.Contains("090700" + "6f4865726f6900", Hex(f));       // [slot 09][uid 0700]"oHeroi\0"
         }
+
+        [Fact]
+        public void ChannelUserRemove_Is0x20WithSlotIdx() =>
+            Assert.Equal("200007", Hex(LobbyFrames.ChannelUserRemove(7)));
 
         // ---- Prova de que userid/nome vêm do DOMÍNIO (síntese, não blob cravado nem handle de captura) ----
 
@@ -108,7 +113,7 @@ namespace RakionServer.World.Tests
             Assert.Contains("e7034a50", a);    // userid 999 (e703) + nome "JP" (4a50)
             Assert.Contains("d2045a5a", b);    // userid 1234 (d204) + nome "ZZ" (5a5a)
             Assert.NotEqual(a, b);             // entradas distintas -> frames distintos (não é blob fixo)
-            var users = new[] { new LobbyFrames.UserListEntry(1234, "ZZ", 0) };
+            var users = new[] { new LobbyFrames.UserListEntry(0, 1234, "ZZ", 0) };
             Assert.Contains("646368616e6e656c3031", Hex(LobbyFrames.ChannelList(users))); // "dchannel01" é const
         }
     }

@@ -166,7 +166,7 @@ namespace RakionServer.World
                 // Messenger (F9): a identidade do buddy é por IP -> ao sair, apaga a messenger_session p/ uma
                 // conexão futura do mesmo IP não ser resolvida como esta conta (e o amigo cair offline na presença).
                 if (s.UserId.Length > 0) await _db.DeleteMessengerSessionAsync(s.UserId);
-                BroadcastChannelUserList();   // user list VIVA: os que ficam veem este sair
+                AnnounceChannelUserLeft(s);   // 0x20 [slotIdx]: os que ficam removem este da user list
                 Log.Info("world", "[{0}] sessao encerrada ('{1}') — {2}/{3} online",
                     s.Slot, s.UserId, CurrentUsers, MaxUser);
             }

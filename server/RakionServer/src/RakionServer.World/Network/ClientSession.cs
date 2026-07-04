@@ -142,6 +142,7 @@ namespace RakionServer.World.Network
         private readonly int[] _potionRowId = new int[0x13];  // id da linha itembox das celulas type1 — segue o item no move
         private bool _potionPainted;          // quickslot pintado no 1o open (0x2c) da sessao — fallback do auto-render
         private bool _potionLoginPainted;     // quickslot pintado na entrada do lobby (0x14) — auto-render no relog (CONFIRMADO)
+        private bool _chanJoinAnnounced;      // 0x1e-append do novato já broadcastado (1x por sessão; o widget acumula)
 
         /// <summary>
         /// Cifra do canal lobby/field (AES-128, chave/IV reais do worldserv.exe). No original

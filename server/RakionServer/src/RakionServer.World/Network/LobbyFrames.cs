@@ -176,25 +176,28 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
-        /// <summary>Uma entrada da user list do canal (0x1e) — DTO de borda: userid + nome do char + classe.</summary>
-        public readonly record struct UserListEntry(ushort UserId, string Name, byte CharClass);
+        /// <summary>Uma entrada da user list do canal (0x1e) — DTO de borda: índice do membro no canal (byte,
+        /// usado no remove 0x20), userid, nome do char e classe.</summary>
+        public readonly record struct UserListEntry(byte ChanSlot, ushort UserId, string Name, byte CharClass);
 
-        /// <summary>0x1e lista de USUÁRIOS ONLINE do canal ("dchannel01"). RE FUN_00404da0 + FUN_0040afb0:
-        /// [1e 00][type=0][count][nome-canal\0] + count×[relIdx u16][uid u16][nome\0][classe][time][dword u32].
-        /// Cravado da captura (orig_capture2, S>C 0x1e ao logar): 1 user "JP2" uid6 = `...00 00 06 00 4a503200 01
-        /// 00 00000000` (a cauda após o LEN real é lixo de stack, ignorada). O nome vai COMPLETO (nul-terminado) —
-        /// o `WriteName` de 2 bytes cortava o nome ("Heroi2"→"He" na tela). userid/nome/classe vêm do domínio.</summary>
+        /// <summary>0x1e user list do canal ("dchannel01"). RE FUN_00404da0 + FUN_0040afb0:
+        /// [1e 00][type=0][count][nome-canal\0][str2\0] + count×[slotIdx 1B][uid u16][nome\0][classe][time]
+        /// [dword u32]. Cravado da captura (1 user "JP2" uid6 slot0 = `...00 00 0600 4a503200 01 00 0..`).
+        /// SEMÂNTICA DO CLIENTE (validada in-game 2026-07-04): o widget ACUMULA cada 0x1e (só limpa ao
+        /// reconstruir a tela) — então a lista CHEIA vai SÓ a quem entra; aos demais vai um 0x1e só com o
+        /// novato (append) e o 0x20 [slotIdx] remove na saída. Nome COMPLETO nul-terminado (o WriteName de
+        /// 2 bytes cortava "Heroi2"→"He").</summary>
         public static byte[] ChannelList(IReadOnlyList<UserListEntry> users)
         {
             using var w = new PacketWriter();
             w.WriteWord(0x1e);
             w.WriteByte(0);                                  // type
             w.WriteByte((byte)Math.Min(users.Count, 255));   // count
-            w.WriteCString(ChannelName);
-            for (int i = 0; i < users.Count; i++)
+            w.WriteCString(ChannelName);                     // nome1\0
+            w.WriteByte(0);                                  // nome2\0 (segunda string do CRoom, vazia)
+            foreach (var u in users)
             {
-                var u = users[i];
-                w.WriteWord((ushort)i);          // relIdx (posição no canal)
+                w.WriteByte(u.ChanSlot);         // slotIdx no canal (1B — o 0x20 remove por ele)
                 w.WriteWord(u.UserId);           // uid u16
                 w.WriteCString(u.Name);          // nome COMPLETO + NUL (FUN_0040afb0 user+0x14a8)
                 w.WriteByte(u.CharClass);        // classe (user+0x1531)
@@ -202,6 +205,16 @@ namespace RakionServer.World.Network
                 w.WriteInt32(0);                 // dword (user+0x14d0)
             }
             if (users.Count == 0) w.WriteBytes(new byte[8]);   // canal vazio: pad mínimo
+            return w.ToArray();
+        }
+
+        /// <summary>0x20 remove um membro da user list do canal (CRoom, worldserv 0x405240): [20 00][slotIdx].
+        /// Broadcast aos que ficam quando alguém desloga — o par incremental do 0x1e-append.</summary>
+        public static byte[] ChannelUserRemove(byte chanSlot)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x20);
+            w.WriteByte(chanSlot);
             return w.ToArray();
         }
 
