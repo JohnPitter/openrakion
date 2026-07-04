@@ -213,7 +213,11 @@ namespace RakionServer.World
             _cfg = cfg;
             _db = db;
             Bots = new BotManager(() => _udpGame?.Port ?? 40708);
+            Items = new ItemCatalog(db);
         }
+
+        /// <summary>Catálogo de itens (iteminfo) — serviço extraído; carregado no boot, consultado por shop/login.</summary>
+        public ItemCatalog Items { get; }
 
         /// <summary>Subsistema de BOTS (IA, roster, peer, ciclo de vida) — extraído do WorldServer p/ isolar o
         /// acoplamento; depende só da porta do gameplay UDP. Entradas: BotTick/SpawnFieldBotsInStage/DiscardBots
@@ -503,7 +507,7 @@ namespace RakionServer.World
             EnchantConfig = await _db.LoadEnchantConfigAsync();
             Log.Ok("enchant", "config: {0} catalisador(es)  evento×{1} PU×{2}",
                 EnchantConfig.CatalyzerCount, EnchantConfig.EventMult, EnchantConfig.PuMult);
-            await LoadItemDefsCacheAsync();   // catalogo de itens (iteminfo) p/ a compra 0x2e
+            await Items.LoadAsync();   // catalogo de itens (iteminfo) p/ a compra 0x2e
             _levelCurve = await _db.LoadLevelCurveAsync(); // curva de exp por classe (level-up 0x50)
             Log.Ok("level", "curva de level carregada: {0} entradas (classlevelinfo)", _levelCurve.Count);
             _ = Task.Run(() => ConfigReloadLoopAsync(_cts.Token));   // reload a quente de pu_config/enchant_* (admin sem restart)
@@ -688,58 +692,6 @@ namespace RakionServer.World
             return ups;
         }
 
-        private System.Collections.Generic.Dictionary<int, Database.ItemDef> _itemDefs = new();
-        /// <summary>Catalogo de itens (iteminfo) carregado no boot. Preco Gold/Cash por itemId.</summary>
-        public Database.ItemDef? FindItemDef(int itemId) => _itemDefs.TryGetValue(itemId, out var d) ? d : null;
-
-        /// <summary>
-        /// O item pode ser DESENHADO no grid do armazem (box)? Só "gear" = tipos 0-5 (slots de equipamento,
-        /// Class bitmask 1-16, ids 1xxx-5xxx). Tipos 6-14 (transform=8, lotto=11, especial=13, etc., todos
-        /// Class 31) NÃO têm ícone de box no cliente GG-removido -> renderizam invisíveis e crasham o painel
-        /// ao reconstruir (botão "Previous"). Esses ainda são comprados/persistidos no itembox, só não pintam
-        /// no grid. Catálogo do cliente: o box-visual (FUN_004774e0) só trata especial o tipo 0x0c, e o gear
-        /// tipo 0 foi confirmado em jogo; tipos 8/13 foram confirmados invisíveis+crash.
-        /// </summary>
-        public bool IsBoxDisplayable(int itemId)
-        {
-            var d = FindItemDef(itemId);
-            if (d == null) return false;
-            // Gear (0-5) + materiais/consumiveis/cash (6,7,9-14, ex: Mithril 13001 type 13) têm ícone de
-            // box e pintam normalmente. O crash do painel no Previous que motivava o filtro antigo (só
-            // type<=5) JÁ foi resolvido (acks 0x2c/0x2d fiéis ao original).
-            // EXPERIMENTO captura-de-Cell (2026-07-01): type 8 (cell/creature) LIBERADO no grid p/ o jogador
-            // arrastar a cell ao deck de creature e invocar no stage (captura do 0x307 real → HIT×N nativo).
-            // RISCO ACEITO no teste: o cliente GG-removido pode pintar a cell SEM ícone (invisível) e o botão
-            // "Previous" pode crashar o painel com type-8 no box. Reverter p/ `return d.Type != 8;` se instabilizar.
-            return true;
-        }
-
-        /// <summary>Item é um SET (type 10) — um BUNDLE de peças, não uma peça equipável direta.</summary>
-        public bool IsSet(int itemId) => FindItemDef(itemId)?.Type == 10;
-
-        /// <summary>Composição de um SET (type 10): as colunas hit1-4/chit/ap do iteminfo guardam os itemIds
-        /// dos membros (1 por slot de gear, faixa 0-5) — confirmado: 9012 -> 1009/1109/1209/1309/1409/1509.
-        /// Fonte ÚNICA da composição. Só retorna membros que são itens válidos do catálogo (um valor que não
-        /// resolve em item é stat, não membro -> filtrado). Vazio se não for set ou sem membros válidos.</summary>
-        public System.Collections.Generic.IReadOnlyList<int> ExpandSetMembers(int setItemId)
-        {
-            var d = FindItemDef(setItemId);
-            if (d == null || d.Type != 10) return System.Array.Empty<int>();
-            var members = new System.Collections.Generic.List<int>(6);
-            foreach (var m in new[] { d.Hit1, d.Hit2, d.Hit3, d.Hit4, d.CHit, d.Ap })
-                if (m > 0 && FindItemDef(m) != null) members.Add(m);
-            return members;
-        }
-
-        /// <summary>Carrega o catalogo de itens uma vez (iteminfo).</summary>
-        public async Task LoadItemDefsCacheAsync()
-        {
-            var list = await _db.LoadItemDefsAsync();
-            var map = new System.Collections.Generic.Dictionary<int, Database.ItemDef>(list.Count);
-            foreach (var d in list) map[d.Id] = d;
-            _itemDefs = map;
-            Log.Ok("shop", "catalogo de itens carregado: {0} definicoes", map.Count);
-        }
 
         public void Stop()
         {
@@ -862,16 +814,16 @@ namespace RakionServer.World
                 // SETS (type 10) são BUNDLES de peças de gear (iteminfo hit1-4/chit/ap = itemIds dos membros).
                 // Desempacota no armazem (troca o set pelas peças) — o cliente não tem ação de "usar set", então
                 // sem isto o set fica inerte no box. Idempotente: após desempacotar não resta set p/ desempacotar.
-                var setsInBox = loadedBox.FindAll(t => IsSet(t.ItemId));
+                var setsInBox = loadedBox.FindAll(t => Items.IsSet(t.ItemId));
                 if (setsInBox.Count > 0)
                 {
                     var doneSets = new HashSet<int>();
                     foreach (var t in setsInBox)
-                        if (doneSets.Add(t.ItemId)) await _db.UnpackSetInBoxAsync(gi.Id, t.ItemId, ExpandSetMembers(t.ItemId));
+                        if (doneSets.Add(t.ItemId)) await _db.UnpackSetInBoxAsync(gi.Id, t.ItemId, Items.ExpandSetMembers(t.ItemId));
                     loadedBox = await _db.LoadItemBoxAsync(gi.Id);          // recarrega já desempacotado
                     Log.Ok("login", "[{0}] {1} set(s) type-10 desempacotado(s) no armazem", s.Slot, doneSets.Count);
                 }
-                var boxGear = loadedBox.FindAll(t => IsBoxDisplayable(t.ItemId));   // só gear entra no grid
+                var boxGear = loadedBox.FindAll(t => Items.IsBoxDisplayable(t.ItemId));   // só gear entra no grid
                 s.SetBoxItems(boxGear);   // consolida poções por id (1 célula + contador); gear 1 por célula, com nível de refino
                 s.LoadPotionSlot(await _db.LoadQuickslotAsync(gi.Id));     // quickslot de pocao persistido (itembox.qslot)
                 s.StageRanks = await _db.LoadStageRanksAsync(ch.Id);       // ranks de stage -> overlay 0x0C@333 (RANK X CLEAR na seleção)
