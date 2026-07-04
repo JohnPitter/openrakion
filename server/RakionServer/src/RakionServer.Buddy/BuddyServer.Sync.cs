@@ -38,35 +38,27 @@ namespace RakionServer.Buddy
             }
         }
 
-        /// <summary>Re-lê a buddylist de UMA conexão e empurra os deltas vs o snapshot em memória.</summary>
+        /// <summary>Re-lê a buddylist de UMA conexão, empurra os deltas E re-acende a lista (a UI do F9 descarta o
+        /// RET_LOGIN/presença que chega ANTES da janela montar — a lista fica VAZIA até um evento forçar re-render;
+        /// re-empurrar a presença a cada ciclo acende a lista sozinha em ~2.5s). O NTF_USER_STATE é idempotente.</summary>
         private async Task SyncOneAsync(BuddyConn conn)
         {
             var fresh = await _db.LoadBuddyListAsync(conn.Account);
             var freshNicks = new List<string>(fresh.Count);
             foreach (var b in fresh) freshNicks.Add(b.Nick);
-
-            var old = new HashSet<string>(conn.BuddyNicks, StringComparer.OrdinalIgnoreCase);
-            var added = new List<string>();
-            foreach (var n in freshNicks) if (!old.Contains(n)) added.Add(n);
-            var now = new HashSet<string>(freshNicks, StringComparer.OrdinalIgnoreCase);
-            bool removed = false;
-            foreach (var n in conn.BuddyNicks) if (!now.Contains(n)) { removed = true; break; }
-
-            if (added.Count == 0 && !removed) return;   // sem mudança
             conn.BuddyNicks = freshNicks;
+            if (freshNicks.Count == 0) return;
 
-            // amigos NOVOS: manda a presença deles a ESTA conexão (acende a linha na lista, online/offline) e,
-            // se o novo amigo está online, avisa-o que ESTA conexão está online (cross-announce, casado por nick).
-            foreach (var nick in added)
+            // Re-acende a lista TODA: presença (online/offline + endereço P2P) de cada amigo. Idempotente — o
+            // cliente só (re)ativa o P2P se ip1==ip2; offline zera. Isto conserta o "lista vazia até nick change".
+            var roster = new List<UserPresence>(freshNicks.Count);
+            foreach (var nick in freshNicks)
             {
                 bool up = _byNick.TryGetValue(nick, out var f) && f!.LoggedIn && f != conn;
-                Send(conn, BuddyProtocol.NTF_USER_STATE,
-                    BuddyFrames.UserState(new[] { up ? Presence(f!) : new UserPresence(nick, false, null, 0) }));
-                if (up)
-                    Send(f!, BuddyProtocol.NTF_USER_STATE, BuddyFrames.UserState(new[] { Presence(conn) }));
+                roster.Add(up ? Presence(f!) : new UserPresence(nick, false, null, 0));
+                if (up) Send(f!, BuddyProtocol.NTF_USER_STATE, BuddyFrames.UserState(new[] { Presence(conn) }));
             }
-            Log.Ok("buddy", "[{0}] sync '{1}': +{2} amigo(s){3} -> presença empurrada",
-                conn.Ip, conn.Account, added.Count, removed ? " (e remoções)" : "");
+            Send(conn, BuddyProtocol.NTF_USER_STATE, BuddyFrames.UserState(roster));
         }
     }
 }
