@@ -214,10 +214,14 @@ namespace RakionServer.World
             _db = db;
             Bots = new BotManager(() => _udpGame?.Port ?? 40708);
             Items = new ItemCatalog(db);
+            Progression = new ProgressionService(db);
         }
 
         /// <summary>Catálogo de itens (iteminfo) — serviço extraído; carregado no boot, consultado por shop/login.</summary>
         public ItemCatalog Items { get; }
+
+        /// <summary>Progressão (exp/level/stage-result) — serviço extraído; opera sobre a sessão + DB.</summary>
+        public ProgressionService Progression { get; }
 
         /// <summary>Subsistema de BOTS (IA, roster, peer, ciclo de vida) — extraído do WorldServer p/ isolar o
         /// acoplamento; depende só da porta do gameplay UDP. Entradas: BotTick/SpawnFieldBotsInStage/DiscardBots
@@ -508,8 +512,7 @@ namespace RakionServer.World
             Log.Ok("enchant", "config: {0} catalisador(es)  evento×{1} PU×{2}",
                 EnchantConfig.CatalyzerCount, EnchantConfig.EventMult, EnchantConfig.PuMult);
             await Items.LoadAsync();   // catalogo de itens (iteminfo) p/ a compra 0x2e
-            _levelCurve = await _db.LoadLevelCurveAsync(); // curva de exp por classe (level-up 0x50)
-            Log.Ok("level", "curva de level carregada: {0} entradas (classlevelinfo)", _levelCurve.Count);
+            await Progression.LoadCurveAsync();            // curva de exp por classe (level-up 0x50)
             _ = Task.Run(() => ConfigReloadLoopAsync(_cts.Token));   // reload a quente de pu_config/enchant_* (admin sem restart)
             Log.Ok("world", "World Server pronto (ServerId={0})", _cfg.ServerId);
         }
@@ -540,37 +543,6 @@ namespace RakionServer.World
         /// <summary>Acesso ao DB para os handlers (compra 0x2e).</summary>
         public WorldDatabase Db => _db;
 
-        private System.Collections.Generic.Dictionary<(byte Cls, byte Level), int> _levelCurve = new();
-
-        /// <summary>Exp TOTAL p/ avancar do nivel atual (classlevelinfo). 0 = sem proximo nivel.</summary>
-        public int NextLevelExp(byte cls, byte level) => _levelCurve.TryGetValue((cls, level), out var e) ? e : 0;
-
-        /// <summary>
-        /// Credita exp ao char ativo e processa level-ups (FUN_0040d300): acumula CharExp,
-        /// sobe CharLevel/CharLevelPoint e persiste exp + nivel no characterinfo. O threshold de cada
-        /// nivel e' o MEIO do intervalo da curva classlevelinfo ((curva[L-1]+curva[L])/2) — house-rule
-        /// p/ "barra cheia = upa" exato (o cliente desenha o cheio no meio do span; ver loop).
-        /// Devolve quantos niveis subiu (0 = nenhum).
-        /// </summary>
-        public int GrantExp(ClientSession s, uint exp)
-        {
-            if (s.ActiveCharId <= 0 || exp == 0) return 0;
-            s.CharExp += exp;
-            _ = _db.AddCharacterResultAsync(s.ActiveCharId, 0, 0, 0, exp);
-            return SettleLevels(s);
-        }
-
-        /// <summary>Aplica o RESULTADO de um stage solo (handler 0x53): bônus de PU sobre exp/gold, credita gold
-        /// (saldo + DB), grava o MELHOR rank do stage (userstageinfo) e concede exp (curva classlevelinfo).
-        /// Devolve o nº de level-ups. Regra de negócio do motor de partida/progressão — fora do handler de rede.</summary>
-        public int ApplyStageResult(ClientSession s, byte stage, byte rank, uint exp, uint gold)
-        {
-            exp = s.BonusExp(exp); gold = s.BonusGold(gold);                       // bônus de PU (pu_config)
-            s.Gold += gold;
-            if (gold > 0 && s.GameInfoId > 0) _ = _db.AddGoldAsync(s.GameInfoId, (int)gold);
-            if (rank > 0 && s.ActiveCharId > 0) _ = _db.SaveStageRankAsync(s.ActiveCharId, stage, rank); // melhor rank por stage
-            return GrantExp(s, exp);
-        }
 
         /// <summary>Domínio do messenger (add buddy, 0x19): resolve o nick -> conta dona e, se existe e não é o
         /// próprio jogador, persiste a amizade RECÍPROCA (buddylist nos 2 sentidos). Devolve (status, accountId do
@@ -661,36 +633,6 @@ namespace RakionServer.World
         };
 
         private readonly System.Random _rng = new();
-
-        /// <summary>Sobe os niveis PENDENTES pela curva (sem creditar exp) e persiste. Chamado ao GANHAR exp
-        /// (<see cref="GrantExp"/>) E no LOAD do char — um char carregado JÁ acima do limiar upa na hora, sem
-        /// precisar ganhar exp de novo. Devolve quantos niveis subiu (0 = nenhum).</summary>
-        public int SettleLevels(ClientSession s)
-        {
-            if (s.ActiveCharId <= 0) return 0;
-            int ups = 0;
-            while (s.CharLevel < 99)
-            {
-                int full = NextLevelExp(s.CharClass, s.CharLevel);              // curva ORIGINAL: exp do proximo nivel (curva[L])
-                if (full <= 0) break;                                           // teto da curva (sem proximo nivel)
-                int floor = NextLevelExp(s.CharClass, (byte)(s.CharLevel - 1)); // exp do nivel atual (curva[L-1])
-                // HOUSE-RULE (desvio consciente; o DB fica intacto): o cliente desenha a barra "cheia" a ~2/5 do
-                // span do nivel (display nv4 = 496 ~ 386 + (658-386)*2/5 = 494). O meio-a-meio antigo (522)
-                // deixava a barra visualmente cheia SEM upar. Subimos nesse ponto p/ "barra cheia = upa".
-                int next = floor + (full - floor) * 2 / 5;
-                if (s.CharExp < next) break;
-                s.CharLevel++;
-                s.CharLevelPoint++;
-                ups++;
-            }
-            if (ups > 0)
-            {
-                _ = _db.UpdateCharacterLevelAsync(s.ActiveCharId, s.CharLevel, (byte)Math.Min(s.CharLevelPoint, 255));
-                Log.Ok("level", "[{0}] char {1} LEVEL UP -> {2} (+{3} nivel(is), exp total {4})",
-                    s.Slot, s.ActiveCharId, s.CharLevel, ups, s.CharExp);
-            }
-            return ups;
-        }
 
 
         public void Stop()
@@ -798,7 +740,7 @@ namespace RakionServer.World
                 s.CharLose = (uint)(ch.Lose < 0 ? 0 : ch.Lose);         // overlay 0x0C @77
                 s.CharDraw = (uint)(ch.Draw < 0 ? 0 : ch.Draw);         // overlay 0x0C @81
                 s.CharLevelPoint = (uint)(ch.LevelPoint);               // pontos de level -> overlay 0x0C @101
-                SettleLevels(s);                                        // upa niveis pendentes JÁ no load (barra cheia do relog)
+                Progression.SettleLevels(s);                                        // upa niveis pendentes JÁ no load (barra cheia do relog)
                 // stats alocados (hit1..maxcp) -> Stats[0..9], p/ a alocacao 0x33 partir do valor real salvo
                 s.Stats[0] = ch.Hit1; s.Stats[1] = ch.Hit2; s.Stats[2] = ch.Hit3; s.Stats[3] = ch.Hit4;
                 s.Stats[4] = ch.Chit; s.Stats[5] = ch.Hp; s.Stats[6] = ch.Ap; s.Stats[7] = ch.AttackSpeed;

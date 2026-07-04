@@ -180,7 +180,7 @@ namespace RakionServer.World.Network
             // persiste a transacao (a loja debita do mesmo saldo; sem isto o credito sumia no relogin)
             if (gold > 0 && u.GameInfoId > 0) _ = ctx.World.Db.AddGoldAsync(u.GameInfoId, (int)gold);
             // exp + level-up server-side (FUN_0040d300, curva classlevelinfo) — persiste exp/nivel.
-            ctx.World.GrantExp(u, exp);
+            ctx.World.Progression.GrantExp(u, exp);
 
             // FUN_004038e0 LOBBY 0x51 (level-up) ao proprio — [51][level][u16 levelPoint]
             SendLobbyMsg(ctx, 0x51, new byte[] {

@@ -508,7 +508,7 @@ namespace RakionServer.World.Network
         }
 
         /// <summary>Handler do 0x53 GameResult (resultado do stage solo, FUN_00425010): traduz bytes -> chamada de
-        /// domínio (<see cref="WorldServer.ApplyStageResult"/>, que credita exp/gold/rank) e serializa as respostas
+        /// domínio (<see cref="ProgressionService.ApplyStageResult"/>, que credita exp/gold/rank) e serializa as respostas
         /// — level-up (0x51) + ack (0x53). A regra de negócio (progressão) mora no WorldServer; aqui só parse +
         /// validação de limites + serialização. Layout: [stage u8][rank u8][count u8][count×u16 mapSlots][exp u32][gold u32].</summary>
         private void OnStageResult(byte[] data)
@@ -531,7 +531,7 @@ namespace RakionServer.World.Network
                     Log.Warn("field", "[{0}] 0x53 solo: Wrong Game Point! Exp:{1} Gold:{2} — ignorado", Slot, exp, gold);
                     return;
                 }
-                int ups = _server.ApplyStageResult(this, stage, rank, exp, gold);   // domínio: bônus PU + gold + rank + exp
+                int ups = _server.Progression.ApplyStageResult(this, stage, rank, exp, gold);   // domínio: bônus PU + gold + rank + exp
                 if (ups > 0) SendLevelUp();                                          // 0x51 ao cliente
                 // ACK do 0x53: sem ele o cliente nao comita o resultado (o rank so' entrava na selecao apos relog).
                 SendStageResultAck(stage, rank, count, mapSlots);
