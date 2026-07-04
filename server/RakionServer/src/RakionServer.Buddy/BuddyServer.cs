@@ -177,7 +177,13 @@ namespace RakionServer.Buddy
             _byToken[conn.Token] = conn;
             _byAccount[conn.Account] = conn;
 
-            Send(conn, BuddyProtocol.RET_LOGIN, BuddyFrames.LoginList(conn.Token, buddies));
+            byte[] loginList = BuddyFrames.LoginList(conn.Token, buddies);
+            // TRACE byte-a-byte do RET_LOGIN: sem servidor original p/ capturar (openrakion-server = nossa
+            // reconstrução), o ground truth é a RE do Buddy2.dll; logar o que EMITIMOS crava o offset do
+            // nome truncado ('He'/'roi2') vs o parse do cliente (buddyrec_out: id@0, nome UTF-16@0x14).
+            Log.Info("buddy", "[{0}] RET_LOGIN {1}B nicks=[{2}] hex={3}", conn.Ip, loginList.Length,
+                string.Join(",", conn.BuddyNicks), Convert.ToHexString(loginList));
+            Send(conn, BuddyProtocol.RET_LOGIN, loginList);
             Log.Ok("buddy", "[{0}] LOGIN '{1}' (nick '{2}') — {3} amigo(s), token={4}",
                 conn.Ip, conn.Account, conn.Nick, buddies.Count, conn.Token);
             AnnounceOnline(conn);
@@ -188,6 +194,7 @@ namespace RakionServer.Buddy
         /// envia 0x3002 ao servidor (buddyfull_out l.445).</summary>
         private async Task HandleRemoveAsync(BuddyConn conn, byte[] payload)
         {
+            Log.Info("buddy", "[{0}] SVC_REMOVE payload {1}B hex={2}", conn.Ip, payload.Length, Convert.ToHexString(payload));
             string nick = AsciiZ(payload);
             if (conn.Account.Length > 0 && nick.Length > 0)
             {
