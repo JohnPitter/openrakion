@@ -67,6 +67,7 @@ namespace RakionServer.World
                 var bot = rec.Bot!;
                 bot.SpawnedThisRound = true;
                 bot.SpawnedMs = Environment.TickCount64;
+                DisposeLink(bot);                     // novo round: fecha o socket/peer do round anterior (re-handshake fresco)
                 bot.InitStagePosition();
                 rec.State = 4; rec.Dead = false; bot.Dead = false;
                 bot.SpawnGen++;                                  // nova entidade na engine -> a ponte invalida o cache e re-acha (anti-crash)

@@ -44,12 +44,13 @@ namespace RakionServer.World
         /// chave própria na tabela do host. Só o socket de envio (porta única, como o peer).</summary>
         private void EnsureBotSocket(BotPlayer bot)
         {
-            if (bot.UdpSocket != null) return;
+            var link = LinkOf(bot);
+            if (link.UdpSocket != null) return;
             int port = Interlocked.Increment(ref _botPortSeq);
             var sock = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
             sock.Bind(new IPEndPoint(IPAddress.Loopback, port));
-            bot.UdpSocket = sock;
-            bot.BotEndpoint = new IPEndPoint(IPAddress.Loopback, port);
+            link.UdpSocket = sock;
+            link.BotEndpoint = new IPEndPoint(IPAddress.Loopback, port);
             Log.Ok("bot", "socket UDP NPC porta {0} (bot '{1}')", port, bot.Name);
         }
 
@@ -70,7 +71,7 @@ namespace RakionServer.World
         /// que o relaya ao host — a MESMA via do 0x30a (UdpGameplay relaya 0x307/0x30b).</summary>
         private void EmitBotNpcDatagram(BotPlayer bot, byte[] pkt)
         {
-            var sock = bot.UdpSocket;
+            var sock = LinkOf(bot).UdpSocket;
             if (sock == null) return;
             var serverEp = new IPEndPoint(IPAddress.Loopback, _gameplayPort());
             try { sock.SendTo(pkt, serverEp); } catch { }

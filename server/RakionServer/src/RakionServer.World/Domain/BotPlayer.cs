@@ -1,8 +1,4 @@
 using System;
-using System.Net;
-using System.Net.Sockets;
-using RakionServer.Peer;
-using RakionServer.World.Network;
 
 namespace RakionServer.World.Domain
 {
@@ -372,37 +368,9 @@ namespace RakionServer.World.Domain
         /// → render INCONSISTENTE. Cada emissão do create (spawn/re-send/respawn) usa <c>RelSeq++</c>.</summary>
         public uint RelSeq;
 
-        // ---- peer de netcode (mini-peer da Serious Engine; abre o gate do 0x30a) ----
-
-        /// <summary>
-        /// O PEER de netcode do bot (slice RakionServer.Peer): fala o handshake de sessão da engine (REQ_CONNECT
-        /// REMOTE→…→CRC→SEQ_ADDPLAYER) p/ REGISTRAR o bot como peer e ABRIR o gate do 0x30a — sem ele o host
-        /// trava (GetSessionState()[0]==0) e nem emite nem aplica 0x30a. Criado no spawn do round (quando há
-        /// endpoint UDP do host); resetado por round. <see cref="BotPeer.GateOpen"/> é o sinal fiel do gate.
-        /// </summary>
-        public BotPeer? Peer;
-
-        /// <summary>Socket UDP dedicado do bot (porta única = endpoint único para o host).</summary>
-        public Socket? UdpSocket;
-
-        /// <summary>Endpoint do bot (IP:porta do socket dedicado).</summary>
-        public IPEndPoint? BotEndpoint;
-
-        /// <summary>True se o gate do 0x30a abriu (o host emitiu gameplay). Encapsula <see cref="Peer"/>.</summary>
-        public bool GateOpen => Peer?.GateOpen ?? false;
-
-        /// <summary>
-        /// Força o gate aberto (fallback): se o handshake não completou, cria um peer dummy
-        /// que emite frames diretamente. O host pode ignorar até o handshake completar, mas
-        /// pelo menos o bot tenta se mover.
-        /// </summary>
-        public void ForceGateOpen()
-        {
-            if (Peer != null && !Peer.GateOpen)
-            {
-                Peer.ForceGate();
-            }
-        }
+        // O estado de REDE do bot (peer de netcode + socket UDP) NÃO mora aqui: é infra e vive num
+        // RakionServer.World.Network.BotNetLink dono do BotManager (mapa keyed pelo bot). Assim o domínio
+        // BotPlayer fica puro (posição/HP/IA/protocolo-de-sequência), sem depender de Socket/IPEndPoint/BotPeer.
 
         /// <summary>Nonce do subFrame (off+0x0c do corpo 0x30a): varia a cada frame; o cliente só exige que mude.</summary>
         private byte _sub;
@@ -410,8 +378,8 @@ namespace RakionServer.World.Domain
         /// <summary>Próximo subFrame nonce (incrementa e devolve; wraps em 255→0).</summary>
         public byte NextSubFrame() => unchecked(_sub++);
 
-        /// <summary>Reset por ROUND: energia cheia, vivo, sem alvo (espelha o reset do round do field). O peer de
-        /// netcode é descartado (re-handshake no próximo spawn, com o endpoint do host vigente).</summary>
+        /// <summary>Reset por ROUND: energia cheia, vivo, sem alvo (espelha o reset do round do field). O estado de
+        /// REDE (socket/peer) é infra e o BotManager o descarta no re-spawn do round (DisposeLink) — não aqui.</summary>
         public void ResetForRound()
         {
             Hp = MaxHp;
@@ -429,10 +397,6 @@ namespace RakionServer.World.Domain
             StunUntilMs = 0;
             SpawnedThisRound = false;
             SpawnedMs = 0;
-            Peer = null;
-            try { UdpSocket?.Close(); } catch { }
-            UdpSocket = null;
-            BotEndpoint = null;
         }
     }
 }

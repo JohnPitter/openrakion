@@ -87,6 +87,7 @@ namespace RakionServer.World
                 {
                     bot.SpawnedThisRound = true;
                     bot.SpawnedMs = now;
+                    DisposeLink(bot);              // novo round: fecha o socket/peer do round anterior (re-handshake fresco)
                     bot.InitStagePosition();
                     if (IsObjectiveMode(f))
                     {
@@ -129,16 +130,17 @@ namespace RakionServer.World
                 //     por-player (IsValidUDP_ForPlayer). Logo, só no caminho-fantasma.
                 if (!BotMovement.UseNpcAvatar && !BotMovement.UseClientBridge)
                 {
+                    var link = LinkOf(bot);
                     // FALLBACK DE GATE: se o handshake não completou em BotGateFallbackMs, força o gate aberto.
-                    if (!bot.GateOpen && bot.SpawnedMs > 0 && (now - bot.SpawnedMs) > BotGateFallbackMs)
+                    if (!link.GateOpen && bot.SpawnedMs > 0 && (now - bot.SpawnedMs) > BotGateFallbackMs)
                     {
-                        var hs = bot.Peer?.HandshakeState;
+                        var hs = link.Peer?.HandshakeState;
                         Log.Ok("bot", "field {0}: '{1}' gate TIMEOUT após {2}ms (hs={3}) — forçando gate aberto",
                             f.Id, bot.Name, now - bot.SpawnedMs, hs?.ToString() ?? "null");
-                        bot.ForceGateOpen();
+                        link.ForceGateOpen();
                     }
                     // RETRY DO PEER: o join exige o endpoint UDP do host, que pode não existir no spawn.
-                    if (BotMovement.ClientFramesEnabled && bot.Peer == null)
+                    if (BotMovement.ClientFramesEnabled && link.Peer == null)
                         EnsureBotPeerConnected(f, rec, bot);
                 }
 
@@ -371,7 +373,7 @@ namespace RakionServer.World
 
             // Envia 0x30a ao socket do servidor (porta 40708). O servidor recebe de fonte desconhecida
             // (bot) e relaya ao host — mesmo canal que o worldserv original usa para gameplay entre peers.
-            var sock = bot.UdpSocket;
+            var sock = LinkOf(bot).UdpSocket;
             if (sock == null) return;
 
             byte[] action = BotMovement.BuildActionDatagram(bot, rec.Slot);
@@ -400,7 +402,7 @@ namespace RakionServer.World
         /// </summary>
         private void EmitBotAttack(PlayerRec rec, BotPlayer bot, ushort actionId)
         {
-            var sock = bot.UdpSocket;
+            var sock = LinkOf(bot).UdpSocket;
             if (sock == null) return;
             var serverEp = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, _gameplayPort());
             try { sock.SendTo(BotMovement.BuildAttackDatagram(bot, rec.Slot, actionId), serverEp); } catch { }

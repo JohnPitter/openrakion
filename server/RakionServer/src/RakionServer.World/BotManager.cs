@@ -73,17 +73,18 @@ namespace RakionServer.World
             int removed;
             if (all)
             {
-                // notifica cada slot antes de limpar (p/ o cliente do host esvaziar o slot)
-                foreach (var r in f.BotRecs()) NotifyBotLeftRoom(f, r.Slot, requester);
+                // notifica cada slot antes de limpar (p/ o cliente do host esvaziar o slot) + fecha o link de rede
+                foreach (var r in f.BotRecs()) { NotifyBotLeftRoom(f, r.Slot, requester); if (r.Bot != null) DisposeLink(r.Bot); }
                 removed = f.RemoveAllBots();
             }
             else
             {
-                int seat = -1;
-                foreach (var r in f.BotRecs()) seat = r.Slot; // último seat de bot
-                if (seat < 0) return 0;
-                NotifyBotLeftRoom(f, seat, requester);
-                f.ClearBotSeat(seat);
+                PlayerRec? last = null;
+                foreach (var r in f.BotRecs()) last = r; // último bot
+                if (last == null) return 0;
+                NotifyBotLeftRoom(f, last.Slot, requester);
+                if (last.Bot != null) DisposeLink(last.Bot);   // fecha socket/peer do bot removido
+                f.ClearBotSeat(last.Slot);
                 removed = 1;
             }
             Log.Ok("bot", "[{0}] {1} bot(s) removido(s) do field {2}", requester.Slot, removed, f.Id);
@@ -101,9 +102,11 @@ namespace RakionServer.World
             // cliente segue mostrando o bot no slot após o fim do match/settle ("continuam visíveis"). Em
             // LeaveField o host já saiu (Master = sessão morta) — o send é try/catch, então é inócuo.
             var host = f.Master;
-            if (host != null)
-                foreach (var r in f.BotRecs())
-                    NotifyBotLeftRoom(f, r.Slot, host);
+            foreach (var r in f.BotRecs())
+            {
+                if (host != null) NotifyBotLeftRoom(f, r.Slot, host);
+                if (r.Bot != null) DisposeLink(r.Bot);   // fecha socket/peer (o link mora no BotManager, não no domínio)
+            }
             f.RemoveAllBots();
         }
 

@@ -57,8 +57,8 @@ namespace RakionServer.World.Network
                 foreach (var r in field.BotRecs())
                 {
                     var b = r.Bot!;
-                    string gate = b.GateOpen ? "OPEN" : "closed";
-                    string hs = b.Peer?.HandshakeState.ToString() ?? "no-peer";
+                    string gate = world.Bots.BotGateOpen(b) ? "OPEN" : "closed";
+                    string hs = world.Bots.BotHandshake(b);
                     string tgt = b.TargetSeat >= 0 ? $"#{b.TargetSeat}" : "none";
                     sb.AppendLine($"{b.Name} s{r.Slot} [{b.Difficulty}] hp={b.Hp} pos=({b.X:F1},{b.Z:F1}) gate={gate} hs={hs} tgt={tgt}");
                     n++;
@@ -73,9 +73,9 @@ namespace RakionServer.World.Network
                 foreach (var r in field.BotRecs())
                 {
                     var b = r.Bot!;
-                    if (!b.GateOpen)
+                    if (!world.Bots.BotGateOpen(b))
                     {
-                        b.ForceGateOpen();
+                        world.Bots.ForceBotGate(b);
                         forced++;
                     }
                 }
