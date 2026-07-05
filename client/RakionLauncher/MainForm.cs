@@ -188,55 +188,6 @@ internal sealed class MainForm : Form
             new Thread(() => WindowMode.FrameGameWindow(pid, mode, w, h)) { IsBackground = true }.Start();
             new Thread(() => WindowMode.PatchKeyHook(pid)) { IsBackground = true }.Start();
 
-            // Captura (RE do runtime de jogo): se C:\temp\capture_hook.dll existir, injeta CEDO (parent, sem UAC,
-            // antes do anti-tamper armar). DLL 100% passivo (só lê memória) -> não trava o cliente. No-op se ausente.
-            const string capDll = @"C:\temp\capture_hook.dll";
-            if (File.Exists(capDll))
-                new Thread(() => {
-                    Thread.Sleep(900);
-                    string r = GameLauncher.InjectDll(pid, capDll);
-                    try { File.WriteAllText(@"C:\temp\cap_inject.txt", $"pid={pid} inject={r}\n"); } catch { }
-                }) { IsBackground = true }.Start();
-
-            // HIT×N nativo do bot: injeta bot_reliable.dll — abre o CANAL RELIABLE do slot do bot na memória do
-            // cliente (seta player[slot]+0x1d8=1, lendo os slots de C:\temp\bot_slots.txt que o servidor publica).
-            // Com o canal aberto, o create-com-colisão que o servidor emite passa pelo caminho NATIVO → o bot vira
-            // entidade acertável → o contador HIT×N dispara pelo código do jogo. NÃO dirige posição (o movimento é
-            // 100% server-side via 0x30a) — sem clipping. Só engine.dll (offsets estáveis). Ver docs/pvp-stage-re.md
-            // §12. Mesma injeção cross-arch/CEDO do capture (a via do launcher; injetar por fora TRAVA o jogo).
-            // NÃO coexiste com bot_render.dll (ambos hookam SetAction @0x36102fa0 → duplo-hook): esta é a golden.
-            const string botDll = @"C:\temp\bot_reliable.dll";
-            if (File.Exists(botDll))
-                new Thread(() => {
-                    Thread.Sleep(1500);
-                    string r = GameLauncher.InjectDll(pid, botDll);
-                    try { File.WriteAllText(@"C:\temp\bot_inject.txt", $"pid={pid} inject={r}\n"); } catch { }
-                }) { IsBackground = true }.Start();
-
-            // Scanner de diagnóstico (SÓ LEITURA): dumpa os campos do blob do 0x307 (docs/cell-monster-re.md
-            // §2.3c) da memória REAL de um NPC nativo (ex.: o golem objetivo do Golem War) — fecha os campos
-            // ambíguos que a RE estática não confirmou. Fica ocioso até C:\temp\scan_trigger.txt aparecer
-            // (criar já dentro do stage, olhando o NPC) — injetar num processo já rodando via ferramenta externa
-            // trava o jogo; aqui é a mesma via segura do bot_render.dll. No-op se ausente.
-            const string scanDll = @"C:\temp\npc_scan.dll";
-            if (File.Exists(scanDll))
-                new Thread(() => {
-                    Thread.Sleep(1500);
-                    string r = GameLauncher.InjectDll(pid, scanDll);
-                    try { File.WriteAllText(@"C:\temp\npc_scan_inject.txt", $"pid={pid} inject={r}\n"); } catch { }
-                }) { IsBackground = true }.Start();
-
-            // CONTROLE de host-election (observador, SÓ LEITURA): se C:\temp\sessprobe.dll existir, injeta CEDO e
-            // loga se ESTE cliente chama StartPeerToPeer_t (hospeda, role=ff) ou JoinSession_t (entra) no stage-entry
-            // -> C:\temp\sessprobe_<pid>.log. Prova contra o worldserv ORIGINAL se o MASTER hospeda. No-op se ausente.
-            const string sessDll = @"C:\temp\sessprobe.dll";
-            if (File.Exists(sessDll))
-                new Thread(() => {
-                    Thread.Sleep(1000);
-                    string r = GameLauncher.InjectDll(pid, sessDll);
-                    try { File.WriteAllText(@"C:\temp\sessprobe_inject.txt", $"pid={pid} inject={r}\n"); } catch { }
-                }) { IsBackground = true }.Start();
-
             // Botão SEGUE HABILITADO: troca o login e clique START de novo p/ abrir uma 2ª conta na mesma máquina.
             Status($"Rakion iniciado ({user}). Para uma 2ª conta: troque o login e clique START de novo.", false);
         }
