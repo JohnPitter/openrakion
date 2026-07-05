@@ -89,19 +89,26 @@ distinguir **modelo-vazio** (re-popular via `FUN_00489c90` iterando o store) de 
 (dado presente, falta invalidar) — resolver com diagnóstico em runtime antes de gravar bytes
 (patches cegos aqui têm histórico de AV).
 
-### RESOLVIDO — `msgfix.dll` (client/RakionMsgFix, 2026-07-05, validado in-game)
-Diagnóstico runtime cravou: no SHOW o modelo estava **vazio** (não é só-repaint), e o self-name chega
-**truncado em 2 chars** (`"Go"`) porque o campo do 0x0C (`@41` do `LoginCharListWriter`) é fixo em 2 bytes.
-O patch (`msgfix.dll`, native x86, injetado pelo launcher — injetar por fora TRAVA o jogo) hooka
-`FUN_00489120` e no **1º SHOW**:
-1. lê o prefixo de 2 chars do self-name (`host+0x44`, `std::string` VC7 — buf/ptr@+0x04, `_Mysize`@+0x14,
-   `_Myres`@+0x18; SSO se `_Myres<=15`);
-2. resolve `AccountInfo` (`FUN_00471b70` → `[0x004d054c]` `GetAccountInfo`, `__thiscall`) e acha a 1ª string
-   alfanumérica que **começa com o prefixo e é mais longa** (`"GoHeroi"`, auto-validante), gravando-a em
-   `host+0x44`;
-3. chama `FUN_00483600(host)` (host vtable **+0x6c**) — o MESMO refresh do nick-change — que monta o título
-   (`GetLanguageStr` + self-name via `FUN_00483850` + `SetName` `FUN_00419390`) e reconstrói as linhas
-   (`FUN_004831b0`, inclusive amigos offline).
+### Render do F9 — APOSENTADO o `msgfix.dll`, alvo SERVER-SIDE (2026-07-05)
+> **DIRETRIZ:** nenhuma DLL injetada p/ funcionalidade — o original renderiza o F9 sem patch, logo o conserto
+> é replicar a ORDEM/semântica de mensagens que o cliente espera. A `msgfix.dll` (client/RakionMsgFix) foi
+> **REMOVIDA** (injeção do launcher + bundle + projeto). O "22 amigos-lixo + crash no scroll" reportado era
+> provável artefato do msgfix forçando `FUN_00483600` na hora errada (o row-builder renderiza a CONTAGEM do
+> store, e slots não-inicializados viram lixo). Banco + frames RET_LOGIN estão CORRETOS (verificado).
 
-Resultado: F9 abre com `GoHeroi's Rakion messenger [0/N]` + lista completa na hora, sem nick-change. 1x por
-sessão (o título persiste; evita realocar o widget de lista). Prólogo do hook: `56 8b f1 8a 46 24` (6B).
+**Mapa de RE do render (fatos p/ o fix server-side):**
+- `FUN_00489120` (F9 show) = **só toggle de visibilidade**; NÃO reconstrói do store.
+- `FUN_00483600` (host vtable **+0x6c**) = o refresh que MONTA título + linhas. É o que o nick-change dispara.
+  - título: `GetLanguageStr` + self-name via `FUN_00483850` + `SetName` `FUN_00419390`.
+  - linhas: `FUN_004831b0` — ALOCA lista nova (`host+0x410`) e itera **`FUN_00489310`** (contagem do store) ×
+    `FUN_00489840` (entrada i) → `FUN_00482610` (add linha). Logo nº de linhas = contagem do store.
+- self-name: `host+0x44` (`std::string` VC7: buf/ptr@+0x04, `_Mysize`@+0x14, `_Myres`@+0x18). Nasce truncado
+  em 2 chars porque o `@41` do 0x0C é **fixo em 2 bytes** (o resto do frame é relativo a ele); o nome completo
+  vive em `AccountInfo` (`FUN_00471b70`→`[0x004d054c]`). No original o cliente monta o título completo do
+  AccountInfo — falta descobrir QUANDO/por qual trigger.
+- store: populado por RET_LOGIN (loop @`100075a4`, registro 0x94) E por `NTF_USER_STATE` (`FUN_10009a40`
+  "Register undetermined User" ADICIONA se o nick não existe). Suspeita da causa raiz: o store **não é limpo
+  ao reconectar** (re-entrar no server sem fechar o jogo) → re-login acumula. Confirmar o gatilho de clear.
+
+**Aberto:** achar a mensagem/ordem que faz o cliente (a) montar as linhas na hora certa (RET_LOGIN chega ANTES
+da janela montar → é descartado) e (b) limpar o store no relog. Pegar BASELINE NATIVO in-game (sem DLL) antes.

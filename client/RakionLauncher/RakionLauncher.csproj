@@ -29,10 +29,6 @@
     <!-- Assets de UI (ícone + arte) embutidos no exe. Derivados do cliente, NÃO versionados (ver Assets\
          README.md). O glob tolera a ausência: quem clona sem os assets ainda compila (UI degrada sem eles). -->
     <EmbeddedResource Include="Assets\*.ico;Assets\*.png;Assets\*.bmp" />
-    <!-- Patch client-side do messenger F9 (native x86, versionado em client\RakionMsgFix). Copiado p/ junto
-         do exe; o launcher injeta no launch (ver MainForm). Condicional: precisa de MSVC p/ (re)compilar. -->
-    <None Include="..\RakionMsgFix\msgfix.dll" Condition="Exists('..\RakionMsgFix\msgfix.dll')"
-          CopyToOutputDirectory="PreserveNewest" Link="msgfix.dll" />
   </ItemGroup>
 
 </Project>

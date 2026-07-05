@@ -237,18 +237,6 @@ internal sealed class MainForm : Form
                     try { File.WriteAllText(@"C:\temp\sessprobe_inject.txt", $"pid={pid} inject={r}\n"); } catch { }
                 }) { IsBackground = true }.Start();
 
-            // FIX do render da janela F9 do messenger (patch PERMANENTE, versionado em client/RakionMsgFix):
-            // hooka FUN_00489120 (F9 show) e, no 1º SHOW, monta o título/nome completo + lista a partir do store
-            // (o F9 sozinho só faz toggle e nascia vazio; nome vinha truncado em 2 chars). Ver docs/protocol-buddy.md
-            // §"Render da janela F9". Bundle msgfix.dll junto ao launcher; injeta CEDO (parent, sem UAC — injetar por
-            // fora TRAVA o jogo). No-op se o arquivo não estiver presente.
-            string msgFixDll = Path.Combine(AppContext.BaseDirectory, "msgfix.dll");
-            if (File.Exists(msgFixDll))
-                new Thread(() => {
-                    Thread.Sleep(900);
-                    GameLauncher.InjectDll(pid, msgFixDll);
-                }) { IsBackground = true }.Start();
-
             // Botão SEGUE HABILITADO: troca o login e clique START de novo p/ abrir uma 2ª conta na mesma máquina.
             Status($"Rakion iniciado ({user}). Para uma 2ª conta: troque o login e clique START de novo.", false);
         }
