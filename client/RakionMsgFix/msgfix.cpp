@@ -32,7 +32,6 @@ typedef void* (*GetNet_t)();
 typedef void* (__thiscall *GetAcct_t)(void* net);
 
 static void* g_tr_show = nullptr;
-static bool  g_done = false;
 
 static void ReadStdStr(DWORD base, char* out, int cap) {
     out[0] = 0;
@@ -93,17 +92,16 @@ static bool FindFullNameByPrefix(DWORD acct, const char* prefix, int plen, char*
 extern "C" void __cdecl OnShow(DWORD obj) {
     __try {
         unsigned char guard = *reinterpret_cast<unsigned char*>(obj + 0x24);   // FUN_00489120 aborta se 0
-        unsigned char vis   = *reinterpret_cast<unsigned char*>(obj + 0x124);  // 0 = vai SHOW
-        if (guard != 0 && vis == 0 && !g_done) {
-            g_done = true;
-            char self[64]; ReadStdStr(obj + 0x44, self, sizeof(self));
-            int plen = 0; while (self[plen]) plen++;
-            char full[24];
-            if (plen >= 1 && plen < 15 &&
-                FindFullNameByPrefix(reinterpret_cast<DWORD>(GetAccountInfo()), self, plen, full, sizeof(full)))
-                WriteStdStr(obj + 0x44, full);
-            reinterpret_cast<Refresh_t>(REFRESH)(reinterpret_cast<void*>(obj));   // MESMO refresh do nick-change
-        }
+        unsigned char vis   = *reinterpret_cast<unsigned char*>(obj + 0x124);  // 0 = vai SHOW (o toggle inverte depois)
+        if (guard == 0) return;
+        if (vis != 0) return;   // so no SHOW (a cada F9-abrir -> add/remove de amigo refletem no reopen)
+        char self[64]; ReadStdStr(obj + 0x44, self, sizeof(self));
+        int plen = 0; while (self[plen]) plen++;
+        char full[24];
+        if (plen >= 1 && plen < 15 &&
+            FindFullNameByPrefix(reinterpret_cast<DWORD>(GetAccountInfo()), self, plen, full, sizeof(full)))
+            WriteStdStr(obj + 0x44, full);
+        reinterpret_cast<Refresh_t>(REFRESH)(reinterpret_cast<void*>(obj));   // MESMO refresh do nick-change
     } __except (EXCEPTION_EXECUTE_HANDLER) {}
 }
 
