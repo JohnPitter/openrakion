@@ -88,3 +88,20 @@ OFFLINE *desregistra* — `FUN_10009aa0` "Unregister User" — esvaziando a list
 distinguir **modelo-vazio** (re-popular via `FUN_00489c90` iterando o store) de **só-repaint**
 (dado presente, falta invalidar) — resolver com diagnóstico em runtime antes de gravar bytes
 (patches cegos aqui têm histórico de AV).
+
+### RESOLVIDO — `msgfix.dll` (client/RakionMsgFix, 2026-07-05, validado in-game)
+Diagnóstico runtime cravou: no SHOW o modelo estava **vazio** (não é só-repaint), e o self-name chega
+**truncado em 2 chars** (`"Go"`) porque o campo do 0x0C (`@41` do `LoginCharListWriter`) é fixo em 2 bytes.
+O patch (`msgfix.dll`, native x86, injetado pelo launcher — injetar por fora TRAVA o jogo) hooka
+`FUN_00489120` e no **1º SHOW**:
+1. lê o prefixo de 2 chars do self-name (`host+0x44`, `std::string` VC7 — buf/ptr@+0x04, `_Mysize`@+0x14,
+   `_Myres`@+0x18; SSO se `_Myres<=15`);
+2. resolve `AccountInfo` (`FUN_00471b70` → `[0x004d054c]` `GetAccountInfo`, `__thiscall`) e acha a 1ª string
+   alfanumérica que **começa com o prefixo e é mais longa** (`"GoHeroi"`, auto-validante), gravando-a em
+   `host+0x44`;
+3. chama `FUN_00483600(host)` (host vtable **+0x6c**) — o MESMO refresh do nick-change — que monta o título
+   (`GetLanguageStr` + self-name via `FUN_00483850` + `SetName` `FUN_00419390`) e reconstrói as linhas
+   (`FUN_004831b0`, inclusive amigos offline).
+
+Resultado: F9 abre com `GoHeroi's Rakion messenger [0/N]` + lista completa na hora, sem nick-change. 1x por
+sessão (o título persiste; evita realocar o widget de lista). Prólogo do hook: `56 8b f1 8a 46 24` (6B).

@@ -237,17 +237,16 @@ internal sealed class MainForm : Form
                     try { File.WriteAllText(@"C:\temp\sessprobe_inject.txt", $"pid={pid} inject={r}\n"); } catch { }
                 }) { IsBackground = true }.Start();
 
-            // Diagnóstico do render da janela F9 do messenger (observador PURO, só LÊ): se C:\temp\msgprobe.dll
-            // existir, injeta CEDO (parent, sem UAC). Hooka FUN_00489120 (F9 show), FUN_00489590 (presença) e
-            // FUN_0047bce0 (login) do rakion.exe -> loga se a lista/contador estão populados no SHOW p/ cravar
-            // modelo-vazio vs só-repaint (docs/protocol-buddy.md §"Render da janela F9"). C:\temp\msgprobe.log.
-            // Mesma via segura do launcher (injetar por fora TRAVA o jogo). No-op se ausente.
-            const string msgDll = @"C:\temp\msgprobe.dll";
-            if (File.Exists(msgDll))
+            // FIX do render da janela F9 do messenger (patch PERMANENTE, versionado em client/RakionMsgFix):
+            // hooka FUN_00489120 (F9 show) e, no 1º SHOW, monta o título/nome completo + lista a partir do store
+            // (o F9 sozinho só faz toggle e nascia vazio; nome vinha truncado em 2 chars). Ver docs/protocol-buddy.md
+            // §"Render da janela F9". Bundle msgfix.dll junto ao launcher; injeta CEDO (parent, sem UAC — injetar por
+            // fora TRAVA o jogo). No-op se o arquivo não estiver presente.
+            string msgFixDll = Path.Combine(AppContext.BaseDirectory, "msgfix.dll");
+            if (File.Exists(msgFixDll))
                 new Thread(() => {
                     Thread.Sleep(900);
-                    string r = GameLauncher.InjectDll(pid, msgDll);
-                    try { File.WriteAllText(@"C:\temp\msgprobe_inject.txt", $"pid={pid} inject={r}\n"); } catch { }
+                    GameLauncher.InjectDll(pid, msgFixDll);
                 }) { IsBackground = true }.Start();
 
             // Botão SEGUE HABILITADO: troca o login e clique START de novo p/ abrir uma 2ª conta na mesma máquina.
