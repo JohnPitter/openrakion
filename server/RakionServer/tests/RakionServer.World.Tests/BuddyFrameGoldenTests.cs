@@ -21,21 +21,24 @@ namespace RakionServer.World.Tests
         // ---- RET_LOGIN (lista de amigos) -----------------------------------------------------------
 
         [Fact]
-        public void LoginList_Empty_PadsAbove7Bytes() =>      // [result=0][token=0][count=0] + pad u32 (>7 bytes p/ sucesso)
+        public void LoginList_Empty_PadsAbove7Bytes() =>      // [result 0][token 0][_ 0][count 0] + pad = 10B (>7)
             Assert.Equal("00000000000000000000", Hex(BuddyFrames.LoginList(0, Array.Empty<BuddyEntry>())));
 
         [Fact]
         public void LoginList_OneOfflineBuddy_Record0x94()
         {
+            // HEADER DE 8 BYTES (cravado in-game): [result u16][token u16][_ u16][count u16][registro 0x94].
+            // O cliente lê count@+6 e a base do registro@+8 (EBX=payload+2). Header de 6B truncava o nome e
+            // inflava o count com bytes do próprio registro -> lista-lixo + crash.
             var buddies = new List<BuddyEntry> { new("acc2", "Heroi2", "") };
             byte[] f = BuddyFrames.LoginList(0x1234, buddies);
 
-            Assert.Equal(6 + 0x94, f.Length);                         // header (6) + 1 registro de 148B
-            Assert.Equal(0x0000, BitConverter.ToUInt16(f, 0));        // result = 0 (sucesso)
-            Assert.Equal(0x1234, BitConverter.ToUInt16(f, 2));        // token (brokering P2P)
-            Assert.Equal(1, BitConverter.ToUInt16(f, 4));             // count
+            Assert.Equal(8 + 0x94, f.Length);                         // header (8) + 1 registro de 148B
+            Assert.Equal(0x0000, BitConverter.ToUInt16(f, 0));        // result = 0 (sucesso) @+0
+            Assert.Equal(0x1234, BitConverter.ToUInt16(f, 2));        // token @+2 (brokering P2P)
+            Assert.Equal(1, BitConverter.ToUInt16(f, 6));             // count @+6
 
-            int rec = 6;
+            int rec = 8;
             Assert.Equal("Heroi2", Encoding.ASCII.GetString(f, rec, 6));         // id ASCII @0x00
             Assert.Equal(0, f[rec + 6]);                                          // null-terminado
             Assert.Equal("Heroi2", Encoding.Unicode.GetString(f, rec + 0x14, 12)); // nome UTF-16 @0x14
@@ -47,8 +50,8 @@ namespace RakionServer.World.Tests
         {
             var buddies = new List<BuddyEntry> { new("a", "Alpha", ""), new("b", "Beta", "g1") };
             byte[] f = BuddyFrames.LoginList(1, buddies);
-            Assert.Equal(6 + 2 * 0x94, f.Length);
-            Assert.Equal(2, BitConverter.ToUInt16(f, 4));
+            Assert.Equal(8 + 2 * 0x94, f.Length);                     // header (8) + 2 registros
+            Assert.Equal(2, BitConverter.ToUInt16(f, 6));             // count @+6
         }
 
         // ---- NTF_USER_STATE (presença) -------------------------------------------------------------
