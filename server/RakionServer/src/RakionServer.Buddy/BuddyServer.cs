@@ -32,7 +32,9 @@ namespace RakionServer.Buddy
         // conexões logadas: por nick (id de rede do messenger) p/ presença + PM, por token p/ o UDP register, e
         // por account p/ distinguir 2+ clientes do mesmo IP (cada um pega a conta ainda não atrelada a uma conexão).
         private readonly ConcurrentDictionary<string, BuddyConn> _byNick = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<ushort, BuddyConn> _byToken = new();
         private readonly ConcurrentDictionary<string, BuddyConn> _byAccount = new(StringComparer.OrdinalIgnoreCase);
+        private int _nextToken;
 
         public BuddyServer(BuddyDatabase db, params int[] ports) { _db = db; _ports = ports; }
 
@@ -164,7 +166,7 @@ namespace RakionServer.Buddy
             if (pick.Account == null && sessions.Count > 0) pick = sessions[0];
             if (pick.Account == null)
             {
-                Send(conn, BuddyProtocol.RET_LOGIN, BuddyFrames.LoginList(Array.Empty<BuddyEntry>()));
+                Send(conn, BuddyProtocol.RET_LOGIN, BuddyFrames.LoginList(0, Array.Empty<BuddyEntry>()));
                 Log.Warn("buddy", "[{0}] LOGIN sem identidade (sem messenger_session) -> lista vazia", conn.Ip);
                 return;
             }
@@ -172,19 +174,21 @@ namespace RakionServer.Buddy
             conn.Nick = pick.Nick.Length > 0 ? pick.Nick : pick.Account;
             var buddies = await _db.LoadBuddyListAsync(conn.Account);
             conn.BuddyNicks = buddies.ConvertAll(b => b.Nick);
+            conn.Token = NextToken();
             conn.LoggedIn = true;
             _byNick[conn.Nick] = conn;
+            _byToken[conn.Token] = conn;
             _byAccount[conn.Account] = conn;
 
-            byte[] loginList = BuddyFrames.LoginList(buddies);
+            byte[] loginList = BuddyFrames.LoginList(conn.Token, buddies);
             // TRACE byte-a-byte do RET_LOGIN: sem servidor original p/ capturar (openrakion-server = nossa
-            // reconstrução), o ground truth é a RE do Buddy2.dll; logar o que EMITIMOS crava o layout
-            // [result][count][record] vs o parse do cliente (buddyrec_out: count@+2, id@0, nome UTF-16@0x14).
+            // reconstrução), o ground truth é a RE do Buddy2.dll; logar o que EMITIMOS crava o offset do
+            // nome truncado ('He'/'roi2') vs o parse do cliente (buddyrec_out: id@0, nome UTF-16@0x14).
             Log.Info("buddy", "[{0}] RET_LOGIN {1}B nicks=[{2}] hex={3}", conn.Ip, loginList.Length,
                 string.Join(",", conn.BuddyNicks), Convert.ToHexString(loginList));
             Send(conn, BuddyProtocol.RET_LOGIN, loginList);
-            Log.Ok("buddy", "[{0}] LOGIN '{1}' (nick '{2}') — {3} amigo(s)",
-                conn.Ip, conn.Account, conn.Nick, buddies.Count);
+            Log.Ok("buddy", "[{0}] LOGIN '{1}' (nick '{2}') — {3} amigo(s), token={4}",
+                conn.Ip, conn.Account, conn.Nick, buddies.Count, conn.Token);
             AnnounceOnline(conn);
         }
 
@@ -257,6 +261,14 @@ namespace RakionServer.Buddy
             int nul = Array.IndexOf(data, (byte)0);
             int len = nul >= 0 ? nul : data.Length;
             return len > 0 ? Encoding.ASCII.GetString(data, 0, len) : "";
+        }
+
+        /// <summary>Token de brokering único por conexão (!= 0). Wrap em 16 bits (colisão exigiria 65535 sessões).</summary>
+        private ushort NextToken()
+        {
+            ushort t;
+            do { t = (ushort)Interlocked.Increment(ref _nextToken); } while (t == 0);
+            return t;
         }
     }
 }
