@@ -1,5 +1,4 @@
 using System;
-using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
@@ -53,13 +52,16 @@ namespace RakionServer.Buddy
                 catch (Exception ex) { Log.Debug("buddy", "UDP recv: {0}", ex.Message); continue; }
 
                 if (r.Buffer.Length < 4) continue;
-                ushort token = BinaryPrimitives.ReadUInt16LittleEndian(r.Buffer.AsSpan(2));   // [result u16][token u16]
-                if (token == 0 || !_byToken.TryGetValue(token, out var conn)) continue;
+                // O RET_LOGIN NÃO carrega token (o cliente lia o token como count → lista-lixo). Correlaciona o
+                // echo pela ORIGEM: a conexão buddy LOGADA com o mesmo IP (localhost = 1 cliente/IP no caso comum;
+                // multi-cliente no mesmo IP cai na mais recente).
+                var conn = FindLoggedInByIp(r.RemoteEndPoint.Address.ToString());
+                if (conn == null) continue;
                 bool isNew = conn.UdpEndpoint == null;
                 conn.UdpEndpoint = r.RemoteEndPoint;
                 if (isNew)
                 {
-                    Log.Ok("buddy", "[{0}] endpoint P2P aprendido: {1} (token {2})", conn.Ip, r.RemoteEndPoint, token);
+                    Log.Ok("buddy", "[{0}] endpoint P2P aprendido: {1}", conn.Ip, r.RemoteEndPoint);
                     RefreshPresence(conn);   // re-anuncia com o endereço (habilita o P2P do PM)
                 }
             }
@@ -129,8 +131,17 @@ namespace RakionServer.Buddy
             if (!conn.LoggedIn) return;
             if (_byNick.TryGetValue(conn.Nick, out var cur) && cur == conn) _byNick.TryRemove(conn.Nick, out _);
             if (_byAccount.TryGetValue(conn.Account, out var ca) && ca == conn) _byAccount.TryRemove(conn.Account, out _);
-            _byToken.TryRemove(conn.Token, out _);
             AnnounceOffline(conn);
+        }
+
+        /// <summary>Conexão buddy LOGADA com o IP dado (correlação do echo UDP do P2P — o RET_LOGIN não carrega
+        /// token). Caso comum (localhost, 1 cliente/IP) é inequívoco; multi-cliente no mesmo IP cai na mais recente.</summary>
+        private BuddyConn? FindLoggedInByIp(string ip)
+        {
+            BuddyConn? found = null;
+            foreach (var c in _byAccount.Values)
+                if (c.LoggedIn && c.Ip == ip) found = c;
+            return found;
         }
     }
 }

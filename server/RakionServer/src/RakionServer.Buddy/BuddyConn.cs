@@ -7,10 +7,11 @@ namespace RakionServer.Buddy
 {
     /// <summary>
     /// Estado de uma conexão TCP do messenger. A identidade (account/nick) é resolvida por IP no login — o login
-    /// do Buddy é cifrado e opaco, então o World grava a <c>messenger_session</c> e o Buddy a lê. O token é
-    /// ecoado pelo cliente via UDP p/ o brokering P2P aprender o <see cref="UdpEndpoint"/> (endereço para o qual
-    /// os amigos abrem o P2P direto). Os sends são serializados por <see cref="SendLock"/> (a presença, disparada
-    /// por outra conexão, concorre com a resposta do próprio loop).
+    /// do Buddy é cifrado e opaco, então o World grava a <c>messenger_session</c> e o Buddy a lê. O endpoint P2P
+    /// (<see cref="UdpEndpoint"/>, p/ onde os amigos abrem o P2P direto do PM) é aprendido pelo echo UDP do
+    /// cliente, correlacionado por IP (o RET_LOGIN não carrega token — carregava e o cliente o lia como count).
+    /// Os sends são serializados por <see cref="SendLock"/> (a presença, disparada por outra conexão, concorre
+    /// com a resposta do próprio loop).
     /// </summary>
     internal sealed class BuddyConn
     {
@@ -22,9 +23,8 @@ namespace RakionServer.Buddy
 
         public string Account = "";
         public string Nick = "";
-        public ushort Token;
         public bool LoggedIn;
-        public IPEndPoint? UdpEndpoint;                       // endpoint P2P aprendido (token echo via UDP)
+        public IPEndPoint? UdpEndpoint;                       // endpoint P2P aprendido (echo UDP, correlato por IP)
         public IReadOnlyList<string> BuddyNicks = Array.Empty<string>();   // nicks dos amigos (presença/PM)
     }
 }

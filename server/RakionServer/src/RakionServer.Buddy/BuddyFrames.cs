@@ -28,22 +28,22 @@ namespace RakionServer.Buddy
         public const int GroupOff = 0x3c;     // grupo UTF-16
         public const int AddrOff = 0x64;      // endereço P2P (0 = offline)
 
-        /// <summary>RET_LOGIN (0x1011) de sucesso: [u16 result=0][u16 token][u16 count][count × registro 0x94].
-        /// Os amigos entram OFFLINE (endereço P2P 0); a presença/endereço vem depois pelo NTF_USER_STATE. O token
-        /// (u16 @+2) é ecoado pelo cliente via UDP p/ o brokering P2P aprender o endpoint (o cliente faz sendto dos
-        /// 4 bytes iniciais — ver disasm @1000759e). count cap 500 (limite do cliente, @100075ae).</summary>
-        public static byte[] LoginList(ushort token, IReadOnlyList<BuddyEntry> buddies)
+        /// <summary>RET_LOGIN (0x1011) de sucesso: <b>[u16 result=0][u16 count][count × registro 0x94]</b>.
+        /// CRAVADO (2026-07-05): o cliente lê a CONTAGEM em <c>payload+2</c> (loop @100075a4 com EBX=CD → count@+2,
+        /// registros@+4) — NÃO existe campo "token" entre result e count. Um token espúrio @+2 fazia o cliente ler
+        /// o TOKEN como count (crescia a cada login) e desalinhava os registros em 2B → id lia `[01 00…]` e parava
+        /// no NUL → N registros de lixo → lista cheia + crash no scroll. Amigos entram OFFLINE (endereço P2P 0); a
+        /// presença vem pelo NTF_USER_STATE. count cap 500 (@100075ae). Sem amigos: pad p/ payload >7B (o caminho
+        /// de sucesso do cliente exige). O brokering P2P NÃO depende de token no frame (correlaciona por IP).</summary>
+        public static byte[] LoginList(IReadOnlyList<BuddyEntry> buddies)
         {
             int count = Math.Min(buddies.Count, 500);
             using var w = new PacketWriter();
-            w.WriteWord(0);          // result = 0 (sucesso)
-            w.WriteWord(token);      // token ecoado via UDP (brokering P2P)
-            w.WriteWord(count);
+            w.WriteWord(0);          // result = 0 (sucesso) @+0
+            w.WriteWord(count);      // buddyCount @+2 — o cliente lê a contagem AQUI (sem campo token antes)
             for (int i = 0; i < count; i++)
                 w.WriteBytes(BuddyRecord(buddies[i].Nick, buddies[i].Category));
-            // o caminho de SUCESSO do cliente (RET_LOGIN END) exige payload > 7 bytes; sem amigos o frame teria só
-            // 6 bytes -> pad p/ 10 (o stub mandava 8). Com amigos, os registros de 148B já garantem o tamanho.
-            if (count == 0) w.WriteUInt32(0);
+            if (count == 0) w.WriteBytes(new byte[6]);   // sem amigos: [result][count]=4B + pad 6 = 10B (>7B)
             return w.ToArray();
         }
 
