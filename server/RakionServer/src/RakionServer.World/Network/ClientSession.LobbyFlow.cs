@@ -357,6 +357,11 @@ namespace RakionServer.World.Network
                     SendEncryptedFrame(LobbyFrames.ChannelList(_server.SnapshotChannelUsers()));
                     Log.Ok("lobby", "[{0}] 0x1e invite user-list req -> {1} usuário(s)", Slot, _server.SnapshotChannelUsers().Count);
                     return true;
+                case 0x72: // FieldInvitation SEND — master seleciona um user no diálogo Invite e confirma. RE
+                    // (2026-07-05): SendFieldInvitation@engine.dll 0x36191af0 = [72][targetUserId:u16]. O world
+                    // RELAYA o NOTIFY 0x72 ao alvo (worldserv FUN_00428520 -> cliente FUN_36193f40) -> popup.
+                    HandleFieldInvite(data);
+                    return true;
                 default:
                     // Shop list/loadout (0x2d/0x2f) E buy (0x2e) DEVEM chegar aos handlers reais
                     // (Op_RoomRosterSync/Op_GroupMemberInfo/Op_RoomMemberQuery) -> NAO consumir aqui, deixa o
@@ -390,6 +395,41 @@ namespace RakionServer.World.Network
                     }
                     return false;
             }
+        }
+
+        /// <summary>0x72 FieldInvitation: o master (dono da sala) convida o <c>targetUserId</c> (payload u16) —
+        /// RE do worldserv FUN_00428520. Valida (master em sala + alvo online) e RELAYA o notify sintetizado do
+        /// estado da sala (<see cref="LobbyFrames.FieldInvitation"/>) ao alvo, que abre o popup e, ao aceitar,
+        /// entra pela via 0x38 já portada (o cliente ecoa o fieldSlot). Regra de borda: só traduz bytes↔chamada
+        /// e serializa; o "domínio" aqui é apenas roteamento de sessão. Erro (fora de sala / alvo offline) =
+        /// DROP silencioso — o original DESCONECTAVA o master (FUN_0041eb20 reason 0xd6/0xd7/0xd8), o que é
+        /// hostil demais p/ um convite inválido; ignorar é mais seguro e não trava o cliente.</summary>
+        private void HandleFieldInvite(byte[] data)
+        {
+            if (data.Length < 2) { Log.Info("lobby", "[{0}] 0x72 invite: payload curto ({1}B)", Slot, data.Length); return; }
+            ushort targetId = (ushort)(data[0] | (data[1] << 8));
+
+            var field = FieldId >= 0 ? _server.GetField(FieldId) : null;
+            if (field == null || !field.IsRoom)
+            {
+                Log.Info("lobby", "[{0}] 0x72 invite -> alvo {1} IGNORADO (não está numa sala)", Slot, targetId);
+                return;
+            }
+            var target = _server.GetSessionByUserId(targetId);
+            if (target == null || target == this)
+            {
+                Log.Info("lobby", "[{0}] 0x72 invite -> alvo id {1} offline/inválido (sem relay)", Slot, targetId);
+                return;
+            }
+
+            ushort inviterId = (ushort)(GameInfoId > 0 ? GameInfoId : Slot);
+            byte[] notify = LobbyFrames.FieldInvitation(
+                inviterId, CharName, (ushort)field.Id,
+                field.MapId, field.Mode, field.MinLevel, field.MaxLevel, field.MaxRounds,
+                field.Name, field.Password);
+            target.SendEncryptedFrame(notify);
+            Log.Ok("lobby", "[{0}] '{1}' convidou '{2}' (id {3}) p/ sala {4} — notify 0x72 relayado ao slot {5}",
+                Slot, CharName, target.CharName, targetId, field.Id, target.Slot);
         }
 
         /// <summary>0x19 CharacterGetUserName: traduz o pedido (nick + opcode/seq da resposta) e responde o 0x0D

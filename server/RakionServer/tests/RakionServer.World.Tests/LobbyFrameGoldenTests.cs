@@ -122,5 +122,39 @@ namespace RakionServer.World.Tests
             var users = new[] { new LobbyFrames.UserListEntry(0, 1234, "ZZ", 0) };
             Assert.Contains("646368616e6e656c3031", Hex(LobbyFrames.ChannelList(users))); // "dchannel01" é const
         }
+
+        // ---- 0x72 FieldInvitation (invite da sala): layout cravado do parse do cliente (engine.dll FUN_36193f40) ----
+
+        [Fact]
+        public void FieldInvitation_ByteExact_MatchesClientParse()
+        {
+            // Entrada: inviter id 5 "Go", sala 0x0122, map 3, mode 1, lvl 1..40, rounds 3, "Sala1", sem senha.
+            // Layout EXATO que o cliente lê (FUN_36193f40): [72 00][id][nome\0][slot][map,mode,min,max,0,rounds,0]
+            // [nome-sala\0][senha\0]. O u16 do slot cai LOGO após o NUL do nome (o parse usa strlen do nome).
+            byte[] f = LobbyFrames.FieldInvitation(5, "Go", 0x0122, 3, 1, 1, 40, 3, "Sala1", "");
+            Assert.Equal("72000500476f0022010301012800030053616c61310000", Hex(f));
+        }
+
+        [Fact]
+        public void FieldInvitation_SlotFollowsNameNul_LongName()
+        {
+            // Nome maior desloca o slot/atributos: o cliente reancorra pelo NUL do nome (strlen), então o
+            // fieldSlot tem que vir imediatamente após o \0 do inviterName — provado por Contains do bloco.
+            byte[] f = LobbyFrames.FieldInvitation(7, "GoHeroi", 0x0200, 5, 2, 10, 30, 2, "Arena", "pw");
+            // "GoHeroi\0" = 476f4865726f6900 ; depois [00 02](slot 0x0200) [05 02 0a 1e 00 02 00] ; "Arena\0" ; "pw\0"
+            Assert.Contains("476f4865726f6900" + "0002" + "05020a1e000200" + "4172656e6100" + "707700", Hex(f));
+        }
+
+        [Fact]
+        public void FieldInvitation_IsDomainSourced()
+        {
+            // Convidador/sala distintos -> frames distintos (síntese do Field, não blob fixo).
+            var a = Hex(LobbyFrames.FieldInvitation(5, "Go", 0x0122, 3, 1, 1, 40, 3, "Sala1", ""));
+            var b = Hex(LobbyFrames.FieldInvitation(9, "Ze", 0x0300, 4, 3, 5, 50, 1, "Outra", "x"));
+            Assert.NotEqual(a, b);
+            Assert.StartsWith("7200", a);                 // opcode 0x72
+            Assert.Contains("0500" + "476f00", a);        // id 5 + "Go\0"
+            Assert.Contains("0900", b);                   // id 9
+        }
     }
 }

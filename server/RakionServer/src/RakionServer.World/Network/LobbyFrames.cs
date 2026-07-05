@@ -155,6 +155,36 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
+        /// <summary>0x72 FieldInvitation NOTIFY (world -&gt; ALVO): o popup "&lt;fulano&gt; te convidou p/ a sala".
+        /// RE 2026-07-05 (dois lados): worldserv FUN_00428520 MONTA e o cliente FUN_36193f40 (engine.dll;
+        /// dispatch ProcessWorldRecvBuffer -&gt; FUN_36197320 caso 0x72) LÊ, nesta ordem, do payload:
+        ///   [inviterId:u16][inviterName\0][fieldSlot:u16][map][mode][minLvl][maxLvl][0][maxRounds][0][roomName\0][pass\0]
+        /// O bloco de 7 bytes = atributos da sala (mesma fonte do GameList 0x36: +0x118 map, +0x119 mode,
+        /// +0x111 minLvl, +0x112 maxLvl, +0x113=0, +0x11a maxRounds). fieldSlot = <c>Field.Id</c> do master —
+        /// o cliente o ecoa no ACEITE via SendFieldEnter (=0x38 join, já portado); o host-callback vtable+0x260
+        /// abre o popup. NOTA-DE-BUILD: este engine.dll lê 7 bytes de atributos; o worldserv.exe do RE emite 8
+        /// (6 + u16 em +0x11c) — build divergente (rakion-final≠rakion-new). Seguimos o engine.dll, que é quem
+        /// PARSEIA o nosso frame. Síntese pura do estado do Field — nenhum byte de replay.</summary>
+        public static byte[] FieldInvitation(ushort inviterId, string inviterName, ushort fieldSlot,
+            byte map, byte mode, byte minLevel, byte maxLevel, byte maxRounds, string roomName, string password)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x72);
+            w.WriteWord(inviterId);          // [+0]      id do convidador (mostrado/referência no popup)
+            w.WriteCString(inviterName);     // [+2]      nome do convidador + NUL
+            w.WriteWord(fieldSlot);          // [+nl+3]   id da sala -> echo no aceite (SendFieldEnter 0x38)
+            w.WriteByte(map);                // [+nl+5]   map    (+0x118)
+            w.WriteByte(mode);               //           mode   (+0x119)
+            w.WriteByte(minLevel);           //           minLvl (+0x111)
+            w.WriteByte(maxLevel);           //           maxLvl (+0x112)
+            w.WriteByte(0);                  //           (+0x113)
+            w.WriteByte(maxRounds);          //           rounds (+0x11a)
+            w.WriteByte(0);                  //           (pad do bloco de atributos)
+            w.WriteCString(roomName);        // [+nl+12]  nome da sala + NUL
+            w.WriteCString(password);        //           senha + NUL (vazia = só NUL)
+            return w.ToArray();
+        }
+
         /// <summary>0x1f info de sessão/char. RE FUN_00404fc0: a ENTRADA (sucesso) = [1f 00][00 00][userid:u16]
         /// [registro FUN_0040afb0]. O registro = [nome COMPLETO\0][class][team][dword]. Cravado da captura
         /// (orig_capture2: `1f00 0000 0600 4a503200 01 00 00000000`) — o `WriteName` de 2 bytes CORTAVA o nome

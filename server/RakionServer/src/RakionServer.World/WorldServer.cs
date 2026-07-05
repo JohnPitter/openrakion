@@ -138,6 +138,19 @@ namespace RakionServer.World
             return null;
         }
 
+        /// <summary>Sessao pelo UserId publicado na user list do canal (0x1e): GameInfoId se &gt;0, senao Slot
+        /// (mesma regra do <see cref="UserEntryOf"/>). O invite 0x72 endereca o alvo por esse id.</summary>
+        public ClientSession? GetSessionByUserId(ushort userId)
+        {
+            foreach (var s in _sessions.Values)
+            {
+                if (!s.Connected || string.IsNullOrEmpty(s.CharName)) continue;
+                ushort uid = (ushort)(s.GameInfoId > 0 ? s.GameInfoId : s.Slot);
+                if (uid == userId) return s;
+            }
+            return null;
+        }
+
         /// <summary>Envia um tick de gameplay (1583 + SEQ) ao endpoint UDP do jogador.</summary>
         public void SendGameplayTick(System.Net.IPEndPoint to, byte seq) => _udpGame?.SendTick(to, seq);
 
