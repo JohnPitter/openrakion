@@ -349,6 +349,14 @@ namespace RakionServer.World.Network
                     // Chat normal segue engolido no solo (o cliente desenha o próprio chat local).
                     WorldHandlers.TryHandleBotChatCommand(this, _server, data);
                     return true;
+                case 0x1E: // FieldInviteUserListReq — botão INVITE da sala. RE (2026-07-05): o clique (tela
+                    // FUN_00447af0 caso 0x18e) chama net vtable+0x2c8, que manda 0x1E ao WORLD (payload 8B
+                    // zero), e abre o painel FUN_004460f0; o painel é populado pela RESPOSTA. Validado ao
+                    // vivo: 3 cliques no Invite = 3x 0x1E no log. Sem resposta o diálogo fica vazio.
+                    // Devolve a lista de usuários do canal (mesma síntese do 0x1e do login).
+                    SendEncryptedFrame(LobbyFrames.ChannelList(_server.SnapshotChannelUsers()));
+                    Log.Ok("lobby", "[{0}] 0x1e invite user-list req -> {1} usuário(s)", Slot, _server.SnapshotChannelUsers().Count);
+                    return true;
                 default:
                     // Shop list/loadout (0x2d/0x2f) E buy (0x2e) DEVEM chegar aos handlers reais
                     // (Op_RoomRosterSync/Op_GroupMemberInfo/Op_RoomMemberQuery) -> NAO consumir aqui, deixa o

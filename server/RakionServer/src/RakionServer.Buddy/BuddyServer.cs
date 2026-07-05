@@ -135,9 +135,12 @@ namespace RakionServer.Buddy
                 // no shop trava sem o RET_SET_NICK). GROUP_GETLIST: sem grupos.
                 case BuddyProtocol.SVC_SET_NICK:      ReplyOk(conn, BuddyProtocol.RET_SET_NICK); break;
                 case BuddyProtocol.SVC_SET_EXTUSER:   ReplyOk(conn, BuddyProtocol.RET_SET_EXTUSER); break;
-                // SET_EXTLIST: o cliente pinga a ext-list constantemente (818x no teste) e RE-ENVIA sem o ack ->
-                // confirma p/ parar o flood (o RET_SET_EXTLIST só checa wRtc==0).
-                case BuddyProtocol.SVC_SET_EXTLIST:   ReplyOk(conn, BuddyProtocol.RET_SET_EXTLIST); break;
+                // SET_EXTLIST (0x3110): NÃO responder. O ACK 0x3111 síncrono realimenta o dispatcher do
+                // buddy2.dll (recv ACK -> manda 0x3110 -> recv ACK ...) num loop APERTADO; com os frames de
+                // ~80KB do dispatcher, ~12 níveis estouram a pilha (crash __chkstk 0xc00000fd @buddy2+0x17845,
+                // char-select). Sem o ACK o loop apertado quebra (o cliente cai no ping por-frame, benigno).
+                // Consumir e ignorar. TODO: handshake correto p/ o cliente limpar o bit4 de +0x140d4 e parar.
+                case BuddyProtocol.SVC_SET_EXTLIST:   break;
                 case BuddyProtocol.SVC_GROUP_GETLIST: SendGroupListEmpty(conn); break;
 
                 // PM é P2P PURO -> o tunnel TCP (relay) NÃO é usado. Se o cliente cair no fallback, ignora.
