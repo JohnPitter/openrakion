@@ -364,9 +364,9 @@ namespace RakionServer.World.Domain
         /// contígua (o canal reliable 0x8307 foi abandonado: exigia um peer-host que o cliente único não hospeda).</summary>
         public uint UdpSeq;
 
-        // O estado de REDE do bot (peer de netcode + socket UDP) NÃO mora aqui: é infra e vive num
+        // O estado de REDE do bot (socket UDP + lockstep de sessão) NÃO mora aqui: é infra e vive num
         // RakionServer.World.Network.BotNetLink dono do BotManager (mapa keyed pelo bot). Assim o domínio
-        // BotPlayer fica puro (posição/HP/IA/protocolo-de-sequência), sem depender de Socket/IPEndPoint/BotPeer.
+        // BotPlayer fica puro (posição/HP/IA/protocolo-de-sequência), sem depender de Socket/IPEndPoint.
 
         /// <summary>Nonce do subFrame (off+0x0c do corpo 0x30a): varia a cada frame; o cliente só exige que mude.</summary>
         private byte _sub;

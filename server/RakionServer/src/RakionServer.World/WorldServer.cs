@@ -218,10 +218,7 @@ namespace RakionServer.World
                         // 2+ HUMANOS = P2P: o CLIENTE (host) dirige o relógio 1583 e o manda direto ao outro
                         // (captura do original: o 1583 é P2P 2301↔2302, NÃO servidor->cliente). O tick do servidor
                         // conflitava com o do peer -> o 2º cliente ficava "fantasma". Só solo/bot usa o clock do server.
-                        // EXPERIMENTO make-or-break (peer): com BOT, NÃO dirigir o clock — o host, sem ver relógio
-                        // externo, assume a autoridade P2P (ga_IsServer) e vira session-server → pode aceitar o
-                        // CONNECT do peer do bot. RISCO: se não assumir, o stage congela (sem clock). Ver [peer] no log.
-                        if (f.HumanCount >= 2 || (f.BotCount > 0 && Network.BotMovement.BotPeerProbe)) continue;
+                        if (f.HumanCount >= 2) continue;
                         foreach (var r in f.Slots)
                         {
                             var s = r.Session;

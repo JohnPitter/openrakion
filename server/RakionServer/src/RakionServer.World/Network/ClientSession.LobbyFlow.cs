@@ -545,10 +545,7 @@ namespace RakionServer.World.Network
             // ZERO do servidor). Se o servidor injeta o priming tick aqui, o HOST vê um clock externo e
             // NÃO assume a autoridade (ga_IsServer) -> ninguém dirige o lockstep -> "modo observação".
             // Só solo/bot (HumanCount<2) precisa do tick do servidor. Ver docs/pvp-stage-re.md §10.
-            // EXPERIMENTO peer: com bot, NÃO manda o priming tick — o host assume a autoridade P2P e vira
-            // session-server (aceita o CONNECT do bot). Sem bot, mantém o tick (solo trava sem ele).
-            bool botPeerMatch = f.BotCount > 0 && Network.BotMovement.BotPeerProbe;
-            if (f.Mode != 0 && f.HumanCount < 2 && !botPeerMatch && UdpEndpoint != null) _server.SendGameplayTick(UdpEndpoint, LastInput);
+            if (f.Mode != 0 && f.HumanCount < 2 && UdpEndpoint != null) _server.SendGameplayTick(UdpEndpoint, LastInput);
             Log.Ok("field", "[{0}] spawn -> motor da partida (field {1}, seat {2}, mode {3})", Slot, f.Id, FieldSeat, f.Mode);
         }
 

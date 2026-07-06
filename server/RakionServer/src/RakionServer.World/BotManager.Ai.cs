@@ -109,9 +109,9 @@ namespace RakionServer.World
                     continue;
                 }
 
-                // PROBE do peer (make-or-break): retenta o handshake até o host ter endpoint UDP conhecido.
-                if (BotMovement.BotPeerProbe && LinkOf(bot).Peer == null)
-                    EnsureBotPeerProbe(f, rec, bot);
+                // Lockstep de sessão P2P (registro do bot como peer no host — colisão/HIT×N nativos):
+                // opens 1x por round + push periódico, self-throttled. Ver BotManager.Peer/BotLockstep.
+                EnsureBotLockstep(f, rec, bot, now);
 
                 // 2) DECISÃO: alvo mais próximo + intenção de ataque, em cadência própria.
                 if (now >= bot.NextDecisionMs)
@@ -351,9 +351,10 @@ namespace RakionServer.World
             {
                 NotifyBotAddPlayer(f, rec.Slot, bot);         // 0x4b: instancia o avatar no stage do host
                 if (!BotMovement.UseClientBridge)
+                {
                     EnsureBotUdpSocket(bot);                  // origem dos 0x30a sintetizados (via relay do servidor)
-                if (BotMovement.BotPeerProbe)
-                    EnsureBotPeerProbe(f, rec, bot);          // MAKE-OR-BREAK: tenta o handshake de peer real (log [peer])
+                    EnsureBotLockstep(f, rec, bot, now);      // abre o canal de sessão P2P com o host (peer real)
+                }
             }
         }
 

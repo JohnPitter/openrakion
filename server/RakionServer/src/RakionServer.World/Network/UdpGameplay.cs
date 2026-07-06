@@ -296,24 +296,30 @@ namespace RakionServer.World.Network
             // ACK 0x030d do cliente (7B): consome.
             if (pkt.Length >= 2 && pkt[0] == 0x0d && pkt[1] == 0x03) return;
 
-            // LOCKSTEP de connect-de-sessão da engine (0x0304 janela-de-token / 0x0305 eco / 0x0319 ack). RE
-            // peer_registration_re (captura byte-a-byte): o gate de APLICAÇÃO do 0x30a de um peer no host SÓ abre
-            // após este handshake reliable com aquele peer — o bot faz transporte (0x0201)+spawn (0x4b) mas não o
-            // lockstep, então o host nunca entra em "networked com o bot". O bot não tem cliente: o servidor ECOA,
-            // no lugar do bot, o 0x0305 p/ cada 0x0304 do host (bytes idênticos, opcode 0x04->0x05 — captura
-            // l.55/56). LOG diagnóstico de TODO o lockstep p/ o teste in-game revelar o fluxo real do host.
+            // LOCKSTEP de sessão P2P (0x0304 open/push, 0x0305 ack) — dialeto REAL da captura de 2 humanos
+            // (docs/p2p-handshake-groundtruth.txt l.12-23; codec BotLockstep). O host abre/re-pusha o stream
+            // dele PARA O BOT neste socket (o 0x319 registrou o servidor como endpoint do bot). O servidor faz
+            // as duas pontas no lugar do bot: (a) ACKeia o push do host com o formato exato do joiner (bytes
+            // 6/7 = seat do ACKER — o eco-clone antigo mantinha os seats do host, o host descartava e re-pushava
+            // a cada 5s); (b) relaya ao host os opens/pushes que o BOT origina do socket dedicado (41xxx).
             if (pkt.Length >= 2 && pkt[1] == 0x03 && (pkt[0] == 0x04 || pkt[0] == 0x05 || pkt[0] == 0x19))
             {
+                if (from.Port >= BotUdpPortBase) { RelayToAllFields(pkt, from); return; }   // lado do BOT -> host
                 var ls = ResolveSender(from);
                 var lf = ls != null ? _world.GetField(ls.FieldId) : null;
-                int bots = lf?.BotCount ?? 0;
-                Log.Ok("udp", "LOCKSTEP 0x03{0:X2} {1}B de {2} (seat={3} bots={4}) {5}", pkt[0], pkt.Length, from,
-                    ls?.Slot ?? -1, bots, Convert.ToHexString(pkt[..System.Math.Min(16, pkt.Length)]));
-                if (bots > 0 && pkt[0] == 0x04)
+                if (BotLockstep.IsPush(pkt) && lf != null)
                 {
-                    byte[] lsEcho = (byte[])pkt.Clone(); lsEcho[0] = 0x05;   // 0x0304 -> 0x0305, mesmo token (captura)
-                    try { _sock!.SendTo(lsEcho, from); Log.Ok("udp", "  -> eco 0x0305 (no lugar do bot) ao host {0}", from); } catch { }
+                    byte dst = BotLockstep.DstSeat(pkt);
+                    if (lf.RecAt(dst)?.IsBot == true)
+                    {
+                        try { _sock!.SendTo(BotLockstep.BuildAck(pkt, dst), from); } catch { }
+                        Log.Ok("udp", "LOCKSTEP push do host -> bot seat {0} ACKEADO (seq={1}) {2}", dst,
+                            BinaryPrimitives.ReadUInt32LittleEndian(pkt.AsSpan(2)), Convert.ToHexString(pkt));
+                        return;
+                    }
                 }
+                Log.Ok("udp", "LOCKSTEP 0x03{0:X2} {1}B de {2} (seat={3}) {4}", pkt[0], pkt.Length, from,
+                    ls?.Slot ?? -1, Convert.ToHexString(pkt[..System.Math.Min(16, pkt.Length)]));
                 return;
             }
 

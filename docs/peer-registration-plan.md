@@ -11,13 +11,16 @@ O handshake que registra o peer (e dá colisão/HIT×N) corre **DIRETO entre os 
 **2300-2399** (host=2301, joiner=2302), NÃO pelo nosso relay (40708/40709). Sequência real:
 
 1. **Registro no servidor:** cada cliente manda `0x0201` (op 6 = host, op 7 = joiner) ao servidor
-   (40708/40709). O servidor ecoa e broka os endpoints. **DOIS registros = 2 players networked.**
-2. **Handshake direto (2302→2301 e 2301→2302):** o joiner abre o canal reliable com `0x0304 role=0xff`
-   (control/open, 2×), depois `0x0304 role=0x0a` (stream de sessão, offsets crescentes). **O host
-   RESPONDE com o próprio stream `0x0304 role=0x0a`** — é o que faltava no bot. O corpo
-   (CONNECT/STATEDELTA/CRC/ADDPLAYER, ~32KB) flui chunked (13B/frame), cada push com seu `0x0305` ack.
-3. **Gameplay:** só DEPOIS do handshake vêm os `0x030a` (movimento) + `0x030f` (keystate) → sessão
-   estabelecida, `CPlayerEntity` com colisão criada em cada cliente.
+   (40708/40709). O servidor ecoa e broka os endpoints.
+2. **Handshake direto (2302→2301 e 2301→2302):** o joiner abre o canal reliable com DOIS opens
+   `0x0304` de 12B (byte6=0xff, byte7=seat destino) e troca pushes de **13B com 1 byte de payload**
+   (byte6=seat do sender, byte7=seat destino, payload=seat do sender; joiner=0x0a, host=0x00). O host
+   responde com os próprios pushes. **CORREÇÃO 2026-07-06 (re-análise dos 3726 frames): NÃO existe
+   corpo CONNECT/STATEDELTA/CRC/ADDPLAYER — zero TAGV na captura inteira.** O canal de sessão é SÓ
+   isso: opens + pushes de 1 byte + acks. O ack é o eco do frame com opcode 0x0305 e **bytes 6 E 7 =
+   seat do ACKER** (l.13/17/19).
+3. **Gameplay:** DEPOIS do canal vêm os `0x030a` (movimento) + `0x030f` (keystate) → peer registrado,
+   `CPlayerEntity` com colisão criada em cada cliente.
 
 Learn-by-source (cravado `engine.dll 0x36100481`): o host aprende o endpoint do peer pela ORIGEM do
 `0x0304` recebido e responde a ela. ⇒ o mini-peer pode falar do socket do nosso servidor; o host
@@ -71,13 +74,41 @@ players NETWORKED (com endpoint brokerado). O bot entra por 0x38 injetado (slot 
 join brokerado que um 2º cliente real faz → o host conta 1 player networked → fica solo → ignora o
 CONNECT. `BotPeerProbe=false` (type-7 restaurado); reativar só com o próximo lever.
 
-## Próximo lever (não testado) — o join brokerado como 2º player networked
-Fazer o host CONTAR o bot como player networked no START. Requer RE de onde o `StartPeerToPeer` do host
-lê a contagem/lista de players (0x37 room-state? 0x48 field-status? session-properties?) e injetar o bot
-lá como um peer com endpoint brokerado (o socket do mini-peer). É o mesmo miolo do headless §12
-(session-properties/game-mode) visto do lado do host — sub-projeto aberto.
+## REVIRAVOLTA (2026-07-06, mesma noite) — o host SEMPRE engajou; o dialeto é que estava errado
+
+Duas evidências viraram o veredito do make-or-break:
+
+1. **Re-análise da captura completa (3726 frames): o CONNECT SE1 (TAGV/REQ_CONNECTREMOTE) NÃO existe
+   no fio.** O "handshake de sessão" real entre 2 humanos é minúsculo: 2 opens de 12B + pushes de 13B
+   com 1 byte de payload (o seat do sender). O mini-peer falava um protocolo que o joiner real nunca
+   fala — por isso o host "só ackeava": ele ackeia qualquer 0x0304 no transporte e ignora payload que
+   não é do dialeto.
+2. **worldserver.log: o host JÁ MANDA o push de sessão dele PARA O BOT** — `0x0304` com byte6=0x00
+   (seat do host), byte7=0x0A (seat do bot), payload 0x00, no socket do SERVIDOR (o 0x319 registrou o
+   servidor como endpoint do bot), re-tentando a cada ~5s. O host nunca recusou o bot como peer; ele
+   estava com a mão estendida o tempo todo. Nosso eco-clone ackeava ERRADO (mantinha bytes 6/7 do
+   host em vez do seat do acker) → o host descartava o ack e re-pushava.
+
+Conclusões antigas CORRIGIDAS: "o host não entra em modo networked-server p/ o bot" está REFUTADA
+(ele pusha o canal ao bot sozinho); o lever do "join brokerado como 2º player networked" ficou
+DESNECESSÁRIO para o canal (talvez ainda importe p/ outra coisa, mas não p/ abrir o lockstep).
+
+## Implementação (2026-07-06) — lockstep real no caminho do bot
+- `Network/BotLockstep.cs`: codec puro golden-tested (opens/pushes/acks byte-a-byte da captura
+  l.12-23 + o push real do host no log).
+- Lado do BOT (`BotManager.Peer.cs`): 2 opens por round + push periódico (1s), do socket dedicado →
+  servidor → relay ao host do socket do UdpGameplay (regra fixa: nada fala direto com o cliente).
+- Lado do HOST (`UdpGameplay`): push do host com destino em seat de bot → ACK correto (bytes 6/7 =
+  seat do bot) no lugar do bot.
+- Probe SE1 removido (BotPeer/SessionHandshake fora do caminho do World); flag `BotPeerProbe` e os
+  gates de experimento do clock removidos (clock 1583 do servidor restaurado p/ solo/bot).
+
+**Validação pendente (in-game):** com o canal fechado, o host deve parar de re-pushar a cada 5s
+(acks aceitos) e — hipótese central — promover o avatar do bot a peer com colisão ⇒ HIT×N nativo.
+Diagnóstico no log: `LOCKSTEP push do host -> bot seat N ACKEADO` + cadência dos pushes do host.
 
 ## Risco honesto
-É o **núcleo-muro** do projeto (sessões anteriores investiram muito no peer/headless sem fechar). A
-diferença agora: a verdade de referência está capturada e a hipótese do bloqueio (modo networked) é
-concreta e testável. Ainda assim é multi-passo e depende de iteração in-game.
+O ack correto + o lado-bot do canal são exatamente o que o fio dos 2 humanos mostra — mas a captura
+não prova ONDE o cliente decide criar a entidade com colisão. Se o HIT×N não vier mesmo com o canal
+estabelecido, o próximo passo é diffar o que o host recebe nos dois cenários DEPOIS do canal (0x830c/
+0x8313/0x8315, os reliable de gameplay da captura que o bot ainda não fala).
