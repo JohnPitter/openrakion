@@ -82,8 +82,59 @@ mas não roda esse init, então team/alive/template/active ficam por sorte. É p
 existe (repele) mas o raycast do golpe, mesmo achando o corpo, **sai no primeiro gate** (template ou
 team=0) → zero HIT×N. **Não há pacote de contador a mandar; falta o ESTADO de combatente na entidade.**
 
-## Se retomar — próximo experimento mais barato
-Testar se o `0x830c` alive-flag é **aceito** pelo host: instrumentar (server-side) se o host **ecoa/
-reage** ao nosso `0x830c` (como reage ao de outro humano). Se NÃO reage → confirma o Muro 1 (entrega
-reliable). O sinal de sucesso seria o host mandar de volta um `0x830c`/`0x8315` referente ao seat do
-bot logo após o nosso.
+## ATAQUE AOS DOIS MUROS (RE 2026-07-06, sessão longa) — cravado na engine.dll
+
+### Muro 1 — o gate reliable DECODIFICADO (`IsApplyReliableUDP@0x36109e20`)
+Decide se um reliable-UDP é APLICADO. **Dois gates em AND:**
+
+1. **`IsValidUDP_ForPlayer`@0x36109da0** — base da tabela de players (stride **0x378**/player);
+   confere `[base + seat*0x378 + 0x1e8] == IP_remetente` **E** `[+0x1ec] == porta_remetente`. É o
+   MESMO gate do 0x30a — **já passamos** (o 0x319 registra o socket do servidor como endpoint do seat).
+2. **Gate de SEQUÊNCIA**@0x36109de0 — `seq_recebido > [base + seat*0x378 + 0x1f4]` (`jbe → rejeita`);
+   on-pass grava `[+0x1f4] = seq`. **Sequência estritamente monotônica por assento.**
+
+⇒ Um reliable do bot (0x830c/0x307) é aceito SE: (a) vem do endpoint registrado (ok via 0x319) E
+(b) tem `u32 seq` (offset +2 do frame) estritamente crescente. Nosso `bot.UdpSeq++` já é monotônico,
+então **o 0x830c provavelmente JÁ passa os dois gates** — logo o Muro 1 **não é** o bloqueio do
+alive-flag. O bloqueio é o Muro 2 (a entidade não é combatente; o alive-flag só ATUALIZA estado de
+uma entidade que nunca foi criada como combatente).
+
+### Muro 2 — o create do combatente + as funções de setup (RVAs no binário REAL)
+`AddRemotePlayer@0x3610e2b0` **não é referenciado em .text/.rdata/.data** da engine → chamado 100%
+do código EMPACOTADO (gamemp/entitiesmp). As funções que ELE encadeia p/ montar o combatente SÃO
+exports da engine (rakion-final), confirmadas:
+
+| função | VA | seta |
+|---|---|---|
+| `ChangeTeam@CSessionState` | **0x36109f00** | team **+0x26c** (gate IsEnemy) |
+| `SetAsRemoteEntity@CEntity` | **0x3600cfd0** | marca REMOTA/cinemática (≠ local-física que repele) |
+| `GetPlayersCount@CSessionState` | 0x36109... | contagem de players networked |
+
+A `entitiesmp` desempacotada (rakion-new, versão MAIS NOVA — offsets não transferem, LÓGICA sim)
+importa da engine um cluster de setup: `SetAsRemoteEntity`, `ChangeTeam`, `RecvCreateCreature`,
+`InputLocalClientCreatureNpcSlot`, `GetPlayersCount`, `CreateEventCreature`. ⇒ o combatente é montado
+pela `entitiesmp` chamando esses exports quando processa o **player-add de SESSÃO** (não o 0x4b de
+field). Nosso bot está na tabela de FIELD (0x4b) mas não na lista de players de SESSÃO → a engine
+nunca roda o setup de combatente nele.
+
+### O CAMINHO que a RE abriu — `0x307` create-NPC via reliable (100% engine, dirigível server-side)
+O dispatcher `HandleMessage@0x3610d7c0` (msgtypes 0x307–0x312) tem o **caso 0x307 → `AddRemoteGeneralNpc`
+@0x361097a0 → `CWorld::CreateNpc`**: cria um **`CNpc*` REAL com colisão e HP** (o molde do Cell,
+cell-monster-re) — TUDO dentro da engine, sem código empacotado. Tentamos 0x307 antes e "não
+renderizou" — mas agora sabemos o porquê provável: **não passava o gate de sequência reliable**
+(mandávamos unreliable/seq errada). Com o gate decodificado, o experimento correto é:
+
+> Mandar o `0x307` (create-NPC, codec `BuildCreateNpcDatagram` já existe) como **reliable do endpoint
+> registrado, com `u32 seq` monotônico** que bata em `IsApplyReliableUDP`. Se passar → NPC nativo
+> hittável (HIT×N vem de graça, cell-monster §5), dirigido server-side por 0x30f (owner*9+sub).
+> Tradeoff conhecido: o bot aparece como monstro (Cell), não como player ([[bot-hittability-type7-verdict]]).
+
+**Owner do 0x307** = índice de player-slot válido (indexa `owner*9`, sem bounds-check — cell-monster
+§0.1a); usar o seat do bot. Blob = os 43B golden da captura de Cell.
+
+### Veredito da dupla-frente
+- **Muro 1**: gate reliable DECODIFICADO e satisfazível (endpoint + seq monotônica). Não era o
+  bloqueio do alive-flag.
+- **Muro 2**: create de combatente-PLAYER é empacotado (fechado por ora), MAS o create de
+  combatente-NPC (0x307) é in-engine e agora tem caminho de entrega claro (reliable+seq). É o
+  ataque viável.
