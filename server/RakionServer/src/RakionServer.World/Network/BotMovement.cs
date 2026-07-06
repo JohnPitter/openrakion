@@ -159,10 +159,15 @@ namespace RakionServer.World.Network
         /// PROBE do peer real (make-or-break do HIT×N nativo): além do type-7, o bot tenta o handshake de sessão
         /// SE1 DIRETO com o host (mini-peer) p/ ser registrado como peer com colisão. Liga o diagnóstico que
         /// classifica se o host ENGAJA o CONNECT do bot ou só ackeia. Ver <see cref="BotManager"/> (partial Peer)
-        /// e docs/peer-registration-plan.md. Efeito colateral esperado: o bot CONGELA (o 0x0304 do peer quebra o
-        /// gate do 0x30a type-7) — é diagnóstico, lê-se o log [peer].
+        /// e docs/peer-registration-plan.md.
+        ///
+        /// **DESLIGADO — 2 levers testados in-game (2026-07-06), host NÃO engaja:** (1) o CONNECT do bot é
+        /// byte-correto (TAGV 47415456, ver 10000, op 6) → não é formato; (2) parar o relógio 1583 do servidor
+        /// (p/ o host assumir ga_IsServer) NÃO mudou — o host só ACKeia (0x0305), nunca manda REP_CONNECTREMOTE.
+        /// O host não está em modo networked-server p/ o bot; o gatilho real (o join brokerado como 2º player
+        /// networked) é RE mais profunda. Reativar só com o próximo lever. Enquanto isso: type-7 funcional.
         /// </summary>
-        public static bool BotPeerProbe => true;
+        public static bool BotPeerProbe => false;
 
         /// <summary>
         /// Datagrama 0x307 CreateNpc completo (50B): <c>[u16 0x0307][u32 seq][u8 srcSlot][corpo 43B]</c> — UNRELIABLE.

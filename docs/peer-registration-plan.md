@@ -52,6 +52,31 @@ nunca processa o CONNECT no nível de sessão.
 - Caminho FUNCIONAL hoje = type-7 (anda + dano server-side, sem HIT×N). É o fallback enquanto o peer
   não fecha.
 
+## Resultado do make-or-break (2026-07-06) — host NÃO engaja, 2 levers testados
+
+Probe do peer ligado in-game: o bot manda o CONNECT ao endpoint P2P do host (2301) e o log `[peer]`
+classificou CADA resposta. **Veredito: o host SÓ ACKeia (`0x0305`), NUNCA engaja** (zero
+`REP_CONNECTREMOTE`/push role=0x0a) — 12+ respostas, todas ack-só.
+
+- **Lever 1 — formato do CONNECT: DESCARTADO.** O CONNECT do bot está byte-correto: `TAGV=47415456`,
+  ver `0x2710`=10000, op 6 — idêntico em forma ao 2º humano. O host ACKeia o frame (recebe), só não
+  processa a sessão. Não é bug de formato.
+- **Lever 2 — clock-authority: FALHOU.** Hipótese: o servidor dirigir o 1583 sinaliza modo
+  server-driven → host não assume `ga_IsServer`. Parei o clock p/ match-com-bot; o host **continuou
+  só ackeando**. Removeu o clock mas não fez o host virar session-server.
+
+**Conclusão:** o host não entra em modo networked-server p/ o bot, e NÃO é pelo clock. O gatilho real
+é mais fundo: o host decide ser servidor de sessão no START da partida, provavelmente pela contagem de
+players NETWORKED (com endpoint brokerado). O bot entra por 0x38 injetado (slot sintético), não pelo
+join brokerado que um 2º cliente real faz → o host conta 1 player networked → fica solo → ignora o
+CONNECT. `BotPeerProbe=false` (type-7 restaurado); reativar só com o próximo lever.
+
+## Próximo lever (não testado) — o join brokerado como 2º player networked
+Fazer o host CONTAR o bot como player networked no START. Requer RE de onde o `StartPeerToPeer` do host
+lê a contagem/lista de players (0x37 room-state? 0x48 field-status? session-properties?) e injetar o bot
+lá como um peer com endpoint brokerado (o socket do mini-peer). É o mesmo miolo do headless §12
+(session-properties/game-mode) visto do lado do host — sub-projeto aberto.
+
 ## Risco honesto
 É o **núcleo-muro** do projeto (sessões anteriores investiram muito no peer/headless sem fechar). A
 diferença agora: a verdade de referência está capturada e a hipótese do bloqueio (modo networked) é
