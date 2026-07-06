@@ -20,11 +20,16 @@ namespace RakionServer.World.Tests
             var bot = new BotPlayer(1, "Rok", level: 5, charClass: 1, team: 1)
             { X = 1.5f, Y = 2.0f, Z = -3.0f, Yaw = 90f, AimX = 0f, AimY = 0f, AimZ = 0f };
 
-            byte[] b = BotMovement.EncodeActionBody(bot, seat: 0x0a, subFrame: 0xA5);
+            byte[] b = BotMovement.EncodeActionBody(bot, seat: 0x0a, subFrame: 0xA5, moving: true);
 
             Assert.Equal(19, b.Length);
             Assert.Equal(100, BitConverter.ToUInt16(b, 0));         // +00 [u16 dt] = 100 (NÃO 0)
             Assert.Equal(0x002a, BitConverter.ToUInt16(b, 2));      // +02 [u16 actState] = 0x0020|seat(0x0a)
+
+            // PARADO: o bit 0x20 (andando) desliga; sobra o seat puro — captura só tem 4 valores de actState
+            // (0x2a/0x0a joiner, 0x20/0x00 host). Bit fixo = avatar "anda parado"/desliza.
+            byte[] idle = BotMovement.EncodeActionBody(bot, seat: 0x0a, subFrame: 0xA5, moving: false);
+            Assert.Equal(0x000a, BitConverter.ToUInt16(idle, 2));
             Assert.Equal((short)150, BitConverter.ToInt16(b, 4));   // +04 x = 1.5 / 0.01
             Assert.Equal((short)200, BitConverter.ToInt16(b, 6));   // +06 y = 2.0 / 0.01
             Assert.Equal((short)-300, BitConverter.ToInt16(b, 8));  // +08 z = -3.0 / 0.01
@@ -39,7 +44,7 @@ namespace RakionServer.World.Tests
         public void EncodeActionBody_NormalizesHeadingToSignedDegrees()
         {
             var bot = new BotPlayer(2, "Ares", 5, 1, team: 0) { Yaw = 270f };
-            byte[] b = BotMovement.EncodeActionBody(bot, seat: 0x0a, subFrame: 0);
+            byte[] b = BotMovement.EncodeActionBody(bot, seat: 0x0a, subFrame: 0, moving: true);
             Assert.Equal((short)90, BitConverter.ToInt16(b, 10));   // (270+180)=450 -> 90 (faixa [-180..180])
         }
 
@@ -49,14 +54,14 @@ namespace RakionServer.World.Tests
             var bot = new BotPlayer(3, "Vyl", 5, 1, team: 1);
             Assert.True(BotMovement.UdpFramingKnown);
 
-            byte[] d = BotMovement.BuildActionDatagram(bot, seat: 0x0a);
+            byte[] d = BotMovement.BuildActionDatagram(bot, seat: 0x0a, moving: true);
             Assert.Equal(26, d.Length);                  // [u16 type][u32 seq][u8 srcSlot][19B corpo]
             Assert.Equal(0x0a, d[0]); Assert.Equal(0x03, d[1]);  // msgType 0x030a (little-endian)
             Assert.Equal(0x0a, d[6]);                    // srcSlot = seat do bot no header
             Assert.Equal(0x002a, BitConverter.ToUInt16(d, 9));   // actState do corpo (+02) ECOA o mesmo slot
 
             // outro seat: srcSlot E actState acompanham (captura: srcSlot=0x00 -> actState=0x0020)
-            byte[] red = BotMovement.BuildActionDatagram(bot, seat: 0x00);
+            byte[] red = BotMovement.BuildActionDatagram(bot, seat: 0x00, moving: true);
             Assert.Equal(0x00, red[6]);
             Assert.Equal(0x0020, BitConverter.ToUInt16(red, 9));
         }
@@ -78,17 +83,36 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
-        public void KeystateDatagram_HasMovingTail()
+        public void KeystateDatagram_EchoesCurrentAction()
         {
+            // O tail do 0x30f ecoa a AÇÃO corrente (high-byte do último 0x0311) e persiste até a próxima —
+            // driver da animação de golpe (captura: 0x0311 action=0x0C00 → keystate (00,0c); default (00,01)).
             var bot = new BotPlayer(4, "Kor", 5, 1, team: 1);
-            byte[] mv = BotMovement.BuildKeystateDatagram(bot, seat: 0x0a, moving: true);
-            byte[] idle = BotMovement.BuildKeystateDatagram(bot, seat: 0x0a, moving: false);
+            byte[] neutral = BotMovement.BuildKeystateDatagram(bot, seat: 0x0a);
+            Assert.Equal(14, neutral.Length);
+            Assert.Equal(0x0f, neutral[0]); Assert.Equal(0x03, neutral[1]);   // msgType 0x030f
+            Assert.Equal(0x0a, neutral[6]); Assert.Equal(0x0a, neutral[7]);   // srcSlot E srcSlotEcho = seat
+            Assert.Equal(0x00, neutral[12]); Assert.Equal(0x01, neutral[13]); // (00,01) neutro (default do peer)
 
-            Assert.Equal(14, mv.Length);
-            Assert.Equal(0x0f, mv[0]); Assert.Equal(0x03, mv[1]);   // msgType 0x030f
-            Assert.Equal(0x0a, mv[6]); Assert.Equal(0x0a, mv[7]);   // srcSlot E srcSlotEcho = seat do bot
-            Assert.Equal(0x0100, BitConverter.ToUInt16(mv, 12));    // tail KeyMoving andando
-            Assert.Equal(0x0300, BitConverter.ToUInt16(idle, 12));  // tail KeyIdle parado
+            bot.LastActionHigh = 0x0c;                                        // golpeou com action 0x0C00
+            byte[] swing = BotMovement.BuildKeystateDatagram(bot, seat: 0x0a);
+            Assert.Equal(0x00, swing[12]); Assert.Equal(0x0c, swing[13]);     // (00,0c) — o golpe anima
+        }
+
+        [Fact]
+        public void AliveFlagDatagram_ReproducesCapturedAnnounce()
+        {
+            // GOLDEN p2p-handshake-groundtruth l.285 (joiner seat 0x0a anuncia a si com flag=1, seq 0x81):
+            // 0c83810000000a0a010a002a0091010400000001000000
+            var bot = new BotPlayer(7, "Gav", 5, 1, team: 1);
+            bot.UdpSeq = 0x81;
+            byte[] up = BotMovement.BuildAliveFlagDatagram(bot, seat: 0x0a, alive: true);
+            Assert.Equal("0C83810000000A0A010A002A0091010400000001000000", Convert.ToHexString(up));
+
+            // morte: payload 0 (round end na captura, ex. l.2389)
+            byte[] down = BotMovement.BuildAliveFlagDatagram(bot, seat: 0x0a, alive: false);
+            Assert.Equal(23, down.Length);
+            Assert.Equal(0u, BitConverter.ToUInt32(down, 19));
         }
 
         [Fact]
@@ -107,8 +131,8 @@ namespace RakionServer.World.Tests
         public void Datagrams_ShareMonotonicSeqPerBot()
         {
             var bot = new BotPlayer(6, "Nyx", 5, 1, team: 1);
-            byte[] a = BotMovement.BuildActionDatagram(bot, 0x0a);            // seq N
-            byte[] b = BotMovement.BuildKeystateDatagram(bot, 0x0a, true);    // seq N+1
+            byte[] a = BotMovement.BuildActionDatagram(bot, 0x0a, true);      // seq N
+            byte[] b = BotMovement.BuildKeystateDatagram(bot, 0x0a);          // seq N+1
             byte[] c = BotMovement.BuildAttackDatagram(bot, 0x0a, 1);         // seq N+2
             uint s0 = BitConverter.ToUInt32(a, 2);
             Assert.Equal(s0 + 1, BitConverter.ToUInt32(b, 2));   // contador único, ++ por pacote do sender

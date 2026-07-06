@@ -200,11 +200,17 @@ namespace RakionServer.World.Network
         /// <summary>Máscara dos 5 bits baixos do actState que carregam o slot do dono.</summary>
         private const int SlotMask = 0x1f;
 
-        /// <summary>Tail de keystate (0x030f) parado (captura).</summary>
-        private const ushort KeyIdle = 0x0300;
+        /// <summary>Mensagem de ESTADO reliable entre peers (0x830c) — família do canal de sessão. Corpo:
+        /// <c>[u8 01][u16 subjectSeat][u16 kind][u16 classId][u32 len][payload]</c>. Kinds cravados da captura:
+        /// <see cref="StateKindAlive"/> (round start/end) e 0x000c (âncora de posição nos golpes especiais).</summary>
+        public const ushort MsgReliableState = 0x830c;
 
-        /// <summary>Tail de keystate (0x030f) andando (captura).</summary>
-        private const ushort KeyMoving = 0x0100;
+        /// <summary>Kind do 0x830c de VIVO/EM-COMBATE (payload u32: 1 no início do round, 0 no fim/morte).
+        /// Na captura os DOIS peers anunciam a si e ECOAM a confirmação do outro (l.282-297).</summary>
+        public const ushort StateKindAlive = 0x002a;
+
+        /// <summary>Class id da entidade Player (Classes\Player.ecl) referenciada nos 0x830c da captura.</summary>
+        public const ushort StateClassPlayer = 0x0191;
 
         /// <summary>Delta de frame em ms no corpo 0x30a (taxa real ~100ms da captura).</summary>
         private const ushort DtMs = 100;
@@ -231,11 +237,13 @@ namespace RakionServer.World.Network
         /// mesmo slot p/ o cliente rotear o move ao avatar do bot. <paramref name="subFrame"/> = nonce que
         /// DEVE variar a cada frame (o cliente não valida o valor, só exige que mude).
         /// </summary>
-        public static byte[] EncodeActionBody(BotPlayer bot, int seat, byte subFrame)
+        public static byte[] EncodeActionBody(BotPlayer bot, int seat, byte subFrame, bool moving)
         {
             using var w = new PacketWriter();
             w.WriteWord(DtMs);                                          // +00 u16 dt (ms; ~100)
-            w.WriteWord((ushort)(ActStateMoveFlag | (seat & SlotMask))); // +02 u16 actState (flag move | slot)
+            // actState: bit 0x20 = ANDANDO (captura: só 4 valores — 0x20|seat movendo, seat puro parado).
+            // Mandar 0x20 fixo fazia o avatar "andar parado"/deslizar — o bit é o driver da animação de passo.
+            w.WriteWord((ushort)((moving ? ActStateMoveFlag : 0) | (seat & SlotMask))); // +02 u16 actState
             w.WriteInt16(Pack(bot.X));                   // +04 s16 x
             w.WriteInt16(Pack(bot.Y));                   // +06 s16 y
             w.WriteInt16(Pack(bot.Z));                   // +08 s16 z
@@ -255,9 +263,9 @@ namespace RakionServer.World.Network
         /// <paramref name="seat"/> do bot (origem do relay; o mesmo slot ecoa no actState do corpo). O alvo
         /// NÃO entra no pacote (é o endereço do SendTo). Corpo cravado em <see cref="EncodeActionBody"/>.
         /// </summary>
-        public static byte[] BuildActionDatagram(BotPlayer bot, int seat)
+        public static byte[] BuildActionDatagram(BotPlayer bot, int seat, bool moving)
         {
-            byte[] body = EncodeActionBody(bot, seat, bot.NextSubFrame());
+            byte[] body = EncodeActionBody(bot, seat, bot.NextSubFrame(), moving);
             using var w = new PacketWriter();
             w.WriteWord(MsgAction);          // +00 u16 0x030a (unreliable)
             w.WriteUInt32(bot.UdpSeq++);     // +02 u32 seq (++ por pacote do sender)
@@ -284,12 +292,14 @@ namespace RakionServer.World.Network
         }
 
         /// <summary>
-        /// Companheiro 0x030f (14B) de keystate/animação — mandar SEMPRE logo após o 0x30a (§3). O cliente
-        /// lê o par (posição + keystate) p/ escolher a animação. Corpo: [u8 srcSlotEcho][u16 0x0008][u16
-        /// 0x0001][u16 tail], tail = 0x0100 (andando) / 0x0300 (parado) — ambos vistos na captura. srcSlot e
-        /// srcSlotEcho = <paramref name="seat"/> do bot (mesma origem do 0x30a).
+        /// Companheiro 0x030f (14B) de keystate/animação — mandar SEMPRE logo após o 0x30a (§3). Corpo:
+        /// [u8 srcSlotEcho][u16 0x0008][u16 0x0001][u8 estado][u8 ação]. O byte de AÇÃO ecoa o high-byte do
+        /// último 0x0311 e PERSISTE até a próxima ação — é o driver da animação de golpe no cliente remoto
+        /// (cravado na captura: host golpeia 0x0311 action=0x0C00 → o tail do 0x30f dele vira (00,0c) nos
+        /// frames seguintes; default do peer parado/andando = (00,01)). O tail fixo antigo nunca sinalizava o
+        /// golpe (bot "não atacava" na tela) e o "parado" 0x0300 dizia "ação 3".
         /// </summary>
-        public static byte[] BuildKeystateDatagram(BotPlayer bot, int seat, bool moving)
+        public static byte[] BuildKeystateDatagram(BotPlayer bot, int seat)
         {
             using var w = new PacketWriter();
             w.WriteWord(MsgKeystate);                    // +00 0x030f
@@ -298,8 +308,32 @@ namespace RakionServer.World.Network
             w.WriteByte((byte)seat);                     // +07 srcSlotEcho = seat do bot
             w.WriteWord(0x0008);                         // +08 const (tipo de bloco de input)
             w.WriteWord(0x0001);                         // +0a const
-            w.WriteWord(moving ? KeyMoving : KeyIdle);   // +0c tail keystate
+            w.WriteByte(0);                              // +0c estado (0 = normal; 1-3 = movimentos especiais)
+            w.WriteByte(bot.LastActionHigh);             // +0d AÇÃO corrente (eco do 0x0311; 0x01 = neutro)
             return w.ToArray();                          // 14B
+        }
+
+        /// <summary>
+        /// Flag de VIVO/EM-COMBATE do avatar (23B, reliable 0x830c kind 0x2a) — o anúncio de estado que os
+        /// peers reais trocam no início (payload 1) e fim (payload 0) do round; candidato direto ao gate do
+        /// HIT×N (AddHitCount exige entidade ALIVE+team+HP). GOLDEN da captura l.285 (joiner seat 0x0a):
+        /// <c>0c83[seq]0a0a010a002a00910104000000 01000000</c>. O host ECOA a confirmação (diagnóstico: um
+        /// 0x830c do host ao seat do bot no log = semântica confirmada).
+        /// </summary>
+        public static byte[] BuildAliveFlagDatagram(BotPlayer bot, int seat, bool alive)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(MsgReliableState);   // +00 u16 0x830c (reliable state)
+            w.WriteUInt32(bot.UdpSeq++);     // +02 u32 seq (mesmo contador do sender)
+            w.WriteByte((byte)seat);         // +06 srcSlot
+            w.WriteByte((byte)seat);         // +07 srcSlotEcho
+            w.WriteByte(1);                  // +08 subtipo (const 01 na captura)
+            w.WriteWord((ushort)seat);       // +09 u16 seat do SUJEITO (auto-anúncio = o próprio)
+            w.WriteWord(StateKindAlive);     // +0b u16 kind 0x2a (vivo/em-combate)
+            w.WriteWord(StateClassPlayer);   // +0d u16 classe 0x0191 (Player.ecl)
+            w.WriteUInt32(4);                // +0f u32 len do payload
+            w.WriteUInt32(alive ? 1u : 0u);  // +13 u32 flag
+            return w.ToArray();              // 23B
         }
 
         /// <summary>

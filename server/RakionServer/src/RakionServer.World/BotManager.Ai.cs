@@ -95,6 +95,13 @@ namespace RakionServer.World
                 //     cliente já viu (mesma forma do respawn de um humano). Os 0x30a voltam a sair no tick seguinte.
                 if (bot.Dead || rec.Dead)
                 {
+                    // Baixa o alive-flag (0x830c kind 0x2a payload 0) UMA vez por morte — o peer real anuncia
+                    // o fim-de-combate ao host (captura l.2389+); reergue no respawn.
+                    if (!bot.AliveFlagDown)
+                    {
+                        bot.AliveFlagDown = true;
+                        EmitBotAliveFlag(rec, bot, alive: false);
+                    }
                     if (f.Phase == MatchPhase.Playing && bot.DueForRespawn(now, BotRespawnDelayMs))
                     {
                         bot.Respawn();
@@ -104,6 +111,8 @@ namespace RakionServer.World
                             SpawnBotAsNpc(f, rec, bot);   // 0x307 NPC (descartado)
                         else
                             f.BroadcastField(0x45, new[] { (byte)rec.Slot });   // 0x45 fantasma — a ponte re-acha e segue movendo
+                        bot.AliveFlagDown = false;
+                        EmitBotAliveFlag(rec, bot, alive: true);
                         Log.Ok("bot", "field {0}: '{1}' RESPAWN seat {2} (apos {3}ms)", f.Id, bot.Name, rec.Slot, BotRespawnDelayMs);
                     }
                     continue;
@@ -354,6 +363,7 @@ namespace RakionServer.World
                 {
                     EnsureBotUdpSocket(bot);                  // origem dos 0x30a sintetizados (via relay do servidor)
                     EnsureBotLockstep(f, rec, bot, now);      // abre o canal de sessão P2P com o host (peer real)
+                    EmitBotAliveFlag(rec, bot, alive: true);  // anuncia o avatar em-combate (0x830c kind 0x2a = 1)
                 }
             }
         }
@@ -375,8 +385,8 @@ namespace RakionServer.World
             var sock = LinkOf(bot).UdpSocket;
             if (sock == null) return;
 
-            byte[] action = BotMovement.BuildActionDatagram(bot, rec.Slot);
-            byte[] key = BotMovement.BuildKeystateDatagram(bot, rec.Slot, moving);
+            byte[] action = BotMovement.BuildActionDatagram(bot, rec.Slot, moving);
+            byte[] key = BotMovement.BuildKeystateDatagram(bot, rec.Slot);
 
             // Envia para o servidor (loopback:40708) — o UdpGameplay.Process recebe e relaya ao host
             var serverEp = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, _gameplayPort());
@@ -406,6 +416,24 @@ namespace RakionServer.World
             if (sock == null) return;
             var serverEp = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, _gameplayPort());
             try { sock.SendTo(BotMovement.BuildAttackDatagram(bot, rec.Slot, actionId), serverEp); } catch { }
+            // O high-byte da ação ECOA no tail dos 0x30f seguintes — é o que anima o golpe no cliente
+            // (captura: 0x0311 action=0x0C00 → keystate (00,0c) persistente até a próxima ação).
+            bot.LastActionHigh = (byte)(actionId >> 8);
+        }
+
+        /// <summary>
+        /// Anúncio de VIVO/EM-COMBATE do avatar (0x830c kind 0x2a, reliable): payload 1 no spawn/respawn,
+        /// 0 na morte — o estado que os peers reais trocam por round e que o gate de hit valida (ALIVE).
+        /// Via socket do bot → relay do servidor, como todo tráfego do bot.
+        /// </summary>
+        private void EmitBotAliveFlag(PlayerRec rec, BotPlayer bot, bool alive)
+        {
+            EnsureBotUdpSocket(bot);
+            var sock = LinkOf(bot).UdpSocket;
+            if (sock == null) return;
+            var serverEp = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, _gameplayPort());
+            try { sock.SendTo(BotMovement.BuildAliveFlagDatagram(bot, rec.Slot, alive), serverEp); } catch { }
+            Log.Ok("bot", "alive-flag={0} seat {1} (0x830c kind 0x2a)", alive ? 1 : 0, rec.Slot);
         }
     }
 }

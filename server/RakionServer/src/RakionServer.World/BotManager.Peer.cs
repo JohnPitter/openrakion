@@ -72,9 +72,9 @@ namespace RakionServer.World
             byte botSeat = (byte)rec.Slot;
             var serverEp = new IPEndPoint(IPAddress.Loopback, _gameplayPort());
 
-            if (!link.LockstepOpened)
+            if (!bot.LockstepOpenedMatch)
             {
-                link.LockstepOpened = true;
+                bot.LockstepOpenedMatch = true;   // canal abre 1x POR PARTIDA (não por round — captura)
                 for (int i = 0; i < 2; i++)   // captura l.12/14: o joiner abre o canal com DOIS opens
                 {
                     uint seq = bot.UdpSeq++;

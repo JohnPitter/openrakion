@@ -343,9 +343,12 @@ namespace RakionServer.World.Network
                 return;
             }
 
-            // NETCODE da SESSÃO P2P da engine + 0x30a/0x030f gameplay.
+            // NETCODE da SESSÃO P2P da engine + 0x30a/0x030f gameplay + estado reliable entre peers
+            // (0x830c alive-flag/âncora, 0x8313 — família do canal; sem rota própria o 23B do bot caía no
+            // parse de ping). O 0x8315 de 8B já tem trilha própria (feedback 1583) acima.
             if (WireFrames.IsReliableFrame(pkt) ||
-                (pkt.Length >= 2 && pkt[1] == 0x03 && (pkt[0] == 0x0a || pkt[0] == 0x0f)))
+                (pkt.Length >= 2 && pkt[1] == 0x03 && (pkt[0] == 0x0a || pkt[0] == 0x0f)) ||
+                (pkt.Length >= 2 && pkt[1] == 0x83 && (pkt[0] == 0x0c || pkt[0] == 0x13)))
             {
                 ushort mt = pkt.Length >= 2 ? (ushort)(pkt[0] | (pkt[1] << 8)) : (ushort)0;
                 Log.Ok("udp", "GAMEPLAY RX {0}B type=0x{1:X4} de {2} data={3}", pkt.Length, mt, from, Convert.ToHexString(pkt[..Math.Min(32, pkt.Length)]));
