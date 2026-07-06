@@ -396,6 +396,10 @@ namespace RakionServer.World
             {
                 _udpGame = new UdpGameplay(this, gamePort);
                 _udpGame.Start();
+                // Endereço P2P dos BOTS no roster (0x37/0x38): o socket do servidor — a origem REAL de todo o
+                // tráfego do bot (0x30a/lockstep/0x830c). Sem endereço no registro o cliente não promove o slot
+                // a peer de rede (12B de zeros = "fantasma" p/ combate). Ver BuildPlayerRecord/WritePeerAddr.
+                BotPeerEndpoint = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, gamePort);
             }
 
             // Log em arquivo para diagnóstico sem precisar copiar do console.

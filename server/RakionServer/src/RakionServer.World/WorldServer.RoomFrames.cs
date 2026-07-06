@@ -17,6 +17,12 @@ namespace RakionServer.World
         /// detalhe de SERIALIZAÇÃO (como um bot é codificado no frame), por isso mora aqui e não no BotManager.</summary>
         internal static ushort BotUserId(int seat) => (ushort)(0xB000 + seat);
 
+        /// <summary>Endereço P2P dos BOTS no registro do roster (0x37/0x38) = o socket UDP do servidor (setado no
+        /// Start), a origem real de todo o tráfego do bot. O cliente promove um slot a PEER DE REDE pelo endereço
+        /// do registro — zeros (o antigo default do bot) deixavam a entidade "fantasma" p/ combate, mesmo com o
+        /// 0x319 destravando o movimento. Único por processo (uma porta de gameplay) → estático.</summary>
+        internal static System.Net.IPEndPoint? BotPeerEndpoint;
+
         /// <summary>Userid do ocupante no frame (bot = faixa alta 0xB000+seat; humano = usergameinfo.id).</summary>
         private static ushort RecUid(Domain.PlayerRec rec) =>
             rec.Bot != null ? BotUserId(rec.Slot) : (ushort)(rec.Session?.GameInfoId ?? 0);
@@ -28,7 +34,8 @@ namespace RakionServer.World
         /// NOTA: tamanho FIXO por buffer (78/88B) também crashava — a forma é VARIÁVEL (nome até \0).</summary>
         private static byte[] RecordFor(Domain.PlayerRec rec) =>
             rec.Bot != null
-                ? BuildPlayerRecord(rec.Bot.Name, (byte)rec.Bot.CharClass, (byte)rec.Bot.Level, equipTail: false)
+                ? BuildPlayerRecord(rec.Bot.Name, (byte)rec.Bot.CharClass, (byte)rec.Bot.Level, 0,
+                                    BotPeerEndpoint, equipTail: false)
                 : BuildPlayerRecord(rec.Session?.CharName ?? "", (byte)(rec.Session?.CharClass ?? 0),
                                     (byte)(rec.Session?.CharLevel ?? 1), 0, rec.Session?.UdpEndpoint, equipTail: false);
 

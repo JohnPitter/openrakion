@@ -67,9 +67,11 @@ namespace RakionServer.World
                 SpawnBotIntoRound(f, rec, rec.Bot!, now);   // golden source do spawn (mesmo caminho do BotTick)
         }
 
-        /// <summary>0x38 member-join do BOT: monta o registro genérico com o userid sintético do bot (faixa alta).
-        /// Delega ao golden source <see cref="WorldServer.BuildMemberJoin"/>.</summary>
+        /// <summary>0x38 member-join do BOT: registro genérico com o userid sintético (faixa alta) e o endereço
+        /// P2P = socket do servidor (<see cref="WorldServer.BotPeerEndpoint"/> — zeros deixavam a entidade
+        /// "fantasma" p/ combate). Delega ao golden source <see cref="WorldServer.BuildMemberJoin"/>.</summary>
         private static byte[] BuildRoomMemberJoin(BotPlayer bot, int seat) =>
-            WorldServer.BuildMemberJoin(bot.Name, (byte)bot.CharClass, (byte)bot.Level, WorldServer.BotUserId(seat), seat);
+            WorldServer.BuildMemberJoin(bot.Name, (byte)bot.CharClass, (byte)bot.Level, WorldServer.BotUserId(seat), seat,
+                                        peerEp: WorldServer.BotPeerEndpoint);
     }
 }
