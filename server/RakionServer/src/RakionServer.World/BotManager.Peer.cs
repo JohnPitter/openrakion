@@ -74,7 +74,7 @@ namespace RakionServer.World
             var sock = link.UdpSocket!;
             if (link.Peer == null)
             {
-                Log.Ok("peer", "PROBE '{0}': socket {1} -> CONNECT ao host P2P {2}", bot.Name, link.BotEndpoint, hostEp);
+                Log.Ok("peer", "PROBE '{0}': socket {1} -> CONNECT ao host P2P {2}", bot.Name, link.BotEndpoint?.ToString() ?? "?", hostEp);
                 var character = PeerLib.BotCharacterFactory.ForBot(bot.Name, bot.CharClass, bot.Level, bot.Team);
                 var identity = new PeerLib.PeerIdentity(character, rec.Slot);
                 link.Peer = new PeerLib.BotPeer(
