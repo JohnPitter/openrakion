@@ -30,7 +30,7 @@ namespace RakionServer.World
                 bot.NpcSub = 0;                                   // 1 NPC por owner -> sem risco de colisão de sub
                 bot.NpcKeyAssigned = true;
             }
-            EnsureBotSocket(bot);
+            EnsureBotUdpSocket(bot);
             EmitBotNpcDatagram(bot, BotMovement.BuildCreateNpcDatagram(bot, NpcClassOf(bot), bot.UdpSeq++, (byte)rec.Slot));
             Log.Ok("bot", "field {0}: '{1}' NPC spawn 0x307 classe 0x{2:X4} (owner {3} sub {4}, rec.Slot {5})",
                 f.Id, bot.Name, NpcClassOf(bot), bot.NpcOwner, bot.NpcSub, rec.Slot);
@@ -38,21 +38,6 @@ namespace RakionServer.World
 
         /// <summary>Class id do avatar do bot: o override do <c>/addbot &lt;classe&gt;</c> se houver, senão o default.</summary>
         private static ushort NpcClassOf(BotPlayer bot) => bot.NpcClassId != 0 ? bot.NpcClassId : BotMovement.NpcClassBot;
-
-        /// <summary>Garante um socket UDP dedicado p/ o bot enviar os datagramas NPC ao servidor (que os
-        /// relaya ao host). No modo NPC NÃO há handshake de peer — o gate era do 0x30a do jogador; o NPC tem
-        /// chave própria na tabela do host. Só o socket de envio (porta única, como o peer).</summary>
-        private void EnsureBotSocket(BotPlayer bot)
-        {
-            var link = LinkOf(bot);
-            if (link.UdpSocket != null) return;
-            int port = Interlocked.Increment(ref _botPortSeq);
-            var sock = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-            sock.Bind(new IPEndPoint(IPAddress.Loopback, port));
-            link.UdpSocket = sock;
-            link.BotEndpoint = new IPEndPoint(IPAddress.Loopback, port);
-            Log.Ok("bot", "socket UDP NPC porta {0} (bot '{1}')", port, bot.Name);
-        }
 
         /// <summary>Move o NPC via 0x30b a cada tick. O create (0x307) é emitido UMA vez no spawn (SpawnBotAsNpc):
         /// re-enviar um create de entidade que JÁ existe gera "unknown error" no host e a RESETA/destrói — foi o

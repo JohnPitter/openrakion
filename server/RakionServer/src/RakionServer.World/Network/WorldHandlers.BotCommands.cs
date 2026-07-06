@@ -36,8 +36,7 @@ namespace RakionServer.World.Network
             bool isAdd = lower.StartsWith("/addbot") || lower == "/bot" || lower.StartsWith("/bot ");
             bool isRemove = lower.StartsWith("/removebot") || lower.StartsWith("/delbot") || lower.StartsWith("/clearbot");
             bool isStatus = lower.StartsWith("/botstatus") || lower.StartsWith("/bots");
-            bool isDebug = lower.StartsWith("/botdebug") || lower.StartsWith("/botfix");
-            if (!isAdd && !isRemove && !isStatus && !isDebug) return false;
+            if (!isAdd && !isRemove && !isStatus) return false;
 
             var field = world.GetOrCreateRoomField(u);
             if (field == null) { BotChatFeedback(u, "crie uma sala primeiro"); return true; }
@@ -57,29 +56,11 @@ namespace RakionServer.World.Network
                 foreach (var r in field.BotRecs())
                 {
                     var b = r.Bot!;
-                    string gate = world.Bots.BotGateOpen(b) ? "OPEN" : "closed";
-                    string hs = world.Bots.BotHandshake(b);
                     string tgt = b.TargetSeat >= 0 ? $"#{b.TargetSeat}" : "none";
-                    sb.AppendLine($"{b.Name} s{r.Slot} [{b.Difficulty}] hp={b.Hp} pos=({b.X:F1},{b.Z:F1}) gate={gate} hs={hs} tgt={tgt}");
+                    sb.AppendLine($"{b.Name} s{r.Slot} [{b.Difficulty}] hp={b.Hp} pos=({b.X:F1},{b.Z:F1}) tgt={tgt}");
                     n++;
                 }
                 BotChatFeedback(u, n > 0 ? $"{n} bot(s): {sb}" : "nenhum bot");
-                return true;
-            }
-
-            if (isDebug)
-            {
-                int forced = 0;
-                foreach (var r in field.BotRecs())
-                {
-                    var b = r.Bot!;
-                    if (!world.Bots.BotGateOpen(b))
-                    {
-                        world.Bots.ForceBotGate(b);
-                        forced++;
-                    }
-                }
-                BotChatFeedback(u, forced > 0 ? $"{forced} gate(s) forçado(s)" : "todos gates já abertos");
                 return true;
             }
 

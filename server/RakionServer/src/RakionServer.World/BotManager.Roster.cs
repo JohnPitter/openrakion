@@ -62,25 +62,9 @@ namespace RakionServer.World
             var host = f.Master;
             if (host == null) return;
             try { host.SendMessage(0x48, BotMovement.BuildFieldGameStart()); } catch { }   // round-load (1x)
+            long now = Environment.TickCount64;
             foreach (var rec in f.BotRecs())
-            {
-                var bot = rec.Bot!;
-                bot.SpawnedThisRound = true;
-                bot.SpawnedMs = Environment.TickCount64;
-                DisposeLink(bot);                     // novo round: fecha o socket/peer do round anterior (re-handshake fresco)
-                bot.InitStagePosition();
-                rec.State = 4; rec.Dead = false; bot.Dead = false;
-                bot.SpawnGen++;                                  // nova entidade na engine -> a ponte invalida o cache e re-acha (anti-crash)
-                if (BotMovement.UseNpcAvatar)
-                {
-                    SpawnBotAsNpc(f, rec, bot);                  // 0x307 NPC (descartado: classes auto-vivas não registram)
-                }
-                else
-                {
-                    NotifyBotAddPlayer(f, rec.Slot, bot);        // 0x45 fantasma CPlayer (RENDERIZA) — movido pela ponte de injeção
-                    EnsureBotPeerConnected(f, rec, bot);
-                }
-            }
+                SpawnBotIntoRound(f, rec, rec.Bot!, now);   // golden source do spawn (mesmo caminho do BotTick)
         }
 
         /// <summary>0x38 member-join do BOT: monta o registro genérico com o userid sintético do bot (faixa alta).

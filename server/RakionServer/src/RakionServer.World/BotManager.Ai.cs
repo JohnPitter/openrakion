@@ -52,9 +52,6 @@ namespace RakionServer.World
         /// <summary>Delay de respawn do bot dentro do round (ms). Placeholder ~5s até a RE do timing real (§11).</summary>
         private const long BotRespawnDelayMs = 5000;
 
-        /// <summary>Timeout para fallback do gate: se o handshake não completar em N ms, força o gate aberto.</summary>
-        private const long BotGateFallbackMs = 5000;
-
         /// <summary>Distância máxima para o bot atacar (coord do mundo). Acima disso, só persegue.</summary>
         private const float BotAttackRange = 8.0f;
 
@@ -76,33 +73,20 @@ namespace RakionServer.World
             foreach (var rec in f.BotRecs())
             {
                 var bot = rec.Bot!;
-                // Colisão de parede do bot: PREFERE a envoltória empírica dos humanos (chão comprovadamente válido —
-                // não prende o bot numa geometria chutada errada); cai no clamp fixo do mapa só até um humano pisar.
-                bot.Walk = f.HumanHull(2f) ?? Domain.GolemWarLayouts.WalkFor(f.MapId);
+                // Colisão de parede do bot: UNIÃO do box estático do mapa com a envoltória empírica dos humanos.
+                // O hull só EXPANDE (chão comprovadamente pisado além da geometria estática); nunca encolhe o box —
+                // preferir o hull sozinho clampava o bot pro quadradinho do spawn do humano no início do round
+                // (hull minúsculo) = teleporte pro lado do humano + bot preso.
+                var mapWalk = Domain.GolemWarLayouts.WalkFor(f.MapId);
+                var hull = f.HumanHull(2f);
+                bot.Walk = mapWalk is { } mw ? (hull is { } h ? mw.Union(h) : mw) : hull;
 
                 // 1) SPAWN (fallback p/ bot só visto pelo BotTick; o caminho primário é SpawnFieldBotsInStage
                 //    no load do host): marca playing e, com os frames ligados, instancia o avatar via 0x4b
                 //    AddPlayer — o frame DECODIFICADO da captura, a forma que o cliente já viu (lição-mestra).
                 if (!bot.SpawnedThisRound)
                 {
-                    bot.SpawnedThisRound = true;
-                    bot.SpawnedMs = now;
-                    DisposeLink(bot);              // novo round: fecha o socket/peer do round anterior (re-handshake fresco)
-                    bot.InitStagePosition();
-                    if (IsObjectiveMode(f))
-                    {
-                        var sp = GolemWarLayouts.For(f.MapId).SpawnFor(bot.Team);
-                        bot.X = sp.X; bot.Z = sp.Z;   // spawn REAL do mapa (Y no chão); a rota assume daqui
-                    }
-                    rec.State = 4; rec.Dead = false; bot.Dead = false;
-                    if (BotMovement.UseNpcAvatar)
-                        SpawnBotAsNpc(f, rec, bot);               // 0x307 CreateNpc: entidade de colisão acertável
-                    else if (BotMovement.ClientFramesEnabled)
-                    {
-                        NotifyBotAddPlayer(f, rec.Slot, bot);     // 0x45: fantasma CPlayer visível (a ponte o acha + move)
-                        if (!BotMovement.UseClientBridge)
-                            EnsureBotPeerConnected(f, rec, bot);  // só no modo 0x30a-rede; na ponte o move é SetPlacement
-                    }
+                    SpawnBotIntoRound(f, rec, bot, now);
                     Log.Ok("bot", "field {0}: '{1}' spawn (seat {2} time {3})", f.Id, bot.Name, rec.Slot, bot.Team);
                     continue;
                 }
@@ -123,25 +107,6 @@ namespace RakionServer.World
                         Log.Ok("bot", "field {0}: '{1}' RESPAWN seat {2} (apos {3}ms)", f.Id, bot.Name, rec.Slot, BotRespawnDelayMs);
                     }
                     continue;
-                }
-
-                // 1b/1c) GATE + RETRY do PEER do 0x30a (jogador). No modo NPC (0x307) NÃO há gate: a entidade
-                //     NPC tem chave própria na tabela do host e o move (0x30b) não passa pelo filtro de endpoint
-                //     por-player (IsValidUDP_ForPlayer). Logo, só no caminho-fantasma.
-                if (!BotMovement.UseNpcAvatar && !BotMovement.UseClientBridge)
-                {
-                    var link = LinkOf(bot);
-                    // FALLBACK DE GATE: se o handshake não completou em BotGateFallbackMs, força o gate aberto.
-                    if (!link.GateOpen && bot.SpawnedMs > 0 && (now - bot.SpawnedMs) > BotGateFallbackMs)
-                    {
-                        var hs = link.Peer?.HandshakeState;
-                        Log.Ok("bot", "field {0}: '{1}' gate TIMEOUT após {2}ms (hs={3}) — forçando gate aberto",
-                            f.Id, bot.Name, now - bot.SpawnedMs, hs?.ToString() ?? "null");
-                        link.ForceGateOpen();
-                    }
-                    // RETRY DO PEER: o join exige o endpoint UDP do host, que pode não existir no spawn.
-                    if (BotMovement.ClientFramesEnabled && link.Peer == null)
-                        EnsureBotPeerConnected(f, rec, bot);
                 }
 
                 // 2) DECISÃO: alvo mais próximo + intenção de ataque, em cadência própria.
@@ -360,19 +325,46 @@ namespace RakionServer.World
             return bestSeat;
         }
 
+        /// <summary>Entra o bot no round: posição de spawn (rota Golem usa o spawn REAL do mapa), estado
+        /// playing, socket UDP fresco e o frame de spawn que o cliente já viu (0x4b AddPlayer / 0x307 NPC).
+        /// Golden source dos DOIS caminhos de spawn (primário SpawnFieldBotsInStage + fallback BotTick).</summary>
+        private void SpawnBotIntoRound(Domain.Field f, PlayerRec rec, BotPlayer bot, long now)
+        {
+            bot.SpawnedThisRound = true;
+            bot.SpawnedMs = now;
+            DisposeLink(bot);                 // novo round: socket fresco (porta nova desambigua o round)
+            bot.InitStagePosition();
+            if (IsObjectiveMode(f))
+            {
+                var sp = GolemWarLayouts.For(f.MapId).SpawnFor(bot.Team);
+                bot.X = sp.X; bot.Z = sp.Z;   // spawn REAL do mapa (Y no chão); a rota assume daqui
+            }
+            rec.State = 4; rec.Dead = false; bot.Dead = false;
+            bot.SpawnGen++;                   // nova entidade na engine -> a ponte invalida o cache e re-acha
+            if (BotMovement.UseNpcAvatar)
+                SpawnBotAsNpc(f, rec, bot);                   // 0x307 CreateNpc: entidade de colisão acertável
+            else if (BotMovement.ClientFramesEnabled)
+            {
+                NotifyBotAddPlayer(f, rec.Slot, bot);         // 0x4b: instancia o avatar no stage do host
+                if (!BotMovement.UseClientBridge)
+                    EnsureBotUdpSocket(bot);                  // origem dos 0x30a sintetizados (via relay do servidor)
+            }
+        }
+
         /// <summary>
         /// SÍNTESE do movimento+ação do bot = PAR CNetMessage 0x30a (posição) + 0x030f (keystate/animação).
-        /// Envia diretamente ao host via SendGameplayRaw (UDP), sem depender do handshake P2P. O host
-        /// recebe o 0x30a, lê o slot do corpo e aplica a ação ao avatar do bot (GetPlayer(slot)!=NULL,
-        /// garantido pelo 0x4b AddPlayer prévio). Datagramas cravados da captura (BotMovement.Build*).
+        /// Emitido do socket DEDICADO do bot ao SERVIDOR (loopback), que relaya ao host do socket do
+        /// UdpGameplay — a MESMA origem que o 0x319 registrou no cliente, então o 0x30a passa no
+        /// IsValidUDP_ForPlayer. O host lê o slot do corpo e aplica a ação ao avatar do bot
+        /// (GetPlayer(slot)!=NULL, garantido pelo 0x4b AddPlayer prévio). NUNCA enviar direto ao cliente
+        /// (regressão do mini-peer — ver BotManager.Peer). Datagramas cravados da captura (BotMovement.Build*).
         /// </summary>
         private void EmitBotMovement(Domain.Field f, PlayerRec rec, BotPlayer bot, bool moving)
         {
             var host = f.Master;
             if (host == null) return;
 
-            // Envia 0x30a ao socket do servidor (porta 40708). O servidor recebe de fonte desconhecida
-            // (bot) e relaya ao host — mesmo canal que o worldserv original usa para gameplay entre peers.
+            EnsureBotUdpSocket(bot);          // robustez: recria após round-reset/descartes fora de ordem
             var sock = LinkOf(bot).UdpSocket;
             if (sock == null) return;
 
@@ -402,6 +394,7 @@ namespace RakionServer.World
         /// </summary>
         private void EmitBotAttack(PlayerRec rec, BotPlayer bot, ushort actionId)
         {
+            EnsureBotUdpSocket(bot);
             var sock = LinkOf(bot).UdpSocket;
             if (sock == null) return;
             var serverEp = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, _gameplayPort());

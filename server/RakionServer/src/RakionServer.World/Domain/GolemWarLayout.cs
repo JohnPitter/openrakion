@@ -31,6 +31,12 @@ namespace RakionServer.World.Domain
     {
         public float ClampX(float x) => x < MinX ? MinX : (x > MaxX ? MaxX : x);
         public float ClampZ(float z) => z < MinZ ? MinZ : (z > MaxZ ? MaxZ : z);
+
+        /// <summary>Menor AABB que contém os dois boxes — usado p/ EXPANDIR o box estático do mapa com o
+        /// chão empiricamente pisado pelos humanos (hull), sem nunca encolhê-lo.</summary>
+        public WalkBounds Union(WalkBounds o) => new(
+            o.MinX < MinX ? o.MinX : MinX, o.MaxX > MaxX ? o.MaxX : MaxX,
+            o.MinZ < MinZ ? o.MinZ : MinZ, o.MaxZ > MaxZ ? o.MaxZ : MaxZ);
     }
 
     /// <summary>

@@ -1,4 +1,23 @@
-# Bot PvP — Estado Atual (2026-06-28)
+# Bot PvP — Estado Atual (2026-06-28; regressão corrigida 2026-07-06)
+
+## REGRESSÃO "bot parado" (2026-07) — causa e regra permanente
+Sintoma: o bot aparecia no stage (0x4b TCP) mas **não se movia**. Causa: o mini-peer
+(`BotPeer.Connect`, adicionado no peer-codec de 2026-07-03 p/ o sub-projeto headless-H3) mandava
+o OPEN de canal reliable (0x0304) + keepalives **do socket dedicado do bot (porta 41xxx) DIRETO ao
+cliente** — pro MESMO slot que o 0x319 tinha registrado como `servidor:40708`. O cliente re-ligava
+o peer do slot ao endpoint errado e o `IsValidUDP_ForPlayer` passava a REJEITAR todo 0x30a relayado
+pelo servidor → bot congelado no spawn. A cadeia server-side estava íntegra (provada pelo teste de
+integração `BotMovementChainTests`: 0x319 + fluxo de 0x30a com posição avançando chegam ao endpoint
+do host).
+
+**REGRA (não regredir): NENHUM pacote do bot fala DIRETO com o cliente.** O socket dedicado do bot
+só envia ao servidor (loopback); quem fala com o cliente é SEMPRE o socket do `UdpGameplay` (mesma
+origem do 0x319 e do eco de lockstep 0x0305). O codec `RakionServer.Peer` segue vivo p/ o headless-H3,
+mas fora do caminho do bot. Fixes acompanhantes: clamp de parede = **união** do box do mapa com o
+hull empírico dos humanos (preferir o hull sozinho clampava o bot pro quadradinho do spawn do humano
+no início do round), e o spawn primário (`SpawnFieldBotsInStage`) usa o mesmo golden source de
+posicionamento do fallback (`SpawnBotIntoRound`, com o spawn REAL do mapa no modo Golem).
+
 
 > Bot server-side (sem 2º cliente) que anda, luta e joga o objetivo Golem War. Movimento via
 > **0x319** (registro de endpoint UDP no cliente), NÃO headless. Combate cliente-autoritativo:
