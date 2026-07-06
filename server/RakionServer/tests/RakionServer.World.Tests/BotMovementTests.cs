@@ -198,10 +198,10 @@ namespace RakionServer.World.Tests
             bot.UdpSeq = 7;
             byte[] d = BotMovement.BuildCreateNpcDatagram(bot, BotMovement.NpcClassPlayer, bot.UdpSeq++, srcSlot: 0x0a);
 
-            // [u16 0x0307 UNRELIABLE][u32 seq][u8 srcSlot][corpo: 28B header + 15B blob] = 50B. O CORPO é a captura
-            // real; só o transporte é unreliable (dispatch por-opcode mascara 0x8000; sem depender do canal reliable).
+            // [u16 0x8307 RELIABLE][u32 seq][u8 srcSlot][corpo: 28B header + 15B blob] = 50B. RE (rakion.bin):
+            // o dispatcher de create (HandleMessage) SÓ é alcançado pela via reliable — o create TEM de ser 0x8307.
             Assert.Equal(50, d.Length);
-            Assert.Equal(0x07, d[0]); Assert.Equal(0x03, d[1]);    // msgType 0x0307 (LE) — UNRELIABLE (bit 0x8000 limpo)
+            Assert.Equal(0x07, d[0]); Assert.Equal(0x83, d[1]);    // msgType 0x8307 (LE) — RELIABLE (bit 0x8000 setado)
             Assert.Equal(7u, BitConverter.ToUInt32(d, 2));         // +02 seq
             Assert.Equal(0x0a, d[6]);                              // +06 srcSlot (seat do dono — FALTAVA antes)
             Assert.Equal(0x0a, d[7]);                              // +07 owner (corpo = NpcOwner)

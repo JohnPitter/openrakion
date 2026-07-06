@@ -166,24 +166,31 @@ namespace RakionServer.World.Network
         }
 
         /// <summary>
-        /// Relay dos datagramas do AVATAR NPC do bot (0x307/0x30b) aos humanos em fields com bots. Igual ao
-        /// <see cref="RelayToAllFields"/>, mas SEM o handshake 0x319 (o NPC não é jogador — não há filtro de
-        /// endpoint por-player a destravar; a entidade é endereçada por owner*9+sub na tabela do host).
+        /// Relay dos datagramas do AVATAR NPC do bot (0x307/0x8307 create, 0x30b move) aos humanos em fields com
+        /// bots. O CREATE reliable (0x8307) passa por <c>IsApplyReliableUDP@0x36109e20</c>, cujo 1º gate
+        /// (<c>IsValidUDP_ForPlayer</c>) exige o endpoint do remetente gravado em <c>playerRec[seat]+0x1e8/+0x1ec</c>
+        /// — por isso REGISTRAMOS o 0x319 do seat-dono ANTES do relay (a RE mostrou que pular isso derrubava o
+        /// create; ver docs/hitbox-re-findings.md §VIRADA). O move 0x30b unreliable é endereçado por owner*9+sub
+        /// na tabela do host e não precisa do gate.
         /// </summary>
         private void RelayNpcToFields(byte[] pkt, IPEndPoint from)
         {
             if (_sock == null) return;
+            bool isReliableCreate = pkt.Length > 6 && pkt[0] == 0x07 && pkt[1] == 0x83;   // 0x8307
+            byte ownerSeat = pkt.Length > 6 ? pkt[6] : (byte)0xff;
             int n = 0;
             foreach (var sess in _world.Sessions)
             {
                 if (sess.UdpEndpoint == null || (!sess.InField && sess.Status != 3)) continue; // Status 3 = stage (UserStatus.InField): robusto a relog que zera o bool InField
                 if (sess.UdpEndpoint.Equals(from)) continue;   // não ecoa ao sender
                 var f = _world.GetField(sess.FieldId);
-                if (f == null) continue;   // relaya NPC (0x307/0x30b) a TODOS no field — a Cell de um humano tem de
-                //   aparecer pros outros mesmo SEM bot (era bug: exigia BotCount>0). Necessário p/ a captura do blob.
+                if (f == null) continue;   // relaya NPC a TODOS no field — a Cell de um humano tem de aparecer pros outros.
+                // Create reliable: grava o endpoint do servidor como playerRec[ownerSeat] no host (0x319) ANTES,
+                // senão o gate 1 do IsApplyReliableUDP descarta o 0x8307 (RE do Muro 2).
+                if (isReliableCreate && ownerSeat != 0xff) EnsureBotEndpointRegistered(sess.UdpEndpoint, ownerSeat);
                 try { _sock.SendTo(pkt, sess.UdpEndpoint); n++; } catch { }
             }
-            if (n > 0) Log.Ok("udp", "RELAY NPC -> {0} humano(s) ({1}B)", n, pkt.Length);
+            if (n > 0) Log.Ok("udp", "RELAY NPC{0} -> {1} humano(s) ({2}B)", isReliableCreate ? " create(reliable+0x319)" : "", n, pkt.Length);
             else Log.Debug("udp", "RELAY NPC: 0 humanos no field ({0}B)", pkt.Length);
         }
 

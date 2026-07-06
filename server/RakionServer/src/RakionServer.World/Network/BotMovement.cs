@@ -54,6 +54,16 @@ namespace RakionServer.World.Network
         /// </summary>
         public const ushort MsgCreateNpc = 0x0307;
 
+        /// <summary>Bit RELIABLE do msgType da SE1 (0x8000). O create-NPC do jogo é enviado por
+        /// <c>SendPacket_Reliable</c> (RE rakion-new: <c>SendInfoCreateNpcTo</c>), e o dispatcher de create
+        /// (<c>HandleMessage</c>, msgtypes 0x307–0x312) SÓ é alcançado pela via reliable — o 0x0307 unreliable
+        /// cai no path de movimento (<c>GetActionFromMessage</c>) e nunca instancia. ⇒ o create do bot TEM de
+        /// ser <c>0x8307</c>. Passa em <c>IsApplyReliableUDP@0x36109e20</c> se: (1) vier do endpoint registrado
+        /// (0x319 grava playerRec[seat]+0x1e8/+0x1ec) E (2) tiver u32 seq monotônico (>[+0x1f4]); então o gate
+        /// de FASE do exe (<c>rakion.bin@0x40b8d0</c>: <c>[sessão+0x180]==0x1d</c>=stage) libera o HandleMessage.
+        /// Ver docs/hitbox-re-findings.md §VIRADA.</summary>
+        public const ushort ReliableBit = 0x8000;
+
         /// <summary>
         /// Move/estado do NPC (handler @0x3610dd6c). Chaveado pela tabela NPC <c>this+0x1d70</c> via
         /// <c>owner*9+sub</c> com <see cref="NpcMoveType"/>=2; <c>vtable+0x194</c> aplica a posição. NÃO é o
@@ -146,8 +156,15 @@ namespace RakionServer.World.Network
         /// nativo de entidade REMOTA exige o canal de replicação de sessão da SE1 = peer-host real (headless-H3,
         /// barrado pela gamemp packed; OU 2º cliente, vetado). O caminho FUNCIONAL é o type-7 (0x4b + 0x30a):
         /// renderiza + anda + dano server-arbitrado. Ver docs/cell-monster-re.md §2.4/§2.5.
+        ///
+        /// **RELIGADO (experimento RE-backed 2026-07-06):** a refutação anterior mandava o create UNRELIABLE
+        /// (0x0307) — que cai no path de movimento e NUNCA chega no dispatcher de create. A RE (rakion.bin
+        /// desempacotado) mostrou que o create SÓ chega via RELIABLE (0x8307) e que o relay NPC pulava o 0x319
+        /// (falhando o gate de endpoint do IsApplyReliableUDP). Ambos corrigidos: create 0x8307 + 0x319 no relay.
+        /// Se o NPC nativo renderizar+for hittável → HIT×N de graça (cell-monster §5). Reverter = <c>false</c>
+        /// (volta ao type-7 funcional). Ver docs/hitbox-re-findings.md §VIRADA.
         /// </summary>
-        public static bool UseNpcAvatar => false;
+        public static bool UseNpcAvatar => true;
 
         /// <summary>
         /// Modo PONTE move-o-bot-por-SetPlacement (robótico/sem colisão): DESLIGADO. Com o NPC real, o movimento
@@ -167,9 +184,9 @@ namespace RakionServer.World.Network
         public static byte[] BuildCreateNpcDatagram(BotPlayer bot, ushort classId, uint seq, byte srcSlot)
         {
             using var w = new PacketWriter();
-            w.WriteWord(MsgCreateNpc);                                     // +00 u16 0x0307 (UNRELIABLE — dispatch por-opcode)
-            w.WriteUInt32(seq);                                            // +02 u32 seq
-            w.WriteByte(srcSlot);                                          // +06 u8 srcSlot (seat do dono — transporte, como 0x30a)
+            w.WriteWord((ushort)(MsgCreateNpc | ReliableBit));            // +00 u16 0x8307 (RELIABLE — só a via reliable chega no HandleMessage/create)
+            w.WriteUInt32(seq);                                            // +02 u32 seq (monotônico → passa o gate de seq @0x36109de0)
+            w.WriteByte(srcSlot);                                          // +06 u8 srcSlot (seat do dono — casa o endpoint 0x319 no IsValidUDP_ForPlayer)
             w.WriteBytes(EncodeCreateNpcBody(bot, bot.NpcOwner, bot.NpcSub, classId)); // +07 corpo 43B
             return w.ToArray();                                           // 50B
         }
