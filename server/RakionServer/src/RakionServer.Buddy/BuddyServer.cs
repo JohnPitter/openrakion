@@ -190,6 +190,28 @@ namespace RakionServer.Buddy
             Log.Ok("buddy", "[{0}] LOGIN '{1}' (nick '{2}') — {3} amigo(s), token={4}",
                 conn.Ip, conn.Account, conn.Nick, buddies.Count, conn.Token);
             AnnounceOnline(conn);
+            ScheduleWindowMountRefresh(conn, loginList);
+        }
+
+        /// <summary>O cliente cria a janela do F9 OCULTA no login e monta as LINHAS só depois (durante o setup do
+        /// lobby); o RET_LOGIN/presença que chega ANTES disso é descartado — por isso a lista só aparecia ao ENTRAR
+        /// NO SERVER DE NOVO (a 2ª entrada re-manda a MESMA sequência com a janela já pronta). Aqui re-emitimos a
+        /// lista + presença como ONE-SHOTs pós-login, cobrindo a variação do tempo de montagem. NÃO é loop periódico
+        /// (re-push CONTÍNUO de presença offline limpava a lista); o RET_LOGIN é find-or-insert por nick → idempotente,
+        /// não duplica. Simula server-side o que a 2ª entrada faz — sem depender de DLL injetada.</summary>
+        private void ScheduleWindowMountRefresh(BuddyConn conn, byte[] loginList)
+        {
+            foreach (int delayMs in new[] { 2000, 5000 })
+            {
+                int d = delayMs;
+                _ = Task.Run(async () =>
+                {
+                    try { await Task.Delay(d, _cts.Token); } catch { return; }
+                    if (!conn.LoggedIn) return;
+                    try { Send(conn, BuddyProtocol.RET_LOGIN, loginList); AnnounceOnline(conn); }
+                    catch (Exception ex) { Log.Debug("buddy", "[{0}] re-emissão F9 ({1}ms): {2}", conn.Ip, d, ex.Message); }
+                });
+            }
         }
 
         /// <summary>SVC_REMOVE_BUDDY (0x3002): o cliente manda o nick do amigo a remover (ASCII null-terminated).
