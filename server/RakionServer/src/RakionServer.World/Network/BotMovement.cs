@@ -432,10 +432,34 @@ namespace RakionServer.World.Network
         /// Corpo do 0x4b AddPlayer (canal FIELD) que INSTANCIA o avatar 3D do bot no stage do host — DECODE
         /// byte-a-byte da captura. O frame completo é [u16 0x4b]+este corpo = [u8 seat][u16 67][blob 67B]; o
         /// blob leva 2 blocos de posição (atual+anchor) + ids + stats, SEM nome/tag (a identidade já veio no
-        /// 0x38 do roster). Posição/stats = literal da captura (a forma que o cliente já viu — lição-mestra;
-        /// parametrizar por classe/mapa do <paramref name="bot"/> é melhoria futura). Decode §1.1.
+        /// 0x38 do roster). POSIÇÃO/ÂNCORA = o estado REAL do bot (o spawn do mapa) — a constante (97,97) da
+        /// captura era de OUTRO mapa e ancorava o corpo físico da entidade promovida longe do modelo visual
+        /// ("parede invisível"). Ordem dos floats: [ground X][ground Z][altura] (captura: 97,97,0). Decode §1.1.
         /// </summary>
-        public static byte[] BuildStageAddPlayer(BotPlayer bot, int seat) => BuildStageAddPlayer(seat);
+        public static byte[] BuildStageAddPlayer(BotPlayer bot, int seat)
+        {
+            using var w = new PacketWriter();
+            w.WriteByte((byte)seat);          // seat/senderSlot (distingue qual avatar)
+            w.WriteWord(67);                  // blobLen = 0x0043
+            w.WriteByte(StageSpawnLead);      // +00 lead
+            w.WriteSingle(bot.X);             // +01 ground X REAL do spawn do bot
+            w.WriteSingle(bot.Z);             // +05 ground Z REAL
+            w.WriteSingle(bot.Y);             // +09 altura (0 no chão — captura: 3º float = 0)
+            w.WriteSingle(0f);                // +0d 4o float do 1o bloco
+            w.WriteUInt32(StageSpawnAnimId);  // +11 id/anim
+            w.WriteUInt32(1);                 // +15 flag (ativo/visivel)
+            w.WriteByte(0);                   // +19 pad de alinhamento
+            w.WriteSingle(bot.X);             // +1a anchor X = posição atual (spawn parado)
+            w.WriteSingle(bot.Z);             // +1e anchor Z
+            w.WriteSingle(StageSpawnFacing);  // +22 facing/escala
+            w.WriteUInt32(90);                // +26 statA (captura)
+            w.WriteUInt32(100);               // +2a statB
+            w.WriteUInt32(110);               // +2e statC
+            w.WriteUInt32(100);               // +32 statD
+            w.WriteUInt32(15);                // +36 statE
+            w.WriteBytes(new byte[9]);        // +3a pad final (zeros) -> fecha 67
+            return w.ToArray();
+        }
 
         /// <summary>
         /// 0x4b AddPlayer de um HUMANO relayado a OUTRO humano — usa a POSIÇÃO e os STATS REAIS que o peer subiu no

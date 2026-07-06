@@ -233,9 +233,11 @@ namespace RakionServer.World.Tests
             "4b000a4300080000c2420000c24200000000000000001f00000001000000000000c2420000c24248e17a3f5a000000640000006e000000640000000f000000000000000000000000";
 
         [Fact]
-        public void BuildStageAddPlayer_ReproducesCapturedBlob()
+        public void BuildStageAddPlayer_ReproducesCapturedBlob_FromState()
         {
-            var bot = new BotPlayer(1, "Rok", 5, 1, team: 1);
+            // O blob agora é SINTETIZADO do estado do bot (posição/âncora reais); com o bot NO ponto da
+            // captura (ground 97,97, altura 0) o frame reproduz a captura byte-a-byte — valida o layout.
+            var bot = new BotPlayer(1, "Rok", 5, 1, team: 1) { X = 97f, Z = 97f, Y = 0f };
             byte[] body = BotMovement.BuildStageAddPlayer(bot, seat: 0x0a);
             // a captura é o frame inteiro [u16 0x4b]+corpo; o builder devolve o corpo (sem o opcode 4b00).
             Assert.Equal(70, body.Length);                       // [u8 seat][u16 67][blob 67]
@@ -243,14 +245,17 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
-        public void BuildStageAddPlayer_OnlySeatByteVariesBetweenPlayers()
+        public void BuildStageAddPlayer_CarriesBotPosition_OnlySeatVaries()
         {
-            var bot = new BotPlayer(1, "Rok", 5, 1, team: 0);
+            var bot = new BotPlayer(1, "Rok", 5, 1, team: 0) { X = 6.3f, Z = -17.8f, Y = 0f };
             byte[] red = BotMovement.BuildStageAddPlayer(bot, seat: 0x00);
             byte[] blue = BotMovement.BuildStageAddPlayer(bot, seat: 0x0a);
             Assert.Equal(0x00, red[0]);
             Assert.Equal(0x0a, blue[0]);
             Assert.Equal(blue[1..], red[1..]);                   // blob idêntico — só o seat distingue (= captura)
+            Assert.Equal(6.3f, BitConverter.ToSingle(red, 4));   // +01 ground X real do bot
+            Assert.Equal(-17.8f, BitConverter.ToSingle(red, 8)); // +05 ground Z real
+            Assert.Equal(6.3f, BitConverter.ToSingle(red, 29));  // +1a anchor X = posição atual
         }
 
         [Fact]
