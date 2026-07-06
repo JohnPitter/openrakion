@@ -135,14 +135,19 @@ namespace RakionServer.World.Network
         /// + ANDA + reage a hit (recuo server-arbitrado) — validado in-game. <c>true</c> = 0x307 CreateNpc (entidade
         /// NPC real, HIT×N nativo).
         ///
-        /// **0x307 DESLIGADO (2026-07-01) — barrado estruturalmente:** o create 0x307 é ENTREGUE mas o cliente só
-        /// aceita o frame RELIABLE (0x8307) de um slot com **canal reliable estabelecido**, e o handshake do
-        /// mini-peer NÃO COMPLETA (o cliente único não hospeda a conexão do bot: manda eco de lockstep 0x0305, não
-        /// o REP_CONNECTREMOTE). Confirmado in-game: o 0x307 do servidor NÃO renderiza. O número NATIVO do hit exige
-        /// um host de peer REAL (headless-H3 — sub-projeto aberto, crash do AddPlayer em docs/headless-engine-re.md
-        /// §12; OU 2º cliente — vetado). Enquanto isso, type-7 é o caminho que FUNCIONA (movimento+IA+recuo de hit).
+        /// **0x307 RELIGADO via UNRELIABLE (2026-07-06) — o combo nunca testado limpo:** as tentativas antigas de
+        /// create RELIABLE (0x8307) precisavam do canal reliable que só um peer-host real estabelece (mini-peer não
+        /// completa; headless barrado pela gamemp packed). MAS o dispatch do cliente (<c>0x3610d350</c>, opcodes
+        /// 0x307-0x312) é POR-OPCODE e **mascara o bit 0x8000** — não checa origem/peer na entrada. O move NPC
+        /// <c>0x30b</c> UNRELIABLE já é processado pelo cliente (o gameplay do nosso servidor chega ao dispatch).
+        /// ⇒ o create <c>0x0307</c> UNRELIABLE deve cair no MESMO handler (AddRemoteGeneralNpc → CreateNpc → CNpc
+        /// REAL com colisão) SEM o canal reliable. O blob é GOLDEN (6 capturas reais). Com o mini-peer REMOVIDO
+        /// (2026-07-06) não há canal meio-conectado p/ deixar o render inconsistente. Se renderizar, o HIT×N vem de
+        /// graça (§5.3 do cell-monster-re: entidade viva + team inimigo + HP). Team = default BLUE da classe Golem →
+        /// inimigo do humano RED (team 0 = host). Faz-ou-quebra: se NÃO renderizar, o veredito honesto é que o hit
+        /// nativo exige peer-host real (headless-H3 / 2º cliente vetado). Ver docs/cell-monster-re.md §2.4.
         /// </summary>
-        public static bool UseNpcAvatar => false;
+        public static bool UseNpcAvatar => true;
 
         /// <summary>
         /// Modo PONTE move-o-bot-por-SetPlacement (robótico/sem colisão): DESLIGADO. Com o NPC real, o movimento
@@ -151,23 +156,22 @@ namespace RakionServer.World.Network
         public static bool UseClientBridge => false;
 
         /// <summary>
-        /// Datagrama 0x307 CreateNpc completo (50B): <c>[u16 0x8307][u32 seq][u8 srcSlot][corpo 43B]</c> — RELIABLE,
-        /// igual à captura real da Cell. O create REAL do cliente vai reliable e é o ÚNICO formato que renderizou
-        /// (unreliable 0x0307 NUNCA renderizou → o handler do create exige o bit reliable, "+0x1d8 gate").
-        /// O render era INCONSISTENTE porque o handshake mini-peer (<see cref="WorldServer"/> EnsureBotPeerConnected)
-        /// disparava espúrio no modo NPC e deixava o canal reliable do slot do bot num estado meio-conectado que
-        /// DESCARTAVA o create; com o peer BLINDADO em modo NPC, o cliente processa o 0x8307 tolerante (como no
-        /// 1º render OK). Entrega reforçada pelo re-envio periódico + <see cref="BotPlayer.RelSeq"/> contígua.
-        /// <c>srcSlot</c> = seat do dono (transporte). Corpo = <see cref="EncodeCreateNpcBody"/>.
+        /// Datagrama 0x307 CreateNpc completo (50B): <c>[u16 0x0307][u32 seq][u8 srcSlot][corpo 43B]</c> — UNRELIABLE.
+        /// O CORPO (43B) é a estrutura GOLDEN das 6 capturas reais de Cell; só o TRANSPORTE muda p/ unreliable: o
+        /// dispatch do cliente é por-opcode (mascara 0x8000) e o create <c>0x0307</c> cai no mesmo handler
+        /// (AddRemoteGeneralNpc → CreateNpc) que o move <c>0x30b</c> unreliable — sem depender do canal reliable que
+        /// o <c>0x8307</c> exigia (e que o mini-peer não estabelecia). Emitido UMA vez por spawn (re-enviar re-cria a
+        /// entidade → "unknown error" → destrói). <c>srcSlot</c> = seat do dono (transporte). Corpo =
+        /// <see cref="EncodeCreateNpcBody"/>. Ver <see cref="UseNpcAvatar"/> p/ o racional completo.
         /// </summary>
         public static byte[] BuildCreateNpcDatagram(BotPlayer bot, ushort classId, uint seq, byte srcSlot)
         {
             using var w = new PacketWriter();
-            w.WriteWord((ushort)(MsgCreateNpc | 0x8000));                  // +00 u16 0x8307 (RELIABLE — único que renderiza)
+            w.WriteWord(MsgCreateNpc);                                     // +00 u16 0x0307 (UNRELIABLE — dispatch por-opcode)
             w.WriteUInt32(seq);                                            // +02 u32 seq
             w.WriteByte(srcSlot);                                          // +06 u8 srcSlot (seat do dono — transporte, como 0x30a)
             w.WriteBytes(EncodeCreateNpcBody(bot, bot.NpcOwner, bot.NpcSub, classId)); // +07 corpo 43B
-            return w.ToArray();                                           // 50B (= captura real)
+            return w.ToArray();                                           // 50B
         }
 
         /// <summary>

@@ -359,14 +359,10 @@ namespace RakionServer.World.Domain
         /// <summary>Vetor de ação/mira (direção do golpe/movimento) — campo action-vec do CNetMessage 0x30a.</summary>
         public float AimX, AimY, AimZ;
 
-        /// <summary>Contador de sequência do datagrama UDP de gameplay (= *(CNet+4)++ do cliente original).</summary>
+        /// <summary>Contador de sequência do datagrama UDP de gameplay (= *(CNet+4)++ do cliente original). Serve
+        /// tanto os moves (0x30a/0x30b) quanto o create NPC (0x0307) — todos unreliable, sem exigência de seq
+        /// contígua (o canal reliable 0x8307 foi abandonado: exigia um peer-host que o cliente único não hospeda).</summary>
         public uint UdpSeq;
-
-        /// <summary>Contador de sequência DEDICADO do canal RELIABLE (0x8307 CreateNpc). Separado do
-        /// <see cref="UdpSeq"/> porque o canal reliable exige seq CONTÍGUA (0,1,2...): compartilhar o UdpSeq
-        /// com os moves unreliable deixava os creates com seqs espaçadas (gaps) → o cliente bufferizava/rejeitava
-        /// → render INCONSISTENTE. Cada emissão do create (spawn/re-send/respawn) usa <c>RelSeq++</c>.</summary>
-        public uint RelSeq;
 
         // O estado de REDE do bot (peer de netcode + socket UDP) NÃO mora aqui: é infra e vive num
         // RakionServer.World.Network.BotNetLink dono do BotManager (mapa keyed pelo bot). Assim o domínio
