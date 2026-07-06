@@ -39,6 +39,39 @@ e `size < 0x13881`; `CD = *(u16*)(pkt+2)`; payload em `pkt+4`, len = `size-4`.
 Requisições do client (`SVC_`) seguem `SVC = RET & ~1` (req par, ret ímpar):
 `SVC_PRECREDENTIAL=0x1000`, `SVC_LOGIN=0x1010`, `SVC_ADD_BUDDY=0x3000`, etc.
 
+## Convite/add de amigo = P2P (RE 2026-07-05, decisivo)
+
+O add de amigo **NÃO** é server-authoritative no retail — é um handshake **P2P direto** (UDP cifrado
+cliente-a-cliente); o servidor só broka endereços e persiste no fim. Cravado do dispatch P2P do
+`Buddy2.dll` (`CCommP2P`, `switch(opcode & 0xffff)`):
+
+| opcode | nome | papel |
+|--------|------|-------|
+| 0xc012 | P2P_SVC_SEND_INVITATION | A → B: "quero te adicionar" (abre o popup em B) |
+| 0xc013 | P2P_RET_SEND_INVITATION | B → A: resposta do popup (aceita/recusa) |
+| 0xc041 | P2P_SVC_ADDBUDDY | A → B: manda o registro completo de A |
+| 0xc042 | P2P_RET_ADDBUDDY | B → A: no ACEITE (`*param_5 != 0`) o cliente chama `FUN_100011e0` = **SVC_ADD_BUDDY (0x3000) ao SERVIDOR** → persiste |
+| 0xc043 | P2P_SVC_REMOVEBUDDY | delete P2P (+ SVC_REMOVE 0x3002 ao servidor) |
+| 0xc011/0xc015/0xc018 | SEND_MSG/SMS/GIFT | PM/mensagens |
+| 0xc051/0xc053 | NTF/SVC_STATE | presença P2P |
+
+Senders (métodos do vtable `CCommP2P`, chamados pelo rakion.exe): invitation `FUN_10001e50`,
+addbuddy `FUN_10002190`. O socket P2P binda porta **0** (efêmera, `FUN_10002dd0`: `socket(2,2,0)`+
+`bind` com sa_data porta=0) e o cliente ANUNCIA a porta via `getsockname` no handler de
+RET_PRECREDENTIAL (opcode 0x1b) — o endpoint P2P é a porta anunciada, **não** a efêmera do token-echo.
+
+**Fluxo completo (retail):** F9 add → World 0x19 (lookup do account-id) → A manda P2P_SVC_SEND_INVITATION
+a B (direto, endereço brokado pela presença) → popup em B → aceite (P2P_RET) → troca ADDBUDDY P2P →
+no aceite CADA lado manda **SVC_ADD_BUDDY (0x3000)** ao servidor → servidor persiste + RET_ADD_BUDDY (0x3001).
+
+**Estado atual (por que "aparece direto sem aceite"):** o P2P direto NÃO estabelece (endpoint mal brokado)
+e o cliente cai no **SVC_TUNNEL_PACKET (0x2020)** = relay TCP — que o nosso server DESCARTA (regra "sem
+relay"). Log empírico: 27× 0x2020, **zero** 0x3000. Sem o invitation entregue, nunca há popup/aceite; a
+amizade só existe porque o World 0x19 a persiste **na hora** (atalho `BuddyService.ResolveAndAddBuddy`).
+Para o aceite funcionar sem relay: brokar o endpoint P2P anunciado (getsockname, não o token-echo) +
+handler real do SVC_ADD_BUDDY + tirar o atalho do 0x19. Risco: P2P na MESMA máquina (localhost) é o caso
+frágil (o teste do autor é 1 PC); em 2 máquinas o P2P direto é limpo.
+
 ## Handshake de login (reconstruído de FUN_10007420)
 1. Client → `SVC_PRECREDENTIAL (0x1000)`. Server → `RET_PRECREDENTIAL (0x1001)` com o
    endereço externo do client (`[u32 ip][u16 port]`) — usado pelo client p/ P2P (getsockname).

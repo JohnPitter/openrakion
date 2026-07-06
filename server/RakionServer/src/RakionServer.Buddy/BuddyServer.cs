@@ -145,9 +145,11 @@ namespace RakionServer.Buddy
                 case BuddyProtocol.SVC_SET_EXTLIST:   break;
                 case BuddyProtocol.SVC_GROUP_GETLIST: SendGroupListEmpty(conn); break;
 
-                // PM é P2P PURO -> o tunnel TCP (relay) NÃO é usado. Se o cliente cair no fallback, ignora.
+                // PM/convite é P2P PURO -> o tunnel TCP (relay) NÃO é usado. Se o cliente cair no fallback
+                // (P2P direto não alcançou o peer), DECODIFICA p/ diagnóstico (opcode P2P + alvo + endpoint)
+                // — sem relayar. Crava por que o direto falhou e como A obtém o endpoint de B.
                 case BuddyProtocol.SVC_TUNNEL_PACKET:
-                    Log.Debug("buddy", "[{0}] SVC_TUNNEL_PACKET ignorado (PM é P2P direto, sem relay)", conn.Ip);
+                    DiagTunnelPacket(conn, payload);
                     break;
 
                 default:
