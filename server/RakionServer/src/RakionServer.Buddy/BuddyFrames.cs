@@ -92,6 +92,20 @@ namespace RakionServer.Buddy
             return w.ToArray();
         }
 
+        /// <summary>RET_REMOVE_BUDDY (0x3003): [u16 result=0][id ASCII 0x14 do amigo removido]. O cliente
+        /// (OnMsg @0x3003) casa esse id contra cada linha da lista (strnicmp 0x14) e REMOVE a que bate
+        /// (FUN_100088a0). Sem o id (só [u16 0]) o cliente lê lixo do buffer, não casa e NÃO tira a linha da UI —
+        /// era a causa do "deletar 2x p/ sumir".</summary>
+        public static byte[] RemoveResult(string nick)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0);                    // result = 0 (sucesso) @+0
+            byte[] id = new byte[IdLen];
+            WriteAscii(id, 0, IdLen, nick);    // id ASCII @+2 (0x14) — chave da remoção na UI
+            w.WriteBytes(id);
+            return w.ToArray();
+        }
+
         private static byte[] Ip4(byte[]? ip) => ip is { Length: 4 } ? ip : new byte[4];
 
         /// <summary>Escreve ASCII em [off..off+max), deixando ao menos 1 NUL terminador; resto fica 0.</summary>

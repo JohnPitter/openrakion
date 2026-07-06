@@ -236,7 +236,9 @@ namespace RakionServer.Buddy
                 var fresh = await _db.LoadBuddyListAsync(conn.Account);   // recarrega p/ a presença não ver o ex-amigo
                 conn.BuddyNicks = fresh.ConvertAll(b => b.Nick);
             }
-            ReplyOk(conn, BuddyProtocol.RET_REMOVE_BUDDY);
+            // ecoa o ID do amigo na resposta -> o cliente casa e TIRA a linha da UI na 1a vez (sem o ID lia lixo
+            // do buffer e só sumia no 2o delete).
+            Send(conn, BuddyProtocol.RET_REMOVE_BUDDY, BuddyFrames.RemoveResult(nick));
             Log.Ok("buddy", "[{0}] REMOVE_BUDDY '{1}' (dono '{2}')", conn.Ip, nick, conn.Account);
         }
 

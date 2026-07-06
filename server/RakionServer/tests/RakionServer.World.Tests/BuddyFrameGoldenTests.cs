@@ -54,6 +54,20 @@ namespace RakionServer.World.Tests
             Assert.Equal(2, BitConverter.ToUInt16(f, 6));             // count @+6
         }
 
+        // ---- RET_REMOVE_BUDDY (remove a linha na UI pelo id) ---------------------------------------
+
+        [Fact]
+        public void RemoveResult_ResultThenId0x14()
+        {
+            // [u16 result=0][id ASCII 0x14] — o cliente (OnMsg @0x3003) casa o id (strnicmp 0x14) e tira a linha.
+            // Sem o id (só [u16 0]) lia lixo do buffer -> "deletar 2x". Total = 2 + 0x14 = 0x16.
+            byte[] f = BuddyFrames.RemoveResult("Heroi2");
+            Assert.Equal(2 + 0x14, f.Length);
+            Assert.Equal(0, BitConverter.ToUInt16(f, 0));               // result = 0 @+0
+            Assert.Equal("Heroi2", Encoding.ASCII.GetString(f, 2, 6));  // id ASCII @+2
+            Assert.Equal(0, f[2 + 6]);                                  // null-terminado
+        }
+
         // ---- NTF_USER_STATE (presença) -------------------------------------------------------------
 
         [Fact]
