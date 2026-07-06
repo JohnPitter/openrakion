@@ -156,6 +156,15 @@ namespace RakionServer.World.Network
         public static bool UseClientBridge => false;
 
         /// <summary>
+        /// PROBE do peer real (make-or-break do HIT×N nativo): além do type-7, o bot tenta o handshake de sessão
+        /// SE1 DIRETO com o host (mini-peer) p/ ser registrado como peer com colisão. Liga o diagnóstico que
+        /// classifica se o host ENGAJA o CONNECT do bot ou só ackeia. Ver <see cref="BotManager"/> (partial Peer)
+        /// e docs/peer-registration-plan.md. Efeito colateral esperado: o bot CONGELA (o 0x0304 do peer quebra o
+        /// gate do 0x30a type-7) — é diagnóstico, lê-se o log [peer].
+        /// </summary>
+        public static bool BotPeerProbe => true;
+
+        /// <summary>
         /// Datagrama 0x307 CreateNpc completo (50B): <c>[u16 0x0307][u32 seq][u8 srcSlot][corpo 43B]</c> — UNRELIABLE.
         /// O CORPO (43B) é a estrutura GOLDEN das 6 capturas reais de Cell; só o TRANSPORTE muda p/ unreliable: o
         /// dispatch do cliente é por-opcode (mascara 0x8000) e o create <c>0x0307</c> cai no mesmo handler
