@@ -135,19 +135,19 @@ namespace RakionServer.World.Network
         /// + ANDA + reage a hit (recuo server-arbitrado) — validado in-game. <c>true</c> = 0x307 CreateNpc (entidade
         /// NPC real, HIT×N nativo).
         ///
-        /// **0x307 RELIGADO via UNRELIABLE (2026-07-06) — o combo nunca testado limpo:** as tentativas antigas de
-        /// create RELIABLE (0x8307) precisavam do canal reliable que só um peer-host real estabelece (mini-peer não
-        /// completa; headless barrado pela gamemp packed). MAS o dispatch do cliente (<c>0x3610d350</c>, opcodes
-        /// 0x307-0x312) é POR-OPCODE e **mascara o bit 0x8000** — não checa origem/peer na entrada. O move NPC
-        /// <c>0x30b</c> UNRELIABLE já é processado pelo cliente (o gameplay do nosso servidor chega ao dispatch).
-        /// ⇒ o create <c>0x0307</c> UNRELIABLE deve cair no MESMO handler (AddRemoteGeneralNpc → CreateNpc → CNpc
-        /// REAL com colisão) SEM o canal reliable. O blob é GOLDEN (6 capturas reais). Com o mini-peer REMOVIDO
-        /// (2026-07-06) não há canal meio-conectado p/ deixar o render inconsistente. Se renderizar, o HIT×N vem de
-        /// graça (§5.3 do cell-monster-re: entidade viva + team inimigo + HP). Team = default BLUE da classe Golem →
-        /// inimigo do humano RED (team 0 = host). Faz-ou-quebra: se NÃO renderizar, o veredito honesto é que o hit
-        /// nativo exige peer-host real (headless-H3 / 2º cliente vetado). Ver docs/cell-monster-re.md §2.4.
+        /// **0x307 DESLIGADO — hipótese unreliable TESTADA E REFUTADA in-game (2026-07-06):** o último cabo solto do
+        /// caminho NPC era o create UNRELIABLE (0x0307). Racional (RE): o dispatch do cliente (<c>0x3610d350</c>) é
+        /// por-opcode e mascara o bit 0x8000, e o move NPC 0x30b unreliable já é processado — logo o create 0x0307
+        /// unreliable deveria cair no mesmo handler. TESTADO com o blob golden + mini-peer removido (estado limpo): o
+        /// create foi ENTREGUE ao cliente do humano (log "RELAY NPC → 1 humano", 50B) mas **NENHUMA entidade
+        /// apareceu**. As 6 capturas reais confirmam o porquê: <c>owner=0</c> = o create é do JOGADOR LOCAL que
+        /// invoca a Cell no PRÓPRIO cliente; o 0x8307 no fio é o envio p/ relay, e um create relayado de fonte
+        /// NÃO-PEER não instancia a entidade no cliente que não a invocou (nem reliable nem unreliable). ⇒ render
+        /// nativo de entidade REMOTA exige o canal de replicação de sessão da SE1 = peer-host real (headless-H3,
+        /// barrado pela gamemp packed; OU 2º cliente, vetado). O caminho FUNCIONAL é o type-7 (0x4b + 0x30a):
+        /// renderiza + anda + dano server-arbitrado. Ver docs/cell-monster-re.md §2.4/§2.5.
         /// </summary>
-        public static bool UseNpcAvatar => true;
+        public static bool UseNpcAvatar => false;
 
         /// <summary>
         /// Modo PONTE move-o-bot-por-SetPlacement (robótico/sem colisão): DESLIGADO. Com o NPC real, o movimento

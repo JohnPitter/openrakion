@@ -180,6 +180,26 @@ convenção do projeto): casa os ~30 campos de uma vez e remove toda ambiguidade
 serialização vale para o caminho peer. Sem captura, resta reescrever best-effort (HP/nome/team
 conhecidos, resto=0) e **iterar via teste in-game** — o que conflita com "RE completa antes de testar".
 
+### 2.4bis VEREDITO TESTADO — create relayado (reliable OU unreliable) NÃO renderiza entidade remota (2026-07-06)
+O último cabo solto (create UNRELIABLE 0x0307) foi TESTADO in-game em estado limpo (mini-peer removido, blob
+golden, `owner`=seat, classe Golem). Racional RE que motivou o teste: o dispatch do cliente (`0x3610d350`) é
+por-opcode e mascara o bit 0x8000, e o move NPC `0x30b` unreliable já é processado ⇒ o create `0x0307` unreliable
+deveria cair no mesmo handler. **Resultado: REFUTADO.** O create foi ENTREGUE ao cliente do humano (log `RELAY NPC
+→ 1 humano`, 50B) mas **nenhuma entidade apareceu**. As 6 capturas reais (§abaixo) explicam: o create real tem
+**`owner=0`** = é do JOGADOR LOCAL invocando a Cell no PRÓPRIO cliente (que a cria localmente); o `0x8307` no fio é
+só o ENVIO p/ relay aos peers. Um create relayado de fonte **NÃO-PEER** não instancia a entidade num cliente que
+não a invocou — **nem reliable nem unreliable**. ⇒ render nativo de entidade REMOTA exige o canal de replicação de
+sessão da SE1 (peer-host real): headless-H3 (barrado pela gamemp packed, ver headless-engine-re §12) ou 2º cliente
+(vetado). **Caminho funcional = type-7** (0x4b AddPlayer + 0x30a): renderiza + anda + dano server-arbitrado; sem
+HIT×N nativo. `UseNpcAvatar=false` fixado.
+
+Capturas reais (Golem/HP400, Dragon/HP260, Nak/HP50), todas `owner=0` `sub=0`:
+```
+Dragon 0x0463 HP260  owner=00 sub=00  placement x=105.4 y=-31.8 z=-3.79  blob: HPcur=260 HPmax=260 tail=01000100000000
+Golem  0x0468 HP400  owner=00 sub=00  ...                                blob: HPcur=400 HPmax=400 tail=01000100000000
+Nak    0x0466 HP50   owner=00 sub=00  ...                                blob: HPcur=50  HPmax=50  tail=01000100000000
+```
+
 ### 2.4 Por que o 0x307 do servidor não renderizou (estado atual)
 In-game, `0x307` com Grunt (0x157) e Golem (0x468) — 84B relayados — **não apareceu**. Fatos:
 - **Grunt (CGrunt 0x157)**: classe da SeriousSam, **não registrada** no runtime do Rakion → o
