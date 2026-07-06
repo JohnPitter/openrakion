@@ -113,6 +113,18 @@ namespace RakionServer.World
                     try { s.SendEncryptedFrame(frame); } catch { }
         }
 
+        /// <summary>Broadcast do chat do canal/game-list (0x22): reecoa o texto a TODOS no channel lobby (mesmos
+        /// que a user list 0x1e mostra), INCLUINDO o remetente — o cliente não desenha o próprio 0x22 local, só o
+        /// eco do servidor (por isso "não aparecia nada"). O nome do remetente já vem embutido no texto pelo
+        /// cliente; o chanSlot = low-byte do Slot (índice do remetente no canal, como o 0x1e/0x20).</summary>
+        public void BroadcastChannelChat(ClientSession sender, string text)
+        {
+            byte[] frame = Network.LobbyFrames.ChannelChat((byte)(sender.Slot & 0xff), text);
+            foreach (var s in _sessions.Values)
+                if (s.Connected && s.Status == Domain.UserStatus.FieldLobby && !string.IsNullOrEmpty(s.CharName))
+                    try { s.SendEncryptedFrame(frame); } catch { }
+        }
+
         /// <summary>Par do append: 0x20 [slotIdx] remove o membro da user list dos que ficam (deslogou).</summary>
         public void AnnounceChannelUserLeft(ClientSession leaver)
         {

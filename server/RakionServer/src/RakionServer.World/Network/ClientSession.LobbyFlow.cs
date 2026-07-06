@@ -371,7 +371,9 @@ namespace RakionServer.World.Network
                     // ("esperando a resposta do world" / "Upgrading Now").
                     // 0x38 = JOIN de sala pela game list (Op_RoomJoin). O joiner tem FieldId=-1 (só navegando),
                     // então o catch-all "em campo" abaixo o engolia -> "entering field" travava. Rotear ao dispatch.
-                    if (opcode == 0x2d || opcode == 0x2e || opcode == 0x2f || opcode == 0x33 || opcode == 0x38 || opcode == 0x39 || opcode == 0x74) return false;
+                    // 0x22 = chat do canal/game-list (SendChannelChat@engine): sem rotear ao dispatch (Op_RoomChat)
+                    // o catch-all "em campo" abaixo o engolia -> chat da game-list não aparecia p/ ninguém.
+                    if (opcode == 0x2d || opcode == 0x2e || opcode == 0x2f || opcode == 0x33 || opcode == 0x38 || opcode == 0x39 || opcode == 0x74 || opcode == 0x22) return false;
                     // Salas BATTLE/PvP (Mode != 0): os opcodes de COMBATE vao aos handlers reais do
                     // motor de partida — 0x4d (par golem/facing: y==0 = golem inimigo destruido ->
                     // fim de round), 0x3d (troca de arma), 0x50 (reporte de exp/gold do fim de partida ->

@@ -14,10 +14,15 @@ resolve ambos os clientes pelo **MESMO IP** e assume 1 cliente/IP (ver [[2-clien
 broadcast da sala/lista não chega ao 2º. RE: o handler de game-list no `ClientSession.LobbyFlow` + a
 resolução por IP (`GetSessionByIp`).
 
-## 3. World chat não funciona
-Digitar no chat do **LOBBY/game-list** não mostra nada. (Distinto do chat da SALA `0x47`, que FUNCIONA —
-o /addbot e o botão provam.) Server-side: o handler/broadcast do world-chat. RE: achar o opcode do world
-chat + por que não ecoa.
+## 3. World chat não funciona — CORRIGIDO (2026-07-05, pendente validação in-game)
+Digitar no chat do **LOBBY/game-list** não mostrava nada. **Causa raiz (cravada por RE + log runtime):** o
+chat da game-list é `SendChannelChat@engine.dll` = **opcode 0x22** (o cliente já monta o texto como
+`"<nome> : <msg>"`), mas o catch-all `if (InField) return true` do `ClientSession.HandleLobbyFlow` o
+ENGOLIA (a game-list tem `InField=true`) — nunca chegava ao handler, nem o próprio remetente via eco (o
+cliente não desenha o 0x22 local). **Fix:** roteia 0x22 ao dispatch → `Op_RoomChat` faz
+`WorldServer.BroadcastChannelChat` a todos no channel lobby (mesmo conjunto do 0x1e), INCLUINDO o remetente,
+no wire do worldserv `FUN_0041bca0`: `[22 00][chanSlot][texto\0]`. Confirmado no `worldserver.log`
+(`NAO-PORTADO 22` = `"Heroi2 : GoHeroi"`). O chat da SALA (`0x47`) sempre funcionou (/addbot).
 
 ## 4. Adicionar amigo (Arrocha) no messenger não faz nada
 F9 → adicionar "Arrocha" (o 2º cliente) → nada acontece. Provável: identidade multi-cliente no Buddy

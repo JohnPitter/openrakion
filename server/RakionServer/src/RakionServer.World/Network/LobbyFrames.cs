@@ -234,6 +234,20 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
+        /// <summary>0x22 chat do canal/game-list (worldserv FUN_0041bca0): [22 00][chanSlot][texto\0]. O cliente
+        /// já MONTA o texto como "&lt;remetente&gt; : &lt;msg&gt;" no envio (o nome vem embutido), então o servidor
+        /// só reecoa; o chanSlot (user+0x148d) é o índice do remetente no canal. Texto limitado a 0x80 (o original
+        /// faz lstrcpynA cap 0x81).</summary>
+        public static byte[] ChannelChat(byte chanSlot, string text)
+        {
+            if (text.Length > 0x80) text = text.Substring(0, 0x80);
+            using var w = new PacketWriter();
+            w.WriteWord(0x22);
+            w.WriteByte(chanSlot);
+            w.WriteCString(text);
+            return w.ToArray();
+        }
+
         /// <summary>0x20 remove um membro da user list do canal (CRoom, worldserv 0x405240): [20 00][slotIdx].
         /// Broadcast aos que ficam quando alguém desloga — o par incremental do 0x1e-append.</summary>
         public static byte[] ChannelUserRemove(byte chanSlot)

@@ -12,11 +12,14 @@ namespace RakionServer.World.Network
     /// </summary>
     public static partial class WorldHandlers
     {
-        /// <summary>FUN_0041bca0: chat de room + comando "/roominfo &lt;id&gt;". Requer status 2 (em room).</summary>
+        /// <summary>FUN_0041bca0: chat do canal/game-list + comando "/roominfo &lt;id&gt;". Requer status 2. O
+        /// original faz broadcast à lobby-room do usuário (FUN_00404ef0: membros com status==2); aqui o equivalente
+        /// é o channel lobby (BroadcastChannelChat) — INCLUINDO o remetente, pois o cliente não desenha o próprio
+        /// 0x22 local. O texto já chega como "&lt;nome&gt; : &lt;msg&gt;" (o cliente embute o nome).</summary>
         private static void Op_RoomChat(HandlerContext ctx)
         {
             var u = ctx.User;
-            if (u.Status != 0x02) return; // so age dentro de um room de chat
+            if (u.Status != 0x02) return; // só age no channel lobby / game-list
             string text = ctx.P.CString(0x1000);
 
             int colon = text.IndexOf(':');
@@ -29,12 +32,7 @@ namespace RakionServer.World.Network
                 return;
             }
 
-            // broadcast do chat aos membros do room
-            var room = ctx.World.GetRoom(u.RoomId) ?? ctx.World.GetRoom(0);
-            if (room == null) return;
-            using var w = new PacketWriter();
-            w.WriteWord(0x22).WriteByte(0).WriteFixed(text, Math.Min(text.Length + 1, 0x81));
-            room.Broadcast(w.ToArray());
+            ctx.World.BroadcastChannelChat(u, text);
         }
 
         /// <summary>FUN_004244f0: mensagem "field list" — broadcast no field (requer in-field, status 3).</summary>

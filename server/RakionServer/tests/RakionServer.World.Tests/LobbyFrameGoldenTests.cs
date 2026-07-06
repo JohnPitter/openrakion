@@ -28,6 +28,18 @@ namespace RakionServer.World.Tests
             Assert.Equal("10004e95dd29ce3a55db20b6ad97a65cc01c000000000000", Hex(LobbyFrames.GameGuard()));
 
         [Fact]
+        public void ChannelChat_SubtypeSlotTextNul() =>   // [22 00][chanSlot][texto\0] — worldserv FUN_0041bca0
+            Assert.Equal("2200054865726f6932203a206f6900",   // slot 5, "Heroi2 : oi\0"
+                Hex(LobbyFrames.ChannelChat(5, "Heroi2 : oi")));
+
+        [Fact]
+        public void ChannelChat_CapsTextAt0x80()
+        {
+            byte[] f = LobbyFrames.ChannelChat(0, new string('a', 200));
+            Assert.Equal(2 + 1 + 0x80 + 1, f.Length);          // subtype(2)+slot(1)+texto(0x80)+nul(1)
+        }
+
+        [Fact]
         public void RemainingTime_RealLen9_ZeroPad() =>   // RE FUN_00408440: 9 bytes reais (tempo+best-players) + pad (era 00a00f lixo)
             Assert.Equal("480001b30100001414000000", Hex(LobbyFrames.RemainingTime(RefStageSec)));
 
