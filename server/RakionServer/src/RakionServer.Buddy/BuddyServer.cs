@@ -15,7 +15,8 @@ namespace RakionServer.Buddy
     /// Buddy Server (messenger F9). Escuta TCP nas portas BuddyServer (8500) e BuddyCenter (8504), fala o frame
     /// [u16 size][u16 CD][payload] do Buddy2.dll e implementa o messenger:
     ///   - HANDSHAKE   : PRECREDENTIAL -> LOGIN (abre a janela);
-    ///   - IDENTIDADE  : o login é cifrado/opaco -> resolve a conexão por IP (messenger_session que o World grava);
+    ///   - IDENTIDADE  : o login é cifrado/opaco -> resolve por IP (messenger_session que o World grava) e, com 2+
+    ///                   clientes no mesmo IP, desambigua por proximidade de porta (BuddyIdentity);
     ///   - LISTA       : RET_LOGIN com a buddylist real (registros 0x94);
     ///   - PRESENÇA    : NTF_USER_STATE aos amigos online, casado por nick (ver BuddyServer.Presence);
     ///   - DELETE      : SVC_REMOVE_BUDDY persiste a remoção recíproca;
@@ -30,7 +31,7 @@ namespace RakionServer.Buddy
         private readonly List<Socket> _listeners = new();
 
         // conexões logadas: por nick (id de rede do messenger) p/ presença + PM, por token p/ o UDP register, e
-        // por account p/ distinguir 2+ clientes do mesmo IP (cada um pega a conta ainda não atrelada a uma conexão).
+        // por account p/ o sync vivo + preferir contas livres no casamento por porta (BuddyIdentity).
         private readonly ConcurrentDictionary<string, BuddyConn> _byNick = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<ushort, BuddyConn> _byToken = new();
         private readonly ConcurrentDictionary<string, BuddyConn> _byAccount = new(StringComparer.OrdinalIgnoreCase);
@@ -76,8 +77,9 @@ namespace RakionServer.Buddy
 
         private async Task HandleAsync(Socket sock, int port, CancellationToken ct)
         {
-            string ip = (sock.RemoteEndPoint as IPEndPoint)?.Address.ToString() ?? "?";
-            var conn = new BuddyConn(sock, ip);
+            var remote = sock.RemoteEndPoint as IPEndPoint;
+            string ip = remote?.Address.ToString() ?? "?";
+            var conn = new BuddyConn(sock, ip, remote?.Port ?? 0);
             Log.Info("buddy", "[{0}] conectado em :{1}", ip, port);
             byte[] buf = new byte[65536];
             int have = 0;
@@ -160,16 +162,20 @@ namespace RakionServer.Buddy
         private async Task HandleLoginAsync(BuddyConn conn)
         {
             var sessions = await _db.ResolveSessionsByIpAsync(conn.Ip);
-            // 2+ clientes no MESMO IP (sem 2º PC): cada conexão pega a conta ainda NÃO atrelada a uma conexão buddy
-            // ativa; se todas já estão atreladas, cai na mais recente.
-            var pick = sessions.Find(s => !_byAccount.ContainsKey(s.Account));
-            if (pick.Account == null && sessions.Count > 0) pick = sessions[0];
-            if (pick.Account == null)
+            // 2+ clientes no MESMO IP (sem 2º PC): casa pela PROXIMIDADE de porta (a porta efêmera do Buddy nasce
+            // logo após a do World no mesmo processo), preferindo contas ainda não atreladas a uma conexão ativa.
+            var pool = sessions.FindAll(s => !_byAccount.ContainsKey(s.Account));
+            if (pool.Count == 0) pool = sessions;
+            if (pool.Count == 0)
             {
                 Send(conn, BuddyProtocol.RET_LOGIN, BuddyFrames.LoginList(0, Array.Empty<BuddyEntry>()));
                 Log.Warn("buddy", "[{0}] LOGIN sem identidade (sem messenger_session) -> lista vazia", conn.Ip);
                 return;
             }
+            var pick = pool[BuddyIdentity.PickNearestByPort(pool.ConvertAll(s => s.Port), conn.Port)];
+            if (sessions.Count > 1)
+                Log.Info("buddy", "[{0}:{1}] {2} sessões no IP -> casou '{3}' (porta world {4}, dist {5})",
+                    conn.Ip, conn.Port, sessions.Count, pick.Account, pick.Port, (conn.Port - pick.Port) & 0xFFFF);
             conn.Account = pick.Account;
             conn.Nick = pick.Nick.Length > 0 ? pick.Nick : pick.Account;
             var buddies = await _db.LoadBuddyListAsync(conn.Account);

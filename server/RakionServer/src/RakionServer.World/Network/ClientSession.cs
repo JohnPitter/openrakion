@@ -28,6 +28,7 @@ namespace RakionServer.World.Network
         // estado de usuario (espelha campos do objeto user[slot])
         public ushort Slot { get; }
         public string RemoteIp { get; }
+        public int RemotePort { get; }
         public bool Connected { get; private set; }          // user+0x1440
         public bool Authenticated { get; set; }              // this+0x5b18 == 0 ? login : in-game
         public bool SlotActive { get; set; }                 // user+0x1460
@@ -157,6 +158,7 @@ namespace RakionServer.World.Network
             Slot = slot;
             _server = server;
             RemoteIp = (sock.RemoteEndPoint as IPEndPoint)?.Address.ToString() ?? "?";
+            RemotePort = (sock.RemoteEndPoint as IPEndPoint)?.Port ?? 0;
         }
 
         public void Start()

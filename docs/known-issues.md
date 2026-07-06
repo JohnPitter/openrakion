@@ -22,7 +22,9 @@ chat + por que não ecoa.
 ## 4. Adicionar amigo (Arrocha) no messenger não faz nada
 F9 → adicionar "Arrocha" (o 2º cliente) → nada acontece. Provável: identidade multi-cliente no Buddy
 (2 no mesmo IP) — ver [[messenger-buddy-protocol]] (já trata 2-no-mesmo-IP, mas pode ter regredido no
-merge ou o add 0x19 recíproco não fechou). RE: `BuddyServer` (porta 8500) + `messenger_session` por IP.
+merge ou o add 0x19 recíproco não fechou). **MITIGADO (2026-07-05, pendente validação in-game):** o World
+grava a porta TCP na `messenger_session` e o Buddy casa conexão↔conta por **proximidade de porta**
+(`BuddyIdentity.PickNearestByPort`) — cada janela F9 do mesmo IP vira uma identidade distinta.
 
 ## Hipótese comum (2, 3, 4)
 Os três cheiram à MESMA raiz: o servidor .NET resolve o jogador por **IP** e assume **1 cliente/IP**

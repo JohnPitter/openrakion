@@ -11,8 +11,9 @@ namespace RakionServer.Buddy
 
     /// <summary>
     /// Acesso ao banco `rakion` para o Buddy. Resolve a identidade da conexão (o login do messenger é cifrado,
-    /// então o Buddy não sabe quem conectou; o World grava <c>messenger_session(account, char_name, ip)</c> no
-    /// login e o Buddy resolve por IP), carrega a lista de amigos (buddylist + nick) e remove amizade. A ESCRITA
+    /// então o Buddy não sabe quem conectou; o World grava <c>messenger_session(account, char_name, ip, port)</c>
+    /// no login — resolve por IP + proximidade de porta), carrega a lista de amigos (buddylist + nick) e remove
+    /// amizade. A ESCRITA
     /// da amizade (add) mora no World (handler 0x19); aqui só leitura + remove. SQL sempre parametrizado.
     /// </summary>
     public sealed class BuddyDatabase
@@ -35,23 +36,24 @@ namespace RakionServer.Buddy
             catch (Exception ex) { Log.Error("buddy", "DB falhou: {0}", ex.Message); return false; }
         }
 
-        /// <summary>Todas as identidades (account, nick) de um IP — o World grava uma messenger_session por conta
-        /// logada. Ordenadas da MAIS RECENTE p/ a mais antiga. Vazio = sem sessão de world nesse IP (cliente não
-        /// logado / DB indisponível). Devolver a LISTA (não só a 1ª) deixa o Buddy distinguir 2+ clientes do mesmo
-        /// IP (127.0.0.1 sem 2º PC): cada conexão pega a conta ainda não atrelada a uma conexão buddy ativa.</summary>
-        public async Task<List<(string Account, string Nick)>> ResolveSessionsByIpAsync(string ip)
+        /// <summary>Todas as identidades (account, nick, porta TCP do login no World) de um IP — o World grava uma
+        /// messenger_session por conta logada. Ordenadas da MAIS RECENTE p/ a mais antiga. Vazio = sem sessão de
+        /// world nesse IP (cliente não logado / DB indisponível). Devolver a LISTA (não só a 1ª) deixa o Buddy
+        /// distinguir 2+ clientes do mesmo IP (127.0.0.1 sem 2º PC): o casamento conexão↔conta é por PROXIMIDADE
+        /// de porta (<see cref="BuddyIdentity.PickNearestByPort"/>).</summary>
+        public async Task<List<(string Account, string Nick, int Port)>> ResolveSessionsByIpAsync(string ip)
         {
-            var list = new List<(string, string)>();
+            var list = new List<(string, string, int)>();
             try
             {
                 await using var c = new MySqlConnection(_conn);
                 await c.OpenAsync();
                 await using var cmd = new MySqlCommand(
-                    "SELECT account, char_name FROM messenger_session WHERE ip=@ip ORDER BY login_ts DESC", c);
+                    "SELECT account, char_name, port FROM messenger_session WHERE ip=@ip ORDER BY login_ts DESC", c);
                 cmd.Parameters.AddWithValue("@ip", ip);
                 await using var r = await cmd.ExecuteReaderAsync();
                 while (await r.ReadAsync())
-                    list.Add((r.GetString(0), r.IsDBNull(1) ? "" : r.GetString(1)));
+                    list.Add((r.GetString(0), r.IsDBNull(1) ? "" : r.GetString(1), r.IsDBNull(2) ? 0 : r.GetInt32(2)));
             }
             catch (Exception ex) { Log.Error("buddy", "ResolveSessionsByIpAsync({0}): {1}", ip, ex.Message); }
             return list;

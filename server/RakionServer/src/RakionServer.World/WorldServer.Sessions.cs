@@ -107,10 +107,10 @@ namespace RakionServer.World
             else { Log.Warn("login", "[{0}] '{1}' sem char ativo (characterinfo.used=1 ausente)", s.Slot, userId); }
             s.LoginCharList = await BuildLoginCharListAsync(s);   // lista de chars do char-select (0x0C), sintetizada do DB
             await _db.LogUserConnectAsync(gi.Id, userId, _cfg.ServerId, s.RemoteIp);
-            // Messenger (F9): grava a identidade do buddy (account+nick+IP). O login do Buddy é cifrado e não
-            // carrega o nick -> o Buddy resolve a conexão TCP por IP (messenger_session) p/ saber quem é, carregar
-            // a lista de amigos e anunciar presença. O nick é o nome do char ativo (id de rede do messenger).
-            await _db.UpsertMessengerSessionAsync(s.UserId, ch?.Name?.Length > 0 ? ch.Name : userId, s.RemoteIp);
+            // Messenger (F9): grava a identidade do buddy (account+nick+IP+porta TCP). O login do Buddy é cifrado
+            // e não carrega o nick -> o Buddy resolve a conexão por IP (messenger_session) e, com 2+ clientes no
+            // mesmo IP, desambigua pela proximidade de porta. O nick é o nome do char ativo (id de rede do messenger).
+            await _db.UpsertMessengerSessionAsync(s.UserId, ch?.Name?.Length > 0 ? ch.Name : userId, s.RemoteIp, s.RemotePort);
             Log.Ok("login", "[{0}] '{1}' logado (char='{2}', gold={3}, cash={4}) — {5}/{6} online",
                 s.Slot, userId, gi.CharName, s.Gold, s.Cash, CurrentUsers, MaxUser);
         }
