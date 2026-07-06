@@ -26,5 +26,6 @@ namespace RakionServer.Buddy
         public bool LoggedIn;
         public IPEndPoint? UdpEndpoint;                       // endpoint P2P aprendido (token echo via UDP)
         public IReadOnlyList<string> BuddyNicks = Array.Empty<string>();   // nicks dos amigos (presença/PM)
+        public string BuddyListSig = "";                      // assinatura conta:nick da lista -> detecta add/remove/nick p/ re-emitir
     }
 }

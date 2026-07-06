@@ -38,31 +38,33 @@ namespace RakionServer.Buddy
             }
         }
 
-        /// <summary>Re-lê a buddylist de UMA conexão e empurra SÓ os deltas (amigo NOVO adicionado no World via
-        /// 0x19). O add não passa pelo Buddy, então sem isto o amigo novo só aparecia no outro cliente após relog.
-        /// NÃO re-empurra a lista inteira a cada ciclo — re-enviar presença OFFLINE repetida limpava a lista no
-        /// cliente (a UI trata offline como remoção). A lista inicial vem do RET_LOGIN + AnnounceOnline no login.</summary>
+        /// <summary>Re-lê a buddylist de UMA conexão; se a ASSINATURA (conta:nick) MUDOU — add (World 0x19),
+        /// remove (Buddy 0x3002) ou nick change (World 0x15) — re-emite o RET_LOGIN COMPLETO + presença, como no
+        /// login. O add aparece na hora (find-or-insert por nick). Só dispara na MUDANÇA (não a cada ciclo) p/ não
+        /// re-emitir presença OFFLINE repetida (que desregistra a linha). O add não passa pelo Buddy (nasce no
+        /// World -> DB), então este poll da buddylist é a ponte World->Buddy.</summary>
         private async Task SyncOneAsync(BuddyConn conn)
         {
             var fresh = await _db.LoadBuddyListAsync(conn.Account);
-            var freshNicks = new List<string>(fresh.Count);
-            foreach (var b in fresh) freshNicks.Add(b.Nick);
+            string sig = BuddySig(fresh);
+            if (sig == conn.BuddyListSig) return;   // lista inalterada
 
-            var old = new HashSet<string>(conn.BuddyNicks, StringComparer.OrdinalIgnoreCase);
-            var added = new List<string>();
-            foreach (var n in freshNicks) if (!old.Contains(n)) added.Add(n);
-            if (added.Count == 0) { conn.BuddyNicks = freshNicks; return; }   // sem amigo novo
-            conn.BuddyNicks = freshNicks;
+            conn.BuddyListSig = sig;
+            conn.BuddyNicks = fresh.ConvertAll(b => b.Nick);
+            Send(conn, BuddyProtocol.RET_LOGIN, BuddyFrames.LoginList(conn.Token, fresh));   // re-monta a lista
+            AnnounceOnline(conn);                                                            // acende online/offline
+            Log.Ok("buddy", "[{0}] sync '{1}': lista mudou -> RET_LOGIN re-emitido ({2} amigo(s))",
+                conn.Ip, conn.Account, fresh.Count);
+        }
 
-            // amigo NOVO: presença dele a ESTA conexão (acende a linha) + cross-announce se ele está online.
-            foreach (var nick in added)
-            {
-                bool up = _byNick.TryGetValue(nick, out var f) && f!.LoggedIn && f != conn;
-                Send(conn, BuddyProtocol.NTF_USER_STATE,
-                    BuddyFrames.UserState(new[] { up ? Presence(f!) : new UserPresence(nick, false, null, 0) }));
-                if (up) Send(f!, BuddyProtocol.NTF_USER_STATE, BuddyFrames.UserState(new[] { Presence(conn) }));
-            }
-            Log.Ok("buddy", "[{0}] sync '{1}': +{2} amigo(s) novo(s) -> presença empurrada", conn.Ip, conn.Account, added.Count);
+        /// <summary>Assinatura estável da buddylist (conta:nick ordenado) — muda quando um amigo é adicionado,
+        /// removido ou tem o nick trocado, disparando a re-emissão da lista à conexão afetada.</summary>
+        private static string BuddySig(List<BuddyEntry> list)
+        {
+            var parts = new List<string>(list.Count);
+            foreach (var b in list) parts.Add(b.Account + ":" + b.Nick);
+            parts.Sort(StringComparer.OrdinalIgnoreCase);
+            return string.Join("|", parts);
         }
     }
 }

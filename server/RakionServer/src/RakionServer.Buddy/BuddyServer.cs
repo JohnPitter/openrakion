@@ -174,6 +174,7 @@ namespace RakionServer.Buddy
             conn.Nick = pick.Nick.Length > 0 ? pick.Nick : pick.Account;
             var buddies = await _db.LoadBuddyListAsync(conn.Account);
             conn.BuddyNicks = buddies.ConvertAll(b => b.Nick);
+            conn.BuddyListSig = BuddySig(buddies);
             conn.Token = NextToken();
             conn.LoggedIn = true;
             _byNick[conn.Nick] = conn;
