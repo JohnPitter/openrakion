@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Text;
 using RakionServer.Common;
 
@@ -44,10 +46,6 @@ namespace RakionServer.World.Network
         private static readonly byte[] GameGuardChallenge =
             { 0x4e, 0x95, 0xdd, 0x29, 0xce, 0x3a, 0x55, 0xdb, 0x20, 0xb6, 0xad, 0x97, 0xa6, 0x5c, 0xc0, 0x1c };
 
-        /// <summary>Registro do player no 0x1f/0x1e (FUN_0040afb0), na ordem [nome-NUL][class@1531][team@146c]
-        /// [dword@14d0]. O nome (2B) é escrito antes; aqui vêm o NUL terminador + os campos do char solo
-        /// (class=1, team/stats=0).</summary>
-        private static readonly byte[] PlayerRecordTail = { 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
         /// <summary>Resposta do 0x19 CharacterGetUserName (messenger "add buddy"): o WORLD informa o account-id
         /// do dono de um nick, que o cliente exige antes de adicionar amigo — sem isso ele trava em "Waiting for
@@ -120,39 +118,143 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
-        /// <summary>0x1f info de sessão/char. RE FUN_00404fc0: a ENTRADA (sucesso) tem LEN=15 =
-        /// [1f 00][00][00][userid:u16][registro do player]. O registro (FUN_0040afb0) = [nome\0][class][team]
-        /// [dword]. O byte 15+ do bloco era LIXO DE STACK — VARIOU entre sessões (06/64/08 no diff golden×log),
-        /// logo zero-pad (LEN real=15). Userid e nome vêm do domínio. A volta-à-lista pós-clear re-manda ESTE
-        /// MESMO frame (mitm_move_133859 l.460 == entrada l.19; só o byte de lixo difere — sem handle/marker).</summary>
-        public static byte[] SessionInfo(ushort userId, string name)
+        /// <summary>Game list 0x36 SINTETIZADA do worldserv (FUN_00422c90 monta [36 00][count][entradas];
+        /// cada entrada = [u16 fieldIndex][corpo do FUN_00405790]). Corpo: [0]flag/senha [1]playing(state==2)
+        /// [2]map(+0x118) [3]mode(+0x119) [4]minLvl(+0x111) [5]maxLvl(+0x112) [6](+0x113) [7](+0x2bc)
+        /// [8]maxRounds(+0x11a) [9]curPlayers(+0x116+0x117) [10]maxPlayers(+0x114+0x115) [11..16]host IP:port
+        /// [17..22]zeros [23..]nome\0 [fim]u16(+0x3a8=mapSlot). Validado in-game 2026-07-01 (renderizou
+        /// Number/[Mapa] Nome/Lv min~max/n/N byte-a-byte). Lista vazia = count=0 + pad (arma o Create).</summary>
+        public static byte[] GameList(IReadOnlyList<RoomListEntry> rooms)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x36);
+            w.WriteByte((byte)Math.Min(rooms.Count, 255));        // count @off2
+            foreach (var r in rooms)
+            {
+                w.WriteWord(r.FieldIndex);                        // [u16 fieldIndex] -> "Number" + echo no join 0x38
+                w.WriteByte((byte)(r.HasPassword ? 1 : 0));       // [0]  flag senha (cadeado)
+                w.WriteByte((byte)(r.Playing ? 1 : 0));           // [1]  playing -> "Status"
+                w.WriteByte(r.Map);                               // [2]  map -> nome do mapa (ex.: [Gravity])
+                w.WriteByte(r.Mode);                              // [3]  mode
+                w.WriteByte(r.MinLevel);                          // [4]  minLevel -> "Level" (min)
+                w.WriteByte(r.MaxLevel);                          // [5]  maxLevel -> "Level" (max)
+                w.WriteByte(0);                                   // [6]  (+0x113)
+                w.WriteByte(0);                                   // [7]  (+0x2bc)
+                w.WriteByte(r.MaxRounds);                         // [8]  maxRounds
+                w.WriteByte(r.CurPlayers);                        // [9]  curPlayers -> "n/N" (esq)
+                w.WriteByte(r.MaxPlayers);                        // [10] maxPlayers -> "n/N" (dir)
+                w.WriteUInt32(r.HostIp);                          // [11..14] host IP -> "Network"
+                w.WriteWord(r.HostPort);                          // [15..16] host port
+                w.WriteUInt32(0);                                 // [17..20] zeros
+                w.WriteWord(0);                                   // [21..22] zeros
+                foreach (char c in r.Name ?? "") w.WriteByte((byte)c); // [23..] nome -> "Game title"
+                w.WriteByte(0);                                   // NUL
+                w.WriteWord(r.MapSlot);                           // [fim] u16 (+0x3a8) = mapSlot
+            }
+            if (rooms.Count == 0) w.WriteBytes(new byte[9]);      // bloco vazio (= GameListEmpty; arma o Create)
+            return w.ToArray();
+        }
+
+        /// <summary>0x72 FieldInvitation NOTIFY (world -&gt; ALVO): o popup "&lt;fulano&gt; te convidou p/ a sala".
+        /// RE 2026-07-05 (dois lados): worldserv FUN_00428520 MONTA e o cliente FUN_36193f40 (engine.dll;
+        /// dispatch ProcessWorldRecvBuffer -&gt; FUN_36197320 caso 0x72) LÊ, nesta ordem, do payload:
+        ///   [inviterId:u16][inviterName\0][fieldSlot:u16][map][mode][minLvl][maxLvl][0][maxRounds][0][roomName\0][pass\0]
+        /// O bloco de 7 bytes = atributos da sala (mesma fonte do GameList 0x36: +0x118 map, +0x119 mode,
+        /// +0x111 minLvl, +0x112 maxLvl, +0x113=0, +0x11a maxRounds). fieldSlot = <c>Field.Id</c> do master —
+        /// o cliente o ecoa no ACEITE via SendFieldEnter (=0x38 join, já portado); o host-callback vtable+0x260
+        /// abre o popup. NOTA-DE-BUILD: este engine.dll lê 7 bytes de atributos; o worldserv.exe do RE emite 8
+        /// (6 + u16 em +0x11c) — build divergente (rakion-final≠rakion-new). Seguimos o engine.dll, que é quem
+        /// PARSEIA o nosso frame. Síntese pura do estado do Field — nenhum byte de replay.</summary>
+        public static byte[] FieldInvitation(ushort inviterId, string inviterName, ushort fieldSlot,
+            byte map, byte mode, byte minLevel, byte maxLevel, byte maxRounds, string roomName, string password)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x72);
+            w.WriteWord(inviterId);          // [+0]      id do convidador (mostrado/referência no popup)
+            w.WriteCString(inviterName);     // [+2]      nome do convidador + NUL
+            w.WriteWord(fieldSlot);          // [+nl+3]   id da sala -> echo no aceite (SendFieldEnter 0x38)
+            w.WriteByte(map);                // [+nl+5]   map    (+0x118)
+            w.WriteByte(mode);               //           mode   (+0x119)
+            w.WriteByte(minLevel);           //           minLvl (+0x111)
+            w.WriteByte(maxLevel);           //           maxLvl (+0x112)
+            w.WriteByte(0);                  //           (+0x113)
+            w.WriteByte(maxRounds);          //           rounds (+0x11a)
+            w.WriteByte(0);                  //           (pad do bloco de atributos)
+            w.WriteCString(roomName);        // [+nl+12]  nome da sala + NUL
+            w.WriteCString(password);        //           senha + NUL (vazia = só NUL)
+            return w.ToArray();
+        }
+
+        /// <summary>0x1f info de sessão/char. RE FUN_00404fc0: a ENTRADA (sucesso) = [1f 00][00 00][userid:u16]
+        /// [registro FUN_0040afb0]. O registro = [nome COMPLETO\0][class][team][dword]. Cravado da captura
+        /// (orig_capture2: `1f00 0000 0600 4a503200 01 00 00000000`) — o `WriteName` de 2 bytes CORTAVA o nome
+        /// ("Heroi2"→"He" na identidade da sessão/messenger). O byte após o dword era LIXO DE STACK, zero-pad.</summary>
+        public static byte[] SessionInfo(ushort userId, string name, byte charClass = 1)
         {
             using var w = new PacketWriter();
             w.WriteWord(0x1f);
             w.WriteWord(0);
             w.WriteWord(userId);
-            WriteName(w, name);
-            w.WriteBytes(PlayerRecordTail);
-            w.WriteBytes(new byte[9]);              // bloco de 24B: byte 15+ era lixo de stack (LEN real=15)
+            w.WriteCString(name);                   // nome COMPLETO + NUL (FUN_0040afb0 user+0x14a8)
+            w.WriteByte(charClass);                 // class (user+0x1531) — solo default 1
+            w.WriteByte(0);                         // team (user+0x146c)
+            w.WriteInt32(0);                        // dword (user+0x14d0)
             return w.ToArray();
         }
 
-        /// <summary>0x1e lista de canais ("dchannel01"). RE FUN_00404da0: [1e 00][type][count][nome1\0][nome2\0]
-        /// [N registros de player]. No solo: type=0, count=1, 1 registro (userid + nome + stats) -> LEN real=28.
-        /// A cauda (bytes 28+) era LIXO DE STACK — VARIOU entre sessões (5e735fb8.../648c0509...), logo zero-pad.
-        /// userid e nome vêm do domínio. A volta-à-lista pós-clear re-manda ESTE MESMO frame (mitm_move l.461 ==
-        /// entrada l.20, byte-a-byte).</summary>
-        public static byte[] ChannelList(ushort userId, string name)
+        /// <summary>Uma entrada da user list do canal (0x1e) — DTO de borda: índice do membro no canal (byte,
+        /// usado no remove 0x20), userid, nome do char e classe.</summary>
+        public readonly record struct UserListEntry(byte ChanSlot, ushort UserId, string Name, byte CharClass);
+
+        /// <summary>0x1e user list do canal ("dchannel01"). RE FUN_00404da0 + FUN_0040afb0:
+        /// [1e 00][type=0][count][nome-canal\0][str2\0] + count×[slotIdx 1B][uid u16][nome\0][classe][time]
+        /// [dword u32]. Cravado da captura (1 user "JP2" uid6 slot0 = `...00 00 0600 4a503200 01 00 0..`).
+        /// SEMÂNTICA DO CLIENTE (validada in-game 2026-07-04): o widget ACUMULA cada 0x1e (só limpa ao
+        /// reconstruir a tela) — então a lista CHEIA vai SÓ a quem entra; aos demais vai um 0x1e só com o
+        /// novato (append) e o 0x20 [slotIdx] remove na saída. Nome COMPLETO nul-terminado (o WriteName de
+        /// 2 bytes cortava "Heroi2"→"He").</summary>
+        public static byte[] ChannelList(IReadOnlyList<UserListEntry> users)
         {
             using var w = new PacketWriter();
             w.WriteWord(0x1e);
-            w.WriteWord(0x0100);
-            w.WriteCString(ChannelName);
-            w.WriteWord(0);
-            w.WriteWord(userId);
-            WriteName(w, name);
-            w.WriteBytes(PlayerRecordTail);
-            w.WriteBytes(new byte[8]);   // bloco de 36B: bytes 28+ eram lixo de stack (LEN real=28)
+            w.WriteByte(0);                                  // type
+            w.WriteByte((byte)Math.Min(users.Count, 255));   // count
+            w.WriteCString(ChannelName);                     // nome1\0
+            w.WriteByte(0);                                  // nome2\0 (segunda string do CRoom, vazia)
+            foreach (var u in users)
+            {
+                w.WriteByte(u.ChanSlot);         // slotIdx no canal (1B — o 0x20 remove por ele)
+                w.WriteWord(u.UserId);           // uid u16
+                w.WriteCString(u.Name);          // nome COMPLETO + NUL (FUN_0040afb0 user+0x14a8)
+                w.WriteByte(u.CharClass);        // classe (user+0x1531)
+                w.WriteByte(0);                  // time (user+0x146c) — 0 no canal (sem times fora do field)
+                w.WriteInt32(0);                 // dword (user+0x14d0)
+            }
+            if (users.Count == 0) w.WriteBytes(new byte[8]);   // canal vazio: pad mínimo
+            return w.ToArray();
+        }
+
+        /// <summary>0x22 chat do canal/game-list (worldserv FUN_0041bca0): [22 00][chanSlot][texto\0]. O cliente
+        /// já MONTA o texto como "&lt;remetente&gt; : &lt;msg&gt;" no envio (o nome vem embutido), então o servidor
+        /// só reecoa; o chanSlot (user+0x148d) é o índice do remetente no canal. Texto limitado a 0x80 (o original
+        /// faz lstrcpynA cap 0x81).</summary>
+        public static byte[] ChannelChat(byte chanSlot, string text)
+        {
+            if (text.Length > 0x80) text = text.Substring(0, 0x80);
+            using var w = new PacketWriter();
+            w.WriteWord(0x22);
+            w.WriteByte(chanSlot);
+            w.WriteCString(text);
+            return w.ToArray();
+        }
+
+        /// <summary>0x20 remove um membro da user list do canal (CRoom, worldserv 0x405240): [20 00][slotIdx].
+        /// Broadcast aos que ficam quando alguém desloga — o par incremental do 0x1e-append.</summary>
+        public static byte[] ChannelUserRemove(byte chanSlot)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x20);
+            w.WriteByte(chanSlot);
             return w.ToArray();
         }
 
@@ -169,17 +271,18 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
-        /// <summary>0x43 ack de start do match. RE FUN_004079d0 (@0x4079d0): a resposta REAL tem LEN=3 =
-        /// [43 00][status], enviada via FUN_0041b8a0(...,3,...). status 0 = partida inicia (seta o timer
-        /// this+0x2b8 = tick+40000ms); 1/2/3 = não pôde iniciar (faltam players/prontidão). O [handle 5B]
-        /// [3b 00 00 00] do blob antigo (e o [0003000000 3b000000] da captura) era LIXO DE STACK — varia
-        /// entre sessões, não é handle nem opcode ecoado. 3 reais + zero-pad.</summary>
+        /// <summary>0x43 ack de start do match. status 0 = partida inicia (seta o timer this+0x2b8). O original
+        /// manda um body estruturado [00 01 42 00 0a sess 00 01] (diff verificado 2026-07-03), mas a sonda runtime
+        /// PROVOU que replicá-lo NÃO muda o observador: os 2 humanos entram no stage com ctLocalPlayers=1 (=JOGADOR,
+        /// não observador) de qualquer forma — o gap real é a sync do game-stream SE1 (7B UDP de :2302/:2303
+        /// descartados + 0x4C sem resposta), não este frame. Semântica per-byte por RE (FUN_004079d0) fica pendente;
+        /// zerado até então (não shippar constante capturada com o byte per-sessão).</summary>
         public static byte[] MatchStartAck()
         {
             using var w = new PacketWriter();
             w.WriteWord(0x43);
             w.WriteByte(0);                 // status (0 = partida inicia)
-            w.WriteBytes(new byte[9]);      // padding do bloco de 12B (era lixo de stack)
+            w.WriteBytes(new byte[9]);      // body: semântica pendente de RE; zerado (não é lixo de stack)
             return w.ToArray();
         }
 
@@ -243,13 +346,6 @@ namespace RakionServer.World.Network
             }
             w.WriteBytes(new byte[9]);              // trailer zeros
             return w.ToArray();
-        }
-
-        private static void WriteName(PacketWriter w, string name)
-        {
-            byte[] nb = Encoding.ASCII.GetBytes(name ?? "");
-            w.WriteByte(nb.Length > 0 ? nb[0] : 0);
-            w.WriteByte(nb.Length > 1 ? nb[1] : 0);
         }
     }
 }

@@ -28,6 +28,7 @@ namespace RakionServer.World.Network
         // estado de usuario (espelha campos do objeto user[slot])
         public ushort Slot { get; }
         public string RemoteIp { get; }
+        public int RemotePort { get; }
         public bool Connected { get; private set; }          // user+0x1440
         public bool Authenticated { get; set; }              // this+0x5b18 == 0 ? login : in-game
         public bool SlotActive { get; set; }                 // user+0x1460
@@ -86,6 +87,11 @@ namespace RakionServer.World.Network
         public ushort PendingRoomDurationSec;                // duracao do round em SEGUNDOS (u16 do 0x3b, 290..1210)
         public byte PendingRoomRounds;                       // rounds configurados na sala (byte do 0x3b, <0x16; stage=1)
         public string PendingRoomName = "";                  // nome da sala (0x3b) -> match-end 0x44 (era "asdd" hardcoded)
+        public ushort PendingRoomSlot;                       // mapSlot (u16 0x122..0x4ba) do 0x3b -> Field.MapSlot (entry 0x36)
+        public string PendingRoomPass = "";                  // senha da sala (0x3b, <9) -> validada no join 0x38
+        public byte PendingRoomFrag;                         // b3 do 0x3b (frag/points limit) -> Field.FragLimit (0x37 +f)
+        public byte PendingRoomMinLevel;                     // b4 do 0x3b -> Field.MinLevel (0x37 +8)
+        public byte PendingRoomMaxLevel;                     // b5 do 0x3b -> Field.MaxLevel (0x37 +9)
 
         // estado de combate/field (campos do user[slot] resolvidos por FUN_0040b7d0 e helpers de field)
         public ushort FieldTargetIndex; // user+0x14a0 (indice do field-objeto alvo resolvido por FUN_0040b7d0)
@@ -99,6 +105,7 @@ namespace RakionServer.World.Network
         public ushort FieldTargetB;       // playerRecord +0x2ca (alvo/objetivo, arg0>=10)
         public ushort FieldObjectIndex; // user+0x14a0 (indice deste user no array de field-objects, lido por FUN_0040b7d0)
         public byte FieldSeat;          // user+0x14a2 (byte de seat/owner do user no field, lido por FUN_0040b7d0)
+        public byte[]? StageSpawnUpload;  // os bytes do 0x4b que ESTE humano subiu (posição/stats reais) — relayados ao peer p/ o avatar aparecer no lugar certo
         public bool ExpBonusActive;     // user+0x236c != 0 (bônus de exp ativo; no nosso server = PU ativo)
         public bool PuActive;           // PU vigente (usergameinfo.powertimedate futuro)
 
@@ -136,6 +143,7 @@ namespace RakionServer.World.Network
         private readonly int[] _potionRowId = new int[0x13];  // id da linha itembox das celulas type1 — segue o item no move
         private bool _potionPainted;          // quickslot pintado no 1o open (0x2c) da sessao — fallback do auto-render
         private bool _potionLoginPainted;     // quickslot pintado na entrada do lobby (0x14) — auto-render no relog (CONFIRMADO)
+        private bool _chanJoinAnnounced;      // 0x1e-append do novato já broadcastado (1x por sessão; o widget acumula)
 
         /// <summary>
         /// Cifra do canal lobby/field (AES-128, chave/IV reais do worldserv.exe). No original
@@ -150,6 +158,7 @@ namespace RakionServer.World.Network
             Slot = slot;
             _server = server;
             RemoteIp = (sock.RemoteEndPoint as IPEndPoint)?.Address.ToString() ?? "?";
+            RemotePort = (sock.RemoteEndPoint as IPEndPoint)?.Port ?? 0;
         }
 
         public void Start()
@@ -278,6 +287,7 @@ namespace RakionServer.World.Network
         /// </summary>
         public void SendLobby(byte[] payload)
         {
+            Log.Debug("tx", "[{0}] LOBBY(SendLobby) {1}B: {2}", Slot, payload.Length, Convert.ToHexString(payload));
             byte[] body = Crypto.Enabled ? Crypto.Encrypt(payload) : payload;
             int size = 2 + body.Length;
             byte[] frame = new byte[size];
@@ -348,6 +358,10 @@ namespace RakionServer.World.Network
             // lock: o box-add atrasado (Task pos-0x13) envia em paralelo com o loop principal; Socket.Send
             // concorrente entrelaca os bytes e corrompe o framing. Serializa os envios.
             try { lock (_sendLock) { _sock.Send(frame); } }
+            // Socket disposto/fechado = a sessao ja desconectou (ex.: bot AI/relay enviando logo apos o peer sair).
+            // Esperado na race de desconexao — Debug, nao Error (poluia o log e mascarava falhas reais).
+            catch (ObjectDisposedException) { Log.Debug("client", "[{0}] send em socket disposto (desconectou)", Slot); }
+            catch (System.Net.Sockets.SocketException ex) { Log.Debug("client", "[{0}] send socket: {1}", Slot, ex.Message); }
             catch (Exception ex) { Log.Error("client", "[{0}] send: {1}", Slot, ex.Message); }
         }
 

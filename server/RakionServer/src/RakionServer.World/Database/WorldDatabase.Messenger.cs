@@ -33,19 +33,21 @@ namespace RakionServer.World.Database
 
         /// <summary>Grava a identidade do messenger (messenger_session) no LOGIN do world. O login do Buddy é
         /// CIFRADO (AES, 208B opacos) e não carrega o nick, então o Buddy não sabe quem conectou; o World — que
-        /// conhece a conta — registra account+nick+IP e o Buddy resolve a conexão por IP (ResolveAccountByIp).
-        /// REPLACE = 1 sessão por conta.</summary>
-        public async Task UpsertMessengerSessionAsync(string account, string charName, string ip)
+        /// conhece a conta — registra account+nick+IP+porta TCP. O Buddy resolve por IP e, com 2+ clientes no
+        /// mesmo IP, desambigua pela PROXIMIDADE de porta (a conexão do Buddy nasce logo após o login do World,
+        /// então as portas efêmeras do mesmo processo são vizinhas). REPLACE = 1 sessão por conta.</summary>
+        public async Task UpsertMessengerSessionAsync(string account, string charName, string ip, int port)
         {
             try
             {
                 await using var c = new MySqlConnection(_conn);
                 await c.OpenAsync();
                 await using var cmd = new MySqlCommand(
-                    "REPLACE INTO messenger_session (account, char_name, ip, login_ts) VALUES (@a,@n,@ip,NOW())", c);
+                    "REPLACE INTO messenger_session (account, char_name, ip, port, login_ts) VALUES (@a,@n,@ip,@p,NOW())", c);
                 cmd.Parameters.AddWithValue("@a", account);
                 cmd.Parameters.AddWithValue("@n", charName ?? "");
                 cmd.Parameters.AddWithValue("@ip", ip ?? "");
+                cmd.Parameters.AddWithValue("@p", port);
                 await cmd.ExecuteNonQueryAsync();
             }
             catch (Exception ex) { Log.Error("db", "UpsertMessengerSessionAsync('{0}'): {1}", account, ex.Message); }

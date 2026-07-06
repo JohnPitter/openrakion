@@ -16,9 +16,10 @@ namespace RakionServer.Buddy
     {
         public Socket Sock { get; }
         public string Ip { get; }
+        public int Port { get; }                              // porta TCP de origem -> desambigua 2+ clientes no mesmo IP
         public readonly object SendLock = new();
 
-        public BuddyConn(Socket sock, string ip) { Sock = sock; Ip = ip; }
+        public BuddyConn(Socket sock, string ip, int port) { Sock = sock; Ip = ip; Port = port; }
 
         public string Account = "";
         public string Nick = "";
@@ -26,5 +27,6 @@ namespace RakionServer.Buddy
         public bool LoggedIn;
         public IPEndPoint? UdpEndpoint;                       // endpoint P2P aprendido (token echo via UDP)
         public IReadOnlyList<string> BuddyNicks = Array.Empty<string>();   // nicks dos amigos (presença/PM)
+        public string BuddyListSig = "";                      // assinatura conta:nick da lista -> detecta add/remove/nick p/ re-emitir
     }
 }

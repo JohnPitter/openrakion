@@ -63,7 +63,7 @@ namespace RakionServer.World.Network
             if (cVar1 == 0x01 && ctx.P.CanRead(2)) off4 = ctx.P.UInt16(); // token (apenas ecoado)
 
             // item tem que existir no catalogo (FUN_00421210 L1749: itemId < this+0x108 = teto de item-id).
-            var def = ctx.World.FindItemDef(itemId);
+            var def = ctx.World.Items.Find(itemId);
             if (def == null) { Log.Warn("shop", "[{0}] BUY item {1} inexistente -> erro 3", u.Slot, itemId); SendShopError(u, 3); return; }
 
             bool payGold = off2 != 0;                       // FUN_0040cb10 L70: param_2=='\0' => CASH; senao GOLD
@@ -85,14 +85,14 @@ namespace RakionServer.World.Network
             u.ShopBuyInProgress = true;
             // SET (type 10) = bundle: a COMPRA entrega as 6 peças de gear (membros), NÃO o item-bundle. Demais
             // itens: concede o próprio. (O mesmo desempacote roda no login como rede de segurança.)
-            var grantItems = ctx.World.ExpandSetMembers(itemId);
+            var grantItems = ctx.World.Items.ExpandSetMembers(itemId);
             if (grantItems.Count == 0) grantItems = new System.Collections.Generic.List<int> { itemId };
             // ocupa a 1a célula VAZIA da grade esparsa (120, 0=vazia) p/ CADA item concedido; registra (item,slot)
             // p/ o delta da resposta. Só GEAR (displayable) entra no grid; não-gear persiste mas não pinta.
             var granted = new System.Collections.Generic.List<(int Item, byte Slot)>(grantItems.Count);
             foreach (var it in grantItems)
             {
-                byte slot = ctx.World.IsBoxDisplayable(it) ? u.AddBoxItemStacked(it) : (byte)0; // poção empilha; gear -> célula nova
+                byte slot = ctx.World.Items.IsBoxDisplayable(it) ? u.AddBoxItemStacked(it) : (byte)0; // poção empilha; gear -> célula nova
                 granted.Add((it, slot));
             }
             // NAO adiciona em u.Items (= useriteminfo/APARENCIA equipada): o item de box NUNCA vai pro corpo 3D (crash).
@@ -118,7 +118,7 @@ namespace RakionServer.World.Network
                             if (rowId <= 0) { ok = false; break; }
                             // conecta a célula do box à linha do itembox -> o refino (UPDATE level / DELETE por id exato)
                             // passa a persistir; sem isto os itens comprados tinham rowId=0 e o relog "desfazia" o upgrade.
-                            if (world.IsBoxDisplayable(g.Item) && g.Slot < u.BoxRowId.Count) u.BoxRowId[g.Slot] = rowId;
+                            if (world.Items.IsBoxDisplayable(g.Item) && g.Slot < u.BoxRowId.Count) u.BoxRowId[g.Slot] = rowId;
                         }
                     else ok = false;
                 }
@@ -212,7 +212,7 @@ namespace RakionServer.World.Network
         {
             var u = ctx.User;
             int itemId = u.BoxItems[slot];
-            int sellGold = SellPriceOf(ctx.World.FindItemDef(itemId), itemId);   // preco fiel ao iteminfo
+            int sellGold = SellPriceOf(ctx.World.Items.Find(itemId), itemId);   // preco fiel ao iteminfo
 
             u.BoxItems[slot] = 0;                                  // esvazia a celula (grade esparsa; SEM shift -> nao desloca as outras)
             uint prev = u.Gold; u.Gold = prev + (uint)sellGold;

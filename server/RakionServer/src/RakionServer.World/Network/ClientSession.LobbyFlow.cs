@@ -51,8 +51,8 @@ namespace RakionServer.World.Network
                     // o gate a partir do Game List (Roomstate Fase A — habilita o inventario/shop).
                     InField = true; FieldSecondary = true; SecondActive = true; Status = 2;
                     SendEncryptedFrame(LobbyFrames.SpawnAck());
-                    SendEncryptedFrame(LobbyFrames.SessionInfo(LobbyUid, LobbyName));
-                    SendEncryptedFrame(LobbyFrames.ChannelList(LobbyUid, LobbyName));
+                    SendEncryptedFrame(LobbyFrames.SessionInfo(LobbyUid, CharName.Length > 0 ? CharName : LobbyName, CharClass));
+                    SendEncryptedFrame(LobbyFrames.ChannelList(_server.SnapshotChannelUsers()));
                     Log.Ok("lobby", "[{0}] 0x14 + 0x1f + 0x1e (canais) + channel-lobby (Status=2)", Slot);
                     // POPULA o espelho do box (AccountInfo+0x78) JA no login — o painel do box no lobby (menu 0x14)
                     // pinta do espelho QUANDO E' CONSTRUIDO (igual o equip, carregado no 0x0C). O 0x13 da resposta
@@ -64,32 +64,53 @@ namespace RakionServer.World.Network
                     // o shop. Guard próprio (_potionLoginPainted) NÃO suprime o fallback do 0x2c — se o widget do
                     // potion-bar ainda não existir neste ponto, o 1o open do inventário repinta.
                     if (!_potionLoginPainted) { _potionLoginPainted = true; PaintQuickslot(); }
+                    // user list INCREMENTAL: avisa os já-online SÓ do novato (o widget do cliente ACUMULA 0x1e —
+                    // reenviar a lista cheia duplicava as entradas), 1x por sessão. Este recebeu a lista cheia acima.
+                    if (!_chanJoinAnnounced) { _chanJoinAnnounced = true; _server.AnnounceChannelUserJoined(this); }
                     return true;
                 case 0x36:
-                    SendEncryptedFrame(LobbyFrames.GameListEmpty());
+                {
+                    // game list SINTETIZADA das salas REAIS registradas (0x3b). Formato do worldserv
+                    // (FUN_00422c90/FUN_00405790), validado in-game. count=0 arma o Create.
+                    var gl = LobbyFrames.GameList(_server.SnapshotRooms());
+                    SendEncryptedFrame(gl);
                     // 2º 0x36 (a captura do original manda dois na fase de arme) SÓ na 1a vez. Remandar a
                     // cada poll re-armava a game-list e mantinha o cliente em polling (telas sobrepostas),
-                    // travando o Previous. Mesmo builder: a lista vazia (count=0) é o que arma o Create.
-                    if (!_r36bSent) { _r36bSent = true; SendEncryptedFrame(LobbyFrames.GameListEmpty()); }
-                    Log.Info("lobby", "[{0}] 0x36 ack{1}", Slot, _r36bSent ? " (+0x36b 1a vez)" : "");
+                    // travando o Previous.
+                    if (!_r36bSent) { _r36bSent = true; SendEncryptedFrame(gl); }
+                    Log.Info("lobby", "[{0}] 0x36 game list{1}", Slot, _r36bSent ? " (+0x36b 1a vez)" : "");
                     return true;
+                }
                 case 0x3b: // CRIAR SALA: room lobby = Status=2 (FieldLobby) + InField + FieldSecondary. (Era
                     // Status=3; 2 e' "sala montada antes do match" -> habilita shop 0x2d/2e/2f. O stage (0x4b)
                     // promove a Status=3 via CreateField.)
                     FieldSecondary = true; SecondActive = true; Status = 2; InField = true;
                     ParseRoomCreate(data); // guarda map/mode da sala -> decide stage (client-side) vs Battle (networked)
+                    _server.RegisterRoom(this); // PUBLICA a sala na game list (0x36) p/ outros clientes verem+entrarem
                     // nova sala = novo match: rearma o StartGameClock (a trava e' por ENTRADA NO STAGE,
                     // nao por sessao — sem isto a 2a sala da mesma sessao ficava com o field morto)
                     System.Threading.Interlocked.Exchange(ref _gameClockStarted, 0);
                     SendEncryptedFrame(LobbyFrames.RoomCreateAck());
-                    Log.Ok("lobby", "[{0}] 0x3b sala criada -> room lobby (Status=2, FSec, map={1} mode={2})",
-                        Slot, PendingRoomMap, PendingRoomMode);
+                    Log.Ok("lobby", "[{0}] 0x3b sala criada -> room lobby (Status=2, FSec, map={1} mode={2} slot/u16={3}=0x{3:x4} rounds={4})",
+                        Slot, PendingRoomMap, PendingRoomMode, PendingRoomDurationSec, PendingRoomRounds);
                     return true;
                 case 0x43: // engage/start do match: rearma o clock p/ REMATCH na mesma sala
+                {
                     System.Threading.Interlocked.Exchange(ref _gameClockStarted, 0);
                     SendEncryptedFrame(LobbyFrames.MatchStartAck());
-                    Log.Info("lobby", "[{0}] 0x43 resp (clock rearmado)", Slot);
+                    // START MULTIPLAYER: o host iniciou -> avisa os OUTROS membros da sala p/ entrarem no stage
+                    // juntos (worldserv FUN_004061f0 broadcast 0x43 [0] a TODOS). Sem isto só o host entrava.
+                    var sf = _server.GetField(FieldId);
+                    int others = 0;
+                    if (sf != null)
+                    {
+                        byte[] startFrame = LobbyFrames.MatchStartAck();
+                        lock (sf.Players) foreach (var m in sf.Players)
+                            if (m != this && m.Connected) { m.SendEncryptedFrame(startFrame); others++; }
+                    }
+                    Log.Ok("lobby", "[{0}] 0x43 start -> match iniciado (broadcast a {1} outro(s) membro(s))", Slot, others);
                     return true;
+                }
                 case 0x48: // tempo restante do stage = duração da sala (+3); cai p/ 432s se a sala não definiu
                     int durSec = PendingRoomDurationSec > 0 ? PendingRoomDurationSec : 432;
                     SendEncryptedFrame(LobbyFrames.RemainingTime(durSec));
@@ -112,14 +133,113 @@ namespace RakionServer.World.Network
                     // real (Op_FieldLeaveGame) desconecta (DISC 0x50: guard InField&&FieldSecondary que o
                     // estado do solo nao satisfaz apos o stage). Tratamos aqui: reset + refresh da lista
                     // (1f/1e/36, os MESMOS frames capturados do original APOS o 0x44 = o "voltar pra lista").
+                    // MEMBER-LEAVE da SALA pré-partida (multiplayer): libera o próprio seat e avisa os demais com
+                    // 0x3a member-leave — sem isto o master mantém o card de quem saiu (fantasma pós-saída). Guard
+                    // Settled=true (só a sala pré-partida; ResetMatch zera ao começar o match -> NÃO toca o fluxo
+                    // pós-partida validado) + Count>1 (há quem notificar). Remoção inline (não LeaveField) p/ não
+                    // acionar a lógica de W.O. do abandono de stage.
+                    {
+                        var lf = _server.GetField(FieldId);
+                        var myRec = lf?.FindRec(this);
+                        // ABANDONO NO MEIO DA PARTIDA (State==2, PvP): NÃO é o member-leave da sala — roda o
+                        // W.O. completo (WorldServer.LeaveField): DERROTA persistida do desertor + vitória por
+                        // W.O. (0x4a + 0x44) ao time que ficou. Bug 2026-07-04: o 0x3A só voltava o desertor
+                        // ao lobby e o field ficava com o seat dele ocupado -> quem ficava não vencia nunca
+                        // (e o settle final podia até dar WIN ao desertor).
+                        if (lf != null && myRec != null && lf.State == 2 && lf.Mode != 0 && !lf.Settled)
+                        {
+                            int abandonedSeat = myRec.Slot;
+                            _server.LeaveField(this);
+                            Log.Ok("lobby", "[{0}] 0x3A ABANDONO do stage (field {1} seat {2}) -> W.O. processado",
+                                Slot, lf.Id, abandonedSeat);
+                        }
+                        else if (lf != null && myRec != null && lf.Settled)
+                        {
+                            int leftSeat = myRec.Slot;
+                            bool wasMaster = lf.MasterSlot == leftSeat;
+                            lf.Remove(this);                                   // libera o rec (State=0, Session=null)
+                            FieldId = -1;
+                            if (lf.Count == 0)
+                            {
+                                // ÚLTIMO membro saiu da sala pré-partida: LIBERA o field. Sem isto a sala ficava
+                                // FANTASMA na game list (o tick não liquida Settled) e o FieldId/field velho
+                                // fazia o próximo 0x3b REUSAR a sala antiga (não dava pra criar outra).
+                                _server.Bots.DiscardBots(lf);
+                                lock (_server.Fields) _server.Fields.Remove(lf);
+                                Log.Ok("lobby", "[{0}] último membro saiu da sala {1} '{2}' -> field liberado", Slot, lf.Id, lf.Name);
+                            }
+                            else
+                            {
+                                if (wasMaster)                                 // host saiu -> reatribui ao 1º ocupado
+                                {
+                                    lf.MasterSlot = -1;
+                                    foreach (var r in lf.Slots) if (r.Occupied) { lf.MasterSlot = r.Slot; break; }
+                                    lf.Master = lf.RecAt(lf.MasterSlot)?.Session ?? lf.Master;   // publicação 0x36 usa Master
+                                }
+                                byte[] memberLeave = { 0x3a, 0x00, (byte)leftSeat };
+                                lock (lf.Players) foreach (var m in lf.Players) if (m.Connected) m.SendLobby(memberLeave);
+                                Log.Ok("lobby", "[{0}] saiu da sala {1} seat {2} -> 0x3a member-leave a {3} restante(s){4}",
+                                    Slot, lf.Id, leftSeat, lf.Count, wasMaster ? " (novo master seat " + lf.MasterSlot + ")" : "");
+                            }
+                        }
+                    }
                     InField = true; FieldSecondary = true; SecondActive = true; Status = 2; // volta ao channel lobby (shop segue ok)
                     // RE confirmada (mitm_move_133859 l.460/461 == entrada l.19/20): a volta-à-lista re-manda
                     // os MESMOS 0x1f/0x1e/0x36 da entrada, sintetizados do estado — sem frame "clear" distinto.
-                    SendEncryptedFrame(LobbyFrames.SessionInfo(LobbyUid, LobbyName));
-                    SendEncryptedFrame(LobbyFrames.ChannelList(LobbyUid, LobbyName));
-                    SendEncryptedFrame(LobbyFrames.GameListEmpty());
+                    SendEncryptedFrame(LobbyFrames.SessionInfo(LobbyUid, CharName.Length > 0 ? CharName : LobbyName, CharClass));
+                    SendEncryptedFrame(LobbyFrames.ChannelList(_server.SnapshotChannelUsers()));
+                    SendEncryptedFrame(LobbyFrames.GameList(_server.SnapshotRooms()));
                     Log.Ok("lobby", "[{0}] 0x3A FieldLeaveGame -> lista de games (channel lobby Status=2)", Slot);
                     return true;
+                case 0x3D: // READY toggle na tela da sala (room lobby, Status=2). data[0]=1 fica ready, 0 desfaz.
+                    // Mesmo opcode do weapon-swap in-stage (Status=3 -> Op_0x3D_Recon); no room o worldserv exige
+                    // Status=3 (FUN_00423ad0), mas nossa sala é Status=2 -> tratamos aqui. WeaponState = ready-state
+                    // (1=não-ready, 2=ready = player+0x1ac do cliente). Broadcast [3d 00][seat][arg] a todos (LOBBY).
+                    if (Status == 2 && FieldId >= 0)
+                    {
+                        var df = _server.GetField(FieldId);
+                        var dr = df?.RecAt(FieldSeat);
+                        if (df != null && dr != null)
+                        {
+                            byte arg = (data != null && data.Length > 0) ? data[0] : (byte)1;
+                            dr.WeaponState = arg != 0 ? (byte)2 : (byte)1;   // ready = 2, não-ready = 1
+                            using var w = new PacketWriter();
+                            w.WriteWord(0x3d).WriteByte(FieldSeat).WriteByte(arg);
+                            byte[] frame = w.ToArray();
+                            lock (df.Players) foreach (var m in df.Players) m.SendLobby(frame);
+                            int ready = 0, occ = 0;
+                            foreach (var r in df.Slots) if (r.State != 0 && (r.Session != null || r.Bot != null))
+                                { occ++; if (r.WeaponState == 2 || r.IsBot) ready++; }
+                            Log.Ok("room", "[{0}] ready seat {1} = {2} ({3}/{4} prontos)", Slot, FieldSeat, arg, ready, occ);
+                        }
+                        return true;
+                    }
+                    return false;
+                case 0x3E: // TROCAR DE TIME na tela da sala (room lobby, Status=2): move o slot p/ o outro bloco
+                    // (0..9 vermelho <-> 10..0x13 azul) e faz broadcast [3e 00][old][new] a todos (LOBBY, como o
+                    // member-join 0x38). O 0x3e IN-STAGE (Status=3, re-spawn) NÃO cai aqui (só trata Status==2).
+                    if (Status == 2 && FieldId >= 0)
+                    {
+                        var tf = _server.GetField(FieldId);
+                        if (tf != null)
+                        {
+                            byte old = FieldSeat;
+                            int ns = tf.SwitchTeamBlock(old);
+                            if (ns >= 0)
+                            {
+                                // 0x3a esvazia o slot antigo + 0x38 member-join no novo (frames PROVADOS que o
+                                // cliente aplica; o [3e][old][new] era ignorado). Broadcast a TODOS os membros.
+                                using var lv = new PacketWriter(); lv.WriteWord(0x3a).WriteByte(old);
+                                byte[] leave = lv.ToArray();
+                                byte[] join = WorldServer.BuildMemberJoin(CharName, CharClass, CharLevel, (ushort)GameInfoId, ns, peerEp: UdpEndpoint);
+                                lock (tf.Players) foreach (var m in tf.Players) { m.SendLobby(leave); m.SendLobby(join); }
+                                Log.Ok("room", "[{0}] troca de time: seat {1} -> {2} (0x3a+0x38)", Slot, old, ns);
+                            }
+                            else Log.Info("room", "[{0}] troca de time negada (outro bloco cheio, seat {1})", Slot, old);
+                        }
+                        return true;
+                    }
+                    return false;
                 // 0x2E (Shop Buy) NAO e' mais interceptado aqui -> cai no WorldHandlers.Dispatch (Op_RoomMemberQuery
                 // = compra real). Removido o intercept de falha graciosa. (Ver default: 0x2e na lista de excecoes.)
                 case 0x2C: // Inventory enter. O cliente manda no body o SEU [SlotActive:u32][user14a4:u32]
@@ -161,6 +281,10 @@ namespace RakionServer.World.Network
                     Status = 3;            // estado de CAMPO (Op_FieldUseItem exige Status==3; o 0x44/0x3A revertem p/ 2)
                     StartGameClock();
                     PaintQuickslot();      // re-registra as poções no campo — hipótese: o cliente zera o contador ao entrar no stage
+                    // SPAWN no stage (0x4b): guarda o blob REAL que este humano subiu (posição/stats) e faz o spawn
+                    // MÚTUO humano↔humano relayando o blob real de cada peer (cada um vê o avatar do outro no lugar certo).
+                    StageSpawnUpload = data;
+                    { var stf = _server.GetField(FieldId); if (stf != null) _server.SpawnStageForHumans(stf, this); }
                     Log.Ok("lobby", "[{0}] 0x4b (spawn) -> STAGE (Status=3, poções re-enviadas); relogio iniciado (udp={1})", Slot, UdpEndpoint?.ToString() ?? "-");
                     return true;
                 case 0x0f: return true; // keepalive do cliente: sem resposta TCP
@@ -219,6 +343,25 @@ namespace RakionServer.World.Network
                     // (lang 599) ate' a resposta 0x0D. Sem isso o "add" do messenger nao avanca.
                     _ = HandleGetUserNameAsync(data);
                     return true;
+                case 0x47: // chat DA SALA (3D chat). Intercepta comando de bot (/addbot, /removebot). Sem
+                    // isto o comando caía no catch-all "em campo (sem resp)" e era engolido — o gatilho
+                    // antigo estava no 0x56, que a tabela mapeia p/ Stub (nunca roda). data = "<nome> : <texto>".
+                    // Chat normal segue engolido no solo (o cliente desenha o próprio chat local).
+                    WorldHandlers.TryHandleBotChatCommand(this, _server, data);
+                    return true;
+                case 0x1E: // FieldInviteUserListReq — botão INVITE da sala. RE (2026-07-05): o clique (tela
+                    // FUN_00447af0 caso 0x18e) chama net vtable+0x2c8, que manda 0x1E ao WORLD (payload 8B
+                    // zero), e abre o painel FUN_004460f0; o painel é populado pela RESPOSTA. Validado ao
+                    // vivo: 3 cliques no Invite = 3x 0x1E no log. Sem resposta o diálogo fica vazio.
+                    // Devolve a lista de usuários do canal (mesma síntese do 0x1e do login).
+                    SendEncryptedFrame(LobbyFrames.ChannelList(_server.SnapshotChannelUsers()));
+                    Log.Ok("lobby", "[{0}] 0x1e invite user-list req -> {1} usuário(s)", Slot, _server.SnapshotChannelUsers().Count);
+                    return true;
+                case 0x72: // FieldInvitation SEND — master seleciona um user no diálogo Invite e confirma. RE
+                    // (2026-07-05): SendFieldInvitation@engine.dll 0x36191af0 = [72][targetUserId:u16]. O world
+                    // RELAYA o NOTIFY 0x72 ao alvo (worldserv FUN_00428520 -> cliente FUN_36193f40) -> popup.
+                    HandleFieldInvite(data);
+                    return true;
                 default:
                     // Shop list/loadout (0x2d/0x2f) E buy (0x2e) DEVEM chegar aos handlers reais
                     // (Op_RoomRosterSync/Op_GroupMemberInfo/Op_RoomMemberQuery) -> NAO consumir aqui, deixa o
@@ -226,7 +369,11 @@ namespace RakionServer.World.Network
                     // (FieldListReq = Quick Start / lista de salas, FUN_00423300) e 0x74 (RoomMoveAction =
                     // UPGRADE do refino, FUN_00421e10 -> reply SendMessage 0x28): sem o reply o cliente trava
                     // ("esperando a resposta do world" / "Upgrading Now").
-                    if (opcode == 0x2d || opcode == 0x2e || opcode == 0x2f || opcode == 0x33 || opcode == 0x39 || opcode == 0x74) return false;
+                    // 0x38 = JOIN de sala pela game list (Op_RoomJoin). O joiner tem FieldId=-1 (só navegando),
+                    // então o catch-all "em campo" abaixo o engolia -> "entering field" travava. Rotear ao dispatch.
+                    // 0x22 = chat do canal/game-list (SendChannelChat@engine): sem rotear ao dispatch (Op_RoomChat)
+                    // o catch-all "em campo" abaixo o engolia -> chat da game-list não aparecia p/ ninguém.
+                    if (opcode == 0x2d || opcode == 0x2e || opcode == 0x2f || opcode == 0x33 || opcode == 0x38 || opcode == 0x39 || opcode == 0x74 || opcode == 0x22) return false;
                     // Salas BATTLE/PvP (Mode != 0): os opcodes de COMBATE vao aos handlers reais do
                     // motor de partida — 0x4d (par golem/facing: y==0 = golem inimigo destruido ->
                     // fim de round), 0x3d (troca de arma), 0x50 (reporte de exp/gold do fim de partida ->
@@ -239,9 +386,52 @@ namespace RakionServer.World.Network
                     }
                     // No lobby/stage o cliente manda varios opcodes que o world original so consome
                     // sem responder. Evita DISC enquanto a fase de gameplay nao esta toda portada.
-                    if (InField) { Log.Debug("lobby", "[{0}] opcode {1:X2} em campo (sem resp)", Slot, opcode); return true; }
+                    if (InField)
+                    {
+                        // TRACE de RE (invite da sala/messenger etc.): loga o opcode + payload dos opcodes ainda
+                        // não portados, p/ cravar qual o botão Invite dispara ao vivo (a captura de fluxo único
+                        // não o tinha). Ver [[diagnostico-runtime-quebra-loop-de-RE]].
+                        Log.Info("lobby", "[{0}] opcode NAO-PORTADO {1:X2} em campo (sem resp) — {2}B: {3}",
+                            Slot, opcode, data.Length, Convert.ToHexString(data.AsSpan(0, Math.Min(data.Length, 48))));
+                        return true;
+                    }
                     return false;
             }
+        }
+
+        /// <summary>0x72 FieldInvitation: o master (dono da sala) convida o <c>targetUserId</c> (payload u16) —
+        /// RE do worldserv FUN_00428520. Valida (master em sala + alvo online) e RELAYA o notify sintetizado do
+        /// estado da sala (<see cref="LobbyFrames.FieldInvitation"/>) ao alvo, que abre o popup e, ao aceitar,
+        /// entra pela via 0x38 já portada (o cliente ecoa o fieldSlot). Regra de borda: só traduz bytes↔chamada
+        /// e serializa; o "domínio" aqui é apenas roteamento de sessão. Erro (fora de sala / alvo offline) =
+        /// DROP silencioso — o original DESCONECTAVA o master (FUN_0041eb20 reason 0xd6/0xd7/0xd8), o que é
+        /// hostil demais p/ um convite inválido; ignorar é mais seguro e não trava o cliente.</summary>
+        private void HandleFieldInvite(byte[] data)
+        {
+            if (data.Length < 2) { Log.Info("lobby", "[{0}] 0x72 invite: payload curto ({1}B)", Slot, data.Length); return; }
+            ushort targetId = (ushort)(data[0] | (data[1] << 8));
+
+            var field = FieldId >= 0 ? _server.GetField(FieldId) : null;
+            if (field == null || !field.IsRoom)
+            {
+                Log.Info("lobby", "[{0}] 0x72 invite -> alvo {1} IGNORADO (não está numa sala)", Slot, targetId);
+                return;
+            }
+            var target = _server.GetSessionByUserId(targetId);
+            if (target == null || target == this)
+            {
+                Log.Info("lobby", "[{0}] 0x72 invite -> alvo id {1} offline/inválido (sem relay)", Slot, targetId);
+                return;
+            }
+
+            ushort inviterId = (ushort)(GameInfoId > 0 ? GameInfoId : Slot);
+            byte[] notify = LobbyFrames.FieldInvitation(
+                inviterId, CharName, (ushort)field.Id,
+                field.MapId, field.Mode, field.MinLevel, field.MaxLevel, field.MaxRounds,
+                field.Name, field.Password);
+            target.SendEncryptedFrame(notify);
+            Log.Ok("lobby", "[{0}] '{1}' convidou '{2}' (id {3}) p/ sala {4} — notify 0x72 relayado ao slot {5}",
+                Slot, CharName, target.CharName, targetId, field.Id, target.Slot);
         }
 
         /// <summary>0x19 CharacterGetUserName: traduz o pedido (nick + opcode/seq da resposta) e responde o 0x0D
@@ -258,7 +448,7 @@ namespace RakionServer.World.Network
 
             // Domínio: resolve o dono do nick E persiste a amizade RECÍPROCA (o AddBuddy do cliente é mudo, então
             // a amizade nasce aqui). O cliente não valida o accountId, só o status byte (0=ok, 2=não existe).
-            var (status, account) = await _server.ResolveAndAddBuddyAsync(this, nick);
+            var (status, account) = await _server.Buddy.ResolveAndAddBuddyAsync(this, nick);
             SendEncryptedFrame(LobbyFrames.GetUserNameResult(status, account, nick));
             Log.Ok("lobby", "[{0}] 0x19 GetUserName('{1}') -> status={2} account='{3}'", Slot, nick, status, account);
         }
@@ -301,7 +491,14 @@ namespace RakionServer.World.Network
         /// </summary>
         public void SendLoginResponse()
         {
-            var list = (LoginCharList ?? new CharList()) with { SessionHandle = _invHandle };
+            // Handle de sessão do PEER (@9-10 do 0x0C) ÚNICO por conexão: o cliente o ecoa no connect P2P e na
+            // abertura do canal reliable. Fixo, os 2 humanos colidiam e o 2º virava observador — deriva do Slot
+            // (único por sessão conectada) mantendo o low-byte 0x2E conhecido-bom.
+            var list = (LoginCharList ?? new CharList()) with
+            {
+                SessionHandle = _invHandle,
+                SessionPeerHandle = (ushort)(0x042E + (Slot << 8)),
+            };
             byte[] f0c = LoginCharListWriter.Build(list);
             SendEncryptedFrame(f0c);
             byte[] f0d = new byte[1332]; f0d[0] = 0x0d; f0d[3] = 0x01;   // 0x0D = tabela zerada (sintetizada)
@@ -322,16 +519,33 @@ namespace RakionServer.World.Network
             GameSeq = 5;
             var f = _server.EnsureFieldForSession(this);
             if (f.Settled) f.ResetMatch(); // field reaproveitado de um match concluido: zera Round/Wins/golens
-            if (PendingRoomMode != 0) { f.Mode = PendingRoomMode; f.MapId = PendingRoomMap; }
-            if (PendingRoomDurationSec != 0) f.RoundDurationSec = PendingRoomDurationSec; // tempo configurado na sala
-            if (PendingRoomRounds != 0) f.MaxRounds = PendingRoomRounds;                  // rounds configurados na sala
+            // Params da sala: SÓ O MASTER aplica os seus PendingRoom* ao field. O JOINER carrega os params
+            // VELHOS da última sala que ELE criou — aplicá-los sobrescrevia o field alheio (bug 2026-07-04:
+            // sala Golem mode=1 virou mode=3 no spawn do joiner → morte não encerrava round, vitória local
+            // do cliente + 0x4a atrasado = "duas mensagens").
+            if (f.Master == this || f.Master == null)
+            {
+                if (PendingRoomMode != 0) { f.Mode = PendingRoomMode; f.MapId = PendingRoomMap; }
+                if (PendingRoomDurationSec != 0) f.RoundDurationSec = PendingRoomDurationSec; // tempo da sala
+                if (PendingRoomRounds != 0) f.MaxRounds = PendingRoomRounds;                  // rounds da sala
+            }
             _server.NotifyPlayerReady(f, this);
+            // PvP COM BOTS: inicia o 1º round (Phase=Pre→Playing) p/ o motor rodar o BotTick (spawn 0x45 + IA).
+            // O MatchTick só roda BotTick na fase Playing; StartGameClock (guardado por _gameClockStarted, 1x)
+            // deixava Phase=Pre → o bot nunca spawnava. Com bots o host é o único humano, então o round começa
+            // no load dele (2 humanos usariam o all-loaded 0x54 do original).
+            if (f.Mode != 0 && f.BotCount > 0 && f.Phase != Domain.MatchPhase.Playing) f.StartRound();
+            _server.Bots.SpawnFieldBotsInStage(f); // 0x45 dos bots + 0x54 begin AGORA (no load do host): timing + o begin que faltava
             Log.Ok("field", "[{0}] sala aplicada ao field {1}: mode={2} map={3} dur={4}s rounds={5}",
                 Slot, f.Id, f.Mode, f.MapId, f.RoundDurationSec, f.MaxRounds);
             // Sala Battle/PvP (mode != 0) = fluxo NETWORKED: o SERVER inicia o loop UDP com o 1o
             // tick 1583 (mitm_full_113423: o original manda 1583 ANTES do 1o 0040 do cliente; sem
             // ele o input fica congelado). Stage solo (mode 0) fica client-side: sem tick.
-            if (f.Mode != 0 && UdpEndpoint != null) _server.SendGameplayTick(UdpEndpoint, LastInput);
+            // 2+ HUMANOS = P2P: os CLIENTES dirigem o clock 1583 direto (captura: 20 pkts 2301<->2302,
+            // ZERO do servidor). Se o servidor injeta o priming tick aqui, o HOST vê um clock externo e
+            // NÃO assume a autoridade (ga_IsServer) -> ninguém dirige o lockstep -> "modo observação".
+            // Só solo/bot (HumanCount<2) precisa do tick do servidor. Ver docs/pvp-stage-re.md §10.
+            if (f.Mode != 0 && f.HumanCount < 2 && UdpEndpoint != null) _server.SendGameplayTick(UdpEndpoint, LastInput);
             Log.Ok("field", "[{0}] spawn -> motor da partida (field {1}, seat {2}, mode {3})", Slot, f.Id, FieldSeat, f.Mode);
         }
 
@@ -346,19 +560,28 @@ namespace RakionServer.World.Network
             try
             {
                 var p = new PacketReader(data);
-                PendingRoomName = p.CString(0x29); p.CString(9); p.CString(0xc9); // nome (->0x44), senha, desc
+                PendingRoomName = p.CString(0x29); PendingRoomPass = p.CString(9); p.CString(0xc9); // nome (->0x44), senha, desc
                 if (p.Remaining >= 2) { PendingRoomMap = p.Byte(); PendingRoomMode = p.Byte(); }
                 if (p.Remaining >= 3)
                 {
                     byte rounds = p.Byte(); // param_3[+2] (<0x16)
                     if (rounds >= 1 && rounds < 0x16) PendingRoomRounds = rounds;
                     ushort dur = p.UInt16();
+                    PendingRoomSlot = dur;  // o u16 após map/mode/timeFlag É o mapSlot (0x122..0x4ba) — ver Op_0x3B_Recon
                     // RANGE ALARGADO p/ aceitar QUALQUER stage (30s..1h). O cliente é autoritativo da duração
                     // do stage (combate client-side); rejeitar a dur faz o field cair no default 432 -> o 0x48
                     // (RemainingSec = dur+3) anuncia o tempo ERRADO -> o cliente TRAVA o stage (esperava o tempo
                     // do mapa). Era esse o bug do Stage 3 (288s = 0x120, rejeitado pelo floor antigo de 290) —
                     // Stage 2 (432s) passava no range antigo e por isso só ele funcionava. Floor 30s = anti-lixo.
                     if (dur >= 0x1e && dur <= 0xE10) PendingRoomDurationSec = dur;
+                }
+                if (p.Remaining >= 3)
+                {
+                    // cauda do 0x3b (captura `... 14 01 0a`): b3=frag/points limit, b4=minLevel, b5=maxLevel —
+                    // ecoados de volta ao joiner no header do 0x37 (+f/+8/+9) e no entry do 0x36.
+                    PendingRoomFrag = p.Byte();
+                    PendingRoomMinLevel = p.Byte();
+                    PendingRoomMaxLevel = p.Byte();
                 }
             }
             catch { PendingRoomMap = 0; PendingRoomMode = 0; PendingRoomDurationSec = 0; PendingRoomRounds = 0; }
@@ -386,7 +609,7 @@ namespace RakionServer.World.Network
         }
 
         /// <summary>Handler do 0x53 GameResult (resultado do stage solo, FUN_00425010): traduz bytes -> chamada de
-        /// domínio (<see cref="WorldServer.ApplyStageResult"/>, que credita exp/gold/rank) e serializa as respostas
+        /// domínio (<see cref="ProgressionService.ApplyStageResult"/>, que credita exp/gold/rank) e serializa as respostas
         /// — level-up (0x51) + ack (0x53). A regra de negócio (progressão) mora no WorldServer; aqui só parse +
         /// validação de limites + serialização. Layout: [stage u8][rank u8][count u8][count×u16 mapSlots][exp u32][gold u32].</summary>
         private void OnStageResult(byte[] data)
@@ -399,6 +622,8 @@ namespace RakionServer.World.Network
                 byte count = p.Byte();         // <5 = qtde de mapSlots (u16) reportados
                 ushort[] mapSlots = new ushort[count];
                 for (int i = 0; i < count; i++) mapSlots[i] = (p.Remaining >= 2) ? p.UInt16() : (ushort)0;
+                if (count > 0) Log.Ok("field", "[{0}] 0x53 mapSlots REAIS do cliente: {1}", Slot,
+                    string.Join(",", System.Array.ConvertAll(mapSlots, s => $"0x{s:x4}({s})")));
                 uint exp = p.CanRead(4) ? p.UInt32() : 0;
                 uint gold = p.CanRead(4) ? p.UInt32() : 0;
                 const uint Max = 1_000_000;    // teto de sanidade (anti-cheat, = ValidateGamePoints do 0x50)
@@ -407,7 +632,7 @@ namespace RakionServer.World.Network
                     Log.Warn("field", "[{0}] 0x53 solo: Wrong Game Point! Exp:{1} Gold:{2} — ignorado", Slot, exp, gold);
                     return;
                 }
-                int ups = _server.ApplyStageResult(this, stage, rank, exp, gold);   // domínio: bônus PU + gold + rank + exp
+                int ups = _server.Progression.ApplyStageResult(this, stage, rank, exp, gold);   // domínio: bônus PU + gold + rank + exp
                 if (ups > 0) SendLevelUp();                                          // 0x51 ao cliente
                 // ACK do 0x53: sem ele o cliente nao comita o resultado (o rank so' entrava na selecao apos relog).
                 SendStageResultAck(stage, rank, count, mapSlots);

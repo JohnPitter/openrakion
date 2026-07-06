@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -17,7 +18,7 @@ namespace RakionServer.World
     /// conexoes TCP (porta do jogo), liga os sockets UDP de gameplay, mantem o
     /// canal IPC com o broker e o estado das sessoes/usuarios.
     /// </summary>
-    public sealed class WorldServer
+    public sealed partial class WorldServer
     {
         private readonly WorldConfig _cfg;
         private readonly WorldDatabase _db;
@@ -42,84 +43,33 @@ namespace RakionServer.World
         public int PingReference;
         public int PingMatchCount;
 
-        /// <summary>Fields/partidas (this+0xe4) e rooms/chat (this+0xdc).</summary>
-        public readonly List<Domain.Field> Fields = new();
-        public readonly List<Domain.Room> Rooms = new() { new Domain.Room(0) };
-
-        public Domain.Field? GetField(int id) => id < 0 ? null : Fields.Find(f => f.Id == id);
-        public Domain.Room? GetRoom(int id) => id < 0 ? null : Rooms.Find(r => r.Id == id);
-
-        private int _nextFieldId;
-
-        /// <summary>
-        /// Aloca um field/sala (espelha a varredura de this+0xe4 por slot livre no
-        /// RoomCreate FUN_00423580). Cria a entrada no dominio e devolve o Field.
-        /// </summary>
-        public Domain.Field CreateField(string name, byte mapId, byte mode, ushort capacity, ClientSession master)
-        {
-            lock (Fields)
-            {
-                var f = new Domain.Field(_nextFieldId++)
-                {
-                    Name = name,
-                    Mode = mode,
-                    MapId = mapId,
-                    // capacity e ushort (ate ~0x4ba=1210 nas salas ranqueadas); o cast cru truncava >255.
-                    // Clamp: 0 -> default 8; acima de 255 satura em byte.MaxValue (sem wrap).
-                    MaxPlayers = capacity == 0 ? (byte)8 : (byte)System.Math.Min((int)capacity, byte.MaxValue),
-                    Master = master,
-                    MasterSlot = master.Slot,
-                    State = 1, // ocupado (field+8 != 0)
-                };
-                f.Add(master);
-                Fields.Add(f);
-                // FUN_0040b7b0: vincula o master ao field (estado "em field")
-                master.FieldId = f.Id;
-                master.InField = true;
-                master.FieldSecondary = true;
-                master.Status = Domain.UserStatus.InField;
-                Log.Info("field", "[{0}] criou field {1} '{2}' (map={3} mode={4} cap={5})",
-                    master.Slot, f.Id, name, mapId, mode, f.MaxPlayers);
-                return f;
-            }
-        }
-
-        /// <summary>
-        /// Garante que a sessao tem um Field ativo com seat alocado (ponte da cadeia de entrada
-        /// 0x3b/0x4b — proven-working — para o modelo de partida real). Solo: cria um field
-        /// dedicado; multi: reusa o field ja associado (FieldId). Marca State=2 (em jogo) p/ o
-        /// motor rodar e seta os campos de seat do user (FUN_0040b7b0).
-        /// </summary>
-        public Domain.Field EnsureFieldForSession(ClientSession s)
-        {
-            Domain.Field f = GetField(s.FieldId)
-                ?? CreateField(s.CharName.Length > 0 ? s.CharName : $"field{s.Slot}", mapId: 0, mode: 0, capacity: 8, master: s);
-            f.State = 2; // field+8 = 2 (em jogo)
-            int seat = f.AssignSeat(s);
-            if (seat >= 0) { s.FieldSeat = (byte)seat; s.FieldObjectIndex = (ushort)seat; }
-            if (f.MasterSlot < 0 || f.MasterSlot >= 0x14) f.MasterSlot = seat;
-            return f;
-        }
-
-        /// <summary>Remove o usuario do field; se ficar vazio, libera o field.</summary>
-        public void LeaveField(ClientSession s)
-        {
-            var f = GetField(s.FieldId);
-            if (f == null) return;
-            f.Remove(s);
-            s.FieldId = -1;
-            if (f.Count == 0)
-            {
-                lock (Fields) Fields.Remove(f);
-                Log.Info("field", "field {0} '{1}' liberado (vazio)", f.Id, f.Name);
-            }
-        }
-
         public WorldServer(WorldConfig cfg, WorldDatabase db)
         {
             _cfg = cfg;
             _db = db;
+            Bots = new BotManager(() => _udpGame?.Port ?? 40708);
+            Items = new ItemCatalog(db);
+            Progression = new ProgressionService(db);
+            Enchant = new EnchantService(db, () => EnchantConfig);   // config recarregável — lê a vigente
+            Buddy = new BuddyService(db);
         }
+
+        /// <summary>Catálogo de itens (iteminfo) — serviço extraído; carregado no boot, consultado por shop/login.</summary>
+        public ItemCatalog Items { get; }
+
+        /// <summary>Progressão (exp/level/stage-result) — serviço extraído; opera sobre a sessão + DB.</summary>
+        public ProgressionService Progression { get; }
+
+        /// <summary>Refino/enchant (0x74) — serviço extraído; opera sobre o box da sessão + DB + config recarregável.</summary>
+        public EnchantService Enchant { get; }
+
+        /// <summary>Buddy/messenger (add buddy 0x19) — serviço extraído; persistência de amizade recíproca.</summary>
+        public BuddyService Buddy { get; }
+
+        /// <summary>Subsistema de BOTS (IA, roster, peer, ciclo de vida) — extraído do WorldServer p/ isolar o
+        /// acoplamento; depende só da porta do gameplay UDP. Entradas: BotTick/SpawnFieldBotsInStage/DiscardBots
+        /// (motor de partida) e AddBotToField/RemoveBotsFromField (chat /addbot).</summary>
+        public BotManager Bots { get; }
 
         public bool Locked { get; private set; }                 // this+0x50 (servidor fechado p/ GM)
         public PuConfig PuConfig { get; private set; } = new();   // pu_config: preço/bônus/multiplicadores do PU (lida no boot)
@@ -129,6 +79,60 @@ namespace RakionServer.World
 
         /// <summary>Sessoes ativas (iteracao thread-safe sobre o dicionario).</summary>
         public IEnumerable<ClientSession> Sessions => _sessions.Values;
+
+        /// <summary>Entrada da user list de uma sessão (DTO de borda). ChanSlot = low-byte do Slot (estável;
+        /// é a chave do remove 0x20).</summary>
+        private static Network.LobbyFrames.UserListEntry UserEntryOf(ClientSession s) =>
+            new((byte)(s.Slot & 0xff), (ushort)(s.GameInfoId > 0 ? s.GameInfoId : s.Slot), s.CharName, s.CharClass);
+
+        /// <summary>Snapshot dos USUÁRIOS ONLINE (conectados com char carregado) p/ a user list do canal (0x1e).
+        /// DEDUP por nome de char (fica a sessão mais recente = maior Slot): uma reconexão deixa a sessão velha
+        /// ainda "Connected" até o TCP notar, e o char aparecia DUPLICADO na lista.</summary>
+        public IReadOnlyList<Network.LobbyFrames.UserListEntry> SnapshotChannelUsers()
+        {
+            var byName = new Dictionary<string, (ushort Slot, Network.LobbyFrames.UserListEntry Entry)>();
+            foreach (var s in _sessions.Values)
+            {
+                if (!s.Connected || string.IsNullOrEmpty(s.CharName)) continue;
+                if (!byName.TryGetValue(s.CharName, out var cur) || s.Slot > cur.Slot)
+                    byName[s.CharName] = (s.Slot, UserEntryOf(s));
+            }
+            var list = new List<Network.LobbyFrames.UserListEntry>(byName.Count);
+            foreach (var v in byName.Values) list.Add(v.Entry);
+            return list;
+        }
+
+        /// <summary>User list INCREMENTAL (o widget do cliente ACUMULA 0x1e): avisa os DEMAIS no channel lobby
+        /// que <paramref name="joiner"/> entrou — um 0x1e só com o novato. A lista cheia vai só a quem entra
+        /// (senão cada rebroadcast duplicava todo mundo na tela de quem já estava).</summary>
+        public void AnnounceChannelUserJoined(ClientSession joiner)
+        {
+            byte[] frame = Network.LobbyFrames.ChannelList(new[] { UserEntryOf(joiner) });
+            foreach (var s in _sessions.Values)
+                if (s != joiner && s.Connected && s.Status == Domain.UserStatus.FieldLobby && !string.IsNullOrEmpty(s.CharName))
+                    try { s.SendEncryptedFrame(frame); } catch { }
+        }
+
+        /// <summary>Broadcast do chat do canal/game-list (0x22): reecoa o texto a TODOS no channel lobby (mesmos
+        /// que a user list 0x1e mostra), INCLUINDO o remetente — o cliente não desenha o próprio 0x22 local, só o
+        /// eco do servidor (por isso "não aparecia nada"). O nome do remetente já vem embutido no texto pelo
+        /// cliente; o chanSlot = low-byte do Slot (índice do remetente no canal, como o 0x1e/0x20).</summary>
+        public void BroadcastChannelChat(ClientSession sender, string text)
+        {
+            byte[] frame = Network.LobbyFrames.ChannelChat((byte)(sender.Slot & 0xff), text);
+            foreach (var s in _sessions.Values)
+                if (s.Connected && s.Status == Domain.UserStatus.FieldLobby && !string.IsNullOrEmpty(s.CharName))
+                    try { s.SendEncryptedFrame(frame); } catch { }
+        }
+
+        /// <summary>Par do append: 0x20 [slotIdx] remove o membro da user list dos que ficam (deslogou).</summary>
+        public void AnnounceChannelUserLeft(ClientSession leaver)
+        {
+            byte[] frame = Network.LobbyFrames.ChannelUserRemove((byte)(leaver.Slot & 0xff));
+            foreach (var s in _sessions.Values)
+                if (s != leaver && s.Connected && s.Status == Domain.UserStatus.FieldLobby && !string.IsNullOrEmpty(s.CharName))
+                    try { s.SendEncryptedFrame(frame); } catch { }
+        }
 
         /// <summary>Sessao por slot (indice do pacote UDP de gameplay).</summary>
         public ClientSession? GetSession(ushort slot) => _sessions.TryGetValue(slot, out var s) ? s : null;
@@ -146,8 +150,25 @@ namespace RakionServer.World
             return null;
         }
 
+        /// <summary>Sessao pelo UserId publicado na user list do canal (0x1e): GameInfoId se &gt;0, senao Slot
+        /// (mesma regra do <see cref="UserEntryOf"/>). O invite 0x72 endereca o alvo por esse id.</summary>
+        public ClientSession? GetSessionByUserId(ushort userId)
+        {
+            foreach (var s in _sessions.Values)
+            {
+                if (!s.Connected || string.IsNullOrEmpty(s.CharName)) continue;
+                ushort uid = (ushort)(s.GameInfoId > 0 ? s.GameInfoId : s.Slot);
+                if (uid == userId) return s;
+            }
+            return null;
+        }
+
         /// <summary>Envia um tick de gameplay (1583 + SEQ) ao endpoint UDP do jogador.</summary>
         public void SendGameplayTick(System.Net.IPEndPoint to, byte seq) => _udpGame?.SendTick(to, seq);
+
+        /// <summary>Envia um datagrama de gameplay SINTETIZADO (move/ação 0x30a do bot) ao endpoint UDP de
+        /// um peer humano. O bot não tem cliente p/ enviar — o servidor monta o pacote do estado do bot.</summary>
+        internal void SendGameplayRaw(System.Net.IPEndPoint to, byte[] pkt) => _udpGame?.SendRaw(to, pkt);
 
         /// <summary>
         /// Motor da partida por-field (FUN_00409940 + FUN_004069a0): roda a maquina de estado
@@ -194,6 +215,10 @@ namespace RakionServer.World
                     foreach (var f in snapshot)
                     {
                         if (f.State != 2) continue;   // solo E PvP — sem o clock o cliente solo nao manda input (trava no briefing)
+                        // 2+ HUMANOS = P2P: o CLIENTE (host) dirige o relógio 1583 e o manda direto ao outro
+                        // (captura do original: o 1583 é P2P 2301↔2302, NÃO servidor->cliente). O tick do servidor
+                        // conflitava com o do peer -> o 2º cliente ficava "fantasma". Só solo/bot usa o clock do server.
+                        if (f.HumanCount >= 2) continue;
                         foreach (var r in f.Slots)
                         {
                             var s = r.Session;
@@ -239,11 +264,14 @@ namespace RakionServer.World
                     // tempo esgotado -> fim de round por placar (FUN_00409940 deadline)
                     if (now >= f.DeadlineMs)
                     {
-                        f.EndRound(f.DecideRoundWinnerByScore());
-                        // FIELD 0x4a aos playing: body=[cause/2bd][2bf][2c0][2c1] (mesmo layout dos
-                        // handlers 0x4a/0x4d de fim-de-round)
-                        f.BroadcastFieldPlaying(0x4a,
-                            new byte[] { f.LastRoundWinner, f.WinnerSide, f.Wins0, f.Wins1 });
+                        f.EndRound(f.DecideRoundWinnerByScore(), cause: 2);   // 2 = placar/tempo (+0x2bd)
+                        // FIELD 0x4a aos playing: body=[causa/2bd][winner-wire/2bf][2c0][2c1]
+                        f.BroadcastFieldPlaying(0x4a, f.Build0x4a());
+                    }
+                    else
+                    {
+                        // IA dos bots (spawn 0x45 + decisão/movimento/ataque sintetizados) durante o round.
+                        Bots.BotTick(f);
                     }
                     break;
 
@@ -289,6 +317,9 @@ namespace RakionServer.World
         private void SettleMatch(Domain.Field f)
         {
             f.Settled = true;
+            // Fim de match (rounds acabaram / sem players): descarta TODOS os bots — eles nunca
+            // persistem no roster pós-partida; a volta à sala mostra só humanos (re-adicionar refaz).
+            Bots.DiscardBots(f);
             if (f.Mode == 0) return;
             byte winner = f.Wins0 > f.Wins1 ? (byte)0 : f.Wins1 > f.Wins0 ? (byte)1 : (byte)2;
             foreach (var r in f.Slots)
@@ -367,6 +398,14 @@ namespace RakionServer.World
                 _udpGame.Start();
             }
 
+            // Log em arquivo para diagnóstico sem precisar copiar do console.
+            Log.EnableFileLog(Path.Combine(AppContext.BaseDirectory, "worldserver.log"));
+
+            // Trilha fina do mini-peer (categoria 'peer'): cada estado/frame do handshake de sessão dos bots.
+            // Liga o sink do slice RakionServer.Peer (I/O isolado) ao Log do servidor p/ o teste in-game cravar
+            // o ponto exato do stall. Sai como [DBG] [peer] (gateado por Log.DebugEnabled).
+            RakionServer.Peer.PeerTrace.Sink = line => Log.Ok("peer", "{0}", line);
+
             _ = Task.Run(() => AcceptLoopAsync(_cts.Token));
             _ = Task.Run(() => FieldEngineLoopAsync(_cts.Token)); // motor da partida por-field (FUN_00409940)
             _ = Task.Run(() => GameClockLoopAsync(_cts.Token));   // relogio 1583 (150ms) das salas Battle/PvP
@@ -380,9 +419,8 @@ namespace RakionServer.World
             EnchantConfig = await _db.LoadEnchantConfigAsync();
             Log.Ok("enchant", "config: {0} catalisador(es)  evento×{1} PU×{2}",
                 EnchantConfig.CatalyzerCount, EnchantConfig.EventMult, EnchantConfig.PuMult);
-            await LoadItemDefsCacheAsync();   // catalogo de itens (iteminfo) p/ a compra 0x2e
-            _levelCurve = await _db.LoadLevelCurveAsync(); // curva de exp por classe (level-up 0x50)
-            Log.Ok("level", "curva de level carregada: {0} entradas (classlevelinfo)", _levelCurve.Count);
+            await Items.LoadAsync();   // catalogo de itens (iteminfo) p/ a compra 0x2e
+            await Progression.LoadCurveAsync();            // curva de exp por classe (level-up 0x50)
             _ = Task.Run(() => ConfigReloadLoopAsync(_cts.Token));   // reload a quente de pu_config/enchant_* (admin sem restart)
             Log.Ok("world", "World Server pronto (ServerId={0})", _cfg.ServerId);
         }
@@ -413,207 +451,9 @@ namespace RakionServer.World
         /// <summary>Acesso ao DB para os handlers (compra 0x2e).</summary>
         public WorldDatabase Db => _db;
 
-        private System.Collections.Generic.Dictionary<(byte Cls, byte Level), int> _levelCurve = new();
 
-        /// <summary>Exp TOTAL p/ avancar do nivel atual (classlevelinfo). 0 = sem proximo nivel.</summary>
-        public int NextLevelExp(byte cls, byte level) => _levelCurve.TryGetValue((cls, level), out var e) ? e : 0;
 
-        /// <summary>
-        /// Credita exp ao char ativo e processa level-ups (FUN_0040d300): acumula CharExp,
-        /// sobe CharLevel/CharLevelPoint e persiste exp + nivel no characterinfo. O threshold de cada
-        /// nivel e' o MEIO do intervalo da curva classlevelinfo ((curva[L-1]+curva[L])/2) — house-rule
-        /// p/ "barra cheia = upa" exato (o cliente desenha o cheio no meio do span; ver loop).
-        /// Devolve quantos niveis subiu (0 = nenhum).
-        /// </summary>
-        public int GrantExp(ClientSession s, uint exp)
-        {
-            if (s.ActiveCharId <= 0 || exp == 0) return 0;
-            s.CharExp += exp;
-            _ = _db.AddCharacterResultAsync(s.ActiveCharId, 0, 0, 0, exp);
-            return SettleLevels(s);
-        }
 
-        /// <summary>Aplica o RESULTADO de um stage solo (handler 0x53): bônus de PU sobre exp/gold, credita gold
-        /// (saldo + DB), grava o MELHOR rank do stage (userstageinfo) e concede exp (curva classlevelinfo).
-        /// Devolve o nº de level-ups. Regra de negócio do motor de partida/progressão — fora do handler de rede.</summary>
-        public int ApplyStageResult(ClientSession s, byte stage, byte rank, uint exp, uint gold)
-        {
-            exp = s.BonusExp(exp); gold = s.BonusGold(gold);                       // bônus de PU (pu_config)
-            s.Gold += gold;
-            if (gold > 0 && s.GameInfoId > 0) _ = _db.AddGoldAsync(s.GameInfoId, (int)gold);
-            if (rank > 0 && s.ActiveCharId > 0) _ = _db.SaveStageRankAsync(s.ActiveCharId, stage, rank); // melhor rank por stage
-            return GrantExp(s, exp);
-        }
-
-        /// <summary>Domínio do messenger (add buddy, 0x19): resolve o nick -> conta dona e, se existe e não é o
-        /// próprio jogador, persiste a amizade RECÍPROCA (buddylist nos 2 sentidos). Devolve (status, accountId do
-        /// dono) p/ o handler serializar a resposta — status 0=ok, 2=char não existe (lang 598). O AddBuddy do
-        /// cliente é MUDO (não emite SVC_ADD_BUDDY), então a amizade é persistida aqui, não no Buddy.</summary>
-        public async Task<(byte Status, string Account)> ResolveAndAddBuddyAsync(ClientSession s, string targetNick)
-        {
-            string? targetAccount = await _db.GetCharOwnerByNickAsync(targetNick);
-            if (targetAccount == null) return ((byte)2, "");                 // char não existe (lang 598)
-            if (!string.Equals(targetAccount, s.UserId, StringComparison.OrdinalIgnoreCase))
-            {
-                await _db.AddBuddyReciprocalAsync(s.UserId, targetAccount);
-                Log.Ok("buddy", "[{0}] amizade '{1}' <-> '{2}' (nick '{3}') persistida", s.Slot, s.UserId, targetAccount, targetNick);
-            }
-            return ((byte)0, targetAccount);
-        }
-
-        /// <summary>Aplica o UPGRADE do refino (handler 0x74 = clique de upgrade). SERVER-AUTHORITATIVE: este build do
-        /// worldserv DESCARTAVA o roll de FUN_0040c310 (o cliente fica em "Upgrading Now" esperando o resultado), então
-        /// reconstruímos o comportamento pretendido — valida (CUser::CheckEnchantReinforce), ROLA a probabilidade,
-        /// aplica o delta de nível na arma (persiste itembox.level) e consome catalyzer + materiais. Regra do motor de
-        /// refino — fora do handler de rede. Devolve o result code (0=+1, 1=nada, 2=-1; 6/7/8 = erro de validação).</summary>
-        public byte ApplyEnchant(ClientSession s, byte weaponSlot, byte catalyzerSlot,
-            System.Collections.Generic.IReadOnlyList<byte> materialSlots)
-        {
-            // VALIDAÇÃO (FUN_0040c310): arma presente e <8000, catalyzer 0x32c9..0x32cd, materiais 0x36b1..0x36b3,
-            // caps de nível. Erro -> 6/7/8 (o cliente mostra "não dá"), sem mexer no estado.
-            int weaponId = BoxItemAt(s, weaponSlot);
-            int catId = BoxItemAt(s, catalyzerSlot);
-            if (weaponId == 0 || weaponId >= 8000) return 6;
-            if (!EnchantConfig.TryGetCatalyzer(catId, out var cat)) return 7;   // catalisador desconhecido
-            int curLevel = weaponSlot < s.BoxLevel.Count ? s.BoxLevel[weaponSlot] : 0;
-            if (curLevel >= 15) return 6;
-            if (curLevel > cat.LevelCap) return 8;             // arma acima do teto do catalisador (Mithril +4, etc.)
-            int j1 = 0, j2 = 0, j3 = 0;
-            foreach (byte ms in materialSlots)
-            {
-                int mid = BoxItemAt(s, ms);
-                if (mid == 0x36b1) j1++;
-                else if (mid == 0x36b2) j2++;
-                else if (mid == 0x36b3) j3++;
-                else return 7;
-            }
-
-            // ROLL server-authoritative (a fórmula de probabilidade roda no servidor) -> delta de nível.
-            // s.PuActive entra no roll: a EnchantConfig aplica o multiplicador de Power User (e o de evento).
-            byte result = RollEnchant(catId, curLevel, j1, j2, j3, s.PuActive);
-            int delta = EnchantDelta(result);
-            int newLevel = System.Math.Clamp(curLevel + delta, 0, 15);
-            if (weaponSlot < s.BoxLevel.Count) s.BoxLevel[weaponSlot] = newLevel;
-            int wRow = weaponSlot < s.BoxRowId.Count ? s.BoxRowId[weaponSlot] : 0;
-            if (wRow > 0) _ = _db.UpdateItemBoxLevelAsync(wRow, newLevel);          // persiste o +N
-
-            // CONSOME catalyzer + materiais (some do box; remoção persistida pela linha EXATA do itembox)
-            Consume(s, catalyzerSlot);
-            foreach (byte ms in materialSlots) Consume(s, ms);
-
-            Log.Ok("enchant", "[{0}] refino: arma slot {1} +{2}->+{3} (result={4}); catalyzer {5:x} + {6} joia(s) [j1={7} j2={8} j3={9}] consumidos",
-                s.Slot, weaponSlot, curLevel, newLevel, result, catId, materialSlots.Count, j1, j2, j3);
-            return result;
-        }
-
-        /// <summary>Lê o itemId de uma célula do box (0 = vazia/fora de faixa).</summary>
-        private static int BoxItemAt(ClientSession s, byte slot) => slot < s.BoxItems.Count ? s.BoxItems[slot] : 0;
-
-        /// <summary>Esvazia a célula e persiste a remoção da linha EXATA do itembox.</summary>
-        private void Consume(ClientSession s, byte slot)
-        {
-            var (_, rowId) = s.ClearBoxCell(slot);
-            if (rowId > 0) _ = _db.DeleteItemBoxByIdAsync(rowId);
-        }
-
-        /// <summary>Roleta do refino: a probabilidade de sucesso vem da <see cref="EnchantConfig"/> (banco —
-        /// coeficientes por catalisador + multiplicadores de evento/PU; estrutura do polinômio fiel ao FUN_0040c310).
-        /// Aqui só sorteamos sucesso vs falha e, na falha, se vira downgrade (-1) ou nada. Destroy (result 5) é
-        /// neutralizado neste build. Devolve o result code (0=+1, 1=nada, 2=-1).</summary>
-        private byte RollEnchant(int catalyzerId, int curLevel, int j1, int j2, int j3, bool puActive)
-        {
-            double p0 = EnchantConfig.SuccessChance(catalyzerId, curLevel, j1, j2, j3, puActive);
-            if (_rng.NextDouble() < p0) return 0;   // SUCESSO +1
-            double downgrade = (1.0 - p0) * EnchantConfig.DowngradeFactor(curLevel);
-            return _rng.NextDouble() < downgrade ? (byte)2 : (byte)1;   // 2=-1 (downgrade) ou 1=nada
-        }
-
-        private static int EnchantDelta(byte resultCode) => resultCode switch
-        {
-            0 => +1, 2 => -1, 3 => -2, 4 => -3, _ => 0,
-        };
-
-        private readonly System.Random _rng = new();
-
-        /// <summary>Sobe os niveis PENDENTES pela curva (sem creditar exp) e persiste. Chamado ao GANHAR exp
-        /// (<see cref="GrantExp"/>) E no LOAD do char — um char carregado JÁ acima do limiar upa na hora, sem
-        /// precisar ganhar exp de novo. Devolve quantos niveis subiu (0 = nenhum).</summary>
-        public int SettleLevels(ClientSession s)
-        {
-            if (s.ActiveCharId <= 0) return 0;
-            int ups = 0;
-            while (s.CharLevel < 99)
-            {
-                int full = NextLevelExp(s.CharClass, s.CharLevel);              // curva ORIGINAL: exp do proximo nivel (curva[L])
-                if (full <= 0) break;                                           // teto da curva (sem proximo nivel)
-                int floor = NextLevelExp(s.CharClass, (byte)(s.CharLevel - 1)); // exp do nivel atual (curva[L-1])
-                // HOUSE-RULE (desvio consciente; o DB fica intacto): o cliente desenha a barra "cheia" a ~2/5 do
-                // span do nivel (display nv4 = 496 ~ 386 + (658-386)*2/5 = 494). O meio-a-meio antigo (522)
-                // deixava a barra visualmente cheia SEM upar. Subimos nesse ponto p/ "barra cheia = upa".
-                int next = floor + (full - floor) * 2 / 5;
-                if (s.CharExp < next) break;
-                s.CharLevel++;
-                s.CharLevelPoint++;
-                ups++;
-            }
-            if (ups > 0)
-            {
-                _ = _db.UpdateCharacterLevelAsync(s.ActiveCharId, s.CharLevel, (byte)Math.Min(s.CharLevelPoint, 255));
-                Log.Ok("level", "[{0}] char {1} LEVEL UP -> {2} (+{3} nivel(is), exp total {4})",
-                    s.Slot, s.ActiveCharId, s.CharLevel, ups, s.CharExp);
-            }
-            return ups;
-        }
-
-        private System.Collections.Generic.Dictionary<int, Database.ItemDef> _itemDefs = new();
-        /// <summary>Catalogo de itens (iteminfo) carregado no boot. Preco Gold/Cash por itemId.</summary>
-        public Database.ItemDef? FindItemDef(int itemId) => _itemDefs.TryGetValue(itemId, out var d) ? d : null;
-
-        /// <summary>
-        /// O item pode ser DESENHADO no grid do armazem (box)? Só "gear" = tipos 0-5 (slots de equipamento,
-        /// Class bitmask 1-16, ids 1xxx-5xxx). Tipos 6-14 (transform=8, lotto=11, especial=13, etc., todos
-        /// Class 31) NÃO têm ícone de box no cliente GG-removido -> renderizam invisíveis e crasham o painel
-        /// ao reconstruir (botão "Previous"). Esses ainda são comprados/persistidos no itembox, só não pintam
-        /// no grid. Catálogo do cliente: o box-visual (FUN_004774e0) só trata especial o tipo 0x0c, e o gear
-        /// tipo 0 foi confirmado em jogo; tipos 8/13 foram confirmados invisíveis+crash.
-        /// </summary>
-        public bool IsBoxDisplayable(int itemId)
-        {
-            var d = FindItemDef(itemId);
-            if (d == null) return false;
-            // Gear (0-5) + materiais/consumiveis/cash (6,7,9-14, ex: Mithril 13001 type 13) têm ícone de
-            // box e pintam normalmente. O crash do painel no Previous que motivava o filtro antigo (só
-            // type<=5) JÁ foi resolvido (acks 0x2c/0x2d fiéis ao original). Só o type 8 (transform) fica
-            // fora — não tem ícone de box no cliente GG-removido (renderiza invisível).
-            return d.Type != 8;
-        }
-
-        /// <summary>Item é um SET (type 10) — um BUNDLE de peças, não uma peça equipável direta.</summary>
-        public bool IsSet(int itemId) => FindItemDef(itemId)?.Type == 10;
-
-        /// <summary>Composição de um SET (type 10): as colunas hit1-4/chit/ap do iteminfo guardam os itemIds
-        /// dos membros (1 por slot de gear, faixa 0-5) — confirmado: 9012 -> 1009/1109/1209/1309/1409/1509.
-        /// Fonte ÚNICA da composição. Só retorna membros que são itens válidos do catálogo (um valor que não
-        /// resolve em item é stat, não membro -> filtrado). Vazio se não for set ou sem membros válidos.</summary>
-        public System.Collections.Generic.IReadOnlyList<int> ExpandSetMembers(int setItemId)
-        {
-            var d = FindItemDef(setItemId);
-            if (d == null || d.Type != 10) return System.Array.Empty<int>();
-            var members = new System.Collections.Generic.List<int>(6);
-            foreach (var m in new[] { d.Hit1, d.Hit2, d.Hit3, d.Hit4, d.CHit, d.Ap })
-                if (m > 0 && FindItemDef(m) != null) members.Add(m);
-            return members;
-        }
-
-        /// <summary>Carrega o catalogo de itens uma vez (iteminfo).</summary>
-        public async Task LoadItemDefsCacheAsync()
-        {
-            var list = await _db.LoadItemDefsAsync();
-            var map = new System.Collections.Generic.Dictionary<int, Database.ItemDef>(list.Count);
-            foreach (var d in list) map[d.Id] = d;
-            _itemDefs = map;
-            Log.Ok("shop", "catalogo de itens carregado: {0} definicoes", map.Count);
-        }
 
         public void Stop()
         {
@@ -662,159 +502,6 @@ namespace RakionServer.World
             }
             slot = 0;
             return false;
-        }
-
-        /// <summary>Resolve o nome esperado da sessao (validada pelo broker). Vazio = nao validada.</summary>
-        public string ResolveSessionName(string userId)
-            => _validated.ContainsKey(userId) ? userId : "";
-
-        /// <summary>
-        /// Sucesso do login (FUN_0041f6c0): promove a sessao e envia o LoginComplete
-        /// imediatamente (o handler original responde ali mesmo). A carga do jogo e o
-        /// log de conexao no DB rodam em background para nao atrasar a resposta.
-        /// </summary>
-        public async Task OnLoginSuccessAsync(ClientSession s, string userId, string field2, string field3, ushort tail)
-        {
-            s.SlotActive = true;
-            s.Authenticated = true;
-            // field2 = USER/conta (login: connType, userID='D' artefato, field2=user, field3=senha). userId
-            // parseado ('D') NAO e' a conta -> usar field2 ('test') p/ achar usergameinfo/cash/char no DB.
-            s.UserId = field2.Length > 0 ? field2 : userId;
-            s.Status = Domain.UserStatus.LoggedIn;
-            s.CharName = field2;
-            s.GroupId = Channels.Count > 0 ? Channels[0].Id : 0;   // canal default (origem real: locale/IDC do client)
-            Interlocked.Increment(ref _currentUsers);
-
-            // Carrega gold/cash/level/itens do DB ANTES do 0x0C: a síntese do 0x0C serializa gold/cash do
-            // estado vivo (o display reflete a compra). Sincrono p/ garantir s.Gold/s.Cash setados no 0x0C.
-            await LoadAndLogAsync(s, s.UserId);
-            s.SendLoginResponse();   // 0x0C sintetizado (lista de chars) + 0x0D — 0x10 vai apos o handshake UDP
-        }
-
-        private async Task LoadAndLogAsync(ClientSession s, string userId)
-        {
-            var gi = await _db.LoadGameInfoAsync(userId);
-            if (gi == null)
-            {
-                Log.Warn("login", "[{0}] '{1}' logado mas sem usergameinfo (DB indisponivel?)", s.Slot, userId);
-                return;
-            }
-            s.Game = new WorldDatabaseInfo { UserId = gi.Id, Name = gi.Name, CharName = gi.CharName, Gold = gi.Gold };
-            s.GameInfoId = gi.Id;                                       // usergameinfo.id (debito gold + useriteminfo.userid)
-            s.Gold = (uint)(gi.Gold < 0 ? 0 : gi.Gold);
-            int cash = await _db.GetCashAsync(userId);                  // cash keyed por account-name
-            s.Cash = (uint)(cash < 0 ? 0 : cash);
-            s.PowerLevelPoint = (uint)(gi.PowerLevelPoint < 0 ? 0 : gi.PowerLevelPoint); // PU Bonus Points -> 0x0C @48
-            s.PuActive = gi.PuActive;                                   // powertimedate > now -> bônus de XP/gold
-            s.ExpBonusActive = gi.PuActive;                            // flag original do bônus de XP (user+0x236c)
-            if (gi.PuActive) Log.Info("shop", "[{0}] PU ATIVO -> bônus xp×{1} gold×{2}", s.Slot,
-                PuConfig.EffectiveExpMult(DateTime.Now), PuConfig.EffectiveGoldMult(DateTime.Now));
-            var ch = await _db.LoadActiveCharacterAsync(gi.Id);
-            if (ch != null)
-            {
-                s.ActiveCharId = ch.Id;                                 // useriteminfo.characterid
-                s.CharClass = ch.Class;                                 // classe -> curva de level (0x50)
-                s.CharExp = ch.Exp < 0 ? 0 : ch.Exp;                    // exp acumulado (level-up server-side)
-                s.CharLevel = ch.Level == 0 ? (byte)1 : ch.Level;       // overlay 0x0C @96 (nivel na tela)
-                s.CharWin = (uint)(ch.Win < 0 ? 0 : ch.Win);            // overlay 0x0C @73
-                s.CharLose = (uint)(ch.Lose < 0 ? 0 : ch.Lose);         // overlay 0x0C @77
-                s.CharDraw = (uint)(ch.Draw < 0 ? 0 : ch.Draw);         // overlay 0x0C @81
-                s.CharLevelPoint = (uint)(ch.LevelPoint);               // pontos de level -> overlay 0x0C @101
-                SettleLevels(s);                                        // upa niveis pendentes JÁ no load (barra cheia do relog)
-                // stats alocados (hit1..maxcp) -> Stats[0..9], p/ a alocacao 0x33 partir do valor real salvo
-                s.Stats[0] = ch.Hit1; s.Stats[1] = ch.Hit2; s.Stats[2] = ch.Hit3; s.Stats[3] = ch.Hit4;
-                s.Stats[4] = ch.Chit; s.Stats[5] = ch.Hp; s.Stats[6] = ch.Ap; s.Stats[7] = ch.AttackSpeed;
-                s.Stats[8] = ch.Speed; s.Stats[9] = ch.Maxcp;
-                if (s.CharName.Length == 0) s.CharName = ch.Name;
-                s.Items = await _db.LoadItemsAsync(ch.Id);              // inventario do char p/ o Box (0x2f)
-                // armazem (itembox) -> exibido no box + slot da compra. FILTRA p/ só gear (type<=5): itens
-                // não-gear (transform/especial/lotto) ficam no DB mas NÃO carregam no box -> sem célula
-                // invisível e sem crash do painel no "Previous" (ver IsBoxDisplayable).
-                var loadedBox = await _db.LoadItemBoxAsync(gi.Id);
-                // SETS (type 10) são BUNDLES de peças de gear (iteminfo hit1-4/chit/ap = itemIds dos membros).
-                // Desempacota no armazem (troca o set pelas peças) — o cliente não tem ação de "usar set", então
-                // sem isto o set fica inerte no box. Idempotente: após desempacotar não resta set p/ desempacotar.
-                var setsInBox = loadedBox.FindAll(t => IsSet(t.ItemId));
-                if (setsInBox.Count > 0)
-                {
-                    var doneSets = new HashSet<int>();
-                    foreach (var t in setsInBox)
-                        if (doneSets.Add(t.ItemId)) await _db.UnpackSetInBoxAsync(gi.Id, t.ItemId, ExpandSetMembers(t.ItemId));
-                    loadedBox = await _db.LoadItemBoxAsync(gi.Id);          // recarrega já desempacotado
-                    Log.Ok("login", "[{0}] {1} set(s) type-10 desempacotado(s) no armazem", s.Slot, doneSets.Count);
-                }
-                var boxGear = loadedBox.FindAll(t => IsBoxDisplayable(t.ItemId));   // só gear entra no grid
-                s.SetBoxItems(boxGear);   // consolida poções por id (1 célula + contador); gear 1 por célula, com nível de refino
-                s.LoadPotionSlot(await _db.LoadQuickslotAsync(gi.Id));     // quickslot de pocao persistido (itembox.qslot)
-                s.StageRanks = await _db.LoadStageRanksAsync(ch.Id);       // ranks de stage -> overlay 0x0C@333 (RANK X CLEAR na seleção)
-                int boxHidden = loadedBox.Count - boxGear.Count;
-                Log.Ok("login", "[{0}] char ativo='{1}' id={2} class={3} lvl={4} itens={5} box={6}{7}", s.Slot, ch.Name, ch.Id, ch.Class, ch.Level, s.Items.Count, boxGear.Count, boxHidden > 0 ? $" (+{boxHidden} não-gear ocultos)" : "");
-            }
-            else { Log.Warn("login", "[{0}] '{1}' sem char ativo (characterinfo.used=1 ausente)", s.Slot, userId); }
-            s.LoginCharList = await BuildLoginCharListAsync(s);   // lista de chars do char-select (0x0C), sintetizada do DB
-            await _db.LogUserConnectAsync(gi.Id, userId, _cfg.ServerId, s.RemoteIp);
-            // Messenger (F9): grava a identidade do buddy (account+nick+IP). O login do Buddy é cifrado e não
-            // carrega o nick -> o Buddy resolve a conexão TCP por IP (messenger_session) p/ saber quem é, carregar
-            // a lista de amigos e anunciar presença. O nick é o nome do char ativo (id de rede do messenger).
-            await _db.UpsertMessengerSessionAsync(s.UserId, ch?.Name?.Length > 0 ? ch.Name : userId, s.RemoteIp);
-            Log.Ok("login", "[{0}] '{1}' logado (char='{2}', gold={3}, cash={4}) — {5}/{6} online",
-                s.Slot, userId, gi.CharName, s.Gold, s.Cash, CurrentUsers, MaxUser);
-        }
-
-        /// <summary>Monta a lista de chars do char-select (0x0C) a partir do DB — síntese de raiz, sem replay.</summary>
-        private async Task<CharList> BuildLoginCharListAsync(ClientSession s)
-        {
-            var chars = await _db.LoadCharactersAsync(s.GameInfoId);
-            var quickslot = await _db.LoadQuickslotAsync(s.GameInfoId);   // account-level (itembox.qslot)
-            var summaries = new List<CharSummary>(chars.Count);
-            foreach (var ch in chars)
-            {
-                var ranks = await _db.LoadStageRanksAsync(ch.Id);
-                summaries.Add(BuildCharSummary(ch, ranks, ch.Id == s.ActiveCharId ? quickslot : null));
-            }
-            return new CharList
-            {
-                AccountName = chars.Count > 0 ? chars[0].Name : s.CharName,   // @41 (truncado a 2 chars no writer)
-                UserId = (uint)s.GameInfoId,
-                Gold = s.Gold,
-                Cash = s.Cash,
-                PowerLevelPoint = (ushort)Math.Min(s.PowerLevelPoint, (uint)ushort.MaxValue),
-                Chars = summaries,
-            };
-        }
-
-        private static CharSummary BuildCharSummary(CharacterInfo ch, byte[] ranks,
-            List<(int Cell, int ItemId, int Count)>? quickslot)
-        {
-            // Equip NÃO entra no char-select: o preview 3D veste o gear no modelo da classe e crasha em classes
-            // sem o bone da arma ('Weapon01_ON_R'). TODO: reabilitar (só armadura, ou tratar o bone por classe).
-            var qs = new ushort[6];
-            if (quickslot != null)
-                foreach (var (cell, itemId, _) in quickslot)
-                    if (cell is >= 13 and <= 18) qs[cell - 13] = (ushort)itemId;
-            return new CharSummary
-            {
-                Name = ch.Name, Slot = ch.Slot, Class = ch.Class,
-                Level = ch.Level == 0 ? (byte)1 : ch.Level, Exp = (uint)Math.Max(0, ch.Exp), LevelPoint = ch.LevelPoint,
-                Win = (uint)Math.Max(0, ch.Win), Lose = (uint)Math.Max(0, ch.Lose), Draw = (uint)Math.Max(0, ch.Draw),
-                Stats = new ushort[] { ch.Hit1, ch.Hit2, ch.Hit3, ch.Hit4, ch.Chit, ch.Hp, ch.Ap, ch.AttackSpeed, ch.Speed, ch.Maxcp },
-                Quickslot = qs, StageRanks = ranks ?? System.Array.Empty<byte>(),
-            };
-        }
-
-        public async Task RemoveSessionAsync(ClientSession s)
-        {
-            if (_sessions.TryRemove(s.Slot, out _))
-            {
-                LeaveField(s);
-                if (s.Authenticated)
-                    Interlocked.Decrement(ref _currentUsers);
-                // Messenger (F9): a identidade do buddy é por IP -> ao sair, apaga a messenger_session p/ uma
-                // conexão futura do mesmo IP não ser resolvida como esta conta (e o amigo cair offline na presença).
-                if (s.UserId.Length > 0) await _db.DeleteMessengerSessionAsync(s.UserId);
-                Log.Info("world", "[{0}] sessao encerrada ('{1}') — {2}/{3} online",
-                    s.Slot, s.UserId, CurrentUsers, MaxUser);
-            }
         }
 
         // ---- broker -----------------------------------------------------------

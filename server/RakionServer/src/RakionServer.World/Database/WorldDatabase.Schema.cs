@@ -77,9 +77,13 @@ namespace RakionServer.World.Database
                     " account VARCHAR(16) NOT NULL PRIMARY KEY," +
                     " char_name VARCHAR(16) NOT NULL DEFAULT ''," +
                     " ip VARCHAR(45) NOT NULL DEFAULT ''," +
+                    " port INT NOT NULL DEFAULT 0," +
                     " login_ts DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)");
-                // a tabela pode existir de uma versão anterior sem char_name (account,ip,login_ts) -> adiciona idempotente
+                // a tabela pode existir de versões anteriores sem char_name/port -> adiciona idempotente. port =
+                // porta TCP de origem do login no World; o Buddy desambigua 2+ clientes do mesmo IP por
+                // proximidade de porta (a conexão do Buddy nasce logo após o login, efêmeras vizinhas).
                 await Exec(c, "ALTER TABLE messenger_session ADD COLUMN IF NOT EXISTS char_name VARCHAR(16) NOT NULL DEFAULT ''");
+                await Exec(c, "ALTER TABLE messenger_session ADD COLUMN IF NOT EXISTS port INT NOT NULL DEFAULT 0");
                 await Exec(c, "ALTER TABLE usergameinfo ADD COLUMN IF NOT EXISTS buddyname VARCHAR(16) NOT NULL DEFAULT ''");
                 Log.Ok("db", "schema verificado (itembox.qslot, pu_config, enchant_*, buddylist, messenger_session)");
             }

@@ -72,6 +72,38 @@ msgType 4: `[u16 serverSeq][u16 4][u32 user+0x1468][u16 reason][u32 ...]`. Razõ
 em logs: `0x47`=FieldList, `0x4f`=FieldQuickEnter, `0x51`=FieldExit, `0x53`=FieldCreate,
 `0x61`=FieldReady, `0x7f`=FieldChat.
 
+## Field Invitation (convite de sala) — opcode `0x72` (RE 2026-07-05, dois lados)
+Fluxo do botão **Invite** da sala (2 clientes). Cadeia: diálogo → SEND → relay/NOTIFY → popup → aceite.
+
+**1) Diálogo (já portado):** o clique manda `0x1E` ao world → resposta = user list do canal
+(`LobbyFrames.ChannelList`), que popula a lista de convidáveis.
+
+**2) SEND (master → world):** `IScavengerWorldNet::SendFieldInvitation(u16)` @`engine.dll 0x36191af0`
+escreve **`[72 00][targetUserId:u16]`** (4B; resto do bloco = pad). `targetUserId` = o UserId da user
+list = `GameInfoId` (>0) senão slot.
+
+**3) Relay/NOTIFY (world → ALVO):** dispatcher `FUN_0042ab40` caso `0x72` → **`FUN_00428520`**:
+- valida o master: `+0x1460 && +0x14a4` (ativo/em field) senão `0xd6`; `+0x1440==3` (em sala) senão `0xd7`.
+- valida o alvo: `target+0x1460 != 0` (online) senão `0xd8`. **Erro ⇒ `FUN_0041eb20` DESCONECTA o master.**
+- monta e envia ao alvo (`FUN_004038e0`, dest = targetId):
+  `[72 00][inviterId:u16][inviterName\0][fieldSlot:u16][blob]`, com `inviterId`=slot do master,
+  `inviterName`=`master+0x14a8`, `fieldSlot`=`master+0x14a0` (índice do field), `blob`=`FUN_00406a80`
+  (map `+0x118`, mode `+0x119`, minLvl `+0x111`, maxLvl `+0x112`, `+0x113`, maxRounds `+0x11a`, `u16 +0x11c`,
+  `roomName\0`, `roomName2\0`).
+
+**4) Popup (cliente-alvo):** `ProcessWorldRecvBuffer` @`0x36197a40` drena a fila → `FUN_36197320(op,data,len)`
+→ caso `0x72` = **`FUN_36193f40`**. Lê, do payload:
+`[inviterId:u16][inviterName\0][fieldSlot:u16][map][mode][minLvl][maxLvl][0][maxRounds][0][roomName\0][pass\0]`
+(reancorra pelo NUL do nome via `lstrlen`), e chama o host-callback `vtable+0x260` = popup.
+
+**5) Aceite:** o cliente ecoa `fieldSlot` via `SendFieldEnter` = **`0x38`** (join, já portado). Sem opcode novo.
+
+> ⚠️ **NOTA-DE-BUILD (rakion-final ≠ rakion-new):** o `engine.dll` (parser do frame) lê **7 bytes** de
+> atributos entre `fieldSlot` e `roomName`; o `worldserv.exe` do RE emite **8** (6 + `u16 +0x11c`). Como quem
+> parseia o nosso frame é o `engine.dll`, a síntese segue os **7 bytes**. Implementação: `LobbyFrames.FieldInvitation`
+> (síntese pura do `Field` — sem replay) + `ClientSession.HandleFieldInvite` (relay; erro = **drop silencioso**,
+> não desconecta) + `WorldServer.GetSessionByUserId`. Golden: `FieldInvitation_ByteExact_MatchesClientParse`.
+
 ## Tabela de opcodes (cases do dispatcher)
 `0x01..0x05, 0x08..0x0C, 0x0E..0x10, 0x12..0x1C, 0x1E, 0x20, 0x22, 0x29..0x2F, 0x31..0x36,
 0x38..0x3B, 0x3D..0x43, 0x45..0x4D, 0x4F, 0x50, 0x53, 0x56, 0x57, 0x59..0x5B, 0x5D, 0x5E,

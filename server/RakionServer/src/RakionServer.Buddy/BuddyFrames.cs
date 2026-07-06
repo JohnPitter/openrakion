@@ -28,22 +28,26 @@ namespace RakionServer.Buddy
         public const int GroupOff = 0x3c;     // grupo UTF-16
         public const int AddrOff = 0x64;      // endereço P2P (0 = offline)
 
-        /// <summary>RET_LOGIN (0x1011) de sucesso: [u16 result=0][u16 token][u16 count][count × registro 0x94].
-        /// Os amigos entram OFFLINE (endereço P2P 0); a presença/endereço vem depois pelo NTF_USER_STATE. O token
-        /// (u16 @+2) é ecoado pelo cliente via UDP p/ o brokering P2P aprender o endpoint (o cliente faz sendto dos
-        /// 4 bytes iniciais — ver disasm @1000759e). count cap 500 (limite do cliente, @100075ae).</summary>
+        /// <summary>RET_LOGIN (0x1011) de sucesso — HEADER DE 8 BYTES: <b>[u16 result=0][u16 token][u16 _][u16 count]
+        /// [count × registro 0x94]</b>. CRAVADO (2026-07-05, medição de 2 sessões in-game): o cliente lê a base do
+        /// registro em <c>payload+8</c> e a contagem em <c>payload+6</c> (loop @100075a4 com EBX=payload+2 →
+        /// count@[EBX+4], registros@[EBX+6]). Prova: com header de 6B o nome UTF-16 saía truncado em N chars e o
+        /// count (lido dos bytes do próprio registro) inflava a lista com lixo + crash; os dois testes convergiram
+        /// em record_base=payload+8. Os 2 bytes @+4 (o "_") completam o header p/ o count cair em +6. Amigos entram
+        /// OFFLINE (endereço P2P 0); a presença vem pelo NTF_USER_STATE. token (@+2) ecoado via UDP (brokering P2P).
+        /// count cap 500 (@100075ae).</summary>
         public static byte[] LoginList(ushort token, IReadOnlyList<BuddyEntry> buddies)
         {
             int count = Math.Min(buddies.Count, 500);
             using var w = new PacketWriter();
-            w.WriteWord(0);          // result = 0 (sucesso)
-            w.WriteWord(token);      // token ecoado via UDP (brokering P2P)
-            w.WriteWord(count);
+            w.WriteWord(0);          // result = 0 (sucesso) @+0
+            w.WriteWord(token);      // @+2 — ecoado via UDP (brokering P2P)
+            w.WriteWord(0);          // @+4 — completa o header de 8B (o cliente lê count@+6, registros@+8)
+            w.WriteWord(count);      // count @+6
             for (int i = 0; i < count; i++)
-                w.WriteBytes(BuddyRecord(buddies[i].Nick, buddies[i].Category));
-            // o caminho de SUCESSO do cliente (RET_LOGIN END) exige payload > 7 bytes; sem amigos o frame teria só
-            // 6 bytes -> pad p/ 10 (o stub mandava 8). Com amigos, os registros de 148B já garantem o tamanho.
-            if (count == 0) w.WriteUInt32(0);
+                w.WriteBytes(BuddyRecord(buddies[i].Nick, buddies[i].Category));   // registros @+8
+            // caminho de SUCESSO do cliente exige payload > 7 bytes; sem amigos o header (8B) já basta, + pad p/ 10.
+            if (count == 0) w.WriteWord(0);
             return w.ToArray();
         }
 
@@ -85,6 +89,20 @@ namespace RakionServer.Buddy
                         w.WriteByte((byte)(e.Port & 0xff));
                     }
             }
+            return w.ToArray();
+        }
+
+        /// <summary>RET_REMOVE_BUDDY (0x3003): [u16 result=0][id ASCII 0x14 do amigo removido]. O cliente
+        /// (OnMsg @0x3003) casa esse id contra cada linha da lista (strnicmp 0x14) e REMOVE a que bate
+        /// (FUN_100088a0). Sem o id (só [u16 0]) o cliente lê lixo do buffer, não casa e NÃO tira a linha da UI —
+        /// era a causa do "deletar 2x p/ sumir".</summary>
+        public static byte[] RemoveResult(string nick)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0);                    // result = 0 (sucesso) @+0
+            byte[] id = new byte[IdLen];
+            WriteAscii(id, 0, IdLen, nick);    // id ASCII @+2 (0x14) — chave da remoção na UI
+            w.WriteBytes(id);
             return w.ToArray();
         }
 

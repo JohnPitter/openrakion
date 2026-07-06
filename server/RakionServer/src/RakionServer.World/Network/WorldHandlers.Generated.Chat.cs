@@ -178,7 +178,7 @@ namespace RakionServer.World.Network
                     uint data = ctx.P.UInt32(); // local_1000 = *(param_3+1)
 
                     // Localiza a sessao do alvo e confirma que esta em field (status==3)
-                    ClientSession target = null;
+                    ClientSession? target = null;
                     foreach (var s in ctx.World.Sessions)
                     {
                         if (s.Slot == targetSlot) { target = s; break; }

@@ -15,6 +15,7 @@ namespace RakionServer.Buddy
         private static async Task<int> Main(string[] args)
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Log.EnableFileLog(System.IO.Path.Combine(AppContext.BaseDirectory, "buddyserver.log"));
             Log.Info("boot", "================================================");
             Log.Info("boot", " Rakion Buddy Server (.NET) — reconstruido do DLL");
             Log.Info("boot", "================================================");

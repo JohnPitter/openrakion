@@ -397,12 +397,12 @@ namespace RakionServer.World.Network
             Log.Debug("enchant", "[{0}] 0x74 preview -> 0x28 (arma {1} cat {2} +{3} mat)", u.Slot, valA, b1, count);
 
             // UPGRADE (0x74 = clique de upgrade; o preenchimento do refinador usa 0x31). SERVER-AUTHORITATIVE:
-            // o servidor ROLA a probabilidade, aplica o +N e consome (WorldServer.ApplyEnchant — regra de domínio),
+            // o servidor ROLA a probabilidade, aplica o +N e consome (EnchantService.ApplyEnchant — regra de domínio),
             // e devolve o RESULTADO no reply [u16 0x74][result][slot arma][slot cat][qtd][slots mats] (formato do
             // FUN_0041de40). É esse reply que limpa o "Upgrading Now" e mostra sucesso/falha no cliente.
             byte[] mats = new byte[count];
             for (int i = 0; i < count; i++) mats[i] = data[i];
-            byte result = ctx.World.ApplyEnchant(u, valA, b1, mats);
+            byte result = ctx.World.Enchant.ApplyEnchant(u, valA, b1, mats);
             using (var wr = new PacketWriter())
             {
                 wr.WriteWord(0x74);

@@ -91,7 +91,7 @@ namespace RakionServer.World.Network
             [0x34] = new("Op_0x34_Recon",     0x422b10, Op_0x34_Recon),  // RoomBuyB
             [0x35] = new("RoomSlot",          0x422850, Op_RoomSlot),
             [0x36] = new("Op_0x36_Recon",     0x422c90, Op_0x36_Recon),  // RoomList/FieldSearch
-            [0x38] = new("RoomSetTitle",      0x423100, Op_RoomSetTitle),
+            [0x38] = new("RoomJoin",          0x423100, Op_RoomJoin),
             [0x39] = new("FieldListReq",      0x423300, Op_FieldListReq),
             [0x3a] = new("Op_0x3A_Recon",     0x4234e0, Op_0x3A_Recon),  // FieldStart/Leave3D
             [0x3b] = new("Op_0x3B_Recon",     0x423580, Op_0x3B_Recon),  // FieldCreate(sala)

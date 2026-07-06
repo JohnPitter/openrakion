@@ -52,9 +52,22 @@ namespace RakionServer.Buddy
                 catch (ObjectDisposedException) { break; }
                 catch (Exception ex) { Log.Debug("buddy", "UDP recv: {0}", ex.Message); continue; }
 
-                if (r.Buffer.Length < 4) continue;
-                ushort token = BinaryPrimitives.ReadUInt16LittleEndian(r.Buffer.AsSpan(2));   // [result u16][token u16]
-                if (token == 0 || !_byToken.TryGetValue(token, out var conn)) continue;
+                if (r.Buffer.Length < 2) continue;
+                // O cliente ecoa 4 bytes a partir de pkt+6 = payload+2 = o TOKEN (o result@0 fica ANTES do
+                // trecho ecoado) -> o token está no offset 0 do datagrama. Casa por token varrendo os offsets
+                // 0 e 2 (robusto a divergência de build) contra os tokens ativos. Log cru p/ diagnóstico.
+                BuddyConn? conn = null; ushort token = 0;
+                for (int off = 0; off + 2 <= r.Buffer.Length && off <= 2; off += 2)
+                {
+                    ushort t = BinaryPrimitives.ReadUInt16LittleEndian(r.Buffer.AsSpan(off));
+                    if (t != 0 && _byToken.TryGetValue(t, out conn)) { token = t; break; }
+                }
+                if (conn == null)
+                {
+                    Log.Debug("buddy", "[{0}] echo UDP {1}B sem token conhecido: {2}", r.RemoteEndPoint,
+                        r.Buffer.Length, Convert.ToHexString(r.Buffer));
+                    continue;
+                }
                 bool isNew = conn.UdpEndpoint == null;
                 conn.UdpEndpoint = r.RemoteEndPoint;
                 if (isNew)
