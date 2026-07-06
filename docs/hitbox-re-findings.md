@@ -138,3 +138,78 @@ renderizou" — mas agora sabemos o porquê provável: **não passava o gate de 
 - **Muro 2**: create de combatente-PLAYER é empacotado (fechado por ora), MAS o create de
   combatente-NPC (0x307) é in-engine e agora tem caminho de entrega claro (reliable+seq). É o
   ataque viável.
+
+## AddRemotePlayer POR DENTRO (rakion-new desempacotada @0x3612f8f0) — como um combatente nasce
+Reversado o corpo (versão nova, lógica transfere):
+```
+AddRemotePlayer(seat, u16, char* name):
+  GetGlobalFieldInfo()
+  AddPlayer@CSessionState(...)        ; <-- CRIA a entidade na TABELA DE PLAYERS DE SESSÃO (+0x1d20)
+  CNetMessage(); Write(...)           ; serializa
+  GetPlayer@CSessionState(seat) x2    ; recupera a entidade criada
+  SendInfoCreateNpcTo(...)            ; propaga o create (reliable) aos outros
+```
+⇒ O combatente é **`CSessionState::AddPlayer`** (export da engine) — dispara no player-add de
+**SESSÃO**, não no `0x4b` de field. Nosso bot está só na tabela de FIELD → a engine nunca roda esse
+caminho nele → entidade sem estado de combatente.
+
+`SendInfoCreateNpcTo`@rakion-new: **`SendPacket_Reliable`** (create É reliable), checa
+`EntityExists@CWorld` e serializa a entidade pela **vtable** (`call [ent+0x1b8]`) — o "blob" É a
+entidade serializada por método virtual (não um layout fixo nosso). Msgtypes de create nesta versão:
+0x519/0x51a (na rakion-final o inbound é 0x307 via `HandleMessage`).
+
+## RAIZ QUE AMARRA OS DOIS MUROS (conclusão do ataque)
+Movimento (0x30a) do bot FUNCIONA porque só ATUALIZA uma entidade que já existe (o avatar 0x4b), e
+passa pelo gate de endpoint (0x319). Já o CREATE (player OU npc) precisa **INSTANCIAR** — e a
+instanciação exige o remetente ser um **PEER DE SESSÃO validado**, coisa que o **roteador de
+mensagens do exe EMPACOTADO** (protegido por xldr) concede só a quem entrou pela via de sessão
+(`AddPlayer`/`AddRemotePlayer`), cujo GATILHO mora nesse exe. O bot entrou pela via de FIELD (0x38/
+0x4b) → não é peer de sessão → o create é roteado p/ o lixo antes de chegar ao `HandleMessage`.
+
+**Portanto:** os dois muros são a MESMA raiz — *virar peer de sessão*. As duas saídas conhecidas:
+1. **2º cliente real** (a sessão o adiciona nativamente) — vetado no projeto (offline 1-cliente).
+2. **Reverter o exe empacotado** (xldr/packer) p/ achar o gatilho de `AddRemotePlayer` e forjá-lo —
+   frente de RE nova (unpack do main exe), fora do escopo de hoje.
+
+O que a engine desempacotada nos deu de graça: `AddPlayer@CSessionState`, `ChangeTeam@0x36109f00`,
+`SetAsRemoteEntity@0x3600cfd0` são **exports** — se um dia houver um caminho de invocá-los no host
+(sem injeção), o combatente sai deles. Enquanto isso, o teto server-side (anda/colide/dano/morte/
+vitória) é o entregável sem furar o packer.
+
+## VIRADA: o exe principal (`rakion.bin`) NÃO é empacotado — a recepção inteira é reversível
+`rakion-final/Bin/rakion.bin` (== rakion.exe, **1.8MB, .text @0x401000 SEM ASLR, ImageBase 0x400000**)
+está **DESEMPACOTADO** e importa da engine: **`AddRemotePlayer`** (IAT @0x4d01f4), **`HandleMessage`**
+(IAT @0x4d03c8), `GetPlayer@CSessionState` (@0x4d03b4). ⇒ o "muro empacotado" era falso alarme p/ o
+GATILHO — o exe do cliente é RE-ável estaticamente. (gamemp/entitiesmp seguem packed, mas o dispatch
+de recepção que importa está no exe.)
+
+### O dispatch de recepção (o roteador que barrava o 0x307)
+`rakion.bin @0x412339` chama `HandleMessage@CSessionState` (o dispatcher 0x307–0x312 do create). O
+caminho até lá:
+```
+0x412312: mov ecx, ebx              ; ebx = objeto de sessão/jogo
+0x412314: call 0x40b8d0             ; GATE
+0x412319: test eax,eax ; je skip    ; se gate==0, NÃO processa o create
+0x412339: call HandleMessage        ; cria a entidade (0x307 -> AddRemoteGeneralNpc)
+```
+**O gate `0x40b8d0` é `return [obj+0x180] == 0x1d`** — uma checagem de **FASE de jogo** (estado 0x1d=29),
+**NÃO** validação de peer. ⇒ o create do bot é aceito SE chegar quando `[sessão+0x180]==0x1d`. O
+roteador maior é uma máquina de estados por `[+0x180]` (visto também `cmp [+0x180],0x17`) + categoria
+de msg (`[esp+0x20]` vs 0xa). Descobrir o enum de estado (quando vale 0x1d) é o próximo passo — e é
+100% estático agora.
+
+### Reavaliação do 0x307 refutado
+A refutação ([[0x307-npc-create-relay-refutado]]) provavelmente foi **fase errada** (state≠0x1d) ou seq
+reliable — NÃO "entidade remota exige peer real". Com o exe aberto, o create-NPC volta a ser caminho
+vivo: mandar 0x307 reliable (seq monotônica, endpoint 0x319) DURANTE a fase `[+0x180]==0x1d`.
+
+## Estado dos muros (fim da sessão de ataque)
+| muro | status | insumo |
+|---|---|---|
+| **1 — entrega reliable** | **QUEBRADO** | `IsApplyReliableUDP` 2 gates decodificados; satisfazível |
+| **2 — trigger do combatente** | **ABERTO** (era "empacotado", é reversível) | `rakion.bin` unpacked; dispatch @0x412339; gate de FASE @0x40b8d0 (state 0x1d), não peer |
+| **2b — serialização do create** | mapeado | create = entidade via vtable `[ent+0x1b8]`; NPC Read_t é stub (28B header); msgtype final 0x307 |
+
+**Próximo passo estático (sem teste in-game):** mapear o enum de estado `[sessão+0x180]` no `rakion.bin`
+(quem escreve 0x1d) → saber a fase exata p/ o create ser aceito → forjar o 0x307 nessa janela. Todo o
+caminho de recepção agora é RE estática no exe desempacotado.
