@@ -291,16 +291,26 @@ namespace RakionServer.World.Network
             return w.ToArray();             // 8B
         }
 
+        /// <summary>Estado de locomoção do tail do 0x30f (byte +0x0c) — cravado da captura: os DOIS peers abrem
+        /// a partida PARADOS com (03,00) e correm com (01,00)/(02,00); no golpe o par vira (00, ação).</summary>
+        public const byte KeyStateIdle = 3;
+        /// <summary>Locomoção "andando" (o joiner da captura usa 1; o host 2 — possivelmente walk vs run).</summary>
+        public const byte KeyStateMoving = 1;
+        /// <summary>Janela (ms) em que o tail segura (00, ação) após um 0x0311 — duração do swing na captura.</summary>
+        public const long SwingHoldMs = 600;
+
         /// <summary>
         /// Companheiro 0x030f (14B) de keystate/animação — mandar SEMPRE logo após o 0x30a (§3). Corpo:
-        /// [u8 srcSlotEcho][u16 0x0008][u16 0x0001][u8 estado][u8 ação]. O byte de AÇÃO ecoa o high-byte do
-        /// último 0x0311 e PERSISTE até a próxima ação — é o driver da animação de golpe no cliente remoto
-        /// (cravado na captura: host golpeia 0x0311 action=0x0C00 → o tail do 0x30f dele vira (00,0c) nos
-        /// frames seguintes; default do peer parado/andando = (00,01)). O tail fixo antigo nunca sinalizava o
-        /// golpe (bot "não atacava" na tela) e o "parado" 0x0300 dizia "ação 3".
+        /// [u8 srcSlotEcho][u16 0x0008][u16 0x0001][u8 estado][u8 ação]. Máquina de estados CRAVADA da
+        /// captura: golpe recente → (00, high-byte do 0x0311) enquanto o swing dura; senão andando → (01,00);
+        /// senão parado → (03,00). O par fixo antigo (00,01) dizia "executando ação 1" eternamente — nunca
+        /// sinalizava andar/parar/golpe (locomoção estranha + golpe sem animação).
         /// </summary>
-        public static byte[] BuildKeystateDatagram(BotPlayer bot, int seat)
+        public static byte[] BuildKeystateDatagram(BotPlayer bot, int seat, bool moving, long nowMs)
         {
+            bool swinging = bot.LastActionMs != 0 && nowMs - bot.LastActionMs < SwingHoldMs;
+            byte b12 = swinging ? (byte)0 : moving ? KeyStateMoving : KeyStateIdle;
+            byte b13 = swinging ? bot.LastActionHigh : (byte)0;
             using var w = new PacketWriter();
             w.WriteWord(MsgKeystate);                    // +00 0x030f
             w.WriteUInt32(bot.UdpSeq++);                 // +02 seq (mesmo contador, ++)
@@ -308,8 +318,8 @@ namespace RakionServer.World.Network
             w.WriteByte((byte)seat);                     // +07 srcSlotEcho = seat do bot
             w.WriteWord(0x0008);                         // +08 const (tipo de bloco de input)
             w.WriteWord(0x0001);                         // +0a const
-            w.WriteByte(0);                              // +0c estado (0 = normal; 1-3 = movimentos especiais)
-            w.WriteByte(bot.LastActionHigh);             // +0d AÇÃO corrente (eco do 0x0311; 0x01 = neutro)
+            w.WriteByte(b12);                            // +0c estado de locomoção (0=em-ação, 1=andando, 3=parado)
+            w.WriteByte(b13);                            // +0d ação corrente (high-byte do 0x0311 durante o swing)
             return w.ToArray();                          // 14B
         }
 

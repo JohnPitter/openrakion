@@ -368,9 +368,12 @@ namespace RakionServer.World.Domain
         // RakionServer.World.Network.BotNetLink dono do BotManager (mapa keyed pelo bot). Assim o domínio
         // BotPlayer fica puro (posição/HP/IA/protocolo-de-sequência), sem depender de Socket/IPEndPoint.
 
-        /// <summary>High-byte da ÚLTIMA ação (0x0311) do bot — ecoado no tail do 0x30f (driver da animação de
-        /// golpe no cliente; captura: persiste até a próxima ação). 0x01 = neutro (default do peer real).</summary>
-        public byte LastActionHigh = 0x01;
+        /// <summary>High-byte da ÚLTIMA ação (0x0311) do bot — vira o byte de AÇÃO do tail do 0x30f durante a
+        /// janela do swing (driver da animação de golpe no cliente remoto).</summary>
+        public byte LastActionHigh;
+
+        /// <summary>Quando (TickCount64) o último 0x0311 saiu — abre a janela de swing do keystate.</summary>
+        public long LastActionMs;
 
         /// <summary>Os 2 opens do lockstep de sessão já foram enviados NESTA PARTIDA (o canal com o host abre
         /// UMA vez por partida — na captura não há re-open por round; re-abrir é suspeito de "unknown error").</summary>
@@ -404,7 +407,8 @@ namespace RakionServer.World.Domain
             StunUntilMs = 0;
             SpawnedThisRound = false;
             SpawnedMs = 0;
-            LastActionHigh = 0x01;
+            LastActionHigh = 0;
+            LastActionMs = 0;
             AliveFlagDown = false;
             // LockstepOpenedMatch NÃO reseta: o canal com o host persiste entre rounds (captura).
         }

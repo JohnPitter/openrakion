@@ -83,20 +83,30 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
-        public void KeystateDatagram_EchoesCurrentAction()
+        public void KeystateDatagram_LocomotionStateMachine()
         {
-            // O tail do 0x30f ecoa a AÇÃO corrente (high-byte do último 0x0311) e persiste até a próxima —
-            // driver da animação de golpe (captura: 0x0311 action=0x0C00 → keystate (00,0c); default (00,01)).
+            // Máquina de estados do tail do 0x30f (captura): parado (03,00) — os frames de abertura da partida;
+            // andando (01,00) — janelas de corrida; golpe recente (00, high-byte do 0x0311) — janelas de ataque.
             var bot = new BotPlayer(4, "Kor", 5, 1, team: 1);
-            byte[] neutral = BotMovement.BuildKeystateDatagram(bot, seat: 0x0a);
-            Assert.Equal(14, neutral.Length);
-            Assert.Equal(0x0f, neutral[0]); Assert.Equal(0x03, neutral[1]);   // msgType 0x030f
-            Assert.Equal(0x0a, neutral[6]); Assert.Equal(0x0a, neutral[7]);   // srcSlot E srcSlotEcho = seat
-            Assert.Equal(0x00, neutral[12]); Assert.Equal(0x01, neutral[13]); // (00,01) neutro (default do peer)
+            const long now = 100_000;
+
+            byte[] idle = BotMovement.BuildKeystateDatagram(bot, seat: 0x0a, moving: false, nowMs: now);
+            Assert.Equal(14, idle.Length);
+            Assert.Equal(0x0f, idle[0]); Assert.Equal(0x03, idle[1]);         // msgType 0x030f
+            Assert.Equal(0x0a, idle[6]); Assert.Equal(0x0a, idle[7]);         // srcSlot E srcSlotEcho = seat
+            Assert.Equal(0x03, idle[12]); Assert.Equal(0x00, idle[13]);       // (03,00) parado
+
+            byte[] run = BotMovement.BuildKeystateDatagram(bot, seat: 0x0a, moving: true, nowMs: now);
+            Assert.Equal(0x01, run[12]); Assert.Equal(0x00, run[13]);         // (01,00) andando
 
             bot.LastActionHigh = 0x0c;                                        // golpeou com action 0x0C00
-            byte[] swing = BotMovement.BuildKeystateDatagram(bot, seat: 0x0a);
+            bot.LastActionMs = now;
+            byte[] swing = BotMovement.BuildKeystateDatagram(bot, seat: 0x0a, moving: true, nowMs: now + 100);
             Assert.Equal(0x00, swing[12]); Assert.Equal(0x0c, swing[13]);     // (00,0c) — o golpe anima
+
+            byte[] after = BotMovement.BuildKeystateDatagram(bot, seat: 0x0a, moving: true,
+                nowMs: now + BotMovement.SwingHoldMs + 1);
+            Assert.Equal(0x01, after[12]); Assert.Equal(0x00, after[13]);     // swing expirou -> locomoção
         }
 
         [Fact]
@@ -131,8 +141,8 @@ namespace RakionServer.World.Tests
         public void Datagrams_ShareMonotonicSeqPerBot()
         {
             var bot = new BotPlayer(6, "Nyx", 5, 1, team: 1);
-            byte[] a = BotMovement.BuildActionDatagram(bot, 0x0a, true);      // seq N
-            byte[] b = BotMovement.BuildKeystateDatagram(bot, 0x0a);          // seq N+1
+            byte[] a = BotMovement.BuildActionDatagram(bot, 0x0a, true);              // seq N
+            byte[] b = BotMovement.BuildKeystateDatagram(bot, 0x0a, true, 1000);      // seq N+1
             byte[] c = BotMovement.BuildAttackDatagram(bot, 0x0a, 1);         // seq N+2
             uint s0 = BitConverter.ToUInt32(a, 2);
             Assert.Equal(s0 + 1, BitConverter.ToUInt32(b, 2));   // contador único, ++ por pacote do sender

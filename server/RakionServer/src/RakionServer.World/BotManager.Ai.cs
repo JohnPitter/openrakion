@@ -386,7 +386,7 @@ namespace RakionServer.World
             if (sock == null) return;
 
             byte[] action = BotMovement.BuildActionDatagram(bot, rec.Slot, moving);
-            byte[] key = BotMovement.BuildKeystateDatagram(bot, rec.Slot);
+            byte[] key = BotMovement.BuildKeystateDatagram(bot, rec.Slot, moving, Environment.TickCount64);
 
             // Envia para o servidor (loopback:40708) — o UdpGameplay.Process recebe e relaya ao host
             var serverEp = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, _gameplayPort());
@@ -416,9 +416,10 @@ namespace RakionServer.World
             if (sock == null) return;
             var serverEp = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, _gameplayPort());
             try { sock.SendTo(BotMovement.BuildAttackDatagram(bot, rec.Slot, actionId), serverEp); } catch { }
-            // O high-byte da ação ECOA no tail dos 0x30f seguintes — é o que anima o golpe no cliente
-            // (captura: 0x0311 action=0x0C00 → keystate (00,0c) persistente até a próxima ação).
+            // Abre a janela de swing: o tail dos 0x30f seguintes vira (00, high-byte da ação) enquanto o
+            // golpe dura — o driver da animação de ataque no cliente remoto (captura, janelas do 0x0311).
             bot.LastActionHigh = (byte)(actionId >> 8);
+            bot.LastActionMs = Environment.TickCount64;
         }
 
         /// <summary>
