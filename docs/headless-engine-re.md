@@ -453,3 +453,16 @@ REAL (não um ponteiro por-processo). Resolução limpa = **humano JOINA o bot-h
 o appearance serializado real → host desserializa (`operator>>`) → CPlayerCharacter válido → AddPlayer completa.
 É a milestone de INTEGRAÇÃO (H3.5), não mais um degrau headless isolado. Alternativa (injeção, vetada): capturar
 o `operator<<` do CPlayerCharacter de um humano no rakion.exe.
+
+## 14. Mecanismo da H3.5 — (de)serialização do CPlayerCharacter (o fecho do appearance)
+A engine EXPORTA os operadores de stream do CPlayerCharacter — é o que resolve o appearance sem forjar bytes:
+- `operator>>(CTStream&, CPlayerCharacter&)` = `??5@YAAAVCTStream@@AAV0@AAVCPlayerCharacter@@@Z` — **DESSERIALIZA**
+  (reconstrói os CTString por CONTEÚDO → ponteiros VÁLIDOS por-processo, não o placeholder-sentinela).
+- `operator<<(CTStream&, CPlayerCharacter&)` = `??6@...` — serializa.
+
+**Fluxo H3.5 (fecha o AddPlayer):** humano joina o bot-host → `MSG_REQ_CONNECTPLAYER` chega com o
+CPlayerCharacter serializado do humano → host aplica `operator>>` p/ desserializar → appearance VÁLIDO →
+`AddPlayer` completa p/ esse peer. Para o BOT, o appearance pode ser: (a) clonado do primeiro humano que
+entra (desserializa e reusa o blob trocando nome/GUID), ou (b) capturado uma vez e embutido como asset.
+⇒ NÃO precisa reverter a construção class→modelo do zero; basta um blob serializado REAL (via operator<<
+de um humano) desserializado por operator>>. Esse é o insumo que faltava mapear. Ver §13 p/ a cascata.
