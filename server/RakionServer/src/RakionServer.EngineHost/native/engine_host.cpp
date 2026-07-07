@@ -519,6 +519,12 @@ int main(int argc, char** argv)
                 } __except (EXCEPTION_EXECUTE_HANDLER) { printf("[c++] accessor RNG lancou (segue)\n"); }
                 fflush(stdout);
             }
+            // NOTA (RE 2026-07-06): a cascata do AddPlayer converge no APPEARANCE. O ctor aponta
+            // CPlayerCharacter+0x18 -> 0x36290A60, que em runtime tem VALORES-SENTINELA (0x56341200/0x12340000/
+            // 0x90125678 = padrao 0x12 34 56 78 90...) = PLACEHOLDER de debug, so preenchido quando um CLIENTE REAL
+            // conecta (MSG_REQ_CONNECTPLAYER traz o appearance serializado). Headless-sozinho nao tem esse dado ->
+            // a serializacao (hash de 0x3601a2b0 sobre [appearance+8]) le lixo/ponteiro -> AV em 0x3600C52F.
+            // ⇒ RESOLUCAO = H3.5 (humano joina o host, traz o appearance real). Ver docs/headless-engine-re.md §13.
             void* addFn = (void*)GetProcAddress(g_eng, "?AddPlayer_t@CNetworkLibrary@@QAEPAVCPlayerSource@@AAVCPlayerCharacter@@@Z");
             printf("[c++] AddPlayer_t(\"Bot1\") em SEH-probe...\n"); fflush(stdout);
             int ar = CallAddPlayerSEH(addFn, pNet, pcBuf);
