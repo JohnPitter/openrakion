@@ -532,3 +532,20 @@ pré-capturado, sem loader-lock), fallback loose-file.
 modal → PatchRet0 → próximo; pode ser dezenas), ou (b) CIRÚRGICO: RE de `0x1001f230` p/ isolar SÓ a
 alocação do player-array (o membro do CGame que o getter vtable[+8] devolve), pulando som/input/rede/UI.
 Ambos são sub-projeto focado. O headless está no ponto mais fundo já alcançado; falta domar o startup-UI.
+
+## 17. Internos do init principal 0x1001f230 — sequência de Read*FromFile (insumo cirúrgico)
+Desmontado o call 1 da Initialize (0x1001f230). São ~16 chamadas, quase todas **cargas de dados** (não
+UI/rede/alocação-de-players):
+`ReadUnusableCharNameFromFile`, `Read_AbuseString_FromFile`, `ReadMacroTextFile`, `ReadLevelDataFromFile`,
+`ReadLanguageFile`, `ReadNationCodeFile`, `ReadPreLoadSMCFile` (preload de modelos .smc — candidato ao
+init de render/janela), `ReadCreatureListFile`, `ReadSupportNationFile`, **`ReadPlayerDataFromFile`**,
+`ReadNpcDataFromFile`, `ReadItemDataFromFile` (+ MessageBoxA/exit de erro entre elas).
+
+**Consequência p/ o cirúrgico:** o array de players NÃO é alocado aqui (são file-reads); nem em
+`InitInternal` (chamamos direto, não aloca — getter vtable[+8] segue stub). Falta localizar QUEM aloca o
+membro do CGame que o getter devolve — provável dentro do `ReadPlayerDataFromFile` ou de um call pós-reads.
+O `ReadPreLoadSMCFile` é o suspeito nº1 do hang de UI (preload de modelos → init de render/janela → modal-loop).
+
+**Resume-point:** (b-cirúrgico) chamar os Read* que populam dados + achar/chamar a alocação do player-array,
+PULANDO `ReadPreLoadSMCFile` (render). Toda a infra (loose-fallback, PatchRet0, watchdog c/ módulo, supressor
+de modal) está pronta. É o ponto mais fundo já mapeado; o headless roda o init até a subida de render/UI.
