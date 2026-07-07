@@ -146,13 +146,13 @@ internal sealed class MainForm : Form
                 WindowMode.PatchWindowedMode(pid);      // windowed real (não troca a resolução do desktop)
                 WindowMode.PatchNoDisplayReset(pid);    // não re-inicializa o display ao restaurar de minimizado
             }
-            WindowMode.InjectDiagDll(pid);              // dev-only (opt-in RAKION_DIAG_DLL): hook de RE no launch suspenso
             GameLauncher.Resume(hThread);
 
             uint upid = (uint)pid;   // frama/patcha por PID -> cada cliente cuida da SUA janela (suporta vários)
             int w = _settings.ScreenWidth, h = _settings.ScreenHeight;   // alvo do framing = resolução escolhida
             new Thread(() => WindowMode.FrameGameWindow(upid, mode, w, h)) { IsBackground = true }.Start();
             new Thread(() => WindowMode.PatchKeyHook(upid)) { IsBackground = true }.Start();
+            new Thread(() => WindowMode.InjectDiagDll(pid)) { IsBackground = true }.Start();   // dev-only (opt-in RAKION_DIAG_DLL): hook de RE pós-loader
 
             _clients++;
             Status($"Rakion iniciado — {_clients} cliente(s) aberto(s). Pode abrir outro no START GAME.", false);

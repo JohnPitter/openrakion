@@ -391,21 +391,28 @@ internal static class WindowMode
     [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr addr, uint size, uint type, uint prot);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr sa, uint stack, IntPtr start, IntPtr param, uint flags, out uint tid);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern uint WaitForSingleObject(IntPtr h, uint ms);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GetExitCodeThread(IntPtr h, out uint code);
 
     private const uint PROCESS_CREATE_THREAD = 0x0002, PROCESS_QUERY_INFORMATION = 0x0400;
     private const uint MEM_COMMIT = 0x1000, MEM_RESERVE = 0x2000, PAGE_READWRITE = 0x04;
 
     /// <summary>
-    /// Injeta uma DLL de DIAGNÓSTICO no jogo SUSPENSO (via LoadLibraryA num remote thread) — a MESMA janela
-    /// segura dos patches de memória (antes do anti-tamper subir). Opt-in por env var RAKION_DIAG_DLL; sem ela
-    /// não faz nada (produção intocada). É só p/ RE do próprio autor (ex.: cravar o trigger do AddRemotePlayer);
-    /// nenhuma funcionalidade do servidor depende disto. Ver docs/headless-engine-re.md §22.7.
+    /// Injeta uma DLL de DIAGNÓSTICO no jogo via LoadLibraryA num remote thread. Chamado DEPOIS do Resume,
+    /// numa thread de fundo: ESPERA a engine.dll aparecer no alvo (= loader do Windows inicializado — injetar
+    /// no processo ainda SUSPENSO falha, o LdrInitializeThunk não rodou), então injeta e VERIFICA o carregamento
+    /// pelo exit-code (HMODULE) + presença do módulo. Opt-in por env var RAKION_DIAG_DLL; sem ela não faz nada
+    /// (produção intocada). Só p/ RE do próprio autor (cravar o trigger do AddRemotePlayer). docs headless-engine-re §22.7.
     /// </summary>
     public static void InjectDiagDll(int pid)
     {
         string? dll = Environment.GetEnvironmentVariable("RAKION_DIAG_DLL");
         if (string.IsNullOrWhiteSpace(dll)) return;
         if (!File.Exists(dll)) { Log($"diag-inject: DLL não encontrada: {dll}"); return; }
+
+        // espera o loader do alvo subir (engine.dll mapeada) — sinal de que o LoadLibrary remoto vai funcionar
+        for (int i = 0; i < 120 && IsAlive((uint)pid); i++) { if (ModuleBase((uint)pid, "engine.dll") != IntPtr.Zero) break; Thread.Sleep(100); }
+        if (ModuleBase((uint)pid, "engine.dll") == IntPtr.Zero) { Log("diag-inject: engine.dll não subiu no alvo — aborta"); return; }
+        Thread.Sleep(300);   // folga p/ o loader assentar antes do LoadLibrary remoto
 
         IntPtr h = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION, false, (uint)pid);
         if (h == IntPtr.Zero) { Log($"diag-inject: OpenProcess falhou err={Marshal.GetLastWin32Error()}"); return; }
@@ -418,9 +425,13 @@ internal static class WindowMode
             IntPtr loadLib = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
             IntPtr t = CreateRemoteThread(h, IntPtr.Zero, 0, loadLib, rem, 0, out _);
             if (t == IntPtr.Zero) { Log($"diag-inject: CreateRemoteThread falhou err={Marshal.GetLastWin32Error()} (anti-tamper?)"); return; }
-            WaitForSingleObject(t, 5000);
+            WaitForSingleObject(t, 8000);
+            GetExitCodeThread(t, out uint hmod);   // = HMODULE da DLL (LoadLibraryA), 0 = FALHOU o load
             CloseHandle(t);
-            Log($"diag-inject: LoadLibrary remoto OK -> {dll}");
+            string name = Path.GetFileName(dll);
+            IntPtr modBase = ModuleBase((uint)pid, name);
+            if (hmod == 0 && modBase == IntPtr.Zero) Log($"diag-inject: LoadLibrary FALHOU (hmod=0, módulo ausente) — {dll}");
+            else Log($"diag-inject: OK -> {name} carregada (hmod=0x{hmod:X8}, base={modBase:X}) em pid={pid}");
         }
         finally { CloseHandle(h); }
     }
