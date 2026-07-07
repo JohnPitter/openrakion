@@ -75,10 +75,30 @@ static __declspec(naked) void HookAddRemote()
     }
 }
 
+// Instala o detour — SÓ se a engine.dll está mapeada E o prólogo bate (senão loga e NÃO toca a memória).
+// Tudo sob SEH: um DllMain que crasha = DLL_INIT_FAILED (err 1114), e nunca vemos o porquê.
 static void Install()
 {
-    if (g_log) { fprintf(g_log, "[hook] engine.dll=%p; instalando detour em AddRemotePlayer @0x%08lx\n",
-                         (void*)GetModuleHandleA("engine.dll"), ADDREMOTE); fflush(g_log); }
+    HMODULE eng = GetModuleHandleA("engine.dll");
+    if (!eng) { if (g_log) { fprintf(g_log, "[hook] engine.dll AUSENTE — hook NAO instalado (processo sem a engine)\n"); fflush(g_log); } return; }
+
+    unsigned char* p = reinterpret_cast<unsigned char*>(ADDREMOTE);
+    __try {
+        // valida o prólogo ANTES de patchar (build diferente / endereço errado -> aborta sem corromper)
+        if (memcmp(p, ORIG_PROLOGUE, 6) != 0) {
+            if (g_log) {
+                fprintf(g_log, "[hook] prologo INESPERADO em 0x%08lx: %02x %02x %02x %02x %02x %02x (esperava sub esp,0x9e8) — aborta\n",
+                        ADDREMOTE, p[0], p[1], p[2], p[3], p[4], p[5]);
+                fflush(g_log);
+            }
+            return;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        if (g_log) { fprintf(g_log, "[hook] 0x%08lx ilegível (engine.dll em base diferente?) — aborta\n", ADDREMOTE); fflush(g_log); }
+        return;
+    }
+
+    if (g_log) { fprintf(g_log, "[hook] engine.dll=%p; prologo OK; instalando detour em AddRemotePlayer @0x%08lx\n", (void*)eng, ADDREMOTE); fflush(g_log); }
 
     g_trampoline = VirtualAlloc(nullptr, 16, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     unsigned char* tr = reinterpret_cast<unsigned char*>(g_trampoline);
@@ -86,16 +106,23 @@ static void Install()
     tr[6] = 0xE9;                                                  // jmp de volta p/ ADDREMOTE+6
     *reinterpret_cast<DWORD*>(tr + 7) = (ADDREMOTE + 6) - (reinterpret_cast<DWORD>(tr) + 11);
 
-    DWORD old;
-    VirtualProtect(reinterpret_cast<void*>(ADDREMOTE), 8, PAGE_EXECUTE_READWRITE, &old);
-    unsigned char* p = reinterpret_cast<unsigned char*>(ADDREMOTE);
-    p[0] = 0xE9;                                                   // jmp HookAddRemote (rel32)
-    *reinterpret_cast<DWORD*>(p + 1) = reinterpret_cast<DWORD>(&HookAddRemote) - (ADDREMOTE + 5);
-    p[5] = 0x90;                                                   // nop (completa os 6B, sem instrução parcial)
-    VirtualProtect(reinterpret_cast<void*>(ADDREMOTE), 8, old, &old);
-    FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<void*>(ADDREMOTE), 8);
+    __try {
+        DWORD old;
+        if (!VirtualProtect(p, 8, PAGE_EXECUTE_READWRITE, &old)) {
+            if (g_log) { fprintf(g_log, "[hook] VirtualProtect FALHOU err=%lu (anti-tamper protege a engine?) — aborta\n", GetLastError()); fflush(g_log); }
+            return;
+        }
+        p[0] = 0xE9;                                              // jmp HookAddRemote (rel32)
+        *reinterpret_cast<DWORD*>(p + 1) = reinterpret_cast<DWORD>(&HookAddRemote) - (ADDREMOTE + 5);
+        p[5] = 0x90;                                              // nop (completa os 6B, sem instrução parcial)
+        VirtualProtect(p, 8, old, &old);
+        FlushInstructionCache(GetCurrentProcess(), p, 8);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        if (g_log) { fprintf(g_log, "[hook] EXCECAO ao escrever o detour — aborta\n"); fflush(g_log); }
+        return;
+    }
 
-    if (g_log) { fprintf(g_log, "[hook] instalado (trampoline=%p). Aguardando o 2o player entrar no stage...\n", g_trampoline); fflush(g_log); }
+    if (g_log) { fprintf(g_log, "[hook] INSTALADO (trampoline=%p). Aguardando o 2o player entrar no stage...\n", g_trampoline); fflush(g_log); }
 }
 
 BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID)
