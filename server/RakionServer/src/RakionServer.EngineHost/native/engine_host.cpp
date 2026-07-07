@@ -502,6 +502,23 @@ int main(int argc, char** argv)
             // Popula esse global com o CPlayerCharacter que construimos (name/team validos) e ve se o crash anda.
             memcpy(reinterpret_cast<void*>(0x3636F40Cu), pcBuf, 0x370);
             printf("[c++] EXPERIMENTO: pcBuf -> localChar global 0x3636F40C (0x370B) copiado\n"); fflush(stdout);
+
+            // Constroi o singleton RNG global 0x3636F338 via o accessor 0x361986E0 (Meyers lazy-init): o
+            // construtor 0x36198400 ALOCA as tabelas +0x20/+0x24/+0x28. Headless o accessor nunca foi chamado
+            // (o caller do hash usa o endereco estatico assumindo init) -> [+0x28] lixo -> AV em 0x3600C52F.
+            {
+                typedef void* (__cdecl* SingletonAcc_t)();
+                unsigned char* guard = reinterpret_cast<unsigned char*>(0x3636F38Cu);   // bit0 = "ja construido"
+                unsigned* s30a = reinterpret_cast<unsigned*>(0x3636F338u + 0x30);
+                unsigned* s28a = reinterpret_cast<unsigned*>(0x3636F338u + 0x28);
+                printf("[c++] RNG antes: guard=%02X [+0x28]=%08X [+0x30]=%08X\n", *guard, *s28a, *s30a);
+                *guard = 0;   // limpa o guard -> forca reconstrucao completa (semeia tabelas + [+0x30])
+                __try {
+                    void* rng = reinterpret_cast<SingletonAcc_t>(0x361986E0u)();
+                    printf("[c++] RNG reconstruido=%p  guard=%02X [+0x28]=%08X [+0x30]=%08X\n", rng, *guard, *s28a, *s30a);
+                } __except (EXCEPTION_EXECUTE_HANDLER) { printf("[c++] accessor RNG lancou (segue)\n"); }
+                fflush(stdout);
+            }
             void* addFn = (void*)GetProcAddress(g_eng, "?AddPlayer_t@CNetworkLibrary@@QAEPAVCPlayerSource@@AAVCPlayerCharacter@@@Z");
             printf("[c++] AddPlayer_t(\"Bot1\") em SEH-probe...\n"); fflush(stdout);
             int ar = CallAddPlayerSEH(addFn, pNet, pcBuf);
