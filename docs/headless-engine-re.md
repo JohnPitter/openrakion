@@ -434,3 +434,22 @@ a peça num outro processo (rakion.exe tem um entry-point único que roda o jogo
 com a engine do cliente headless exigiria **reimplementar a camada rakion.exe** ou **rodar um rakion.exe real** (= 2º
 cliente, vetado). ⇒ **b1 é muito mais fundo que "achar +1 init"**; o caminho server-side (b3 — servidor dirige o 0x30a)
 é o único que mantém o bot fora de um 2º cliente, SE o cliente aceitar o 0x30a server-relayed (em apuração no binário).
+
+## 13. AddPlayer headless — cascata subida (2026-07-06 noite) → desemboca no APPEARANCE
+Com o host RODANDO (build.ps1 + engine_host.exe), subi a cadeia de game-state do AddPlayer degrau a degrau:
+1. **localChar global `0x3636F40C` zerado** → AV no copy-helper `0x36017E50`. FIX: `memcpy(pcBuf → 0x3636F40C, 0x370)`.
+   O caminho cliente (`pNet->[0x14]=1`) copia o CPlayerCharacter LOCAL desse global.
+2. **RNG/hash singleton `0x3636F338`**: guard `0x3636F38C`=01 (accessor `0x361986E0` no-op). FIX: limpar o guard +
+   reconstruir → tabelas `[+0x20/+0x24/+0x28]` re-alocadas (construtor `0x36198400`), `[+0x30]`=seed pequeno válido.
+3. **Crash SEGUE em `0x3600C52F`** — MAS agora o índice enorme vem do CALLER, não do RNG. Rastro: `0x3600c510`
+   (hash) ← `0x3600c4d0` ← **`0x360186d0`**. O caller `0x360186d0` faz `edx=[arg+4]; push edx` → passa `[arg+4]`
+   como índice ao hash. **`[arg+4]` é um PONTEIRO** (ex.: 0x0385D2B8), não um índice pequeno → `[tabela+ptr>>3*4]`
+   fora dos limites.
+   ⇒ É a **serialização do CPlayerCharacter hasheando um campo-ponteiro** = o **APPEARANCE/model como `char*`**
+   (RE §10: appearance do Rakion é struct com CTString por ponteiro, não blob opaco). Bate com o "bloqueador final".
+
+**VEREDITO:** a cascata do AddPlayer headless-sozinho termina no APPEARANCE serializado — que precisa da forma
+REAL (não um ponteiro por-processo). Resolução limpa = **humano JOINA o bot-host** → `MSG_REQ_CONNECTPLAYER` traz
+o appearance serializado real → host desserializa (`operator>>`) → CPlayerCharacter válido → AddPlayer completa.
+É a milestone de INTEGRAÇÃO (H3.5), não mais um degrau headless isolado. Alternativa (injeção, vetada): capturar
+o `operator<<` do CPlayerCharacter de um humano no rakion.exe.
