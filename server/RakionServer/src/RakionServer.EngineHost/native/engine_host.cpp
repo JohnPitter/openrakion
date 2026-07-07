@@ -523,8 +523,9 @@ int main(int argc, char** argv)
                 char setBuf[8] = {0};
                 BuildStr("??0CTFileName@@QAE@PBD@Z", setBuf, "");
                 void* initFn = reinterpret_cast<char*>(g_hGame) + 0x1F2D0;
-                printf("[c++] CGame::Initialize(vtable+0xCC @%p, settings=\"\", mode=8)...\n", initFn); fflush(stdout);
-                int ir = CallGInitSEH(initFn, pGame, setBuf, 8);
+                int gmode = argc > 6 ? atoi(argv[6]) : 0;   // mode do CGame::Initialize (8=host? 0=idle) — testavel via arg
+                printf("[c++] CGame::Initialize(vtable+0xCC @%p, settings=\"\", mode=%d)...\n", initFn, gmode); fflush(stdout);
+                int ir = CallGInitSEH(initFn, pGame, setBuf, gmode);
                 if (ir == 0) printf("[c++] CGame::Initialize OK *** game/player-system inicializado (via vtable+0xCC)\n");
                 else {
                     printf("[c++] >>> EXCECAO no Initialize: %s | '%s'\n   %s\n", g_excType, g_excChar, g_stack);
