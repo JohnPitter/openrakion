@@ -22,6 +22,7 @@ internal sealed class MainForm : Form
     private readonly Label _status = new();
 
     private bool _drag; private Point _dragOrigin;
+    private int _clients;   // nº de clientes abertos (o patch do mutex permite vários)
 
     public MainForm()
     {
@@ -136,30 +137,28 @@ internal sealed class MainForm : Form
             string mode = _settings.DisplayMode;
             // Lança SUSPENSO, aplica o patch do modo janela (se não for fullscreen) ANTES de o engine trocar a
             // resolução do desktop, e só então resume — senão a "janela" cobre a tela na resolução do INI.
-            var (pid, hThread) = GameLauncher.LaunchSuspended(_binDir, _user.Text.Trim(), GameLauncher.HexPass(_pass.Text), ServerId);
+            string user = _user.Text.Trim();
+            var (pid, hThread) = GameLauncher.LaunchSuspended(_binDir, user, GameLauncher.HexPass(_pass.Text), ServerId);
+            WindowMode.Log($"launch cliente #{_clients + 1}: user='{user}' pid={pid}");   // diagnóstico: que conta foi lançada
+            WindowMode.PatchMultiInstance(pid);         // libera abrir mais de um cliente (neutraliza o mutex)
             if (mode != WindowMode.Fullscreen)
             {
                 WindowMode.PatchWindowedMode(pid);      // windowed real (não troca a resolução do desktop)
                 WindowMode.PatchNoDisplayReset(pid);    // não re-inicializa o display ao restaurar de minimizado
             }
+            WindowMode.InjectDiagDll(pid);              // dev-only (opt-in RAKION_DIAG_DLL): hook de RE no launch suspenso
             GameLauncher.Resume(hThread);
 
+            uint upid = (uint)pid;   // frama/patcha por PID -> cada cliente cuida da SUA janela (suporta vários)
             int w = _settings.ScreenWidth, h = _settings.ScreenHeight;   // alvo do framing = resolução escolhida
-            new Thread(() => WindowMode.FrameGameWindow(GameLauncher.GameProcess, mode, w, h)) { IsBackground = true }.Start();
-            new Thread(() => WindowMode.PatchKeyHook(GameLauncher.GameProcess)) { IsBackground = true }.Start();
+            new Thread(() => WindowMode.FrameGameWindow(upid, mode, w, h)) { IsBackground = true }.Start();
+            new Thread(() => WindowMode.PatchKeyHook(upid)) { IsBackground = true }.Start();
 
-            _play.Enabled = false;
-            Status("Rakion iniciado — aplicando o modo de janela…", false);
-            WatchExit();
+            _clients++;
+            Status($"Rakion iniciado — {_clients} cliente(s) aberto(s). Pode abrir outro no START GAME.", false);
         }
         catch (Exception ex) { Status(ex.Message, true); }
     }
-
-    private void WatchExit() => new Thread(() =>
-    {
-        while (GameLauncher.IsRunning()) Thread.Sleep(1000);
-        try { BeginInvoke(() => { _play.Enabled = true; Status("Pronto.", false); }); } catch { }
-    }) { IsBackground = true }.Start();
 
     private void Status(string msg, bool error) { _status.ForeColor = error ? Color.Firebrick : Theme.Ink; _status.Text = msg; }
 
