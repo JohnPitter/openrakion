@@ -490,3 +490,21 @@ server... winsock opened ok... port: 25600"**. ⇒ ela sobe o JOGO INTEIRO, incl
 headless de verdade; (b) surgical: achar DENTRO da Initialize só a alocação do array de players (o membro
 que o getter vtable[+8] devolve) e chamar só isso, pulando sound/input/net. (b) é mais cirúrgico mas exige
 RE dos internos da Initialize. Estado: mais fundo que nunca, mas o AddPlayer ainda pende do player-array.
+
+## 15. O hang da CGame::Initialize é DEADLOCK de ambiente (watchdog, 2026-07-07)
+Watchdog (suspende a thread principal após 8s + dumpa EIP) cravou: a `Initialize` pendura em
+**`eip=0x775A123C` (DLL de SISTEMA)** — uma chamada bloqueante durante a subida da rede ("opening as
+server, port 25600"). Não é asset faltando nem crash: é a `Initialize` subindo o JOGO INTEIRO (som +
+input + rede + servidor) e **bloqueando num syscall que espera o ambiente completo** (thread de
+message-loop / evento que outra thread do jogo sinalizaria) — que o headless não tem.
+
+**Escopo confirmado:** chamar `CGame::Initialize` wholesale = rodar o jogo inteiro headless. É o
+núcleo-muro visto do ponto mais fundo. Duas saídas, ambas sub-projeto:
+- (a) **Domar o bring-up**: identificar o syscall bloqueante (hook winsock/wait SÓ na janela da
+  Initialize) + skipar o master-server/registro + prover as threads que ele espera. Grande.
+- (b) **Cirúrgico**: RE dos internos de `0x1001f2d0` (7 calls: 0x1001f230, imports, InitInternal
+  0x13ae0, ...) p/ chamar SÓ a alocação do array de players (o membro que o getter vtable[+8]
+  devolve), pulando sound/input/net. Mais limpo, exige mapear qual call aloca os players.
+
+Infra pronta p/ retomar: loose-fallback, supressor de MessageBox, watchdog (arma via g_wdArm em volta
+da chamada suspeita). Tudo no engine_host.cpp.

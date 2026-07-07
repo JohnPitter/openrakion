@@ -348,6 +348,44 @@ static void InstallMsgBoxHook()
     PatchEntryJmp("user32.dll", "MessageBoxA", reinterpret_cast<void*>(&MsgBoxAHook));
 }
 
+// ---- Watchdog de HANG: suspende a thread principal apos g_wdSecs e dumpa o EIP + as rets da .text da
+//      engine (0x36001000..0x36214200) = a cadeia de chamada onde travou. RE-ao-vivo do bloqueio. ----
+static HANDLE g_mainThread;
+static volatile LONG g_wdArm = 0;   // so arma em volta da chamada suspeita
+static int g_wdSecs = 8;
+static DWORD WINAPI WatchdogThread(void*)
+{
+    for (;;) {
+        Sleep(g_wdSecs * 1000);
+        if (!InterlockedCompareExchange(&g_wdArm, 0, 0)) continue;   // so dumpa se armado
+        SuspendThread(g_mainThread);
+        CONTEXT c; memset(&c, 0, sizeof(c)); c.ContextFlags = CONTEXT_FULL;
+        if (GetThreadContext(g_mainThread, &c)) {
+            printf("[watchdog] HANG eip=%08X (rva=%08X) esp=%08X ebp=%08X\n",
+                   (unsigned)c.Eip, (unsigned)c.Eip - 0x36000000u, (unsigned)c.Esp, (unsigned)c.Ebp);
+            printf("[watchdog] rets(rva):");
+            __try {
+                unsigned* sp = reinterpret_cast<unsigned*>(c.Esp);
+                int found = 0;
+                for (int i = 0; i < 800 && found < 20; i++) {
+                    unsigned v = sp[i];
+                    if (v >= 0x36001000u && v < 0x36214200u) { printf(" %05X", v - 0x36000000u); found++; }
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) { printf(" [scan-fault]"); }
+            printf("\n"); fflush(stdout);
+        }
+        ResumeThread(g_mainThread);
+        InterlockedExchange(&g_wdArm, 0);   // dumpa 1x por armamento
+    }
+    return 0;   // inalcancavel (loop infinito) — satisfaz C4716
+}
+static void StartWatchdog()
+{
+    DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &g_mainThread,
+                    THREAD_ALL_ACCESS, FALSE, 0);
+    CreateThread(nullptr, 0, WatchdogThread, nullptr, 0, nullptr);
+}
+
 static void InstallOpenHook()
 {
     const unsigned VA = 0x3603e920u;
@@ -525,7 +563,9 @@ int main(int argc, char** argv)
                 void* initFn = reinterpret_cast<char*>(g_hGame) + 0x1F2D0;
                 int gmode = argc > 6 ? atoi(argv[6]) : 0;   // mode do CGame::Initialize (8=host? 0=idle) — testavel via arg
                 printf("[c++] CGame::Initialize(vtable+0xCC @%p, settings=\"\", mode=%d)...\n", initFn, gmode); fflush(stdout);
+                StartWatchdog(); InterlockedExchange(&g_wdArm, 1);   // arma: se Initialize pendurar 8s, dumpa o EIP
                 int ir = CallGInitSEH(initFn, pGame, setBuf, gmode);
+                InterlockedExchange(&g_wdArm, 0);                    // desarma se retornou
                 if (ir == 0) printf("[c++] CGame::Initialize OK *** game/player-system inicializado (via vtable+0xCC)\n");
                 else {
                     printf("[c++] >>> EXCECAO no Initialize: %s | '%s'\n   %s\n", g_excType, g_excChar, g_stack);
