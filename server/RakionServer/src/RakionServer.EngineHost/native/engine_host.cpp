@@ -690,8 +690,8 @@ int main(int argc, char** argv)
             // CGame::InitInternal @ gamemp+0x13AE0 (RE: seeds membros + ~86 DeclareSymbol + AddTimerHandler +
             // include do startup-script (monta player-controls) + LCDInit). Sem ele o player-state fica vazio e o
             // AddPlayer derefa NULL. thiscall void(this). _bDedicatedServer=1 pula o include de persistent-symbols.
-            bool joinMode = (strcmp(mode, "join") == 0);
-            if (pGame && joinMode) {
+            bool skipServerInit = (strcmp(mode, "join") == 0 || strcmp(mode, "hostmin") == 0);
+            if (pGame && skipServerInit) {
                 // JOINER (arquitetura correta, §22): NAO chama CGame::Initialize. Ela sobe o jogo COMO
                 // SERVIDOR ("opening as server, port 25600" -> FatalError headless, §21) — mas um joiner
                 // NUNCA abre servidor; ele CONECTA no host (o cliente humano) e RECEBE world+game-mode+
@@ -843,6 +843,28 @@ int main(int argc, char** argv)
         int pr = PumpSEH(pNet, pTimer, nullptr, handleTimers, secs);
         if (pr == 0) printf("[c++] pump terminou estavel (sessao ficou viva %ds)\n", secs);
         else         printf("[c++] >>> EXCECAO no pump: %s\n   %s\n", g_excType, g_stack);
+    }
+    else if (strcmp(mode, "hostmin") == 0)
+    {
+        // Host MINIMO (so p/ testar o CONNECT do joiner headless-vs-headless): StartPeerToPeer (carrega mundo +
+        // LISTEN) SEM CGame::Initialize (o server-open fatal) e SEM AddPlayer. Se um engine_host "join" conecta
+        // aqui, o codigo do joiner esta certo (rung 2 provado server-side, sem depender do cliente humano). §22.
+        char nameBuf[8] = {0}, worldBuf[8] = {0};
+        char props[2048] = {0};
+        BuildStr("??0CTString@@QAE@PBD@Z",   nameBuf,  "BotHostMin");
+        BuildStr("??0CTFileName@@QAE@PBD@Z", worldBuf, arg4);
+        void* startP2P = (void*)GetProcAddress(g_eng, "?StartPeerToPeer_t@CNetworkLibrary@@QAEXABVCTString@@ABVCTFileName@@KJHPAX@Z");
+        InterlockedExchange(&g_autoCommit, 1);
+        printf("[c++] hostmin: StartPeerToPeer_t(world=\"%s\") SEM CGame::Initialize...\n", arg4); fflush(stdout);
+        int rc = CallStartP2P_SEH(startP2P, pNet, nameBuf, worldBuf, props);
+        if (rc != 0) { printf("[c++] >>> EXCECAO hostmin StartPeerToPeer: %s | '%s'\n   %s\n", g_excType, g_excChar, g_stack); return 9; }
+        printf("[c++] hostmin: StartPeerToPeer OK — LISTEN aberto, servindo joiners\n"); fflush(stdout);
+        void* ppT = GetProcAddress(g_eng, "?_pTimer@@3PAVCTimer@@A");
+        void* pTimer = ppT ? *reinterpret_cast<void**>(ppT) : nullptr;
+        ThisVoid_t handleTimers = reinterpret_cast<ThisVoid_t>(GetProcAddress(g_eng, "?HandleTimerHandlers@CTimer@@QAEXXZ"));
+        int secs = argc > 5 ? atoi(argv[5]) : 30;
+        printf("[c++] hostmin VIVO, bombeando %ds...\n", secs); fflush(stdout);
+        PumpSEH(pNet, pTimer, nullptr, handleTimers, secs);
     }
     else if (strcmp(mode, "join") == 0)
     {

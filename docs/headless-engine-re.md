@@ -666,5 +666,41 @@ o peer faz só `GAME_Create` + `InitInternal` (0x13ae0, roda limpo, sem hang/fat
 3. **Ponte de IA (H5):** dirigir o bot alimentando movimento/ataque pela sessão do engine_host (tráfego do
    peer joiner), não mais 0x30a server-relay do fantasma.
 
-**Estado:** o muro central (§21) está **contornado e verificado** headless. Falta o brokering do endpoint +
-o teste de join contra o host vivo (in-game). Não é mais "portar o cliente inteiro"; é integrar o joiner.
+**Estado:** o muro do §21 (server-open do modo servidor) está **contornado**. Rungs restantes abaixo.
+
+## 22.1 Teste 2-processos headless (hostmin ↔ join) — o muro REAL localizado (2026-07-07)
+Para provar o joiner SEM depender do cliente humano, adicionei `hostmin` (host mínimo: `StartPeerToPeer` +
+LISTEN, SEM `CGame::Initialize`) e testei `hostmin` ↔ `join` headless-vs-headless. Resultados:
+
+- **`hostmin` FUNCIONA headless:** `InitInternal` + `StartPeerToPeer_t` **abriu o LISTEN e serviu 45s** —
+  SEM `CGame::Initialize`, SEM render, SEM o fatal do §21. ⇒ **REFINA o §21**: a `CGame::Initialize` (com o
+  "opening as server") NUNCA foi necessária pro host ESCUTAR; o world-load + listen server-side rodam limpos
+  headless. O muro do host era um beco (a `Initialize` faz render+rede que o listen não precisa).
+- **`join` CRASHA no world-load do CLIENTE (não no connect):** o segfault é **idêntico com ou sem host** →
+  não chega ao connect; morre no setup LOCAL do `JoinSession`. `engine_host.RPT`: `C0000005` @ `009AE60D`
+  (região anônima). `engine_opens.log` (últimos opens antes do crash): cascata de **assets de RENDER** —
+  `.smc`/`.bm`/`.tex`/ParticleEmitter (`green_build01`, `MessageManager.ecl`, `pwParticleEmitter`). ⇒ o
+  JOINER, por ser **cliente**, carrega os MODELOS/TEXTURAS do mundo e derefa um device de render NULL headless.
+  É o **muro de render** (§18/§20), agora atingido pela via do joiner (o host `hostmin` NÃO o toca — carga
+  server-side sem modelos).
+
+**Veredito refinado (o muro real, localizado):** o server-open (§21) era red-herring — o host-listen headless
+FUNCIONA (`hostmin`). Os dois núcleos que sobram são o **mesmo tecido render+game-state** de sempre:
+- (a) **joiner headless** precisa de render-null pra carregar os modelos-cliente do mundo (§20 peeling, ou
+  criar um device de render nulo), OU
+- (b) **host headless** (`hostmin`, que JÁ escuta) + o HUMANO como JOINER (o humano TEM render → sem crash de
+  modelo do lado dele; traz o appearance no join, §14 H3.5) — falta só o **game-state pro `AddPlayer(bot)`**
+  no host (o estado profundo que o `AddPlayer_t` lê: `CGame vtable+8→+0x470c/+0x4854`), que a `CGame::Initialize`
+  monta mas entrelaça com render/rede. Caminho (b) é o mais promissor: o lado que precisa de render é o HUMANO
+  (que o tem), e o headless fica só como host+bot.
+
+**Rungs concretos (caminho b, o mais viável):**
+1. `hostmin` já escuta headless ✅. Falta: montar SÓ o game-state que o `AddPlayer_t` lê, sem a
+   `CGame::Initialize` inteira (isolar dos internos de `0x1f230`/`InitInternal` o que popula
+   `CGame vtable+8→+0x470c`). É a RE cirúrgica agora com alvo EXATO (o `AddPlayer_t` @0x360F3EB0 diz os campos).
+2. Servidor faz o cliente humano JOINAR o `hostmin` (brokering: apontar o P2P do humano ao endpoint do host),
+   em vez do humano hospedar. Traz o appearance (§14 H3.5) → `AddPlayer` do humano completa.
+3. `AddPlayer(bot)` no host → propaga ao humano → combatente real → HIT×N. Ponte de IA (H5) dirige o bot.
+
+**Infra desta sessão:** modo `join` (host-only `CGame::Initialize`), modo `hostmin` (listen headless provado),
+harness `join-bot-test.ps1`, RE fresca do binário CERTO (vtable/AddPlayer_t/offsets corrigidos).
