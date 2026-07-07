@@ -690,7 +690,21 @@ int main(int argc, char** argv)
             // CGame::InitInternal @ gamemp+0x13AE0 (RE: seeds membros + ~86 DeclareSymbol + AddTimerHandler +
             // include do startup-script (monta player-controls) + LCDInit). Sem ele o player-state fica vazio e o
             // AddPlayer derefa NULL. thiscall void(this). _bDedicatedServer=1 pula o include de persistent-symbols.
-            if (pGame) {
+            bool joinMode = (strcmp(mode, "join") == 0);
+            if (pGame && joinMode) {
+                // JOINER (arquitetura correta, §22): NAO chama CGame::Initialize. Ela sobe o jogo COMO
+                // SERVIDOR ("opening as server, port 25600" -> FatalError headless, §21) — mas um joiner
+                // NUNCA abre servidor; ele CONECTA no host (o cliente humano) e RECEBE world+game-mode+
+                // player-array pela sessao. So precisa do InitInternal (0x13AE0: seeds membros +
+                // DeclareSymbol + startup-script), que roda SEM hang (§16). O game-state profundo que o
+                // AddPlayer_t le (engine.dll 0x360F3EB0: CGame[0x3636F260]->vtable[+8] -> byte +0x470c,
+                // slot +0x4854) chega do HOST via JoinSession — nao e' alocado localmente pelo joiner.
+                void* iiFn = reinterpret_cast<char*>(g_hGame) + 0x13AE0;
+                printf("[c++] JOIN: InitInternal(@%p) direto — pula o server-open da Initialize (§22)\n", iiFn); fflush(stdout);
+                if (CallThisVoidSEH(iiFn, pGame) == 0) printf("[c++] InitInternal OK (joiner)\n");
+                else printf("[c++] >>> EXCECAO InitInternal (joiner): %s\n", g_excType);
+            }
+            else if (pGame) {
                 // CGame::Initialize = vtable[+0xCC] (gamemp+0x1f2d0) — o rakion.bin REAL chama isto apos
                 // GAME_Create (0x40bd52), nao o InitInternal direto. Ela chama InitInternal INTERNAMENTE +
                 // aloca o sistema de players (que o getter vtable[+8] devolve). thiscall(this, CTFileName*
@@ -847,6 +861,24 @@ int main(int argc, char** argv)
         int rc = CallJoinSEH(joinFn, pNet, nsBuf, 1, fnmCharPtr);
         if (rc != 0) { printf("[c++] >>> EXCECAO no join: %s | msg-se-char*: '%s'\n   %s\n", g_excType, g_excChar, g_stack); return 8; }
         printf("[c++] JoinSession RETORNOU OK *** o peer headless ENTROU na sessao + carregou o mundo\n");
+
+        // Registra o bot como jogador local NESTE peer joiner. Chamado APOS o JoinSession — nesse ponto o
+        // host ja streamou o game-state (creature-list/player-array/game-mode) que o AddPlayer_t le. E' o
+        // teste decisivo de §22: se o crash do AddPlayer some quando o state vem do host, a arquitetura
+        // joiner e' o caminho (vs. o host-mode que fatalava no server-open). O appearance do bot e' o
+        // CPlayerCharacter construido aqui; o host propaga ao cliente humano -> combatente real -> HIT×N.
+        {
+            char pcName[8] = {0}, pcTeam[8] = {0}, pcBuf[0x400] = {0};
+            BuildStr("??0CTString@@QAE@PBD@Z", pcName, "Bot1");
+            BuildStr("??0CTString@@QAE@PBD@Z", pcTeam, "");
+            typedef void* (__thiscall* PcCtor2_t)(void*, const void*, const void*);
+            reinterpret_cast<PcCtor2_t>(GetProcAddress(g_eng, "??0CPlayerCharacter@@QAE@ABVCTString@@0@Z"))(pcBuf, pcName, pcTeam);
+            void* addFn = (void*)GetProcAddress(g_eng, "?AddPlayer_t@CNetworkLibrary@@QAEPAVCPlayerSource@@AAVCPlayerCharacter@@@Z");
+            printf("[c++] JOIN: AddPlayer_t(\"Bot1\") apos o join (game-state vindo do host)...\n"); fflush(stdout);
+            int ar = CallAddPlayerSEH(addFn, pNet, pcBuf);
+            if (ar == 0) printf("[c++] AddPlayer_t OK -> CPlayerSource=%p *** BOT registrado como peer joiner!\n", g_plsResult);
+            else         printf("[c++] >>> EXCECAO AddPlayer (joiner): %s | '%s'\n   %s\n", g_excType, g_excChar, g_stack);
+        }
 
         // pump pra manter o joiner sincronizado
         void* ppT = GetProcAddress(g_eng, "?_pTimer@@3PAVCTimer@@A");

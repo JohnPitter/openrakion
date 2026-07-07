@@ -620,3 +620,51 @@ render (pump determinístico) e chega até o init de REDE — onde a falha real 
 Toda a infra (pump, hooks, watchdog, fallbacks) fica reutilizável. Resume do sub-projeto: fazer o
 `StartPeerToPeer`/server-open da engine ter sucesso headless (RE do que a rede-init exige sem render) — é o
 próximo alvo REAL, não mais peeling.
+
+## 22. VIRADA: o muro era o modo SERVIDOR — o JOINER contorna o fatal (2026-07-07)
+§21 dava o veredito como "portar headless". Estava certo **para o modo HOST** (o peer sobe o jogo COMO
+servidor: `CGame::Initialize` → "opening as server, port 25600" → `ExitProcess(1)`). Erro de arquitetura:
+para pôr um 2º combatente no cliente humano, o headless **não precisa ser servidor** — precisa ser
+**JOINER** (o 2º cliente que ENTRA na sessão que o humano hospeda). É o split master/joiner do stage real
+2-clientes (`room-state 0x37` master@+2; sim-3D é P2P client-side, `worldserv` não roda engine).
+
+**RE do binário CERTO (rakion-final, via capstone — corrige offsets cross-build):**
+- CGame vtable **@0x100295f8** (do ctor 0x10017150, `mov [esi],0x100295f8`). `Initialize`=vtable[+0xCC]=
+  **0x1001f2d0** (confirmado); é um WRAPPER fino: `call 0x1001f230` (init grande: Read* + render + rede) →
+  MessageBoxA/exit de erro → `operator=` [esi+0x40] → `InitInternal` **0x10013ae0** → `ret 8`.
+- vtable[+8] (suposto "getter do player-array" da RE antiga) = **0x10011bd0 = `ret` PURO (stub)** em
+  rakion-final. A premissa "vtable+8 devolve o array" veio do **rakion-new** (build diferente) — não vale no
+  binário real. Por isso toda a cascata headless-HOST batia em lixo/AV: **offsets de outro build**.
+- `AddPlayer_t` real = engine.dll **0x360F3EB0**. Lê estado PROFUNDO do CGame:
+  `CGame[0x3636F260]->vtable[+8]()` → byte `[+0x470c]`, slot `[edi+ecx*4+0x4854]`, `[0x362ba778]+0x24 +0x2946`.
+  ⇒ o AddPlayer depende de um CGame **inteiro** (o que a `Initialize` monta) — NÃO de uma alocação isolável.
+  No JOINER esse estado profundo **vem do host pela sessão** (o join streama world+game-mode+players), não é
+  alocado localmente. É por isso que o caminho joiner é viável e o "cirúrgico local" (§16b) não era.
+
+**Correção implementada (engine_host.cpp):** o bloco `CGame::Initialize` virou **host-only**. Em modo `join`
+o peer faz só `GAME_Create` + `InitInternal` (0x13ae0, roda limpo, sem hang/fatal) → `JoinSession_t`
+(0x360F5960, conecta pra FORA) → `AddPlayer_t` APÓS o join (com o game-state já vindo do host).
+
+**PROVA empírica (smoke-test `engine_host … join Rakion 127.0.0.1 …`):**
+```
+[c++] JOIN: InitInternal(@10013AE0) direto — pula o server-open da Initialize (§22)
+[c++] InitInternal OK (joiner)
+[c++] JoinSession_t(host="127.0.0.1", world="…ko2.wld") em SEH-probe…
+[commit] 0903xxxx (acc=write) commitada, re-exec   ← aloca buffers da sessão
+<segfault>                                          ← conectando a host AUSENTE (127.0.0.1 vazio)
+```
+**ZERO "opening as server, port 25600". ZERO ExitProcess(1) fatal.** O peer joiner passa o init, entra no
+`JoinSession`, aloca os buffers da sessão e só cai por **não haver host** em 127.0.0.1 — falha esperada de
+"ninguém pra entrar", não o muro de rede de §21. **O muro do §21 era do modo servidor; o joiner o contorna.**
+
+**Rungs restantes (bounded, arquitetura correta):**
+1. **Servidor broka o endpoint do humano + lança o engine_host** em `join` no início do stage. O world
+   server JÁ conhece o endpoint UDP-gameplay do humano (relaya 0x30a pra ele) — é o alvo do JoinSession.
+   Validar se a porta de sessão-listen do master == porta gameplay.
+2. **Teste in-game:** humano hospeda o stage (master), engine_host faz join → `AddPlayer("Bot1")` completa
+   com o state do host? O cliente humano cria o combatente real → HIT×N + movimento/anim/colisão nativos.
+3. **Ponte de IA (H5):** dirigir o bot alimentando movimento/ataque pela sessão do engine_host (tráfego do
+   peer joiner), não mais 0x30a server-relay do fantasma.
+
+**Estado:** o muro central (§21) está **contornado e verificado** headless. Falta o brokering do endpoint +
+o teste de join contra o host vivo (in-game). Não é mais "portar o cliente inteiro"; é integrar o joiner.
