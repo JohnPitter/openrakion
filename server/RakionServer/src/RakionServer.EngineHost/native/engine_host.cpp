@@ -491,8 +491,17 @@ int main(int argc, char** argv)
                        f14, f24, cg);
                 printf("[c++] DIAG global localChar@0x3636F40C[0]=%08X  field4@0x3636F760=%08X (0=>copy crasha)\n",
                        loc0, loc1);
-                fflush(stdout);
+                // LAYOUT do CPlayerCharacter construido (dwords NAO-zero) -> mostra onde vivem os CTString (name/team)
+                // e o que falta (appearance/model). O crash le src->[+0x354].
+                unsigned* pcw = reinterpret_cast<unsigned*>(pcBuf);
+                printf("[c++] DIAG pcBuf non-zero dwords:");
+                for (int k = 0; k < 0x370 / 4; k++) if (pcw[k]) printf(" +%X=%08X", k * 4, pcw[k]);
+                printf("\n"); fflush(stdout);
             }
+            // EXPERIMENTO: o caminho cliente copia o CPlayerCharacter LOCAL do global 0x3636F40C (zerado => crash).
+            // Popula esse global com o CPlayerCharacter que construimos (name/team validos) e ve se o crash anda.
+            memcpy(reinterpret_cast<void*>(0x3636F40Cu), pcBuf, 0x370);
+            printf("[c++] EXPERIMENTO: pcBuf -> localChar global 0x3636F40C (0x370B) copiado\n"); fflush(stdout);
             void* addFn = (void*)GetProcAddress(g_eng, "?AddPlayer_t@CNetworkLibrary@@QAEPAVCPlayerSource@@AAVCPlayerCharacter@@@Z");
             printf("[c++] AddPlayer_t(\"Bot1\") em SEH-probe...\n"); fflush(stdout);
             int ar = CallAddPlayerSEH(addFn, pNet, pcBuf);
