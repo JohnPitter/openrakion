@@ -27,7 +27,25 @@ namespace RakionServer.World.Domain
             Profile = BotProfile.For(difficulty);
             MaxHp = Profile.MaxHp;
             Hp = Profile.MaxHp;
+            _rng = new Random(unchecked(id * 7919 + 17));   // semente por-bot: variedade sem sincronizar bots
         }
+
+        /// <summary>RNG por-bot (semente do <see cref="Id"/>) — variedade HUMANA no footwork/timing. Determinístico
+        /// por bot (reprodutível), mas cada bot sorteia diferente (não se movem em uníssono).</summary>
+        private readonly Random _rng;
+
+        /// <summary>Sorteio pseudo-aleatório em [0,100) do RNG do bot — usado p/ variar o footwork de combate.</summary>
+        public int NextRoll() => _rng.Next(100);
+
+        /// <summary>Footwork de combate humano no melee: circula (strafe), lê o oponente parado (hold) ou recua
+        /// tático (backstep). O motor troca entre eles em cadência jittered — não orbita igual a uma máquina.</summary>
+        public enum Footwork : byte { Strafe, Hold, Backstep }
+
+        /// <summary>Footwork corrente do bot no melee (setado pelo motor de IA).</summary>
+        public Footwork Foot = Footwork.Strafe;
+
+        /// <summary>Instante (TickCount64) de trocar o footwork corrente — cadência jittered por sorteio.</summary>
+        public long NextFootMs;
 
         /// <summary>Nível de inteligência do bot (Easy/Normal/Hard). Define o <see cref="Profile"/>.</summary>
         public BotDifficulty Difficulty;
@@ -288,9 +306,38 @@ namespace RakionServer.World.Domain
 
             float ux = dx / dist, uz = dz / dist;                // unitário até o alvo
             float tanx = -uz * dir, tanz = ux * dir;             // perpendicular (sentido dir)
-            float radial = dist - ringRadius;                    // >0 longe (aproxima); <0 perto (afasta)
+            float radial = dist - ringRadius;
+            // Correção radial ASSIMÉTRICA e SUAVE: puxa pra dentro quando LONGE (firme, fecha a distância), mas
+            // separa MUITO de leve quando COLADO — o bot SEGURA o chão em vez de fugir. O empurrão simétrico forte
+            // antigo (fator 0.5) era o "repelido pra longe": bastava o humano avançar p/ o bot recuar mantendo o anel.
+            float corr = radial > 0f ? MathF.Min(radial, 0.6f) * 0.30f
+                                     : MathF.Max(radial, -0.4f) * 0.10f;
             float spd = Profile.MoveSpeed * Math.Clamp(Profile.StrafeBias, 0f, 1f);
-            Integrate(tanx * spd + ux * radial * 0.5f, tanz * spd + uz * radial * 0.5f);
+            Integrate(tanx * spd + ux * corr, tanz * spd + uz * corr);
+        }
+
+        /// <summary>
+        /// Recuo DELIBERADO (como apertar a tecla "trás"): afasta-se do alvo à <paramref name="speed"/> ENCARANDO o
+        /// alvo — backpedal humano, não empurrão. É escolha TÁTICA do footwork (≠ <see cref="ApplyKnockback"/>, que é
+        /// reação involuntária a um hit). O próximo 0x30a leva a posição recuando + o rosto no alvo.
+        /// </summary>
+        public void RetreatFrom(float tx, float tz, float speed)
+        {
+            float dx = tx - X, dz = tz - Z;
+            float dist = MathF.Sqrt(dx * dx + dz * dz);
+            if (dist > 0.01f) Yaw = MathF.Atan2(dx, dz) * (180f / MathF.PI);   // encara o alvo enquanto recua
+            if (dist < 0.01f) { Integrate(0f, 0f); return; }
+            float ux = dx / dist, uz = dz / dist;
+            Integrate(-ux * speed, -uz * speed);                              // move AO CONTRÁRIO do alvo
+        }
+
+        /// <summary>Segura o chão: desacelera até parar (a velocidade decai pela aceleração do perfil), ENCARANDO o
+        /// alvo — o footwork "hold" (humano lê o oponente parado entre trocas). Sem deslize: keystate vira idle.</summary>
+        public void HoldGround(float tx, float tz)
+        {
+            float dx = tx - X, dz = tz - Z;
+            if (dx * dx + dz * dz > 0.0001f) Yaw = MathF.Atan2(dx, dz) * (180f / MathF.PI);
+            Integrate(0f, 0f);
         }
 
         /// <summary>Integra a velocidade atual rumo à desejada, limitada pela aceleração do perfil, e aplica à

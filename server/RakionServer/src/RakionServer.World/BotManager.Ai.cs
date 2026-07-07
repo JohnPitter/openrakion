@@ -19,8 +19,10 @@ namespace RakionServer.World
     {
         private const long BotMoveIntervalMs = 100;   // taxa real da captura (~100ms entre 0x30a do mesmo sender)
 
-        /// <summary>Anel (coord) que o bot mantém ao orbitar o alvo no melee — dentro do alcance do golpe.</summary>
-        private const float BotStrafeRing = 2.6f;
+        /// <summary>Anel de LUTA (coord) que o bot mantém no melee — perto o bastante p/ trocar golpe, logo FORA da
+        /// colisão dura (senão o cliente empurra). Apertado (2.2) p/ o bot SEGURAR o chão e o humano conseguir chegar
+        /// perto — antes (2.6 + empurrão radial) o bot fugia ao humano avançar ("repelido pra longe").</summary>
+        private const float BotStrafeRing = 2.2f;
 
         /// <summary>Quanto à frente (ms) a IA projeta o alvo ao liderar a perseguição/mira (escalado pelo perfil).</summary>
         private const float BotLeadMs = 260f;
@@ -153,7 +155,7 @@ namespace RakionServer.World
                     if (gateOpenedVisually && !stunned)
                     {
                         bot.MaybeFlipStrafe(now);   // troca o lado da orbitação periodicamente
-                        if (engage) ChaseTarget(f, bot);
+                        if (engage) ChaseTarget(f, bot, now);
                         else if (objective) UpdateBotObjective(f, rec, bot, now);
                         else bot.PatrolStep();
                     }
@@ -280,7 +282,7 @@ namespace RakionServer.World
         /// <summary>Persegue o alvo humano: ANTECIPA a posição (lidera pelo vetor de velocidade, escala do perfil),
         /// aproxima até o anel de melee e então ORBITA o alvo (não fica parado — humano circula o oponente).
         /// Fallback p/ a posição padrão do time se o alvo ainda não enviou 0x30a.</summary>
-        private static void ChaseTarget(Domain.Field f, BotPlayer bot)
+        private static void ChaseTarget(Domain.Field f, BotPlayer bot, long now)
         {
             var target = f.RecAt(bot.TargetSeat);
             if (target == null) return;
@@ -296,14 +298,44 @@ namespace RakionServer.World
                 tx += target.VelX * lead;
                 tz += target.VelZ * lead;
             }
+            bot.SetAimToward(tx, target.LastY, tz);
 
             float dx = tx - bot.X, dz = tz - bot.Z;
             float dist = MathF.Sqrt(dx * dx + dz * dz);
-            if (dist > BotStrafeRing + 0.6f)
-                bot.MoveToward(tx, tz, BotStrafeRing);                       // longe: aproxima (freia no anel)
-            else
-                bot.StrafeAround(tx, tz, bot.StrafeDir, BotStrafeRing);     // no alcance: orbita o alvo
-            bot.SetAimToward(tx, target.LastY, tz);
+
+            // LONGE do alcance de luta: AVANÇA correndo, encarando o alvo (freia ao chegar no anel). É o único
+            // momento de locomoção "reta" — como um humano fechando a distância.
+            if (dist > BotStrafeRing + 0.8f) { bot.MoveToward(tx, tz, BotStrafeRing); return; }
+
+            // EM alcance: FOOTWORK humano — circula / segura o chão / recua tático, trocando em cadência jittered
+            // (não orbita igual a uma máquina). O recuo é backpedal DELIBERADO encarando o alvo, não empurrão.
+            if (now >= bot.NextFootMs) PickFootwork(bot, now);
+            switch (bot.Foot)
+            {
+                case BotPlayer.Footwork.Backstep: bot.RetreatFrom(tx, tz, bot.Profile.MoveSpeed * 0.7f); break;
+                case BotPlayer.Footwork.Hold:     bot.HoldGround(tx, tz); break;
+                default:                          bot.StrafeAround(tx, tz, bot.StrafeDir, BotStrafeRing); break;
+            }
+        }
+
+        /// <summary>
+        /// Escolhe o próximo footwork de combate com distribuição HUMANA: circula na maior parte do tempo (~50%),
+        /// segura o chão lendo o oponente às vezes (~32%), e recua TÁTICO de leve e ocasional (~18%) — nunca foge
+        /// por reflexo. Duração jittered pelo RNG do bot (cadência viva, dessincronizada entre bots).
+        /// </summary>
+        private static void PickFootwork(BotPlayer bot, long now)
+        {
+            int roll = bot.NextRoll();   // [0,100)
+            long dur;
+            if (roll < 50) { bot.Foot = BotPlayer.Footwork.Strafe; dur = 550 + roll * 9; }              // circula ~0.55–1.0s
+            else if (roll < 82) { bot.Foot = BotPlayer.Footwork.Hold; dur = 350 + (roll - 50) * 8; }    // segura ~0.35–0.6s
+            else                                                                                         // recuo tático curto ~0.28–0.45s
+            {
+                bot.Foot = BotPlayer.Footwork.Backstep;
+                dur = 280 + (roll - 82) * 10;
+                bot.StrafeDir = (sbyte)-bot.StrafeDir;   // ao voltar do recuo, circula pro outro lado (finta)
+            }
+            bot.NextFootMs = now + dur;
         }
 
         /// <summary>
