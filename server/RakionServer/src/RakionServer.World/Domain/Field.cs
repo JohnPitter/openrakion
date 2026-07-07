@@ -34,6 +34,13 @@ namespace RakionServer.World.Domain
         /// <summary>Throttle do último golpe do bot NESTE humano (TickCount64) — evita instakill por 0x311 repetidos.</summary>
         public long LastBotHitMs;
 
+        /// <summary>Combo de acertos consecutivos deste humano nos bots (encadeia dentro de
+        /// <see cref="Field.HitComboWindowMs"/>) — alimenta o "HIT x N" visível via chat de stage
+        /// (o contador nativo do HUD exige peer de sessão real — muro do cliente).</summary>
+        public int HitCombo;
+        /// <summary>TickCount64 do último acerto que contou no combo.</summary>
+        public long LastHitComboMs;
+
         /// <summary>Velocidade estimada do alvo no plano XZ (coord/ms, suavizada por EMA) — derivada do delta
         /// entre 0x30a consecutivos. A IA do bot usa p/ ANTECIPAR (liderar a mira/perseguição); zero = parado.</summary>
         public float VelX, VelZ;
@@ -520,7 +527,11 @@ namespace RakionServer.World.Domain
             // REVIVE todos os ocupantes do match no início do round (cada round é um começo fresco — os mortos do
             // round anterior renascem). Antes só revivia State==3, deixando os mortos (State==1) fora do round seguinte
             // -> sem "evento de morte" o fim de round não disparava (round intermitente não encerrando).
-            foreach (var r in Slots) if (r.Occupied) { r.Dead = false; if (r.State == 3 || r.State == 1) r.State = 4; r.Bot?.ResetForRound(); }
+            foreach (var r in Slots) if (r.Occupied)
+            {
+                r.Dead = false; if (r.State == 3 || r.State == 1) r.State = 4; r.Bot?.ResetForRound();
+                r.MatchHp = HumanMatchHp; r.HitCombo = 0;   // HP virtual/combo por round (senão o round seguinte herda o HP gasto)
+            }
             RecomputeMvp();
             Log.Ok("field", "field {0} round {1} iniciado (dur={2}s mode={3})", Id, Round, RoundDurationSec, Mode);
         }
@@ -689,6 +700,21 @@ namespace RakionServer.World.Domain
         /// throttle (250) p/ encadear durante o combo do humano (stun-lock realista; recupera ao parar de bater).</summary>
         private const long BotHitStaggerMs = 550;
 
+        /// <summary>Janela do combo (ms): acertos dentro dela encadeiam o "HIT x N"; fora, o combo recomeça em 1.</summary>
+        private const long HitComboWindowMs = 4000;
+
+        /// <summary>
+        /// Linha de chat de STAGE a todos os humanos do field — feedback visível do combate server-side.
+        /// Forma do handler original de 3D-chat (FUN_004244f0): [u16 0x47][00][cstring], canal lobby.
+        /// É o substituto do HUD nativo de HIT×N (que exige peer de sessão real — muro do cliente).
+        /// </summary>
+        public void AnnounceStage(string text)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x47).WriteByte(0).WriteCString(text);
+            BroadcastLobby(w.ToArray());
+        }
+
         /// <summary>
         /// Arbitra um golpe do humano <paramref name="attackerSeat"/> (0x311) contra o BOT inimigo mais próximo
         /// dentro do alcance — o bot não tem cliente p/ reportar a própria morte (combate cliente-autoritativo),
@@ -762,6 +788,11 @@ namespace RakionServer.World.Domain
             if (!died) best.Bot.Stagger(now, BotHitStaggerMs);   // cambaleia + interrompe o combo (reação de hit)
             Log.Ok("combat", "field {0}: humano seat {1} ACERTOU bot seat {2} -{3} (HP {4}/{5}) dist={6:F1} action=0x{7:X4}{8}",
                 Id, attackerSeat, best.Slot, dmg, best.Bot.Hp, best.Bot.MaxHp, MathF.Sqrt(bestD2), actionId, died ? " -> MORREU" : "");
+            a.HitCombo = (now - a.LastHitComboMs <= HitComboWindowMs) ? a.HitCombo + 1 : 1;
+            a.LastHitComboMs = now;
+            AnnounceStage(died
+                ? $"HIT : x{a.HitCombo} >> {best.Bot.Name} MORREU"
+                : $"HIT : x{a.HitCombo} >> {best.Bot.Name} {best.Bot.Hp}/{best.Bot.MaxHp}");
             if (!died) return null;       // sobreviveu
 
             OnPlayerDeath(best.Slot, attackerSeat, cause);
@@ -803,6 +834,10 @@ namespace RakionServer.World.Domain
             h.MatchHp = (ushort)Math.Max(0, h.MatchHp - dmg);
             Log.Ok("combat", "field {0}: BOT seat {1} ACERTOU humano seat {2} -{3} (HP virtual {4}) dist={5:F1}{6}",
                 Id, botRec.Slot, h.Slot, dmg, h.MatchHp, MathF.Sqrt(d2), h.MatchHp == 0 ? " -> MORREU" : "");
+            h.HitCombo = 0;   // apanhar quebra a sequência do SEU "HIT x N" (semântica do contador nativo)
+            AnnounceStage(h.MatchHp == 0
+                ? $"{bot.Name} : te FINALIZOU"
+                : $"{bot.Name} : te acertou -{dmg} (HP {h.MatchHp}/{HumanMatchHp})");
             if (h.MatchHp > 0) return null;
 
             OnPlayerDeath(h.Slot, botRec.Slot, 0);   // morte do humano pelo bot (credita o bot + placar/round)
