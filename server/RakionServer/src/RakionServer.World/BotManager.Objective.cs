@@ -65,7 +65,7 @@ namespace RakionServer.World
             {
                 case WaypointKind.Nav:
                     if (dist <= WaypointReachDist) AdvanceRoute(bot, route.Count);
-                    else bot.MoveToward(wp.Pos.X, wp.Pos.Z, ObjectiveMoveStandoff);
+                    else bot.MoveToward(wp.Pos.X, wp.Pos.Z, ObjectiveMoveStandoff, RunSpeedPerTick);
                     break;
 
                 case WaypointKind.Teleport:
@@ -75,7 +75,7 @@ namespace RakionServer.World
                         Log.Ok("bot", "field {0}: '{1}' teleporte -> ({2:F1},{3:F1})", f.Id, bot.Name, bot.X, bot.Z);
                         AdvanceRoute(bot, route.Count);
                     }
-                    else bot.MoveToward(wp.Pos.X, wp.Pos.Z, ObjectiveMoveStandoff);
+                    else bot.MoveToward(wp.Pos.X, wp.Pos.Z, ObjectiveMoveStandoff, RunSpeedPerTick);
                     break;
 
                 case WaypointKind.Golem:
@@ -86,7 +86,7 @@ namespace RakionServer.World
                         bot.SetAimToward(wp.Pos.X, bot.Y, wp.Pos.Z);       // mira o golem no plano do bot (aim-vec)
                         if (AttackGolem(f, rec, bot, wp.Param, now)) AdvanceRoute(bot, route.Count);
                     }
-                    else bot.MoveToward(wp.Pos.X, wp.Pos.Z, ObjectiveMoveStandoff);
+                    else bot.MoveToward(wp.Pos.X, wp.Pos.Z, ObjectiveMoveStandoff, RunSpeedPerTick);
                     break;
             }
         }

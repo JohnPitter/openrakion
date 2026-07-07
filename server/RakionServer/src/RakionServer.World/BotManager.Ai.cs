@@ -28,10 +28,12 @@ namespace RakionServer.World
         /// <summary>Quanto à frente (ms) a IA projeta o alvo ao liderar a perseguição/mira (escalado pelo perfil).</summary>
         private const float BotLeadMs = 260f;
 
-        /// <summary>Multiplicador de velocidade na PERSEGUIÇÃO (fora do melee): o bot corre mais rápido que o humano
-        /// (~0.6/tick na captura) p/ ALCANÇAR — a velocidade base (Normal 0.46) sozinha nunca fecha um humano
-        /// correndo (perseguição de popa). No melee volta ao normal (footwork).</summary>
-        private const float ChaseSpeedBoost = 1.7f;
+        /// <summary>Velocidade de CORRIDA do humano medida na captura: eixo dominante caiu ~0.86 coord/128ms
+        /// ≈ 0.67 coord por tick de 100ms (worldserver.log, humano correndo em linha). A animação de corrida do
+        /// cliente (keystate 00 01) "pisa" nessa cadência; mover MAIS rápido que isso faz o modelo DESLIZAR
+        /// (patinação). O chase corre nesta MESMA velocidade — casa o passo com a animação (sem deslize) e mantém
+        /// o ritmo do humano (fecha distância cortando ângulo/prevendo, não com boost). No melee usa o footwork.</summary>
+        private const float RunSpeedPerTick = 0.66f;
 
         /// <summary>Padrões de combo do bot (sequências de actionId do 0x0311) — encadeia golpes como um jogador
         /// real em vez de repetir 1 golpe "sem parar". actionIds REAIS capturados do humano in-game (worldserver.log):
@@ -341,7 +343,7 @@ namespace RakionServer.World
             // fechar. Nada de footwork aqui (senão dança sem alcançar o humano que corre a ~0.6/tick).
             if (!bot.InMelee)
             {
-                bot.MoveToward(ax, az, BotStrafeRing, bot.Profile.MoveSpeed * ChaseSpeedBoost);
+                bot.MoveToward(ax, az, BotStrafeRing, RunSpeedPerTick);
                 return;
             }
 
