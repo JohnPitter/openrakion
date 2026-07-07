@@ -878,30 +878,31 @@ int main(int argc, char** argv)
         void* ppT = GetProcAddress(g_eng, "?_pTimer@@3PAVCTimer@@A");
         void* pTimer = ppT ? *reinterpret_cast<void**>(ppT) : nullptr;
         ThisVoid_t handleTimers = reinterpret_cast<ThisVoid_t>(GetProcAddress(g_eng, "?HandleTimerHandlers@CTimer@@QAEXXZ"));
-        int secs = argc > 5 ? atoi(argv[5]) : 90;
-        printf("[c++] hostmin VIVO, ESPERANDO cliente conectar (%ds) — wait-for-join p/ HIT×N...\n", secs); fflush(stdout);
-        bool botAdded = false;
-        unsigned lastCnt = 0xffffffff;
-        for (int t = 0; t < secs && !botAdded; t++)
+        (void)pcBuf; (void)addFn;
+        int secs = argc > 5 ? atoi(argv[5]) : 120;
+        printf("[c++] hostmin VIVO, DIAGNOSTICO de conexao (%ds) — logando a tabela de players quando muda...\n", secs); fflush(stdout);
+        // DIAGNOSTICO (§22.5): antes de forjar o AddPlayer, OBSERVAR o que muda quando um cliente REAL conecta.
+        // O AddPlayer_t itera uma tabela de playerRecs (stride 0x378) num endereco fixo da engine; pNet+0x28 e' a
+        // CAPACIDADE (nao "conectados"). Logo a assinatura do array pNet+0x2c (1os slots + [+4]=appearance) e o
+        // pNet+0x14 (host/cliente) a cada mudanca -> o teste in-game revela o SINAL real de "humano conectou +
+        // mandou appearance" e o ALVO do clone. Sem AddPlayer no escuro (crashava iterando slots zerados).
+        char snap[64] = {0};
+        for (int t = 0; t < secs; t++)
         {
-            PumpSEH(pNet, pTimer, nullptr, handleTimers, 1);   // 1s de pump (serve o connect-stream + timers)
-            unsigned cnt = *reinterpret_cast<unsigned*>(reinterpret_cast<char*>(pNet) + 0x28);
-            void* base   = *reinterpret_cast<void**>(reinterpret_cast<char*>(pNet) + 0x2c);
-            if (cnt != lastCnt) { printf("[c++] hostmin: players=%u base=%p (t=%ds)\n", cnt, base, t); lastCnt = cnt; fflush(stdout); }
-            if (cnt >= 1 && base)
-            {
-                // Cliente REAL conectou! O CPlayerCharacter dele está no array (base[0], 0x370B) COM appearance.
-                printf("[c++] hostmin: *** CLIENTE CONECTOU (players=%u) — clonando appearance -> AddPlayer(bot)\n", cnt); fflush(stdout);
-                __try { memcpy(reinterpret_cast<void*>(0x3636F75Cu), base, 0x370); }   // char do humano -> global local-char
-                __except (EXCEPTION_EXECUTE_HANDLER) { printf("[c++] clone do appearance lancou (segue)\n"); fflush(stdout); }
-                int ar = CallAddPlayerSEH(addFn, pNet, pcBuf);
-                if (ar == 0) { printf("[c++] hostmin: AddPlayer(bot) OK -> CPlayerSource=%p *** BOT = PEER REAL! HIT×N deve contar\n", g_plsResult); botAdded = true; }
-                else         printf("[c++] >>> EXCECAO AddPlayer(bot) pos-join: %s | '%s'\n", g_excType, g_excChar);
-                fflush(stdout);
-            }
+            PumpSEH(pNet, pTimer, nullptr, handleTimers, 1);
+            unsigned cap  = *reinterpret_cast<unsigned*>(reinterpret_cast<char*>(pNet) + 0x28);
+            unsigned f14  = *reinterpret_cast<unsigned*>(reinterpret_cast<char*>(pNet) + 0x14);
+            void* base    = *reinterpret_cast<void**>(reinterpret_cast<char*>(pNet) + 0x2c);
+            // assinatura: [+4] (appearance) dos 3 primeiros slots do array pNet+0x2c (stride 0x370)
+            unsigned a0=0,a1=0,a2=0;
+            if (base) { __try {
+                a0 = *reinterpret_cast<unsigned*>(reinterpret_cast<char*>(base) + 0x004);
+                a1 = *reinterpret_cast<unsigned*>(reinterpret_cast<char*>(base) + 0x374);
+                a2 = *reinterpret_cast<unsigned*>(reinterpret_cast<char*>(base) + 0x6E4);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {} }
+            char cur[64]; sprintf_s(cur, "cap=%u f14=%08X app=[%08X %08X %08X]", cap, f14, a0, a1, a2);
+            if (strcmp(cur, snap) != 0) { printf("[c++] hostmin t=%ds: %s\n", t, cur); fflush(stdout); strcpy_s(snap, cur); }
         }
-        if (botAdded) { printf("[c++] hostmin: bot registrado — bombeando +30s p/ manter a sessao viva\n"); fflush(stdout);
-                        PumpSEH(pNet, pTimer, nullptr, handleTimers, 30); }
     }
     else if (strcmp(mode, "join") == 0)
     {

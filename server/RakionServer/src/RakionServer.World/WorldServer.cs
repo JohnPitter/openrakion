@@ -416,6 +416,8 @@ namespace RakionServer.World
 
             // Log em arquivo para diagnóstico sem precisar copiar do console.
             Log.EnableFileLog(Path.Combine(AppContext.BaseDirectory, "worldserver.log"));
+            // Confirma no FILE-LOG o endereço P2P do roster do bot (o set acima loga só no console, antes daqui).
+            Log.Ok("peer", "roster do bot -> BotPeerEndpoint = {0}", BotPeerEndpoint?.ToString() ?? "(null)");
 
             // Trilha fina do mini-peer (categoria 'peer'): cada estado/frame do handshake de sessão dos bots.
             // Liga o sink do slice RakionServer.Peer (I/O isolado) ao Log do servidor p/ o teste in-game cravar
