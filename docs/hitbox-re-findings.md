@@ -213,3 +213,43 @@ vivo: mandar 0x307 reliable (seq monotônica, endpoint 0x319) DURANTE a fase `[+
 **Próximo passo estático (sem teste in-game):** mapear o enum de estado `[sessão+0x180]` no `rakion.bin`
 (quem escreve 0x1d) → saber a fase exata p/ o create ser aceito → forjar o 0x307 nessa janela. Todo o
 caminho de recepção agora é RE estática no exe desempacotado.
+
+## FURO FINAL DO MURO 2 — todos os binários reversados (nenhum empacotado)
+Descoberta que corrige o MODELO inteiro:
+
+- **`gamemp.dll` e `entitiesmp.dll` do rakion-final NÃO estão empacotados** (seções normais, orig. 2007).
+  Os três binários (rakion.bin, gamemp, entitiesmp) são RE estática. Não há packer a furar.
+- **`AddRemotePlayer` é IMPORT MORTO.** Busca byte-a-byte no `rakion.bin`: `call [0x4d01f4]`=**0 hits**,
+  `call thunk`=**0 hits**, ref-de-dado só nos 2 thunks `jmp`. ⇒ **o combatente NÃO nasce de
+  `AddRemotePlayer`** — a premissa da sessão inteira estava errada. (idem rakion-new: sem caller.)
+- **`gamemp` faz o TEAM-SETUP do combatente**, não a criação: importa `GetPlayer@CSessionState`
+  (0x100261c4) + `ChangeTeam@CSessionState` (0x100261cc) + `ChangeTeam@CNetworkLibrary` (0x100261c0);
+  call-sites @0x10011d93/0x10011e40. A função pega o player da **tabela de sessão `+0x1d20`**
+  (`mov edx,[eax+esi*4+0x1d20]`) e seta o time (+0x26c). **Mas `gamemp` NÃO importa `AddPlayer`** → não
+  cria a entrada; só modifica uma que já existe.
+
+### Modelo corrigido (a RAIZ verdadeira)
+As entradas de combatente na tabela `+0x1d20` são criadas **DENTRO da `engine.dll`**, no processamento
+do **join de SESSÃO** (não exportado como uma mensagem única que a gente forje; nasce do fluxo de peer
+da SE1). O `gamemp` depois só ajusta (team via `ChangeTeam`). O bot entra pela via de **FIELD**
+(0x38/0x4b) — que popula a tabela de field, **não** a `+0x1d20` de sessão. Por isso:
+- O humano vê o bot (avatar de field), colide (corpo), mas o **raycast de hit testa a `+0x1d20`** — onde
+  o bot **não tem entrada de combatente** → `ReceiveDamage` nunca roda → zero HIT×N.
+- `ChangeTeam` do bot não tem em quê agir (sem entrada `+0x1d20`).
+
+**Conclusão do ataque (honesta):** o Muro 2 não é "código empacotado" (todos os bins abrem) nem
+`AddRemotePlayer` (morto). É **arquitetural**: a entrada de combatente `+0x1d20` é criada pelo fluxo de
+peer de SESSÃO interno da engine, que só dispara p/ um **peer de sessão real** (2º cliente). Num setup
+offline 1-cliente, sem ser peer de sessão, não há como popular a `+0x1d20` do bot por mensagem — a não
+ser o caminho **NPC** (tabela `+0x1d70`, `AddRemoteGeneralNpc`, 100% engine, dirigível), que é o
+experimento deployado (0x8307+0x319). O combatente-PLAYER nativo exige peer de sessão real; ponto.
+
+### Insumo de valor perene (RVAs no binário real, tudo reversável)
+| item | onde | uso futuro |
+|---|---|---|
+| `IsApplyReliableUDP` 2 gates | engine 0x36109e20 | fazer QUALQUER reliable do bot ser aceito |
+| gate de FASE do create | rakion.bin 0x40b8d0 (`[+0x180]==0x1d`) | janela p/ o 0x307 |
+| dispatch do create | rakion.bin 0x412339 → `HandleMessage` | receber create no cliente |
+| team-setup | gamemp 0x10011d93/e40 (`GetPlayer`+`ChangeTeam` na `+0x1d20`) | setar team do combatente |
+| `AddRemoteGeneralNpc` | engine 0x361097a0 (caso 0x307) | criar NPC hittável (via NPC) |
+| `AddPlayer@CSessionState` | engine export | criaria a entrada `+0x1d20` (só via engine-interno) |
