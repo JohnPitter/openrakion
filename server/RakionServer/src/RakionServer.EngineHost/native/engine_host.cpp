@@ -863,43 +863,45 @@ int main(int argc, char** argv)
         if (rc != 0) { printf("[c++] >>> EXCECAO hostmin StartPeerToPeer: %s | '%s'\n   %s\n", g_excType, g_excChar, g_stack); return 9; }
         printf("[c++] hostmin: StartPeerToPeer OK — LISTEN aberto, servindo joiners\n"); fflush(stdout);
 
-        // TESTE cirúrgico (§22.1 rung 1): AddPlayer(bot) com estado LIMPO (StartPeerToPeer sem a
-        // CGame::Initialize fatalada). O AddPlayer_t real (0x360F3EB0) usa o array de players em
-        // pNet+0x28(count)/+0x2c(base) stride 0x370 (SE_InitEngine monta) + call 0x36103230 (build do slot
-        // a partir do CPlayerCharacter). Se completar aqui, o HOST headless registra o bot como player —
-        // rung 1 do caminho (b). Se crashar, o SEH crava o site (provável 0x36103230, appearance/game-state).
-        // argv[6]=="listen": PULA o AddPlayer (crasha no appearance) p/ o host FICAR VIVO servindo joiners.
-        bool hostminListen = (argc > 6 && strcmp(argv[6], "listen") == 0);
-        if (!hostminListen)
-        {
-            char pcName[8] = {0}, pcTeam[8] = {0}, pcBuf[0x400] = {0};
-            BuildStr("??0CTString@@QAE@PBD@Z", pcName, "Bot1");
-            BuildStr("??0CTString@@QAE@PBD@Z", pcTeam, "");
-            typedef void* (__thiscall* PcCtor2_t)(void*, const void*, const void*);
-            reinterpret_cast<PcCtor2_t>(GetProcAddress(g_eng, "??0CPlayerCharacter@@QAE@ABVCTString@@0@Z"))(pcBuf, pcName, pcTeam);
-            // O AddPlayer_t crasha em 0x36017E8E na cópia do JOGADOR-LOCAL (global 0x3636F75C): lê o
-            // sub-objeto de APPEARANCE em [+4]=[0x3636F760] e o derefa. Headless [+4]=NULL (nenhum cliente
-            // local conectou). PROVADO: construir um CPlayerCharacter (name,team) nesse global NÃO resolve —
-            // o ctor deixa [+4] com LIXO (não um ponteiro válido), a cópia derefa e crasha igual. O appearance
-            // é um sub-objeto serializado que SÓ nasce de um cliente real (MSG_REQ_CONNECTPLAYER, §14 H3.5).
-            // ⇒ AddPlayer(bot) headless-sozinho não fecha; precisa do appearance real (humano joina) OU de um
-            // blob de appearance CAPTURADO instalado no global. Ver docs/headless-engine-re.md §22.2.
-            void* addFn = (void*)GetProcAddress(g_eng, "?AddPlayer_t@CNetworkLibrary@@QAEPAVCPlayerSource@@AAVCPlayerCharacter@@@Z");
-            unsigned cnt = *reinterpret_cast<unsigned*>(reinterpret_cast<char*>(pNet) + 0x28);
-            void* base   = *reinterpret_cast<void**>(reinterpret_cast<char*>(pNet) + 0x2c);
-            printf("[c++] hostmin: player-array pNet+0x28 count=%u base=%p (stride 0x370)\n", cnt, base);
-            printf("[c++] hostmin: AddPlayer_t(\"Bot1\") em SEH-probe...\n"); fflush(stdout);
-            int ar = CallAddPlayerSEH(addFn, pNet, pcBuf);
-            if (ar == 0) printf("[c++] hostmin: AddPlayer_t OK -> CPlayerSource=%p *** BOT REGISTRADO no host headless!\n", g_plsResult);
-            else         printf("[c++] >>> EXCECAO hostmin AddPlayer: %s | '%s'\n   %s\n", g_excType, g_excChar, g_stack);
-        }
+        // WAIT-FOR-JOIN (§22.5, H3.5): NÃO faz AddPlayer na hora (crasha sem appearance — o global local-char
+        // 0x3636F75C[+4] é NULL headless). Bombeia esperando um CLIENTE REAL conectar; quando o array de players
+        // (pNet+0x28 count / +0x2c base, stride 0x370) SOBE, o humano entrou e mandou o CPlayerCharacter DELE (com
+        // appearance VÁLIDO). Clona esse char pro global local-char 0x3636F75C — o dado que faltava — e AÍ faz
+        // AddPlayer(bot). O bot vira peer de sessão REAL no cliente humano → HIT×N nativo conta.
+        char pcName[8] = {0}, pcTeam[8] = {0}, pcBuf[0x400] = {0};
+        BuildStr("??0CTString@@QAE@PBD@Z", pcName, "Bot1");
+        BuildStr("??0CTString@@QAE@PBD@Z", pcTeam, "");
+        typedef void* (__thiscall* PcCtor2_t)(void*, const void*, const void*);
+        reinterpret_cast<PcCtor2_t>(GetProcAddress(g_eng, "??0CPlayerCharacter@@QAE@ABVCTString@@0@Z"))(pcBuf, pcName, pcTeam);
+        void* addFn = (void*)GetProcAddress(g_eng, "?AddPlayer_t@CNetworkLibrary@@QAEPAVCPlayerSource@@AAVCPlayerCharacter@@@Z");
 
         void* ppT = GetProcAddress(g_eng, "?_pTimer@@3PAVCTimer@@A");
         void* pTimer = ppT ? *reinterpret_cast<void**>(ppT) : nullptr;
         ThisVoid_t handleTimers = reinterpret_cast<ThisVoid_t>(GetProcAddress(g_eng, "?HandleTimerHandlers@CTimer@@QAEXXZ"));
-        int secs = argc > 5 ? atoi(argv[5]) : 30;
-        printf("[c++] hostmin VIVO, bombeando %ds...\n", secs); fflush(stdout);
-        PumpSEH(pNet, pTimer, nullptr, handleTimers, secs);
+        int secs = argc > 5 ? atoi(argv[5]) : 90;
+        printf("[c++] hostmin VIVO, ESPERANDO cliente conectar (%ds) — wait-for-join p/ HIT×N...\n", secs); fflush(stdout);
+        bool botAdded = false;
+        unsigned lastCnt = 0xffffffff;
+        for (int t = 0; t < secs && !botAdded; t++)
+        {
+            PumpSEH(pNet, pTimer, nullptr, handleTimers, 1);   // 1s de pump (serve o connect-stream + timers)
+            unsigned cnt = *reinterpret_cast<unsigned*>(reinterpret_cast<char*>(pNet) + 0x28);
+            void* base   = *reinterpret_cast<void**>(reinterpret_cast<char*>(pNet) + 0x2c);
+            if (cnt != lastCnt) { printf("[c++] hostmin: players=%u base=%p (t=%ds)\n", cnt, base, t); lastCnt = cnt; fflush(stdout); }
+            if (cnt >= 1 && base)
+            {
+                // Cliente REAL conectou! O CPlayerCharacter dele está no array (base[0], 0x370B) COM appearance.
+                printf("[c++] hostmin: *** CLIENTE CONECTOU (players=%u) — clonando appearance -> AddPlayer(bot)\n", cnt); fflush(stdout);
+                __try { memcpy(reinterpret_cast<void*>(0x3636F75Cu), base, 0x370); }   // char do humano -> global local-char
+                __except (EXCEPTION_EXECUTE_HANDLER) { printf("[c++] clone do appearance lancou (segue)\n"); fflush(stdout); }
+                int ar = CallAddPlayerSEH(addFn, pNet, pcBuf);
+                if (ar == 0) { printf("[c++] hostmin: AddPlayer(bot) OK -> CPlayerSource=%p *** BOT = PEER REAL! HIT×N deve contar\n", g_plsResult); botAdded = true; }
+                else         printf("[c++] >>> EXCECAO AddPlayer(bot) pos-join: %s | '%s'\n", g_excType, g_excChar);
+                fflush(stdout);
+            }
+        }
+        if (botAdded) { printf("[c++] hostmin: bot registrado — bombeando +30s p/ manter a sessao viva\n"); fflush(stdout);
+                        PumpSEH(pNet, pTimer, nullptr, handleTimers, 30); }
     }
     else if (strcmp(mode, "join") == 0)
     {
