@@ -568,3 +568,20 @@ extrair os DataSetup.xfs, + prover os globais de render que a rede referencia. �
 
 **Estado:** headless roda o init até o preload de render; toda a infra pronta (loose-fallback, PatchRet0
 win32u/user32, watchdog c/ módulo, supressor de modal, IAT-skip). Resume: extrair DataSetup.xfs + atacar (a) ou (b).
+
+## 19. Caminho (a) PARCIAL: message-injector passa o modal do render (2026-07-07)
+Em vez de bloquear os waits (que só giram), o **message-injector** (thread postando WM_NULL na main +
+fila pré-criada) faz o message-loop do preload ITERAR e completar. Resultado: o headless passa o modal do
+`ReadPreLoadSMCFile` e **chega à etapa de REDE** ("opening as server, port 25600") — mais fundo que o hang.
+
+MAS: (1) é RACY — às vezes passa (exit=1), às vezes pendura num NOVO wait (`NtUserWaitMessage`) da etapa de
+rede/pós-preload (o injetor não alimenta a tempo). (2) O término na rede **não passa por `gamemp!exit`** (hook
+não logou) → é `ExitProcess`/crash direto. ⇒ o init tem uma SUCESSÃO de message-loops + um exit/crash de rede.
+
+**Infra nova:** `MsgInjectorThread` (PostThreadMessageW), fila pré-criada na main, hook de `exit` (IAT gamemp)
+que loga o caller. Tudo no engine_host.cpp.
+
+**Veredito refinado:** path (a) é viável mas precisa de um injetor ROBUSTO (alimentar TODOS os loops, talvez
+por hook de GetMessage que retorna WM_NULL sem bloquear em vez de PostThreadMessage racy) + resolver o
+exit/crash da etapa de rede (hookar ExitProcess p/ cravar o caller). Ainda sub-projeto, mas o headless agora
+PASSA o render e chega na rede — o ponto mais fundo. Resume: injetor robusto (hook GetMessage->WM_NULL) + ExitProcess hook.

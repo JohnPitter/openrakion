@@ -14,6 +14,7 @@
 #include <windows.h>
 #include <cstdio>
 #include <cstring>
+#pragma comment(lib, "user32.lib")   // PostThreadMessageW (message-injector do caminho a)
 
 static HMODULE g_eng;
 static HMODULE g_hEnt, g_hGame;   // EntitiesMP @0x35000000 + gamemp @0x10000000 (pre-carregadas)
@@ -361,17 +362,27 @@ static void PatchRet0(const char* mod, const char* fn, int argbytes)
     VirtualProtect(p, n, old, &old); FlushInstructionCache(GetCurrentProcess(), p, n);
     printf("[c++] %s!%s -> ret0 (headless: sem message-loop)\n", mod, fn);
 }
+// CAMINHO (a): em vez de bloquear os waits (que so GIRAM o modal-loop sem sair), deixamos GetMessage/
+// WaitMessage FUNCIONAREM e uma thread injeta WM_NULL na main -> o loop de preload itera e COMPLETA.
+static DWORD g_mainTid;
+static volatile LONG g_injectArm = 0;
+static DWORD WINAPI MsgInjectorThread(void*)
+{
+    for (;;) {
+        if (InterlockedCompareExchange(&g_injectArm, 0, 0)) PostThreadMessageW(g_mainTid, WM_NULL, 0, 0);
+        Sleep(1);
+    }
+    return 0;
+}
+static void StartMsgInjector()
+{
+    g_mainTid = GetCurrentThreadId();
+    CreateThread(nullptr, 0, MsgInjectorThread, nullptr, 0, nullptr);
+}
 static void InstallNoWindowHooks()
 {
-    // GetMessage retorna 0 (WM_QUIT) -> sai do loop; WaitMessage/MsgWait retornam na hora (nao bloqueiam).
-    PatchRet0("user32.dll", "GetMessageW", 16);
-    PatchRet0("user32.dll", "GetMessageA", 16);
-    PatchRet0("user32.dll", "WaitMessage", 0);
-    // A engine alcanca o WAIT por outro caminho (nao via user32!WaitMessage) -> a Initialize pendura em
-    // win32u!NtUserWaitMessage (watchdog). Patch no SYSCALL-STUB direto (camada mais baixa) pega qualquer via.
-    PatchRet0("win32u.dll", "NtUserWaitMessage", 0);            // BOOL(void) -> 0 (sem espera)
-    PatchRet0("win32u.dll", "NtUserGetMessage", 16);            // -> 0 (WM_QUIT)
-    PatchRet0("win32u.dll", "NtUserMsgWaitForMultipleObjectsEx", 24);
+    // EXPERIMENTO (a): NAO bloqueia os waits — deixa o message-loop rodar; o injetor alimenta a fila.
+    StartMsgInjector();
 }
 
 // ---- Watchdog de HANG: suspende a thread principal apos g_wdSecs e dumpa o EIP + as rets da .text da
@@ -517,6 +528,22 @@ static void* PatchIat(HMODULE mod, const char* func, void* repl)
 // init de render -> janela -> modal-loop que pendura headless). Assinatura void __cdecl F(void).
 static void __cdecl NoopVoidCdecl() {}
 
+// Hook do exit()/ExitProcess: crava QUEM decidiu terminar (o preload passou via injector, mas algo chama
+// exit na etapa de rede). Loga o return-address + rets da .text de gamemp(0x10)/engine(0x36) e ENTAO sai.
+typedef void (__cdecl* Exit_t)(int);
+static Exit_t g_realExit;
+static void __cdecl ExitLog(int code)
+{
+    printf("[c++] *** exit(%d) chamado ***\n", code);
+    unsigned* stk; __asm { mov stk, esp }
+    printf("[c++] exit rets:");
+    for (int i = 0; i < 200; i++) { unsigned v = stk[i];
+        if ((v >= 0x10001000u && v < 0x10040000u) || (v >= 0x36001000u && v < 0x36214000u))
+            printf(" %s+%X", v < 0x36000000u ? "gm" : "eng", v < 0x36000000u ? v - 0x10000000u : v - 0x36000000u); }
+    printf("\n"); fflush(stdout);
+    if (g_realExit) g_realExit(code); else ExitProcess(code);
+}
+
 int main(int argc, char** argv)
 {
     g_openlog = fopen("C:\\temp\\engine_opens.log", "w");
@@ -628,12 +655,17 @@ int main(int argc, char** argv)
                 // vazio + mode 8 (visto em 0x40bcea). SEH captura "cannot load settings".
                 char setBuf[8] = {0};
                 BuildStr("??0CTFileName@@QAE@PBD@Z", setBuf, "");
-                // CIRÚRGICO: pula o ReadPreLoadSMCFile (preload de modelos -> render/janela -> modal-loop headless).
-                // IAT-patch no gamemp: o call [0x100264e0] em 0x1001f230 vai ao no-op. Mantém as cargas de DADOS.
-                if (PatchIat(g_hGame, "?ReadPreLoadSMCFile@@YAXXZ", reinterpret_cast<void*>(&NoopVoidCdecl)))
-                    printf("[c++] IAT-skip: gamemp!ReadPreLoadSMCFile -> no-op (pula render/UI)\n");
-                else printf("[c++] IAT-skip: ReadPreLoadSMCFile nao achado no import de gamemp\n");
-                fflush(stdout);
+                // EXPERIMENTO (a): NAO pula o ReadPreLoadSMCFile — deixa rodar com o message-injector alimentando
+                // a fila (o loop de preload itera e completa em vez de girar/pendurar). InterlockedExchange arma.
+                MSG pm; PeekMessageW(&pm, nullptr, 0, 0, PM_NOREMOVE);   // cria a fila de msg da MAIN -> PostThreadMessage do injetor nunca falha
+                InterlockedExchange(&g_injectArm, 1);   // injetor manda WM_NULL na main durante a Initialize
+                printf("[c++] message-injector ARMADO (fila da main criada; caminho a: preload com pump)\n"); fflush(stdout);
+                // hook do exit p/ cravar quem termina na etapa de rede (preload ja passou via injector)
+                if (HMODULE crt = GetModuleHandleA("msvcr71.dll")) {
+                    g_realExit = reinterpret_cast<Exit_t>(GetProcAddress(crt, "exit"));
+                    PatchIat(g_hGame, "exit", reinterpret_cast<void*>(&ExitLog));
+                    printf("[c++] hook gamemp!exit -> ExitLog (real=%p)\n", g_realExit); fflush(stdout);
+                }
                 void* initFn = reinterpret_cast<char*>(g_hGame) + 0x1F2D0;
                 int gmode = argc > 6 ? atoi(argv[6]) : 0;   // mode do CGame::Initialize (8=host? 0=idle) — testavel via arg
                 printf("[c++] CGame::Initialize(vtable+0xCC @%p, settings=\"\", mode=%d)...\n", initFn, gmode); fflush(stdout);
