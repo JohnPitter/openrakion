@@ -740,3 +740,15 @@ Duas saídas concretas (ambas viáveis, não "portar o cliente"):
 **Próximo passo REAL:** (A) — subir `hostmin` + fazer o cliente humano joinar (brokering do endpoint), e ver
 o `AddPlayer` fechar com o appearance vindo do humano. É a validação in-game do caminho, com o muro reduzido a
 UM ponto conhecido (`0x3636F760` = appearance-subobj do char-local).
+
+**Fecho — os DOIS ramos do AddPlayer exigem estado de cliente real (path B não é atalho):** o build-do-slot
+`0x36103230` bifurca em `[0x362ba778]+0x14`:
+- **`==0` (LOCAL, `0x3610371b`):** usa `[0x3636f260]`(CGame)→`vtable[+8]`→`[eax+0x470c]` + `[0x362ba778]+0x24`
+  → precisa do **player-manager do CGame** (a init completa; `vtable+8` é o `ret`-stub sem o estado).
+- **`!=0` (CLIENT):** copia o **appearance do jogador-local** (`0x3636F760`) → precisa de um cliente real.
+⇒ **irredutível:** um bot hospedado no servidor não tem estado-de-cliente; **um cliente REAL tem de provê-lo**.
+Logo **(A) é O caminho** (não uma entre duas opções): `hostmin` hospeda, o HUMANO joina e traz o estado, o
+`AddPlayer` fecha, o bot clona o appearance do humano. Instalar um blob isolado (B) não basta — os dois ramos
+querem mais que um campo. Sub-projeto restante: brokering (servidor manda o humano joinar o `hostmin`) +
+validação in-game + clone do appearance p/ o bot + ponte de IA (H5). O muro está **cravado e localizado**, não
+mais difuso; o host headless **roda**; falta a integração do join do humano.
