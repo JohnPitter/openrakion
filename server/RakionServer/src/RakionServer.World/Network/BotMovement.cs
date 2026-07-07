@@ -272,12 +272,11 @@ namespace RakionServer.World.Network
             w.WriteInt16(Pack(bot.X));                   // +04 s16 x
             w.WriteInt16(Pack(bot.Y));                   // +06 s16 y
             w.WriteInt16(Pack(bot.Z));                   // +08 s16 z
-            // +0a s16 heading = yaw em graus. A CAPTURA (udp_gameplay_decode) prova a convenção: jogador facing
-            // -Z manda head≈175(≈180); o domínio Yaw=atan2(dx,dz) já dá 180 p/ alvo em -Z → convenção IDÊNTICA,
-            // SEM +180. O +180 antigo invertia o rosto (bot de COSTAS pro alvo) → andando na direção do alvo virava
-            // "moonwalk"/andar-pra-trás. O cliente escolhe frente/trás/lado por velocidade-vs-rosto, então o rosto
-            // certo conserta TODAS as animações de locomoção.
-            w.WriteInt16((short)NormalizeDeg(bot.Yaw));
+            // +0a s16 heading = yaw. O MODELO tem a frente no -Z, então encarar o alvo exige Yaw+180 (in-game:
+            // sem o +180 o bot fica DE COSTAS — confirmado por screenshot). O rosto fica CERTO com +180. A direção
+            // da ANIMAÇÃO de locomoção (frente/trás/lado) NÃO sai daqui — vem do keystate 0x30f (stateTail), que o
+            // cliente REMOTO lê p/ animar (jogador local anima pelo próprio input). Ver BuildKeystateDatagram.
+            w.WriteInt16((short)NormalizeDeg(bot.Yaw + 180f));
             w.WriteByte(subFrame);                       // +0c u8  subFrame nonce (varia)
             w.WriteInt16(Pack(bot.AimX));                // +0d s16 aimX (0 parado; !=0 no golpe)
             w.WriteInt16(Pack(bot.AimY));                // +0f s16 aimY
@@ -319,26 +318,28 @@ namespace RakionServer.World.Network
             return w.ToArray();             // 8B
         }
 
-        /// <summary>Estado de locomoção do tail do 0x30f (byte +0x0c) — cravado da captura: os DOIS peers abrem
-        /// a partida PARADOS com (03,00) e correm com (01,00)/(02,00); no golpe o par vira (00, ação).</summary>
+        /// <summary>Byte +0x0c do 0x30f: <b>0x03 = PARADO</b>, <b>0x00 = em-movimento/golpe</b>. CRAVADO dos BYTES
+        /// da captura (stage_udp_capture): idle = `03 00`, andando = `00 XX`. O código antigo mandava `01 00` no
+        /// andar (bytes INVERTIDOS) → o cliente animava errado (moonwalk).</summary>
         public const byte KeyStateIdle = 3;
-        /// <summary>Locomoção "andando" (o joiner da captura usa 1; o host 2 — possivelmente walk vs run).</summary>
-        public const byte KeyStateMoving = 1;
+        /// <summary>Byte +0x0d do 0x30f no ANDAR = código de direção/locomoção. <b>0x01</b> é o dominante da captura
+        /// (tail `00 01`, 1088 frames). Combinado com o +0x0c=0x00, dá o keystate de caminhada real.</summary>
+        public const byte KeyWalkCode = 1;
         /// <summary>Janela (ms) em que o tail segura (00, ação) após um 0x0311 — duração do swing na captura.</summary>
         public const long SwingHoldMs = 600;
 
         /// <summary>
         /// Companheiro 0x030f (14B) de keystate/animação — mandar SEMPRE logo após o 0x30a (§3). Corpo:
-        /// [u8 srcSlotEcho][u16 0x0008][u16 0x0001][u8 estado][u8 ação]. Máquina de estados CRAVADA da
-        /// captura: golpe recente → (00, high-byte do 0x0311) enquanto o swing dura; senão andando → (01,00);
-        /// senão parado → (03,00). O par fixo antigo (00,01) dizia "executando ação 1" eternamente — nunca
-        /// sinalizava andar/parar/golpe (locomoção estranha + golpe sem animação).
+        /// [u8 srcSlotEcho][u16 0x0008][u16 0x0001][u8 b12][u8 b13]. BYTES cravados da captura: PARADO = `03 00`;
+        /// ANDANDO = `00 01` (b12=00 em-movimento, b13=01 direção dominante); GOLPE = `00 <high-byte da ação>`. O
+        /// código antigo mandava `01 00` no andar (invertido) → animação de locomoção errada (moonwalk/deslize).
         /// </summary>
         public static byte[] BuildKeystateDatagram(BotPlayer bot, int seat, bool moving, long nowMs)
         {
             bool swinging = bot.LastActionMs != 0 && nowMs - bot.LastActionMs < SwingHoldMs;
-            byte b12 = swinging ? (byte)0 : moving ? KeyStateMoving : KeyStateIdle;
-            byte b13 = swinging ? bot.LastActionHigh : (byte)0;
+            // +0x0c: 0x00 movendo/golpe, 0x03 parado. +0x0d: high-byte da ação no golpe; código de andar; 0 parado.
+            byte b12 = (swinging || moving) ? (byte)0 : KeyStateIdle;
+            byte b13 = swinging ? bot.LastActionHigh : (moving ? KeyWalkCode : (byte)0);
             using var w = new PacketWriter();
             w.WriteWord(MsgKeystate);                    // +00 0x030f
             w.WriteUInt32(bot.UdpSeq++);                 // +02 seq (mesmo contador, ++)

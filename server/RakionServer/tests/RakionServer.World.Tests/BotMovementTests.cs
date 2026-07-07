@@ -33,7 +33,7 @@ namespace RakionServer.World.Tests
             Assert.Equal((short)150, BitConverter.ToInt16(b, 4));   // +04 x = 1.5 / 0.01
             Assert.Equal((short)200, BitConverter.ToInt16(b, 6));   // +06 y = 2.0 / 0.01
             Assert.Equal((short)-300, BitConverter.ToInt16(b, 8));  // +08 z = -3.0 / 0.01
-            Assert.Equal((short)90, BitConverter.ToInt16(b, 10));   // +0a heading = Yaw(90) direto (captura: convenção idêntica; SEM +180)
+            Assert.Equal((short)-90, BitConverter.ToInt16(b, 10));  // +0a heading = Yaw(90)+180 -> -90 (modelo tem frente -Z; +180 encara o alvo)
             Assert.Equal(0xA5, b[12]);                              // +0c subFrame nonce
             Assert.Equal((short)0, BitConverter.ToInt16(b, 13));    // +0d aim x
             Assert.Equal((short)0, BitConverter.ToInt16(b, 15));    // +0f aim y
@@ -45,7 +45,7 @@ namespace RakionServer.World.Tests
         {
             var bot = new BotPlayer(2, "Ares", 5, 1, team: 0) { Yaw = 270f };
             byte[] b = BotMovement.EncodeActionBody(bot, seat: 0x0a, subFrame: 0, moving: true);
-            Assert.Equal((short)-90, BitConverter.ToInt16(b, 10));  // Yaw 270 -> normaliza p/ [-180..180] = -90
+            Assert.Equal((short)90, BitConverter.ToInt16(b, 10));   // (270+180)=450 -> 90 (faixa [-180..180])
         }
 
         [Fact]
@@ -85,8 +85,8 @@ namespace RakionServer.World.Tests
         [Fact]
         public void KeystateDatagram_LocomotionStateMachine()
         {
-            // Máquina de estados do tail do 0x30f (captura): parado (03,00) — os frames de abertura da partida;
-            // andando (01,00) — janelas de corrida; golpe recente (00, high-byte do 0x0311) — janelas de ataque.
+            // Máquina de estados do tail do 0x30f (BYTES da captura): parado `03 00`; andando `00 01`
+            // (b12=00 em-movimento, b13=01 direção dominante); golpe `00 <high-byte da ação>`.
             var bot = new BotPlayer(4, "Kor", 5, 1, team: 1);
             const long now = 100_000;
 
@@ -97,7 +97,7 @@ namespace RakionServer.World.Tests
             Assert.Equal(0x03, idle[12]); Assert.Equal(0x00, idle[13]);       // (03,00) parado
 
             byte[] run = BotMovement.BuildKeystateDatagram(bot, seat: 0x0a, moving: true, nowMs: now);
-            Assert.Equal(0x01, run[12]); Assert.Equal(0x00, run[13]);         // (01,00) andando
+            Assert.Equal(0x00, run[12]); Assert.Equal(0x01, run[13]);         // `00 01` andando (bytes da captura)
 
             bot.LastActionHigh = 0x0c;                                        // golpeou com action 0x0C00
             bot.LastActionMs = now;
@@ -106,7 +106,7 @@ namespace RakionServer.World.Tests
 
             byte[] after = BotMovement.BuildKeystateDatagram(bot, seat: 0x0a, moving: true,
                 nowMs: now + BotMovement.SwingHoldMs + 1);
-            Assert.Equal(0x01, after[12]); Assert.Equal(0x00, after[13]);     // swing expirou -> locomoção
+            Assert.Equal(0x00, after[12]); Assert.Equal(0x01, after[13]);     // swing expirou -> locomoção `00 01`
         }
 
         [Fact]
