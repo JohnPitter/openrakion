@@ -859,6 +859,35 @@ int main(int argc, char** argv)
         int rc = CallStartP2P_SEH(startP2P, pNet, nameBuf, worldBuf, props);
         if (rc != 0) { printf("[c++] >>> EXCECAO hostmin StartPeerToPeer: %s | '%s'\n   %s\n", g_excType, g_excChar, g_stack); return 9; }
         printf("[c++] hostmin: StartPeerToPeer OK — LISTEN aberto, servindo joiners\n"); fflush(stdout);
+
+        // TESTE cirúrgico (§22.1 rung 1): AddPlayer(bot) com estado LIMPO (StartPeerToPeer sem a
+        // CGame::Initialize fatalada). O AddPlayer_t real (0x360F3EB0) usa o array de players em
+        // pNet+0x28(count)/+0x2c(base) stride 0x370 (SE_InitEngine monta) + call 0x36103230 (build do slot
+        // a partir do CPlayerCharacter). Se completar aqui, o HOST headless registra o bot como player —
+        // rung 1 do caminho (b). Se crashar, o SEH crava o site (provável 0x36103230, appearance/game-state).
+        {
+            char pcName[8] = {0}, pcTeam[8] = {0}, pcBuf[0x400] = {0};
+            BuildStr("??0CTString@@QAE@PBD@Z", pcName, "Bot1");
+            BuildStr("??0CTString@@QAE@PBD@Z", pcTeam, "");
+            typedef void* (__thiscall* PcCtor2_t)(void*, const void*, const void*);
+            reinterpret_cast<PcCtor2_t>(GetProcAddress(g_eng, "??0CPlayerCharacter@@QAE@ABVCTString@@0@Z"))(pcBuf, pcName, pcTeam);
+            // O AddPlayer_t crasha em 0x36017E8E na cópia do JOGADOR-LOCAL (global 0x3636F75C): lê o
+            // sub-objeto de APPEARANCE em [+4]=[0x3636F760] e o derefa. Headless [+4]=NULL (nenhum cliente
+            // local conectou). PROVADO: construir um CPlayerCharacter (name,team) nesse global NÃO resolve —
+            // o ctor deixa [+4] com LIXO (não um ponteiro válido), a cópia derefa e crasha igual. O appearance
+            // é um sub-objeto serializado que SÓ nasce de um cliente real (MSG_REQ_CONNECTPLAYER, §14 H3.5).
+            // ⇒ AddPlayer(bot) headless-sozinho não fecha; precisa do appearance real (humano joina) OU de um
+            // blob de appearance CAPTURADO instalado no global. Ver docs/headless-engine-re.md §22.2.
+            void* addFn = (void*)GetProcAddress(g_eng, "?AddPlayer_t@CNetworkLibrary@@QAEPAVCPlayerSource@@AAVCPlayerCharacter@@@Z");
+            unsigned cnt = *reinterpret_cast<unsigned*>(reinterpret_cast<char*>(pNet) + 0x28);
+            void* base   = *reinterpret_cast<void**>(reinterpret_cast<char*>(pNet) + 0x2c);
+            printf("[c++] hostmin: player-array pNet+0x28 count=%u base=%p (stride 0x370)\n", cnt, base);
+            printf("[c++] hostmin: AddPlayer_t(\"Bot1\") em SEH-probe...\n"); fflush(stdout);
+            int ar = CallAddPlayerSEH(addFn, pNet, pcBuf);
+            if (ar == 0) printf("[c++] hostmin: AddPlayer_t OK -> CPlayerSource=%p *** BOT REGISTRADO no host headless!\n", g_plsResult);
+            else         printf("[c++] >>> EXCECAO hostmin AddPlayer: %s | '%s'\n   %s\n", g_excType, g_excChar, g_stack);
+        }
+
         void* ppT = GetProcAddress(g_eng, "?_pTimer@@3PAVCTimer@@A");
         void* pTimer = ppT ? *reinterpret_cast<void**>(ppT) : nullptr;
         ThisVoid_t handleTimers = reinterpret_cast<ThisVoid_t>(GetProcAddress(g_eng, "?HandleTimerHandlers@CTimer@@QAEXXZ"));

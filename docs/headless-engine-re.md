@@ -704,3 +704,39 @@ FUNCIONA (`hostmin`). Os dois núcleos que sobram são o **mesmo tecido render+g
 
 **Infra desta sessão:** modo `join` (host-only `CGame::Initialize`), modo `hostmin` (listen headless provado),
 harness `join-bot-test.ps1`, RE fresca do binário CERTO (vtable/AddPlayer_t/offsets corrigidos).
+
+## 22.2 `AddPlayer_t` real cravado + o muro FINAL = appearance do jogador-local (2026-07-07)
+Com `hostmin` (estado LIMPO, sem a `CGame::Initialize` fatalada), testei `AddPlayer(bot)` e cravei o
+`AddPlayer_t` REAL do binário certo (a análise antiga do `0x36103740`/`vtable+8` era de um FRAGMENTO errado):
+
+**`AddPlayer_t`@0x360F3EB0 (entrada real):**
+- O array de players está em **`pNet+0x28` (count) / `pNet+0x2c` (base), stride `0x370`** — no `CNetworkLibrary`
+  (o `SE_InitEngine` monta), **NÃO** no CGame. Headless: `count=4, base=válido` ✅ (o array EXISTE).
+- Varre o array achando slot vazio (`[slot+4]==0`), `imul idx,0x370; lea ecx,[base+off]`, e chama o
+  **build-do-slot `0x36103230`(ecx=&players[slot], ebp=CPlayerCharacter do bot)**; retorna `&players[slot]`.
+
+**O crash (cravado, estado limpo):** `0x36103230` → helper de cópia **`0x36017E50`**, que faz:
+```
+mov ecx,[ebp+8]     ; arg0 = 0x3636F75C  (o CHAR do JOGADOR-LOCAL, global)
+mov ecx,[ecx+4]     ; ecx = [0x3636F760] = appearance-subobj  (NULL headless)
+mov edx,[ecx]       ; deref -> AV em 0x36017E8E
+```
+⇒ o `AddPlayer` **copia o char do jogador-LOCAL** (global `0x3636F75C`) e derefa seu sub-objeto de
+**appearance** em `[+4]`. Headless ninguém conectou → `[+4]=NULL` → AV.
+
+**Fix ingênuo REFUTADO (empírico):** construir um `CPlayerCharacter(name,team)` NO global `0x3636F75C` deixa
+`[+4]` com **LIXO** (`0x44B95D81`, não um ponteiro) → a cópia derefa o lixo e crasha IGUAL. ⇒ o appearance
+**não** é criado pelo ctor básico; é um sub-objeto serializado que **só nasce de um cliente real**
+(`MSG_REQ_CONNECTPLAYER` traz o blob, §14 H3.5).
+
+**VEREDITO (o muro final, no grão mais fino):** o headless-host (`hostmin`) sobe, escuta, tem o array de
+players — mas `AddPlayer(bot)` precisa do **appearance do jogador-local**, que não existe sem um cliente real.
+Duas saídas concretas (ambas viáveis, não "portar o cliente"):
+- **(A) Humano joina o `hostmin`** → o connect dele popula o char-local + appearance no global → `AddPlayer`
+  (dele E do bot clonando o appearance dele) fecha. É o caminho (b)/§14 H3.5, agora com o muro exato na mão.
+- **(B) Capturar um blob de appearance real** (de um `MSG_REQ_CONNECTPLAYER` de partida real) e instalá-lo no
+  global `0x3636F75C[+4]` antes do `AddPlayer` → headless-sozinho fecha. RE do formato do sub-objeto pendente.
+
+**Próximo passo REAL:** (A) — subir `hostmin` + fazer o cliente humano joinar (brokering do endpoint), e ver
+o `AddPlayer` fechar com o appearance vindo do humano. É a validação in-game do caminho, com o muro reduzido a
+UM ponto conhecido (`0x3636F760` = appearance-subobj do char-local).
