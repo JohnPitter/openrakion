@@ -272,9 +272,12 @@ namespace RakionServer.World.Network
             w.WriteInt16(Pack(bot.X));                   // +04 s16 x
             w.WriteInt16(Pack(bot.Y));                   // +06 s16 y
             w.WriteInt16(Pack(bot.Z));                   // +08 s16 z
-            // +0a s16 heading. A convenção do wire é OPOSTA ao Yaw "aponta-pro-alvo" do domínio (in-game o avatar
-            // ficava de COSTAS pro alvo) -> +180 p/ o avatar encarar o alvo/movimento.
-            w.WriteInt16((short)NormalizeDeg(bot.Yaw + 180f));
+            // +0a s16 heading = yaw em graus. A CAPTURA (udp_gameplay_decode) prova a convenção: jogador facing
+            // -Z manda head≈175(≈180); o domínio Yaw=atan2(dx,dz) já dá 180 p/ alvo em -Z → convenção IDÊNTICA,
+            // SEM +180. O +180 antigo invertia o rosto (bot de COSTAS pro alvo) → andando na direção do alvo virava
+            // "moonwalk"/andar-pra-trás. O cliente escolhe frente/trás/lado por velocidade-vs-rosto, então o rosto
+            // certo conserta TODAS as animações de locomoção.
+            w.WriteInt16((short)NormalizeDeg(bot.Yaw));
             w.WriteByte(subFrame);                       // +0c u8  subFrame nonce (varia)
             w.WriteInt16(Pack(bot.AimX));                // +0d s16 aimX (0 parado; !=0 no golpe)
             w.WriteInt16(Pack(bot.AimY));                // +0f s16 aimY

@@ -285,7 +285,10 @@ namespace RakionServer.World.Domain
             float desVx = 0f, desVz = 0f;
             if (dist >= standoff)
             {
-                float inv = speed / dist;                        // normaliza e escala p/ a velocidade pedida
+                float sp = speed;
+                float slow = dist - standoff;                    // ANTI-OVERSHOOT: desacelera nos últimos ~1.5 coord
+                if (slow < 1.5f) sp *= MathF.Max(0.30f, slow / 1.5f);   // antes o boost PASSAVA do alvo ("nem cola")
+                float inv = sp / dist;                           // normaliza e escala p/ a velocidade pedida
                 desVx = dx * inv; desVz = dz * inv;
             }
             Integrate(desVx, desVz);

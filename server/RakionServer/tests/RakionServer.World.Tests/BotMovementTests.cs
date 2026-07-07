@@ -33,7 +33,7 @@ namespace RakionServer.World.Tests
             Assert.Equal((short)150, BitConverter.ToInt16(b, 4));   // +04 x = 1.5 / 0.01
             Assert.Equal((short)200, BitConverter.ToInt16(b, 6));   // +06 y = 2.0 / 0.01
             Assert.Equal((short)-300, BitConverter.ToInt16(b, 8));  // +08 z = -3.0 / 0.01
-            Assert.Equal((short)-90, BitConverter.ToInt16(b, 10));  // +0a heading = Yaw(90)+180 -> -90 (convenção do wire encara o alvo)
+            Assert.Equal((short)90, BitConverter.ToInt16(b, 10));   // +0a heading = Yaw(90) direto (captura: convenção idêntica; SEM +180)
             Assert.Equal(0xA5, b[12]);                              // +0c subFrame nonce
             Assert.Equal((short)0, BitConverter.ToInt16(b, 13));    // +0d aim x
             Assert.Equal((short)0, BitConverter.ToInt16(b, 15));    // +0f aim y
@@ -45,7 +45,7 @@ namespace RakionServer.World.Tests
         {
             var bot = new BotPlayer(2, "Ares", 5, 1, team: 0) { Yaw = 270f };
             byte[] b = BotMovement.EncodeActionBody(bot, seat: 0x0a, subFrame: 0, moving: true);
-            Assert.Equal((short)90, BitConverter.ToInt16(b, 10));   // (270+180)=450 -> 90 (faixa [-180..180])
+            Assert.Equal((short)-90, BitConverter.ToInt16(b, 10));  // Yaw 270 -> normaliza p/ [-180..180] = -90
         }
 
         [Fact]
