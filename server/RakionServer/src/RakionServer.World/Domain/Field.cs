@@ -660,16 +660,20 @@ namespace RakionServer.World.Domain
             return -1;
         }
 
-        /// <summary>Alcance do golpe do humano no plano XZ (coord) p/ a arbitragem humano→bot. Aproximação do
-        /// alcance de melee (aim-vec do 0x30a ≈ 6.0); cone/raycast exato por arma = RE pendente (§11). 5.0: o bot
-        /// orbita a ~2.6 no melee, então o acerto conecta COLADO; 9 fazia o número aparecer "antes de hitar" (longe).</summary>
-        public const float HumanMeleeRange = 3.0f;
+        /// <summary>Alcance do golpe do humano no plano XZ (coord) p/ a arbitragem humano→bot. GENEROSO (4.5): o
+        /// jogador golpeia de DISTÂNCIA CONFORTÁVEL — não precisa encostar no bot (o que dispararia a colisão do
+        /// avatar e o "empurrão" que o cliente sente). O bot mantém ~2.6 no melee (fora da colisão), bem dentro
+        /// deste alcance; e mesmo se a colisão o empurrar p/ 3-4, o hit ainda conecta. Cone (±78°) evita golpe
+        /// "pro lado" contar. aim-vec do 0x30a ≈ 6.0; raycast exato por arma = RE pendente (§11).</summary>
+        public const float HumanMeleeRange = 4.5f;
 
         /// <summary>Throttle entre golpes do humano no MESMO bot (ms) — evita instakill por 0x311 repetidos.</summary>
         private const long BotHitCooldownMs = 250;
 
-        /// <summary>Recuo (coord) do bot ao levar um golpe não-letal — reação VISÍVEL via 0x30a (sem o type-7).</summary>
-        private const float HitKnockbackDist = 2.4f;
+        /// <summary>Recuo (coord) do bot ao levar um golpe não-letal — flinch VISÍVEL via 0x30a. PEQUENO (0.9): só
+        /// um tranco pra trás, NÃO joga o bot p/ fora do alcance — senão o 2º golpe do combo já erra. O combo do
+        /// humano encadeia (bot fica em alcance, staggered), como num jogo real.</summary>
+        private const float HitKnockbackDist = 0.9f;
 
         /// <summary>Recuo (coord) maior no golpe LETAL — o bot "voa" para trás e congela (morte server-side).</summary>
         private const float DeathKnockbackDist = 3.0f;

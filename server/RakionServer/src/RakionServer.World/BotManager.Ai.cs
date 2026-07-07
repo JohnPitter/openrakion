@@ -19,10 +19,11 @@ namespace RakionServer.World
     {
         private const long BotMoveIntervalMs = 100;   // taxa real da captura (~100ms entre 0x30a do mesmo sender)
 
-        /// <summary>Anel de LUTA (coord) que o bot mantém no melee — perto o bastante p/ trocar golpe, logo FORA da
-        /// colisão dura (senão o cliente empurra). Apertado (2.2) p/ o bot SEGURAR o chão e o humano conseguir chegar
-        /// perto — antes (2.6 + empurrão radial) o bot fugia ao humano avançar ("repelido pra longe").</summary>
-        private const float BotStrafeRing = 2.2f;
+        /// <summary>Anel de LUTA (coord) que o bot mantém no melee — logo FORA da colisão do avatar (~2.6), pra o
+        /// humano NÃO precisar encostar (encostar dispara o empurrão de colisão do cliente). Bem dentro do alcance
+        /// de golpe (4.5), então o hit conecta daqui sem sobreposição. NÃO foge quando o humano avança (correção
+        /// radial suave em <see cref="BotPlayer.StrafeAround"/>) — só segura o espaçamento.</summary>
+        private const float BotStrafeRing = 2.6f;
 
         /// <summary>Quanto à frente (ms) a IA projeta o alvo ao liderar a perseguição/mira (escalado pelo perfil).</summary>
         private const float BotLeadMs = 260f;
@@ -286,35 +287,39 @@ namespace RakionServer.World
         {
             var target = f.RecAt(bot.TargetSeat);
             if (target == null) return;
-            float tx = target.LastX, tz = target.LastZ;
-            // ANTI-FLUTUAR: o bot herda a altura (Y) do humano que persegue — a IA server-side não tem o relevo do
-            // mapa, então usa o Y REAL do humano próximo como aproximação do chão (senão o bot fica em Y=0 e "flutua"
-            // sobre áreas rebaixadas/elevadas). Só com posição válida do alvo.
+
+            // Posição REAL do humano (a mesma que a arbitragem de hit usa) — o espaçamento do melee gira em torno
+            // DELA, senão o lead afasta o bot do ponto onde o golpe é medido (bot "longe" na hora do hit).
+            // ANTI-FLUTUAR: herda o Y do humano (a IA server-side não tem o relevo do mapa).
+            float ax = target.LastX, az = target.LastZ;
             if (target.LastPositionMs != 0) bot.Y = target.LastY;
-            if (target.LastPositionMs == 0) { tx = 3.75f; tz = DefaultHumanZ(target.Team); }
-            else
+            if (target.LastPositionMs == 0) { ax = 3.75f; az = DefaultHumanZ(target.Team); }
+
+            // Alvo de APROXIMAÇÃO/MIRA com antecipação (lead) — só p/ fechar distância e mirar, NÃO p/ o espaçamento
+            // colado (Hard prevê mais; Easy não prevê, lead 0).
+            float tx = ax, tz = az;
+            if (target.LastPositionMs != 0)
             {
-                float lead = BotLeadMs * bot.Profile.LeadFactor;   // Hard prevê mais; Easy não prevê (lead 0)
+                float lead = BotLeadMs * bot.Profile.LeadFactor;
                 tx += target.VelX * lead;
                 tz += target.VelZ * lead;
             }
             bot.SetAimToward(tx, target.LastY, tz);
 
-            float dx = tx - bot.X, dz = tz - bot.Z;
-            float dist = MathF.Sqrt(dx * dx + dz * dz);
+            float dx = ax - bot.X, dz = az - bot.Z;
+            float dist = MathF.Sqrt(dx * dx + dz * dz);   // distância à posição REAL do humano
 
-            // LONGE do alcance de luta: AVANÇA correndo, encarando o alvo (freia ao chegar no anel). É o único
-            // momento de locomoção "reta" — como um humano fechando a distância.
+            // LONGE do anel: AVANÇA correndo (mira o lead), encarando o alvo. Único momento de locomoção "reta".
             if (dist > BotStrafeRing + 0.8f) { bot.MoveToward(tx, tz, BotStrafeRing); return; }
 
-            // EM alcance: FOOTWORK humano — circula / segura o chão / recua tático, trocando em cadência jittered
-            // (não orbita igual a uma máquina). O recuo é backpedal DELIBERADO encarando o alvo, não empurrão.
+            // EM alcance: FOOTWORK humano em torno da posição REAL — circula / segura o chão / recua tático, em
+            // cadência jittered (não orbita igual a máquina). O recuo é backpedal DELIBERADO encarando o alvo.
             if (now >= bot.NextFootMs) PickFootwork(bot, now);
             switch (bot.Foot)
             {
-                case BotPlayer.Footwork.Backstep: bot.RetreatFrom(tx, tz, bot.Profile.MoveSpeed * 0.7f); break;
-                case BotPlayer.Footwork.Hold:     bot.HoldGround(tx, tz); break;
-                default:                          bot.StrafeAround(tx, tz, bot.StrafeDir, BotStrafeRing); break;
+                case BotPlayer.Footwork.Backstep: bot.RetreatFrom(ax, az, bot.Profile.MoveSpeed * 0.7f); break;
+                case BotPlayer.Footwork.Hold:     bot.HoldGround(ax, az); break;
+                default:                          bot.StrafeAround(ax, az, bot.StrafeDir, BotStrafeRing); break;
             }
         }
 
