@@ -199,6 +199,17 @@ static int CallThisVoidSEH(void* fn, void* self)
     __except (CxxFilter(GetExceptionInformation())) { return -1; }
 }
 
+// SEH p/ CGame::Initialize (vtable[+0xCC]=gamemp+0x1f2d0): thiscall(this, CTFileName* settings, int mode).
+// O rakion.bin real chama isto apos GAME_Create (0x40bd52) — ele CHAMA o InitInternal internamente +
+// aloca o sistema de players (o getter vtable[+8], stub isolado, so retorna o membro que ESTE init preenche).
+typedef void (__thiscall* GInit_t)(void*, const void*, int);
+static int CallGInitSEH(void* fn, void* self, const void* settings, int mode)
+{
+    g_excType[0] = g_excChar[0] = 0;
+    __try { reinterpret_cast<GInit_t>(fn)(self, settings, mode); return 0; }
+    __except (CxxFilter(GetExceptionInformation())) { return -1; }
+}
+
 typedef void* (__thiscall* AddPlayer2_t)(void* self, void* pc);
 static void* g_plsResult;
 static int CallAddPlayerSEH(void* fn, void* pNet, void* pc)
@@ -233,6 +244,7 @@ static int PumpSEH(void* pNet, void* pTimer, ThisVoid_t mainLoop, ThisVoid_t han
 //      e' lazy e NAO dispara headless -> buffer reservado-vazio -> AV. Apos o Open_t, enchemos o buffer com
 //      o arquivo decodificado do XFS (pre-extraido em C:\temp\xfs_ext). ----
 static FILE* g_openlog;
+static char g_dataRoot[1024];   // pai do Bin (onde vivem os arquivos loose + .xfs) — fallback do Atalho B
 static void* g_openTramp;
 typedef void (__thiscall* OpenOrig_t)(void* self, const void* fnm, int om);
 static OpenOrig_t g_openOrig;   // = trampoline (7 bytes roubados + jmp Open_t+7)
@@ -255,7 +267,11 @@ static void FillBufferFromXfs(void* self, const void* fnm)
         if (!path || !*path) return;
         char full[1024]; sprintf_s(full, "C:\\temp\\xfs_ext\\%s", path);
         FILE* f = fopen(full, "rb");
-        if (!f) { if (g_openlog) { fprintf(g_openlog, "[fill] SEM extraido (%s) buf=%p size=%u xFile=%p\n", path, buf, size, xFile); fflush(g_openlog); } return; }
+        if (!f && g_dataRoot[0]) {   // fallback: arquivo LOOSE no data-root (rakion-final\<path>) — o Open_t ja o achou
+            char loose[1024]; sprintf_s(loose, "%s\\%s", g_dataRoot, path);
+            f = fopen(loose, "rb");
+        }
+        if (!f) { if (g_openlog) { fprintf(g_openlog, "[fill] SEM fonte (%s) buf=%p size=%u xFile=%p\n", path, buf, size, xFile); fflush(g_openlog); } return; }
         VirtualAlloc(buf, size, MEM_COMMIT, PAGE_READWRITE);              // committa o buffer reservado
         size_t rd = fread(buf, 1, size, f);
         fclose(f);
@@ -281,6 +297,57 @@ static __declspec(naked) void OpenHook()
         ret 8                   // limpa os args originais + retorna ao caller
     }
 }
+// ---- Supressor de MessageBox: headless nao pode ter modal (trava esperando clique). Loga a caption+texto
+//      (a mensagem REAL do erro) e retorna IDOK sem mostrar. Patch na ENTRADA de user32!MessageBoxA/W. ----
+static void __cdecl MsgBoxLogW(const wchar_t* text, const wchar_t* cap)
+{
+    printf("[c++] MessageBoxW SUPRIMIDO: cap='%ls' | text='%ls'\n", cap ? cap : L"?", text ? text : L"?"); fflush(stdout);
+    if (g_openlog) { fprintf(g_openlog, "[msgbox] cap='%ls' text='%ls'\n", cap ? cap : L"?", text ? text : L"?"); fflush(g_openlog); }
+}
+static void __cdecl MsgBoxLogA(const char* text, const char* cap)
+{
+    printf("[c++] MessageBoxA SUPRIMIDO: cap='%s' | text='%s'\n", cap ? cap : "?", text ? text : "?"); fflush(stdout);
+    if (g_openlog) { fprintf(g_openlog, "[msgbox] cap='%s' text='%s'\n", cap ? cap : "?", text ? text : "?"); fflush(g_openlog); }
+}
+static __declspec(naked) void MsgBoxWHook()
+{
+    __asm {
+        push dword ptr [esp+0x0c]   // caption
+        push dword ptr [esp+0x0c]   // text (deslocado apos o 1o push)
+        call MsgBoxLogW
+        add  esp, 8
+        mov  eax, 1                 // IDOK
+        ret  0x10                   // stdcall 4 args
+    }
+}
+static __declspec(naked) void MsgBoxAHook()
+{
+    __asm {
+        push dword ptr [esp+0x0c]
+        push dword ptr [esp+0x0c]
+        call MsgBoxLogA
+        add  esp, 8
+        mov  eax, 1
+        ret  0x10
+    }
+}
+static void PatchEntryJmp(const char* mod, const char* fn, void* hook)
+{
+    void* p = (void*)GetProcAddress(GetModuleHandleA(mod), fn);
+    if (!p) return;
+    DWORD old; VirtualProtect(p, 5, PAGE_EXECUTE_READWRITE, &old);
+    unsigned char* b = reinterpret_cast<unsigned char*>(p);
+    b[0] = 0xE9; *reinterpret_cast<unsigned*>(b + 1) = reinterpret_cast<unsigned>(hook) - (reinterpret_cast<unsigned>(p) + 5);
+    VirtualProtect(p, 5, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), p, 5);
+    printf("[c++] MessageBox hook: %s!%s -> supressor\n", mod, fn);
+}
+static void InstallMsgBoxHook()
+{
+    PatchEntryJmp("user32.dll", "MessageBoxW", reinterpret_cast<void*>(&MsgBoxWHook));
+    PatchEntryJmp("user32.dll", "MessageBoxA", reinterpret_cast<void*>(&MsgBoxAHook));
+}
+
 static void InstallOpenHook()
 {
     const unsigned VA = 0x3603e920u;
@@ -355,7 +422,9 @@ int main(int argc, char** argv)
 
     char dll[1024];      sprintf_s(dll, "%s\\engine.dll", bin);
     char dataRoot[1024]; strcpy_s(dataRoot, bin);
-    if (char* sl = strrchr(dataRoot, '\\')) *sl = 0;   // pai do Bin = data-root dos .xfs
+    { char* b = strrchr(dataRoot, '\\'); char* f = strrchr(dataRoot, '/');   // robusto a / e \ (pai do Bin)
+      char* sl = b > f ? b : f; if (sl) *sl = 0; }
+    strcpy_s(g_dataRoot, dataRoot);                    // fallback loose-file do Atalho B (FillBufferFromXfs)
 
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
     SetDllDirectoryA(bin);
@@ -401,6 +470,7 @@ int main(int argc, char** argv)
     { const unsigned char jmp[] = { 0xEB };
       printf("[c++] patch scramble-skip @0x3600C522 (jbe->jmp): %s\n", Patch(0x3600C522u, jmp, 1) ? "ok" : "FALHOU"); }
 
+    InstallMsgBoxHook(); // headless: suprime+loga MessageBox (modal trava o host esperando clique)
     InstallOpenHook();   // loga cada arquivo aberto (diagnostico do path do world-load)
 
     SetCurrentDirectoryA(dataRoot);
@@ -445,11 +515,25 @@ int main(int argc, char** argv)
             // include do startup-script (monta player-controls) + LCDInit). Sem ele o player-state fica vazio e o
             // AddPlayer derefa NULL. thiscall void(this). _bDedicatedServer=1 pula o include de persistent-symbols.
             if (pGame) {
-                void* initFn = reinterpret_cast<char*>(g_hGame) + 0x13AE0;
-                printf("[c++] CGame::InitInternal(@%p)...\n", initFn); fflush(stdout);
-                int ir = CallThisVoidSEH(initFn, pGame);
-                if (ir == 0) printf("[c++] CGame::InitInternal OK *** game/player-system inicializado\n");
-                else         printf("[c++] >>> EXCECAO no InitInternal: %s | '%s'\n   %s\n", g_excType, g_excChar, g_stack);
+                // CGame::Initialize = vtable[+0xCC] (gamemp+0x1f2d0) — o rakion.bin REAL chama isto apos
+                // GAME_Create (0x40bd52), nao o InitInternal direto. Ela chama InitInternal INTERNAMENTE +
+                // aloca o sistema de players (que o getter vtable[+8] devolve). thiscall(this, CTFileName*
+                // settings, int mode). settings = arquivo de game-settings; mode = byte de modo. Guess: settings
+                // vazio + mode 8 (visto em 0x40bcea). SEH captura "cannot load settings".
+                char setBuf[8] = {0};
+                BuildStr("??0CTFileName@@QAE@PBD@Z", setBuf, "");
+                void* initFn = reinterpret_cast<char*>(g_hGame) + 0x1F2D0;
+                printf("[c++] CGame::Initialize(vtable+0xCC @%p, settings=\"\", mode=8)...\n", initFn); fflush(stdout);
+                int ir = CallGInitSEH(initFn, pGame, setBuf, 8);
+                if (ir == 0) printf("[c++] CGame::Initialize OK *** game/player-system inicializado (via vtable+0xCC)\n");
+                else {
+                    printf("[c++] >>> EXCECAO no Initialize: %s | '%s'\n   %s\n", g_excType, g_excChar, g_stack);
+                    // fallback: o InitInternal direto (roda OK, mas nao aloca players) — mantem o resto vivo
+                    void* iiFn = reinterpret_cast<char*>(g_hGame) + 0x13AE0;
+                    printf("[c++] fallback CGame::InitInternal(@%p)...\n", iiFn); fflush(stdout);
+                    if (CallThisVoidSEH(iiFn, pGame) == 0) printf("[c++] InitInternal fallback OK\n");
+                    else printf("[c++] >>> EXCECAO no InitInternal fallback: %s\n", g_excType);
+                }
             }
             // NOTA: o player-creation deref globals de game-state (ex.: arg0=0x3636F75C, e o singleton 0x3636F338)
             // que ficam ZERADOS headless — sao construidos pela init de MATCH/game-mode do jogo, que depende das

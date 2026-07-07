@@ -466,3 +466,27 @@ CPlayerCharacter serializado do humano → host aplica `operator>>` p/ desserial
 entra (desserializa e reusa o blob trocando nome/GUID), ou (b) capturado uma vez e embutido como asset.
 ⇒ NÃO precisa reverter a construção class→modelo do zero; basta um blob serializado REAL (via operator<<
 de um humano) desserializado por operator>>. Esse é o insumo que faltava mapear. Ver §13 p/ a cascata.
+
+## 14. CGame::Initialize (vtable[+0xCC]) — o init de partida REAL (2026-07-07)
+Cravado do rakion.bin: após GAME_Create, o exe chama **`CGame->vtable[+0xCC]`** (=gamemp `0x1001f2d0`),
+NÃO o InitInternal direto. Essa é a `CGame::Initialize`: chama InitInternal INTERNAMENTE + o resto do
+bring-up. thiscall(this, CTFileName* settings, int mode).
+
+Infra que ela exigiu (implementada no engine_host.cpp):
+- **Fallback loose-file no Atalho B**: `Initialize` carrega `ControlsSV\Macros.ctl` (e outros) que existem
+  LOOSE em rakion-final\ (não no XFS). `FillBufferFromXfs` agora tenta `xfs_ext\<path>` E `<dataRoot>\<path>`.
+- **Supressor de MessageBox**: `Initialize` dispara MessageBox modais (headless TRAVA esperando clique — o
+  usuário viu um modal de título ilegível). Patch na entrada de user32!MessageBoxA/W → loga+IDOK.
+
+Com isso a `Initialize` roda MUITO fundo: sound devices, IFeel, e **"Initializing TCP/IP... opening as
+server... winsock opened ok... port: 25600"**. ⇒ ela sobe o JOGO INTEIRO, incluindo a rede como servidor.
+**HANG após "port: 25600"** — bloqueia num ponto de rede (provável espera/loop de servidor, ou master-server).
+
+**Assets XFS ainda não extraídos** (não-fatais, buffer vazio): `DataSetup\UnusableCharName.txt`,
+`AbuseString.txt`, `LevelData\LevelList.txt` — só existem no XFS, faltam no xfs_ext.
+
+**FORK de escopo:** chamar a `Initialize` INTEIRA sobe o jogo todo (e pendura na rede). Duas saídas:
+(a) domar o bring-up completo (achar/skipar o bloqueio de rede + extrair os DataSetup) — sobe o jogo
+headless de verdade; (b) surgical: achar DENTRO da Initialize só a alocação do array de players (o membro
+que o getter vtable[+8] devolve) e chamar só isso, pulando sound/input/net. (b) é mais cirúrgico mas exige
+RE dos internos da Initialize. Estado: mais fundo que nunca, mas o AddPlayer ainda pende do player-array.
