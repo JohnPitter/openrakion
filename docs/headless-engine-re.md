@@ -769,6 +769,30 @@ controle do servidor). Sinal de sucesso (daquele RE §7): o host **emitir 0x30a*
 bot combatente. Risco baixo: hoje o gate já não abre (bot é fantasma), então redirecionar não piora — só pode
 ABRIR. Lifecycle: servidor sobe o `hostmin` no início do stage + descobre a porta + redireciona o slot do bot.
 
+## 22.4 Muro de render CAIU (client=0) + a verdade final do appearance (2026-07-07)
+O muro de render do joiner (§22.1, que eu temia ser "peeling de dezenas de derefs") é **UM FLAG**: SE1 tem
+modo **dedicated** (sem render device). O `PrepareForUse(useNet=1, client)` — `client=1` (join) cria objetos de
+render → crash ao carregar modelos; `client=0` (host/`hostmin`) não. **Forçando `join` com `client=0`
+(dedicated):** `JoinSession_t` **RETORNOU OK e carregou o mundo — ZERO crash de render**. O muro de render caiu.
+(engine_host.cpp: `join ... ded` = client=0.)
+
+**MAS o teste 2-processos (hostmin `listen` + join `ded`) cravou os limites:**
+- O host A **NÃO reagiu** ao joiner B (nenhum log de connect); B "RETORNOU OK" mas **carregou o mundo LOCAL**,
+  não sincronizou com A. ⇒ `JoinSession` dedicated headless faz world-load local, mas o **connect P2P real com
+  o host não visivelmente completa** (porta/handshake — ou o dedicated não engaja o connect como um cliente).
+- B crashou no **mesmo appearance wall** (`0x36017E8E`), com ou sem host. ⇒ **confirmado:** o appearance que
+  falta é do **jogador-LOCAL do joiner = o próprio bot**, NÃO um dado que vem do host. O bot, como player local
+  (seja no host ou no joiner), não tem appearance real — e appearance real só existe de uma **seleção de
+  personagem de um cliente real**.
+
+**VERDADE FINAL (o irredutível, cravado por todos os ângulos):** o combatente/HIT×N exige um player com
+**appearance real**; a única fonte é um **cliente real** (a seleção de char do humano). Um bot server-side não
+tem isso. ⇒ o funcional exige o **humano numa sessão com o `hostmin`** e o bot **clonando o appearance do
+humano** (que chega quando o humano conecta). Não há caminho 100% headless — provado dos dois lados (host e
+joiner, ambos batem no appearance do player-local). O render caiu; o gate do appearance é **in-game por
+natureza**. Ganho da sessão: render-null resolvido (joiner carrega mundo headless), muro reduzido ao appearance
+(1 ponto, `0x3636F760`), e a fonte dele cravada (cliente real → clonar).
+
 ## 22.2b Fecho — os DOIS ramos do AddPlayer exigem estado de cliente real (path B não é atalho)
 O build-do-slot
 `0x36103230` bifurca em `[0x362ba778]+0x14`:

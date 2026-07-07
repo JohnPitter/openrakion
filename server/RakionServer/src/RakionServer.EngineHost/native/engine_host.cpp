@@ -667,7 +667,10 @@ int main(int argc, char** argv)
     printf("[c++] CTStream::EnableStreamHandling() OK (I/O de arquivo liberado nesta thread)\n");
 
     void* cmi = GetProcAddress(g_eng, "?_cmiComm@@3VCCommunicationInterface@@A");  // V=objeto, addr=this
-    bool client = (strcmp(mode, "join") == 0);
+    // EXPERIMENTO render-null (§22.1): join com client=1 crasha carregando modelos (render device NULL
+    // headless); hostmin (client=0) carrega o mundo LIMPO. argv[7]=="0" força o join em modo dedicated
+    // (client=0) p/ testar se pula a criação de objetos de render sem quebrar o connect.
+    bool client = (strcmp(mode, "join") == 0) && !(argc > 7 && strcmp(argv[7], "ded") == 0);
     int r = Fn<Prepare_t>("?PrepareForUse@CCommunicationInterface@@QAEHHH@Z")(cmi, 1, client ? 1 : 0);
     printf("[c++] PrepareForUse(useNet=1, client=%d)=%d\n", client ? 1 : 0, r);
     if (strcmp(mode, "net") == 0) return 0;
@@ -865,6 +868,9 @@ int main(int argc, char** argv)
         // pNet+0x28(count)/+0x2c(base) stride 0x370 (SE_InitEngine monta) + call 0x36103230 (build do slot
         // a partir do CPlayerCharacter). Se completar aqui, o HOST headless registra o bot como player —
         // rung 1 do caminho (b). Se crashar, o SEH crava o site (provável 0x36103230, appearance/game-state).
+        // argv[6]=="listen": PULA o AddPlayer (crasha no appearance) p/ o host FICAR VIVO servindo joiners.
+        bool hostminListen = (argc > 6 && strcmp(argv[6], "listen") == 0);
+        if (!hostminListen)
         {
             char pcName[8] = {0}, pcTeam[8] = {0}, pcBuf[0x400] = {0};
             BuildStr("??0CTString@@QAE@PBD@Z", pcName, "Bot1");
