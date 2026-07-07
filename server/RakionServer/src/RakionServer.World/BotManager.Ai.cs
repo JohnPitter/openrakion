@@ -28,6 +28,11 @@ namespace RakionServer.World
         /// <summary>Quanto à frente (ms) a IA projeta o alvo ao liderar a perseguição/mira (escalado pelo perfil).</summary>
         private const float BotLeadMs = 260f;
 
+        /// <summary>Multiplicador de velocidade na PERSEGUIÇÃO (fora do melee): o bot corre mais rápido que o humano
+        /// (~0.6/tick na captura) p/ ALCANÇAR — a velocidade base (Normal 0.46) sozinha nunca fecha um humano
+        /// correndo (perseguição de popa). No melee volta ao normal (footwork).</summary>
+        private const float ChaseSpeedBoost = 1.7f;
+
         /// <summary>Padrões de combo do bot (sequências de actionId do 0x0311) — encadeia golpes como um jogador
         /// real em vez de repetir 1 golpe "sem parar". actionIds REAIS capturados do humano in-game (worldserver.log):
         /// a CADEIA de M1 é a faixa CONSECUTIVA 0x0400→0x0C00 (os passos do encadeamento); 0x14/0x19/0x1A = movimentos
@@ -309,10 +314,28 @@ namespace RakionServer.World
             float dx = ax - bot.X, dz = az - bot.Z;
             float dist = MathF.Sqrt(dx * dx + dz * dz);   // distância à posição REAL do humano
 
-            // LONGE do anel: AVANÇA correndo (mira o lead), encarando o alvo. Único momento de locomoção "reta".
-            if (dist > BotStrafeRing + 0.8f) { bot.MoveToward(tx, tz, BotStrafeRing); return; }
+            // HISTERESE approach↔melee: entra no melee ao alcançar o anel; sai só quando o alvo foge BEM além
+            // (re-commit ao chase). Sem isto o bot "dançava" na fronteira (~3.5) fazendo footwork sem nunca fechar.
+            if (!bot.InMelee && dist <= BotStrafeRing + 0.3f)
+            {
+                bot.InMelee = true;
+                Log.Ok("bot", "field {0}: bot ENTROU no melee (dist {1:F1})", f.Id, dist);
+            }
+            else if (bot.InMelee && dist > BotStrafeRing + 2.6f)
+            {
+                bot.InMelee = false;
+                Log.Ok("bot", "field {0}: bot SAIU do melee -> re-chase (dist {1:F1})", f.Id, dist);
+            }
 
-            // EM alcance: FOOTWORK humano em torno da posição REAL — circula / segura o chão / recua tático, em
+            // FORA do melee: COMMIT ao chase — corre reto pra posição REAL, MAIS RÁPIDO que o humano (boost), até
+            // fechar. Nada de footwork aqui (senão dança sem alcançar o humano que corre a ~0.6/tick).
+            if (!bot.InMelee)
+            {
+                bot.MoveToward(ax, az, BotStrafeRing, bot.Profile.MoveSpeed * ChaseSpeedBoost);
+                return;
+            }
+
+            // EM melee: FOOTWORK humano em torno da posição REAL — circula / segura o chão / recua tático, em
             // cadência jittered (não orbita igual a máquina). O recuo é backpedal DELIBERADO encarando o alvo.
             if (now >= bot.NextFootMs) PickFootwork(bot, now);
             switch (bot.Foot)

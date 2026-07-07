@@ -274,8 +274,9 @@ namespace RakionServer.World.Domain
         /// desejada (do <see cref="Profile"/>) em vez de saltar à máxima — arranque/freada suaves de humano.
         /// Encara sempre o alvo. Dentro do <paramref name="standoff"/> a velocidade desejada é zero (desacelera).
         /// </summary>
-        public void MoveToward(float tx, float tz, float standoff = 3.0f)
+        public void MoveToward(float tx, float tz, float standoff = 3.0f, float speed = -1f)
         {
+            if (speed < 0f) speed = Profile.MoveSpeed;
             float dx = tx - X, dz = tz - Z;
             float dist = MathF.Sqrt(dx * dx + dz * dz);
             if (dist > 0.01f)
@@ -284,11 +285,16 @@ namespace RakionServer.World.Domain
             float desVx = 0f, desVz = 0f;
             if (dist >= standoff)
             {
-                float inv = Profile.MoveSpeed / dist;            // normaliza e escala p/ a velocidade do perfil
+                float inv = speed / dist;                        // normaliza e escala p/ a velocidade pedida
                 desVx = dx * inv; desVz = dz * inv;
             }
             Integrate(desVx, desVz);
         }
+
+        /// <summary>Histerese approach↔melee: true quando o bot ENTROU no anel de luta. Evita o flip-flop na
+        /// fronteira (que deixava o bot "dançando" a ~3.5 sem fechar); vira false só quando o alvo se afasta bem
+        /// (re-commit ao chase). Reset por round/morte.</summary>
+        public bool InMelee;
 
         /// <summary>
         /// Orbita o alvo (tx, tz) no melee em vez de ficar PARADO — o humano circula o oponente. Move-se
@@ -447,6 +453,7 @@ namespace RakionServer.World.Domain
             Hp = MaxHp;
             Dead = false;
             VelX = 0f; VelZ = 0f;
+            InMelee = false;
             StrafeDir = 1; _nextStrafeFlipMs = 0;
             TargetSeat = -1;
             RouteIndex = 0;
