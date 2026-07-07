@@ -508,3 +508,27 @@ núcleo-muro visto do ponto mais fundo. Duas saídas, ambas sub-projeto:
 
 Infra pronta p/ retomar: loose-fallback, supressor de MessageBox, watchdog (arma via g_wdArm em volta
 da chamada suspeita). Tudo no engine_host.cpp.
+
+## 16. O deadlock é uma CADEIA de modal-loops (peeling, 2026-07-07)
+Watchdog + patches do syscall-stub provaram: a `CGame::Initialize` sobe a UI inteira do jogo e pendura
+numa CADEIA de message-waits. Peeling com PatchRet0 no win32u/user32:
+- `win32u!NtUserWaitMessage` (hang inicial) → patchado (ret 0) → o hang MOVEU p/ `USER32.dll+0x40756`
+  (outro modal-loop). Cada patch avança um degrau. ⇒ é o startup-UI completo do jogo, headless.
+
+Infra de bypass pronta (engine_host.cpp): supressor de MessageBox, `PatchRet0` (GetMessage/WaitMessage +
+win32u NtUserWaitMessage/NtUserGetMessage/NtUserMsgWait), watchdog com **nome de módulo** (mapa
+pré-capturado, sem loader-lock), fallback loose-file.
+
+### Mapa dos 7 calls de CGame::Initialize (0x1001f2d0) — p/ o caminho CIRÚRGICO
+1. `0x1001f230` (interno gamemp) — **init principal (som/input/rede/UI); o hang aninha AQUI**.
+2. `MessageBoxA` (0x10026908) — erro (suprimido).
+3. `exit` (0x100266b8) — condicional (fatal).
+4. `CTFileName::operator=` (0x100262f4, ecx=[esi+0x40]).
+5. **`InitInternal` (0x10013ae0)** — já chamamos direto, roda SEM hang.
+6. `DisableInput@CInput` (0x10026214).
+7. `EnableInput@CInput` (0x10026018).
+
+**Veredito:** completar = ou (a) PEELING da cadeia de modais do startup-UI (grinding: cada NtUserWait/
+modal → PatchRet0 → próximo; pode ser dezenas), ou (b) CIRÚRGICO: RE de `0x1001f230` p/ isolar SÓ a
+alocação do player-array (o membro do CGame que o getter vtable[+8] devolve), pulando som/input/rede/UI.
+Ambos são sub-projeto focado. O headless está no ponto mais fundo já alcançado; falta domar o startup-UI.

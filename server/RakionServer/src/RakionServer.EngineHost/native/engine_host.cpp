@@ -348,11 +348,72 @@ static void InstallMsgBoxHook()
     PatchEntryJmp("user32.dll", "MessageBoxA", reinterpret_cast<void*>(&MsgBoxAHook));
 }
 
+// Sobrescreve a entrada de uma func stdcall p/ `xor eax,eax; ret <argbytes>` (retorna 0/FALSE). Headless:
+// GetMessage retornando 0 = WM_QUIT -> qualquer message-loop da engine SAI (senao bloqueia sem janela).
+static void PatchRet0(const char* mod, const char* fn, int argbytes)
+{
+    void* p = (void*)GetProcAddress(GetModuleHandleA(mod), fn);
+    if (!p) { printf("[c++] ret0: %s!%s nao achado\n", mod, fn); return; }
+    unsigned char stub[5] = { 0x33, 0xC0, 0xC2, (unsigned char)(argbytes & 0xff), (unsigned char)((argbytes >> 8) & 0xff) };
+    int n = argbytes ? 5 : 3; if (!argbytes) stub[2] = 0xC3;   // ret sem args = C3
+    DWORD old; VirtualProtect(p, n, PAGE_EXECUTE_READWRITE, &old);
+    memcpy(p, stub, n);
+    VirtualProtect(p, n, old, &old); FlushInstructionCache(GetCurrentProcess(), p, n);
+    printf("[c++] %s!%s -> ret0 (headless: sem message-loop)\n", mod, fn);
+}
+static void InstallNoWindowHooks()
+{
+    // GetMessage retorna 0 (WM_QUIT) -> sai do loop; WaitMessage/MsgWait retornam na hora (nao bloqueiam).
+    PatchRet0("user32.dll", "GetMessageW", 16);
+    PatchRet0("user32.dll", "GetMessageA", 16);
+    PatchRet0("user32.dll", "WaitMessage", 0);
+    // A engine alcanca o WAIT por outro caminho (nao via user32!WaitMessage) -> a Initialize pendura em
+    // win32u!NtUserWaitMessage (watchdog). Patch no SYSCALL-STUB direto (camada mais baixa) pega qualquer via.
+    PatchRet0("win32u.dll", "NtUserWaitMessage", 0);            // BOOL(void) -> 0 (sem espera)
+    PatchRet0("win32u.dll", "NtUserGetMessage", 16);            // -> 0 (WM_QUIT)
+    PatchRet0("win32u.dll", "NtUserMsgWaitForMultipleObjectsEx", 24);
+}
+
 // ---- Watchdog de HANG: suspende a thread principal apos g_wdSecs e dumpa o EIP + as rets da .text da
 //      engine (0x36001000..0x36214200) = a cadeia de chamada onde travou. RE-ao-vivo do bloqueio. ----
 static HANDLE g_mainThread;
 static volatile LONG g_wdArm = 0;   // so arma em volta da chamada suspeita
 static int g_wdSecs = 8;
+
+// Mapa de modulos capturado ANTES do hang (main rodando -> sem risco de loader-lock na suspensao).
+struct ModEnt { unsigned base, size; char name[64]; };
+static ModEnt g_mods[256]; static int g_nmods;
+static void CaptureModules()
+{
+    HMODULE hs[512]; DWORD need = 0;
+    HMODULE psapi = LoadLibraryA("psapi.dll");
+    typedef BOOL (WINAPI* EPM_t)(HANDLE, HMODULE*, DWORD, LPDWORD);
+    typedef DWORD (WINAPI* GMBN_t)(HANDLE, HMODULE, LPSTR, DWORD);
+    typedef BOOL (WINAPI* GMI_t)(HANDLE, HMODULE, void*, DWORD);
+    EPM_t EPM = reinterpret_cast<EPM_t>(GetProcAddress(psapi, "EnumProcessModules"));
+    GMBN_t GMBN = reinterpret_cast<GMBN_t>(GetProcAddress(psapi, "GetModuleBaseNameA"));
+    GMI_t GMI = reinterpret_cast<GMI_t>(GetProcAddress(psapi, "GetModuleInformation"));
+    if (!EPM || !GMBN || !GMI) return;
+    if (!EPM(GetCurrentProcess(), hs, sizeof(hs), &need)) return;
+    int n = need / sizeof(HMODULE); if (n > 256) n = 256;
+    for (int i = 0; i < n; i++) {
+        struct { void* base; DWORD size; void* ep; } mi;
+        if (!GMI(GetCurrentProcess(), hs[i], &mi, sizeof(mi))) continue;
+        g_mods[g_nmods].base = reinterpret_cast<unsigned>(mi.base);
+        g_mods[g_nmods].size = mi.size;
+        GMBN(GetCurrentProcess(), hs[i], g_mods[g_nmods].name, 64);
+        if (++g_nmods >= 256) break;
+    }
+}
+static void NameModuleOf(unsigned addr)
+{
+    for (int i = 0; i < g_nmods; i++)
+        if (addr >= g_mods[i].base && addr < g_mods[i].base + g_mods[i].size) {
+            printf("[watchdog] hang module=%s base=%08X off=%X\n", g_mods[i].name, g_mods[i].base, addr - g_mods[i].base);
+            fflush(stdout); return;
+        }
+    printf("[watchdog] hang module=? addr=%08X (nao mapeado)\n", addr); fflush(stdout);
+}
 static DWORD WINAPI WatchdogThread(void*)
 {
     for (;;) {
@@ -363,6 +424,7 @@ static DWORD WINAPI WatchdogThread(void*)
         if (GetThreadContext(g_mainThread, &c)) {
             printf("[watchdog] HANG eip=%08X (rva=%08X) esp=%08X ebp=%08X\n",
                    (unsigned)c.Eip, (unsigned)c.Eip - 0x36000000u, (unsigned)c.Esp, (unsigned)c.Ebp);
+            NameModuleOf(static_cast<unsigned>(c.Eip));   // usa o mapa pre-capturado (sem loader-lock)
             printf("[watchdog] rets(rva):");
             __try {
                 unsigned* sp = reinterpret_cast<unsigned*>(c.Esp);
@@ -381,6 +443,7 @@ static DWORD WINAPI WatchdogThread(void*)
 }
 static void StartWatchdog()
 {
+    CaptureModules();   // captura o mapa de modulos com a main RODANDO (sem loader-lock na suspensao)
     DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &g_mainThread,
                     THREAD_ALL_ACCESS, FALSE, 0);
     CreateThread(nullptr, 0, WatchdogThread, nullptr, 0, nullptr);
@@ -509,6 +572,7 @@ int main(int argc, char** argv)
       printf("[c++] patch scramble-skip @0x3600C522 (jbe->jmp): %s\n", Patch(0x3600C522u, jmp, 1) ? "ok" : "FALHOU"); }
 
     InstallMsgBoxHook(); // headless: suprime+loga MessageBox (modal trava o host esperando clique)
+    InstallNoWindowHooks(); // headless: GetMessage/WaitMessage nao bloqueiam (sem janela p/ bombear)
     InstallOpenHook();   // loga cada arquivo aberto (diagnostico do path do world-load)
 
     SetCurrentDirectoryA(dataRoot);
