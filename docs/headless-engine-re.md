@@ -805,3 +805,77 @@ Logo **(A) é O caminho** (não uma entre duas opções): `hostmin` hospeda, o H
 querem mais que um campo. Sub-projeto restante: brokering (servidor manda o humano joinar o `hostmin`) +
 validação in-game + clone do appearance p/ o bot + ponte de IA (H5). O muro está **cravado e localizado**, não
 mais difuso; o host headless **roda**; falta a integração do join do humano.
+
+## 22.6 REVIRAVOLTA — o headless SE1 é o PROTOCOLO ERRADO (3 experimentos, 2026-07-07 noite)
+Retomei o peer headless e, com a **ground-truth de 2 humanos REAIS** (`docs/p2p-handshake-groundtruth.txt`)
+na mão, rodei 3 experimentos que juntos **aposentam** a via headless-SE1 — não por muro de appearance, mas por
+**mismatch de protocolo**:
+
+**A verdade do fio (groundtruth l.1-70) — a camada P2P do stage NÃO é sessão SE1:**
+- `0x0201 CONNECT` vai do cliente ao **SERVIDOR** (portas 40708/40709 = world/broker), NÃO a outro cliente
+  (l.1-10). É o registro de endpoint UDP↔servidor — o que o **nosso** world server JÁ faz (o "0x319
+  endpoint-register"). O servidor ECOA 12B de volta (l.3-4).
+- O canal cliente↔cliente (2301↔2302) é **SÓ** `0x0304` push/`0x0305` ack (12/13B, l.12-55) + `0x030a`/`0x030f`
+  (l.56+). **ZERO `0x0201` entre clientes, ZERO TAGV, ZERO StartPeerToPeer/JoinSession no fio.** A "sessão" P2P
+  do stage é o lockstep minúsculo — que o `BotLockstep`/`BotManager.Peer` **já sintetiza**.
+
+**Experimento 1 — joiner dedicated (`join … ded`) NÃO conecta pra fora:** `JoinSession RETORNOU OK`, mas um
+sniffer nas portas 2301/25600 capturou **0 datagramas** do joiner. Ele carrega o mundo LOCAL e morre no
+appearance wall — **nunca fala com um host** (confirma §22.4: dedicated = world-load local sem connect).
+
+**Experimento 2 e 3 — `hostmin` (StartPeerToPeer) IGNORA o dialeto do stage:** injetei no listen do `hostmin` os
+frames golden — primeiro só os `0x0304` opens/pushes (exp.2), depois seguindo a sequência REAL (`0x0201 CONNECT`
+→ eco → opens, exp.3). **O `hostmin` não respondeu a NADA** (0 respostas ao CONNECT em 3s, 0 aos pushes). ⇒ o
+listen do SE1 `StartPeerToPeer` fala o **protocolo de sessão da SE1**, que **não é** o `0x0201`+`0x0304` do
+Rakion in-stage. Por isso "sessao NAO forma" (commit 9833bca) — o cliente humano nunca completaria o handshake
+com o `hostmin`, pois o stage não usa sessão SE1.
+
+**VEREDITO (o headless-SE1 é o artefato ERRADO):** rodar a engine SE1 como 2º peer pressupõe que o stage P2P =
+sessão SE1. A ground-truth PROVA que não é — o stage P2P é o lockstep custom `0x0304` que **já emitimos**. O
+combatente real (HIT×N/kill/colisão) NÃO nasce de uma sessão SE1; nasce do cliente humano receber a **mensagem
+de jogo que dispara `AddRemotePlayer`** (o "CPlayer EMPACOTADO" de `hitxn-muro-estado-combatente`:
+`AddRemotePlayer@engine 0x3610e2b0`, **sem caller na engine** ⇒ chamado do **gamemp.dll** em resposta a uma
+game-message). Essa mensagem viaja pelo protocolo de jogo que **nós controlamos** — não precisa de headless.
+
+**Reorientação (o insumo que sobra, agora com alvo certo):** parar de perseguir a sessão SE1 headless. A frente
+real é **achar, no gamemp.dll, o dispatch de game-message que chama `AddRemotePlayer`** e sintetizá-lo
+server-side (como já fazemos com 0x38/0x4b/0x0304). É RE de gamemp (base 0x10000000) sobre o call-site do import
+`AddRemotePlayer` da engine — o "packed CPlayer" que seta team/alive/template/HP na entidade remota. Sem
+processo headless, sem appearance-wall (o appearance vem no blob da própria game-message, como no caso 2-humanos
+onde o char do peer chega pelo world TCP + 0x38, não por sessão SE1).
+
+## 22.7 `AddRemotePlayer` cravado + a fonte SE1 nomeia o trigger (2026-07-07 noite, cont.)
+Segui a frente nova com capstone/pefile no binário CERTO (rakion-final). Achados concretos:
+
+**A fonte SE1 open-source nomeia o mecanismo (`Sources/Engine/Network/SessionState.cpp:1317`):** o cliente cria
+a entidade de um jogador remoto ao processar **`MSG_SEQ_ADDPLAYER`** no `CSessionState::ProcessGameStreamBlock`
+— o gamestream CONFIÁVEL, ordenado, que o HOST da sessão manda por tick. O bloco carrega
+`[INDEX iNewPlayer][CPlayerCharacter pcCharacter]`; o handler faz `CreateEntity_t("Classes\\Player.ecl")` +
+`AttachEntity` + `en_pcCharacter = pcCharacter` + `Initialize()`. **É a criação do combatente real** (o
+`CPlayerCharacter` traz nome/appearance/template). Intercalado com `MSG_SEQ_ALLACTIONS` (o tick de ações).
+
+**`AddRemotePlayer` da engine.dll = o handler do Rakion desse mecanismo. Assinatura e miolo CRAVADOS
+(`?AddRemotePlayer@CSessionState@@QAEXEGPAD@Z` @0x3610e2b0):**
+- `AddRemotePlayer(uchar seat, ushort blobLen, char* blob)` — thiscall (ecx=CSessionState).
+- `[0x3636f260]`(CGame)`->vtable[+8]->[+0x4854 + seat*4]`: se já há entidade no seat → pula (idempotente).
+- Vazio: `call 0x3610b6d0` (aloca), e se `blobLen>0` monta CTString do **blob** (`0x36100cd0/d50`) → `call
+  0x361095b0`(pega o CPlayerSource) → `call [vt+0x118]` (seta o nome/appearance do blob). Depois lê `[+0x470c]`
+  do player-manager do CGame e `call [vt+0x114]`/`[vt+0x11c]` (mais setters). ⇒ **o appearance vem do BLOB do
+  argumento**, não de sessão SE1. E lê o player-manager do CGame — que **no cliente humano REAL está
+  inicializado** (o muro de §22 era EXCLUSIVO do nosso headless sem CGame; no cliente vivo não existe).
+
+**Quem CHAMA (o trigger) está no rakion.exe PACKED — RE estática esbarra no packer:**
+- `AddRemotePlayer` tem **0 callers diretos (E8)** e **0 referências de ponteiro** em engine/entitiesmp/gamemp/
+  todos os módulos (xref de `b0 e2 10 36` = vazio). ⇒ a claim antiga "sem caller" estava certa PARA os módulos,
+  mas o caller existe: **`rakion.exe`/`rakion.bin` IMPORTAM o símbolo** (IAT slot **0x004d01f4**).
+- Mas o `.text` do rakion.exe tem **0 referências** ao slot 0x4d01f4 → o executável do cliente é **packed/
+  anti-tamper** (o código que referencia a IAT só existe descomprimido em runtime). Estática morre aqui.
+
+**VEREDITO desta frente (mecanismo 100% claro, trigger atrás do packer):** o combatente real nasce de
+`AddRemotePlayer(seat, len, blob)` chamado pelo dispatch de stage do rakion.exe quando chega a mensagem de
+"novo player" (equivalente Rakion do `MSG_SEQ_ADDPLAYER`). O blob = nome/appearance. NÃO precisa de headless,
+NÃO precisa de sessão SE1, NÃO tem appearance-wall no cliente vivo. Falta UMA coisa: **qual mensagem/bytes o
+rakion.exe traduz nessa chamada** — e isso só sai por **RE ao vivo** (hook do IAT slot 0x4d01f4 no cliente,
+via DLL de diagnóstico do launcher — dev-only — com um 2º player REAL entrando p/ capturar `seat/len/blob` e a
+origem no fio). É o método `diagnostico-runtime-quebra-loop-de-RE` + `rakion-final-binario-diferente-re-ao-vivo`.
+Artefatos estáticos: `scratchpad/{find_addremote,callers,xref_ptr,disasm_fn,imports_of,ref_imm}.py`.
