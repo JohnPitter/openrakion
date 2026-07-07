@@ -603,3 +603,20 @@ definitivamente o "rodar o jogo inteiro sem tela". Infra pronta e reutilizável:
 (GetMessage→WM_NULL), hooks exit/ExitProcess (log + ignore-exit opcional), watchdog c/ módulo, loose-fallback,
 supressor de modal, IAT-skip. Resume: continuar peelando (USER32+0x321A9 → identificar o wait → hookar) OU o
 cirúrgico (isolar o player-array). Ambos sub-projeto; o headless agora PASSA render+rede — ponto mais fundo.
+
+## 21. DECISIVO: o fatal de rede é REAL — não é "peelar", é PORTAR headless (2026-07-07)
+O hang pós-ignore-exit (USER32+0x321A9) está dentro do **`PeekMessageW`** → não é um novo modal a peelar; é
+a engine GIRANDO num spin de PeekMessage num estado QUEBRADO. ⇒ o `ExitProcess(1)` da etapa de rede é um
+**FatalError GENUÍNO**: a rede headless FALHA de verdade (após bind do port 25600) e a engine aborta
+corretamente. Ignorá-lo não avança — só quebra o estado.
+
+**Veredito FINAL (empírico, decisivo):** não é uma cadeia de waits a bypassar um-a-um — cada subsistema
+(render, REDE, input) precisa **FUNCIONAR** headless, não ser pulado. Bypassar leva a spin/estado-quebrado.
+Logo o HIT×N nativo exige **portar o cliente Rakion pra rodar sem tela** (render nulo + rede-servidor
+funcional + input stub), que é o núcleo-muro do projeto — um sub-projeto de porte, não de patches.
+
+**O que o headless HOJE faz (ponto mais fundo, commitado):** carrega o mundo, roda o init do jogo, passa o
+render (pump determinístico) e chega até o init de REDE — onde a falha real da rede-servidor headless barra.
+Toda a infra (pump, hooks, watchdog, fallbacks) fica reutilizável. Resume do sub-projeto: fazer o
+`StartPeerToPeer`/server-open da engine ter sucesso headless (RE do que a rede-init exige sem render) — é o
+próximo alvo REAL, não mais peeling.
