@@ -513,6 +513,10 @@ static void* PatchIat(HMODULE mod, const char* func, void* repl)
     return nullptr;
 }
 
+// No-op p/ IAT-skip: as Read*FromFile de RENDER/UI (ex.: ReadPreLoadSMCFile = preload de modelos .smc ->
+// init de render -> janela -> modal-loop que pendura headless). Assinatura void __cdecl F(void).
+static void __cdecl NoopVoidCdecl() {}
+
 int main(int argc, char** argv)
 {
     g_openlog = fopen("C:\\temp\\engine_opens.log", "w");
@@ -624,6 +628,12 @@ int main(int argc, char** argv)
                 // vazio + mode 8 (visto em 0x40bcea). SEH captura "cannot load settings".
                 char setBuf[8] = {0};
                 BuildStr("??0CTFileName@@QAE@PBD@Z", setBuf, "");
+                // CIRÚRGICO: pula o ReadPreLoadSMCFile (preload de modelos -> render/janela -> modal-loop headless).
+                // IAT-patch no gamemp: o call [0x100264e0] em 0x1001f230 vai ao no-op. Mantém as cargas de DADOS.
+                if (PatchIat(g_hGame, "?ReadPreLoadSMCFile@@YAXXZ", reinterpret_cast<void*>(&NoopVoidCdecl)))
+                    printf("[c++] IAT-skip: gamemp!ReadPreLoadSMCFile -> no-op (pula render/UI)\n");
+                else printf("[c++] IAT-skip: ReadPreLoadSMCFile nao achado no import de gamemp\n");
+                fflush(stdout);
                 void* initFn = reinterpret_cast<char*>(g_hGame) + 0x1F2D0;
                 int gmode = argc > 6 ? atoi(argv[6]) : 0;   // mode do CGame::Initialize (8=host? 0=idle) — testavel via arg
                 printf("[c++] CGame::Initialize(vtable+0xCC @%p, settings=\"\", mode=%d)...\n", initFn, gmode); fflush(stdout);

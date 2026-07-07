@@ -549,3 +549,22 @@ O `ReadPreLoadSMCFile` é o suspeito nº1 do hang de UI (preload de modelos → 
 **Resume-point:** (b-cirúrgico) chamar os Read* que populam dados + achar/chamar a alocação do player-array,
 PULANDO `ReadPreLoadSMCFile` (render). Toda a infra (loose-fallback, PatchRet0, watchdog c/ módulo, supressor
 de modal) está pronta. É o ponto mais fundo já mapeado; o headless roda o init até a subida de render/UI.
+
+## 18. Confirmado: o hang é o ReadPreLoadSMCFile (render/janela) — e é entrelaçado (2026-07-07)
+IAT-skip do `ReadPreLoadSMCFile` (no-op) → o **HANG SUMIU** (exit=1 em vez de timeout). ⇒ cravado: o
+modal-loop nasce no preload de modelos .smc (init de render → janela). MAS pular inteiro cascateia: o
+processo agora **sai (exit 1) na etapa de rede** ("opening as server, port 25600") — globais de render
+que a rede/init tocam ficam NULL sem o preload. Sem MessageBox (não é erro modal); é exit()/crash-em-thread.
+
+Arquivos `DataSetup\*.txt` (UnusableCharName, AbuseString, LevelData\LevelList) são **XFS-only** (xFile≠0),
+não extraídos p/ xfs_ext nem loose → buffers vazios nas Read*. Extraí-los (de DataSetup.xfs) é pré-requisito.
+
+**Natureza final do muro (cravada):** o init do jogo é um TECIDO entrelaçado render+janela+rede+dados —
+remover o render (skip) derruba a rede; manter o render (peeling dos NtUserWait) faz o modal-loop girar.
+Nenhum atalho rápido fecha. Completar exige um dos dois SUB-PROJETOS: (a) **ambiente de render/janela fake**
+headless (criar uma janela oculta + WndProc + pump próprio p/ o preload completar sem modal); (b)
+**cirúrgico profundo**: RE de dentro do ReadPreLoadSMCFile p/ separar carga-de-dados de init-de-render, +
+extrair os DataSetup.xfs, + prover os globais de render que a rede referencia. É o núcleo-muro no grão mais fino.
+
+**Estado:** headless roda o init até o preload de render; toda a infra pronta (loose-fallback, PatchRet0
+win32u/user32, watchdog c/ módulo, supressor de modal, IAT-skip). Resume: extrair DataSetup.xfs + atacar (a) ou (b).
