@@ -394,6 +394,13 @@ int main(int argc, char** argv)
     { const unsigned char jmp[] = { 0xEB };
       printf("[c++] patch render-status skip @0x3610CDC9 (jb->jmp): %s\n", Patch(0x3610CDC9u, jmp, 1) ? "ok" : "FALHOU"); }
 
+    // EXPERIMENTO: bypass do scramble/hash 0x3600C510 que trava no appearance-placeholder do AddPlayer.
+    // A func preenche um buffer com keystream do RNG indexado por [appearance+8] (ponteiro headless -> OOB).
+    // Patch do jbe @0x3600C522 (76->EB) = pula SEMPRE o loop -> so faz cleanup+ret. Se o scramble for
+    // descartavel (como GetStreamCRC32/InitCRCGather), o AddPlayer passa. Ver docs/headless-engine-re.md §13.
+    { const unsigned char jmp[] = { 0xEB };
+      printf("[c++] patch scramble-skip @0x3600C522 (jbe->jmp): %s\n", Patch(0x3600C522u, jmp, 1) ? "ok" : "FALHOU"); }
+
     InstallOpenHook();   // loga cada arquivo aberto (diagnostico do path do world-load)
 
     SetCurrentDirectoryA(dataRoot);
@@ -525,6 +532,12 @@ int main(int argc, char** argv)
             // conecta (MSG_REQ_CONNECTPLAYER traz o appearance serializado). Headless-sozinho nao tem esse dado ->
             // a serializacao (hash de 0x3601a2b0 sobre [appearance+8]) le lixo/ponteiro -> AV em 0x3600C52F.
             // ⇒ RESOLUCAO = H3.5 (humano joina o host, traz o appearance real). Ver docs/headless-engine-re.md §13.
+            // NOTA (RE 2026-07-07): os DOIS caminhos do AddPlayer precisam do INIT COMPLETO do jogo que o
+            // headless pula. [0x14]=1 (cliente) -> copia o CPlayerCharacter local (sub-objetos NULL @+0x350 ->
+            // AV no copy-helper 0x36017E50). [0x14]=0 (host) -> CGame->vtable[+8] (getter do array de players) é
+            // STUB `ret` @0x10011bd0 -> retorna lixo -> AV em 0x36103758: falta CGame::Initialize (aloca slots).
+            // O bypass do scramble (0x3600C522) furou 1 rung; o resto é a sequência de init de partida (H3.5 traz
+            // o char real; CGame::Initialize aloca os slots). Ver docs/headless-engine-re.md §13.
             void* addFn = (void*)GetProcAddress(g_eng, "?AddPlayer_t@CNetworkLibrary@@QAEPAVCPlayerSource@@AAVCPlayerCharacter@@@Z");
             printf("[c++] AddPlayer_t(\"Bot1\") em SEH-probe...\n"); fflush(stdout);
             int ar = CallAddPlayerSEH(addFn, pNet, pcBuf);
