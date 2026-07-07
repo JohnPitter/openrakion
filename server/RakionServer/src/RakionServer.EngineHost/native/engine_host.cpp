@@ -379,10 +379,34 @@ static void StartMsgInjector()
     g_mainTid = GetCurrentThreadId();
     CreateThread(nullptr, 0, MsgInjectorThread, nullptr, 0, nullptr);
 }
+// Pump DETERMINISTICO (nao-racy): GetMessage devolve WM_NULL na hora (return 1 = "tem msg", NAO WM_QUIT) ->
+// o message-loop de preload ITERA confiavelmente e completa o load. Substitui o injetor racy.
+static int WINAPI GetMsgHook(MSG* m, HWND h, unsigned mn, unsigned mx)
+{
+    if (m) { m->hwnd = nullptr; m->message = WM_NULL; m->wParam = 0; m->lParam = 0; m->time = 0; m->pt.x = m->pt.y = 0; }
+    return 1;   // 1 = mensagem obtida (loop continua); 0 seria WM_QUIT (sairia cedo demais)
+}
+// WaitMessage/NtUserWaitMessage -> retorna 1 (ha mensagem) sem bloquear.
+static void PatchRet1(const char* mod, const char* fn, int argbytes)
+{
+    void* p = (void*)GetProcAddress(GetModuleHandleA(mod), fn);
+    if (!p) return;
+    unsigned char s[8] = { 0xB8, 0x01, 0x00, 0x00, 0x00 };   // mov eax,1
+    int n;
+    if (argbytes) { s[5] = 0xC2; s[6] = (unsigned char)(argbytes & 0xff); s[7] = (unsigned char)(argbytes >> 8); n = 8; }
+    else { s[5] = 0xC3; n = 6; }
+    DWORD old; VirtualProtect(p, n, PAGE_EXECUTE_READWRITE, &old);
+    memcpy(p, s, n); VirtualProtect(p, n, old, &old); FlushInstructionCache(GetCurrentProcess(), p, n);
+    printf("[c++] %s!%s -> ret 1 (ha msg, sem bloquear)\n", mod, fn);
+}
 static void InstallNoWindowHooks()
 {
-    // EXPERIMENTO (a): NAO bloqueia os waits — deixa o message-loop rodar; o injetor alimenta a fila.
-    StartMsgInjector();
+    // Pump deterministico: GetMessage -> WM_NULL (loop itera); WaitMessage -> "tem msg" (nao bloqueia).
+    PatchEntryJmp("user32.dll", "GetMessageW", reinterpret_cast<void*>(&GetMsgHook));
+    PatchEntryJmp("user32.dll", "GetMessageA", reinterpret_cast<void*>(&GetMsgHook));
+    PatchEntryJmp("win32u.dll", "NtUserGetMessage", reinterpret_cast<void*>(&GetMsgHook));
+    PatchRet1("user32.dll", "WaitMessage", 0);
+    PatchRet1("win32u.dll", "NtUserWaitMessage", 0);
 }
 
 // ---- Watchdog de HANG: suspende a thread principal apos g_wdSecs e dumpa o EIP + as rets da .text da
@@ -532,6 +556,7 @@ static void __cdecl NoopVoidCdecl() {}
 // exit na etapa de rede). Loga o return-address + rets da .text de gamemp(0x10)/engine(0x36) e ENTAO sai.
 typedef void (__cdecl* Exit_t)(int);
 static Exit_t g_realExit;
+static volatile LONG g_ignoreExit = 0;   // 1 = exit/ExitProcess logam e RETORNAM (ignora o fatal de rede)
 static void __cdecl ExitLog(int code)
 {
     printf("[c++] *** exit(%d) chamado ***\n", code);
@@ -541,7 +566,25 @@ static void __cdecl ExitLog(int code)
         if ((v >= 0x10001000u && v < 0x10040000u) || (v >= 0x36001000u && v < 0x36214000u))
             printf(" %s+%X", v < 0x36000000u ? "gm" : "eng", v < 0x36000000u ? v - 0x10000000u : v - 0x36000000u); }
     printf("\n"); fflush(stdout);
+    if (InterlockedCompareExchange(&g_ignoreExit, 0, 0)) return;   // ignora o fatal (mesmo experimento)
     if (g_realExit) g_realExit(code); else ExitProcess(code);
+}
+
+// Hook do ExitProcess (o exit da rede NAO passa por gamemp!exit -> e ExitProcess direto ou crash). Loga o
+// caller (rets de gamemp/engine) e ENTAO termina via TerminateProcess (a entrada foi patchada, sem original).
+static void WINAPI ExitProcHook(UINT code)
+{
+    printf("[c++] *** ExitProcess(%u) chamado ***\n", code);
+    unsigned* stk; __asm { mov stk, esp }
+    printf("[c++] ExitProcess rets:");
+    for (int i = 0; i < 200; i++) { unsigned v = stk[i];
+        if ((v >= 0x10001000u && v < 0x10040000u) || (v >= 0x36001000u && v < 0x36214000u))
+            printf(" %s+%X", v < 0x36000000u ? "gm" : "eng", v < 0x36000000u ? v - 0x10000000u : v - 0x36000000u); }
+    printf("\n"); fflush(stdout);
+    // EXPERIMENTO: NAO termina — RETORNA, ignorando o fatal de rede headless, p/ ver se o init continua ate
+    // o AddPlayer. Se a rede-falha for nao-essencial offline, o processo limpa e segue. (Se crashar, revert.)
+    if (InterlockedCompareExchange(&g_ignoreExit, 0, 0)) return;
+    TerminateProcess(GetCurrentProcess(), code);
 }
 
 int main(int argc, char** argv)
@@ -657,15 +700,14 @@ int main(int argc, char** argv)
                 BuildStr("??0CTFileName@@QAE@PBD@Z", setBuf, "");
                 // EXPERIMENTO (a): NAO pula o ReadPreLoadSMCFile — deixa rodar com o message-injector alimentando
                 // a fila (o loop de preload itera e completa em vez de girar/pendurar). InterlockedExchange arma.
-                MSG pm; PeekMessageW(&pm, nullptr, 0, 0, PM_NOREMOVE);   // cria a fila de msg da MAIN -> PostThreadMessage do injetor nunca falha
-                InterlockedExchange(&g_injectArm, 1);   // injetor manda WM_NULL na main durante a Initialize
-                printf("[c++] message-injector ARMADO (fila da main criada; caminho a: preload com pump)\n"); fflush(stdout);
-                // hook do exit p/ cravar quem termina na etapa de rede (preload ja passou via injector)
+                // pump deterministico ja instalado (GetMessage->WM_NULL); hooks p/ cravar o exit da etapa de rede:
                 if (HMODULE crt = GetModuleHandleA("msvcr71.dll")) {
                     g_realExit = reinterpret_cast<Exit_t>(GetProcAddress(crt, "exit"));
                     PatchIat(g_hGame, "exit", reinterpret_cast<void*>(&ExitLog));
-                    printf("[c++] hook gamemp!exit -> ExitLog (real=%p)\n", g_realExit); fflush(stdout);
                 }
+                PatchEntryJmp("kernel32.dll", "ExitProcess", reinterpret_cast<void*>(&ExitProcHook));
+                InterlockedExchange(&g_ignoreExit, 1);   // EXPERIMENTO: ignora o fatal de rede, segue ate o AddPlayer
+                printf("[c++] hooks exit/ExitProcess armados + IGNORE-EXIT (segue apos o fatal de rede)\n"); fflush(stdout);
                 void* initFn = reinterpret_cast<char*>(g_hGame) + 0x1F2D0;
                 int gmode = argc > 6 ? atoi(argv[6]) : 0;   // mode do CGame::Initialize (8=host? 0=idle) — testavel via arg
                 printf("[c++] CGame::Initialize(vtable+0xCC @%p, settings=\"\", mode=%d)...\n", initFn, gmode); fflush(stdout);

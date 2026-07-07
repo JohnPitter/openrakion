@@ -585,3 +585,21 @@ que loga o caller. Tudo no engine_host.cpp.
 por hook de GetMessage que retorna WM_NULL sem bloquear em vez de PostThreadMessage racy) + resolver o
 exit/crash da etapa de rede (hookar ExitProcess p/ cravar o caller). Ainda sub-projeto, mas o headless agora
 PASSA o render e chega na rede — o ponto mais fundo. Resume: injetor robusto (hook GetMessage->WM_NULL) + ExitProcess hook.
+
+## 20. Pump DETERMINISTICO + veredito empírico da cadeia (2026-07-07)
+Trocado o injetor racy por um pump DETERMINISTICO: `GetMessage`/`NtUserGetMessage` hookados p/ devolver
+**WM_NULL** (return 1, não WM_QUIT) e `WaitMessage`/`NtUserWaitMessage` → return 1 (há msg). Resultado: o
+message-loop do preload itera CONFIÁVEL (não mais racy) e passa o render → chega à rede de forma estável.
+
+Hooks de término cravaram a cadeia, degrau a degrau:
+- Etapa de rede: **`ExitProcess(1)` chamado (rets: eng+3AC20)** — a rede headless falha e a engine chama
+  ExitProcess (FatalError-like). Hook `ExitProcHook` loga o caller.
+- **Ignorar o ExitProcess (return em vez de terminar)** → o processo CONTINUA (o fatal de rede não era
+  terminal) e vai mais fundo → **hang em `USER32+0x321A9`** (outro wait, ≠ 0x40756 anterior).
+
+**VEREDITO EMPÍRICO (exaustivo):** o init headless é uma CADEIA PROFUNDA de operações dependentes de
+ambiente (modal-loops, waits de USER, fatal-exits de rede). Cada bypass revela o próximo — são dezenas. É
+definitivamente o "rodar o jogo inteiro sem tela". Infra pronta e reutilizável: pump determinístico
+(GetMessage→WM_NULL), hooks exit/ExitProcess (log + ignore-exit opcional), watchdog c/ módulo, loose-fallback,
+supressor de modal, IAT-skip. Resume: continuar peelando (USER32+0x321A9 → identificar o wait → hookar) OU o
+cirúrgico (isolar o player-array). Ambos sub-projeto; o headless agora PASSA render+rede — ponto mais fundo.
