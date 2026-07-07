@@ -741,7 +741,36 @@ Duas saídas concretas (ambas viáveis, não "portar o cliente"):
 o `AddPlayer` fechar com o appearance vindo do humano. É a validação in-game do caminho, com o muro reduzido a
 UM ponto conhecido (`0x3636F760` = appearance-subobj do char-local).
 
-**Fecho — os DOIS ramos do AddPlayer exigem estado de cliente real (path B não é atalho):** o build-do-slot
+## 22.3 CONVERGÊNCIA — dois REs independentes fecham o insumo (2026-07-07)
+O decode do connect de sessão (`rakion-work/ghidra-proj/tagv_connect_decode.out.txt`, RE anterior sobre
+`ConnectRemoteSessionState@0x36105f30` + captura de 6275 frames) chega ao MESMO veredito desta sessão, por
+caminho independente — o insumo agora está COMPLETO e consistente:
+- **Forjar o connect server-side = INVIÁVEL.** O TAGV **nunca trafega no fio** (0 hits em 6275 UDP+TCP); o
+  connect é um **stream reliable dinâmico** (janela deslizante, ACK por offset, ~315 frames/~2s). O **0x0304
+  (connect) e o 0x30a (gameplay) compartilham o MESMO seq de stream** (transição seq 0x26→0x27 no gate). O gate
+  do 0x30a abre com a **conclusão do LOAD**, não por frame-gatilho. Provado in-game: o eco do controle
+  0x0304/0x0305 NÃO abre o gate (0× 0x30a do host). ⇒ casa 1:1 com a minha RE do `AddPlayer` (§22.2): o estado
+  vem de um cliente real, não de bytes sintéticos.
+- **Recomendação daquele RE (verbatim):** *"rodar a engine como 2º peer em loopback... é a única via realista
+  p/ o bot andar sem reimplementar a netcode da Serious Engine."* ⇒ **é exatamente o `hostmin` desta sessão**, que
+  PROVEI rodar (StartPeerToPeer + listen headless). O artefato que aquele RE apontou como "a alternativa" agora
+  EXISTE e roda.
+
+**Insumo consolidado (o que a meta pedia — "para termos insumos"):**
+1. Síntese server-side do combatente/HIT×N = **inviável** (2 REs convergem). Não perseguir.
+2. Peer de engine headless (2º cliente real em loopback) = **a única via** — e **roda** (`hostmin`).
+3. Muro final = **um ponto**: o `AddPlayer`/stream precisa do estado-de-cliente que só o connect real traz
+   (appearance `0x3636F760`; stream 0x0304→0x30a contíguo).
+
+**Integração p/ FECHAR (o "método p/ fechar" daquele RE, agora concreto):** redirecionar o tráfego de peer do
+bot (hoje o relay do servidor em `BotSessionConnect`/`UdpGameplay`) para o **endpoint UDP do `hostmin`** — o
+cliente humano passa a fazer o connect-stream contra a **engine real** do `hostmin` (não contra o eco de
+controle do servidor). Sinal de sucesso (daquele RE §7): o host **emitir 0x30a** (RX `0a03`) = gate aberto =
+bot combatente. Risco baixo: hoje o gate já não abre (bot é fantasma), então redirecionar não piora — só pode
+ABRIR. Lifecycle: servidor sobe o `hostmin` no início do stage + descobre a porta + redireciona o slot do bot.
+
+## 22.2b Fecho — os DOIS ramos do AddPlayer exigem estado de cliente real (path B não é atalho)
+O build-do-slot
 `0x36103230` bifurca em `[0x362ba778]+0x14`:
 - **`==0` (LOCAL, `0x3610371b`):** usa `[0x3636f260]`(CGame)→`vtable[+8]`→`[eax+0x470c]` + `[0x362ba778]+0x24`
   → precisa do **player-manager do CGame** (a init completa; `vtable+8` é o `ret`-stub sem o estado).
