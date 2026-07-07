@@ -317,7 +317,7 @@ namespace RakionServer.World
             if (now >= bot.NextFootMs) PickFootwork(bot, now);
             switch (bot.Foot)
             {
-                case BotPlayer.Footwork.Backstep: bot.RetreatFrom(ax, az, bot.Profile.MoveSpeed * 0.7f); break;
+                case BotPlayer.Footwork.Backstep: bot.RetreatFrom(ax, az, bot.Profile.MoveSpeed * 0.5f); break;
                 case BotPlayer.Footwork.Hold:     bot.HoldGround(ax, az); break;
                 default:                          bot.StrafeAround(ax, az, bot.StrafeDir, BotStrafeRing); break;
             }
@@ -330,14 +330,15 @@ namespace RakionServer.World
         /// </summary>
         private static void PickFootwork(BotPlayer bot, long now)
         {
+            // Durações LONGAS (menos trocas = menos stutter): o footwork muda a cada ~0.6–1.5s, não a cada 0.3s.
             int roll = bot.NextRoll();   // [0,100)
             long dur;
-            if (roll < 50) { bot.Foot = BotPlayer.Footwork.Strafe; dur = 550 + roll * 9; }              // circula ~0.55–1.0s
-            else if (roll < 82) { bot.Foot = BotPlayer.Footwork.Hold; dur = 350 + (roll - 50) * 8; }    // segura ~0.35–0.6s
-            else                                                                                         // recuo tático curto ~0.28–0.45s
+            if (roll < 62) { bot.Foot = BotPlayer.Footwork.Strafe; dur = 800 + roll * 12; }             // circula ~0.8–1.5s
+            else if (roll < 85) { bot.Foot = BotPlayer.Footwork.Hold; dur = 600 + (roll - 62) * 12; }   // settle/drift ~0.6–0.9s
+            else                                                                                         // recuo tático ~0.4–0.6s
             {
                 bot.Foot = BotPlayer.Footwork.Backstep;
-                dur = 280 + (roll - 82) * 10;
+                dur = 400 + (roll - 85) * 12;
                 bot.StrafeDir = (sbyte)-bot.StrafeDir;   // ao voltar do recuo, circula pro outro lado (finta)
             }
             bot.NextFootMs = now + dur;

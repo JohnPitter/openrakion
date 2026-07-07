@@ -331,13 +331,18 @@ namespace RakionServer.World.Domain
             Integrate(-ux * speed, -uz * speed);                              // move AO CONTRÁRIO do alvo
         }
 
-        /// <summary>Segura o chão: desacelera até parar (a velocidade decai pela aceleração do perfil), ENCARANDO o
-        /// alvo — o footwork "hold" (humano lê o oponente parado entre trocas). Sem deslize: keystate vira idle.</summary>
+        /// <summary>"Settle": em vez de TRAVAR seco (que a 10 Hz vira stutter / "erro de rede" no cliente), o bot
+        /// faz um DRIFT LENTO tangencial (leve reposicionamento de peso) ENCARANDO o alvo. O movimento fica sempre
+        /// contínuo → a interpolação do cliente não dá tranco. É o footwork "lê o oponente" sem congelar.</summary>
         public void HoldGround(float tx, float tz)
         {
             float dx = tx - X, dz = tz - Z;
-            if (dx * dx + dz * dz > 0.0001f) Yaw = MathF.Atan2(dx, dz) * (180f / MathF.PI);
-            Integrate(0f, 0f);
+            float dist = MathF.Sqrt(dx * dx + dz * dz);
+            if (dist > 0.01f) Yaw = MathF.Atan2(dx, dz) * (180f / MathF.PI);
+            if (dist < 0.01f) { Integrate(0f, 0f); return; }
+            float ux = dx / dist, uz = dz / dist;
+            float tanx = -uz * StrafeDir, tanz = ux * StrafeDir;          // drift tangencial lento (não congela)
+            Integrate(tanx * Profile.MoveSpeed * 0.18f, tanz * Profile.MoveSpeed * 0.18f);
         }
 
         /// <summary>Integra a velocidade atual rumo à desejada, limitada pela aceleração do perfil, e aplica à
