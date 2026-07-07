@@ -199,7 +199,8 @@ namespace RakionServer.World.Tests
             byte[] d = BotMovement.BuildCreateNpcDatagram(bot, BotMovement.NpcClassPlayer, bot.UdpSeq++, srcSlot: 0x0a);
 
             // [u16 0x8307 RELIABLE][u32 seq][u8 srcSlot][corpo: 28B header + 15B blob] = 50B. RE (rakion.bin):
-            // o dispatcher de create (HandleMessage) SÓ é alcançado pela via reliable — o create TEM de ser 0x8307.
+            // o dispatcher de create (HandleMessage) SÓ é alcançado pela via reliable — o create seria 0x8307.
+            // (O caminho NPC está DESLIGADO — UseNpcAvatar=false; o create fica pronto p/ o dia de um 2º cliente.)
             Assert.Equal(50, d.Length);
             Assert.Equal(0x07, d[0]); Assert.Equal(0x83, d[1]);    // msgType 0x8307 (LE) — RELIABLE (bit 0x8000 setado)
             Assert.Equal(7u, BitConverter.ToUInt32(d, 2));         // +02 seq

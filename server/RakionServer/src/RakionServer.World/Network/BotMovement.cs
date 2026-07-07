@@ -163,8 +163,16 @@ namespace RakionServer.World.Network
         /// (falhando o gate de endpoint do IsApplyReliableUDP). Ambos corrigidos: create 0x8307 + 0x319 no relay.
         /// Se o NPC nativo renderizar+for hittável → HIT×N de graça (cell-monster §5). Reverter = <c>false</c>
         /// (volta ao type-7 funcional). Ver docs/hitbox-re-findings.md §VIRADA.
+        ///
+        /// **DESLIGADO (decisão 2026-07-06): fica no type-7 FUNCIONAL.** A RE do §"FURO FINAL" provou que o
+        /// combatente-PLAYER nativo (HIT×N com cara de jogador) é ARQUITETURAL — a tabela de combate +0x1d20
+        /// nasce do join de SESSÃO da engine, que exige um peer de sessão REAL (2º cliente); impossível em
+        /// 1-cliente offline. O caminho NPC (este flag=true) faria o bot virar MONSTRO e arriscava não
+        /// renderizar. O type-7 entrega o bot jogável: anda + IA + colide + dano/morte/respawn + placar/vitória
+        /// (só falta o número do HIT×N no HUD, cosmético, atrás do muro arquitetural). Insumo p/ o dia de um
+        /// 2º cliente: docs/hitbox-re-findings.md (RVAs de IsApplyReliableUDP/HandleMessage/ChangeTeam/+0x1d20).
         /// </summary>
-        public static bool UseNpcAvatar => true;
+        public static bool UseNpcAvatar => false;
 
         /// <summary>
         /// Modo PONTE move-o-bot-por-SetPlacement (robótico/sem colisão): DESLIGADO. Com o NPC real, o movimento
