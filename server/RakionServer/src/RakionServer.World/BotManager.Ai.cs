@@ -258,7 +258,17 @@ namespace RakionServer.World
             {
                 if (now < bot.NextComboHitMs) return;
                 ushort[] pat = BotComboPatterns[pool[bot.ComboVariant % pool.Length]];
-                EmitBotAttack(rec, bot, pat[bot.ComboStep - 1]);
+                ushort actionId = pat[bot.ComboStep - 1];
+                EmitBotAttack(rec, bot, actionId);
+                // DANO bot→humano (server-side): o golpe do bot te acerta em alcance → HP virtual decrementa; ao
+                // zerar, o servidor te MATA via broadcast 0x4f (o MESMO caminho pelo qual o teu cliente já renderiza
+                // a morte do bot). É o bot "revidando" de verdade, sem depender do peer nativo.
+                int? deadHuman = f.ResolveHumanHitByBot(rec, actionId);
+                if (deadHuman is int hSeat)
+                {
+                    f.BroadcastField(0x4f, new byte[] { (byte)hSeat, 0, (byte)rec.Slot, f.Score0, f.Score1 });
+                    Log.Ok("bot", "field {0}: BOT seat {1} MATOU humano seat {2} (0x4f sintetizado)", f.Id, rec.Slot, hSeat);
+                }
                 bot.ComboStep++;
                 if (bot.ComboStep > pat.Length)   // combo terminou -> descansa
                 {

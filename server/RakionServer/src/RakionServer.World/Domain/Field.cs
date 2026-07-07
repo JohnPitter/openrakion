@@ -27,6 +27,13 @@ namespace RakionServer.World.Domain
         public float LastHeading;        // graus (do 0x30a) — direção que o humano OLHA; p/ o cone de acerto
         public long LastPositionMs;      // timestamp da última atualização de posição
 
+        /// <summary>HP VIRTUAL do humano no match (server-side) p/ o dano bot→humano: o HP real é client-authoritative
+        /// (o servidor não o vê), então rastreamos um HP paralelo; ao zerar pelos golpes do bot, o servidor sintetiza
+        /// a morte do humano (0x4f). Reset por round. 0 = ainda não inicializado (setado no 1º golpe/round).</summary>
+        public ushort MatchHp;
+        /// <summary>Throttle do último golpe do bot NESTE humano (TickCount64) — evita instakill por 0x311 repetidos.</summary>
+        public long LastBotHitMs;
+
         /// <summary>Velocidade estimada do alvo no plano XZ (coord/ms, suavizada por EMA) — derivada do delta
         /// entre 0x30a consecutivos. A IA do bot usa p/ ANTECIPAR (liderar a mira/perseguição); zero = parado.</summary>
         public float VelX, VelZ;
@@ -759,6 +766,47 @@ namespace RakionServer.World.Domain
 
             OnPlayerDeath(best.Slot, attackerSeat, cause);
             return best.Slot;
+        }
+
+        /// <summary>HP VIRTUAL inicial do humano p/ o dano do bot (server-side; o HP real é client-authoritative).</summary>
+        private const ushort HumanMatchHp = 400;
+
+        /// <summary>Alcance do golpe do BOT no humano (coord). O bot encara o alvo por construção (Yaw aponta ao
+        /// alvo), então basta o reach — sem cone. Um pouco maior que o anel de luta (2.6) p/ o golpe conectar.</summary>
+        private const float BotMeleeRange = 3.5f;
+
+        /// <summary>
+        /// Arbitra um golpe do BOT (<paramref name="botRec"/>, 0x0311) contra o humano-alvo dele. O dano ao humano é
+        /// server-side (o HP real é client-authoritative; rastreamos <see cref="PlayerRec.MatchHp"/> virtual). Em
+        /// alcance, aplica dano; ao zerar, SINTETIZA a morte do humano — broadcast 0x4f (killer = bot), o MESMO
+        /// caminho pelo qual o cliente já renderiza a morte do bot. Faz o bot ser uma AMEAÇA REAL (te mata), sem o
+        /// peer nativo. Devolve o seat do humano MORTO (p/ o chamador broadcastar o 0x4f) ou null.
+        /// </summary>
+        public int? ResolveHumanHitByBot(PlayerRec botRec, ushort actionId)
+        {
+            if (State != 2 || Phase == MatchPhase.Pre || Mode == 0) return null;
+            var bot = botRec.Bot;
+            if (bot == null) return null;
+            var h = RecAt(bot.TargetSeat);
+            if (h == null || h.IsBot || !h.Playing || h.Dead || h.LastPositionMs == 0) return null;
+            if (h.MatchHp == 0) h.MatchHp = HumanMatchHp;   // (re)inicializa ao entrar vivo no round/respawn
+
+            float dx = h.LastX - bot.X, dz = h.LastZ - bot.Z;
+            float d2 = dx * dx + dz * dz;
+            if (d2 > BotMeleeRange * BotMeleeRange) return null;   // fora do alcance do bot
+
+            long now = Environment.TickCount64;
+            if (now - h.LastBotHitMs < BotHitCooldownMs) return null;   // throttle anti-instakill
+            h.LastBotHitMs = now;
+
+            ushort dmg = MeleeDamageFor(actionId);
+            h.MatchHp = (ushort)Math.Max(0, h.MatchHp - dmg);
+            Log.Ok("combat", "field {0}: BOT seat {1} ACERTOU humano seat {2} -{3} (HP virtual {4}) dist={5:F1}{6}",
+                Id, botRec.Slot, h.Slot, dmg, h.MatchHp, MathF.Sqrt(d2), h.MatchHp == 0 ? " -> MORREU" : "");
+            if (h.MatchHp > 0) return null;
+
+            OnPlayerDeath(h.Slot, botRec.Slot, 0);   // morte do humano pelo bot (credita o bot + placar/round)
+            return h.Slot;
         }
 
         /// <summary>Dano de melee por actionId do 0x311 — PLACEHOLDER até a RE de arma/combo→dano (iteminfo, §11).
