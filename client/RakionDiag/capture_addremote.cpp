@@ -14,6 +14,7 @@
 // Uso: capture_addremote.exe [pid]   (sem pid: acha o 1o rakion.exe com engine.dll). Ctrl+C p/ sair.
 #include <windows.h>
 #include <tlhelp32.h>
+#include <psapi.h>
 #include <cstdio>
 #include <cstdint>
 #include <vector>
@@ -69,7 +70,8 @@ int main(int argc, char** argv)
     SetConsoleCtrlHandler(OnCtrlC, TRUE);
     EnableDebugPriv();
 
-    DWORD pid = (argc > 1) ? (DWORD)atoi(argv[1]) : FindGamePid();
+    DWORD pid = (argc > 1) ? (DWORD)atoi(argv[1]) : 0;
+    for (int i = 0; !pid && i < 20; i++) { pid = FindGamePid(); if (!pid) Sleep(500); }   // retry: engine.dll pode nao ter subido ainda
     if (!pid) { printf("[cap] nenhum rakion.exe com engine.dll encontrado (o jogo esta no stage?)\n"); return 1; }
     printf("[cap] alvo pid=%lu\n", pid);
 
@@ -77,12 +79,39 @@ int main(int argc, char** argv)
     if (!h) { printf("[cap] OpenProcess falhou err=%lu\n", GetLastError()); return 2; }
 
     // valida o prologo de AddRemotePlayer no alvo (engine.dll base fixa 0x36000000)
-    unsigned char cur[6];
+    unsigned char cur[16];
     SIZE_T rd;
-    if (!ReadProcessMemory(h, (void*)ADDREMOTE, cur, 6, &rd) || rd != 6) { printf("[cap] read do prologo falhou\n"); return 3; }
+    if (!ReadProcessMemory(h, (void*)ADDREMOTE, cur, 16, &rd) || rd < 6) { printf("[cap] read do prologo falhou\n"); return 3; }
     if (memcmp(cur, ORIG6, 6) != 0) {
-        printf("[cap] prologo inesperado: %02x %02x %02x %02x %02x %02x (esperava sub esp,0x9e8)\n",
-               cur[0], cur[1], cur[2], cur[3], cur[4], cur[5]);
+        // Prologo != original -> a função JÁ está hookada em runtime (jogo/anti-tamper). DIAGNÓSTICO READ-ONLY:
+        // segue o jmp, lê o destino e identifica o módulo dono — sem escrever nada.
+        printf("[cap] prologo JA HOOKADO em runtime: %02x %02x %02x %02x %02x %02x\n", cur[0], cur[1], cur[2], cur[3], cur[4], cur[5]);
+        FILE* dg = fopen("C:\\temp\\addremote_probe.log", "w");
+        fprintf(dg, "[probe] 0x%08lx (16B): ", ADDREMOTE);
+        for (int i = 0; i < 16; i++) fprintf(dg, "%02x ", cur[i]);
+        fprintf(dg, "\n");
+        if (cur[0] == 0xE9) {
+            int32_t rel = *(int32_t*)(cur + 1);
+            DWORD tgt = ADDREMOTE + 5 + rel;
+            fprintf(dg, "[probe] E9 jmp -> 0x%08lx\n", tgt);
+            // de quem é o destino?
+            MEMORY_BASIC_INFORMATION mbi;
+            if (VirtualQueryEx(h, (void*)tgt, &mbi, sizeof(mbi))) {
+                char modname[MAX_PATH] = {0};
+                GetModuleFileNameExA(h, (HMODULE)mbi.AllocationBase, modname, MAX_PATH);
+                fprintf(dg, "[probe] destino: AllocBase=%p State=%lx Type=%lx Protect=%lx  modulo='%s'\n",
+                        mbi.AllocationBase, mbi.State, mbi.Type, mbi.Protect, modname[0] ? modname : "(sem nome/memoria privada)");
+            }
+            unsigned char tb[48];
+            if (ReadProcessMemory(h, (void*)tgt, tb, 48, &rd)) {
+                fprintf(dg, "[probe] 0x%08lx (48B no destino): ", tgt);
+                for (int i = 0; i < 48; i++) fprintf(dg, "%02x ", tb[i]);
+                fprintf(dg, "\n");
+            }
+        }
+        fclose(dg);
+        printf("[cap] diagnostico read-only gravado em C:\\temp\\addremote_probe.log (nada foi escrito no jogo)\n");
+        CloseHandle(h);
         return 4;
     }
 
