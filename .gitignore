@@ -47,3 +47,4 @@ out/
 **/native/*.exe
 **/native/*.pdb
 engine_host.obj
+**/TestResults/
