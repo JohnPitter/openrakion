@@ -1,104 +1,105 @@
-# diag.ps1 — FAZ TUDO do diagnóstico do muro do HIT×N num comando só:
-#   1) compila a entitydiff.dll (x86)          2) garante Docker + MariaDB (rakion-db)
-#   3) sobe a stack de servidores              4) limpa dumps antigos
-#   5) abre a launcher com RAKION_DIAG_DLL      6) espera os 24 snapshots
-#   7) roda o diff (se você passar os seats)
+# diag.ps1 — diagnóstico do muro do HIT×N por LEITURA EXTERNA PURA (ReadProcessMemory).
+# NÃO injeta nada (injeção via LoadLibrary crasha o anti-tamper); só LÊ a memória do rakion.exe, como os
+# patches read/write da launcher que o anti-tamper permite. Resolve a entidade de cada slot replicando o
+# GetPlayerEntity @engine.dll 0x36121530 (puro read, cravado por disasm):
+#     pNet=[0x362ba778]; A=[pNet+0x18]; B=[A+0x10]; entry=B+slot*0x100; ent=[entry+4] (0 => slot vazio).
+# Dumpa o struct de cada slot em snapshots -> C:\temp\entdiff\pid<PID>\slotNN_snapSS.bin, e diffa
+# humano-peer vs bot (diff_entities.py).
 #
-# Uso:  .\diag.ps1                         (roda tudo; no fim mostra o comando do diff)
-#       .\diag.ps1 -HumanSeat 10 -BotSeat 11   (também roda o diff no fim)
-#       .\diag.ps1 -SkipServers            (pula Docker/stack — se já estão no ar)
+# Uso:  (com o(s) cliente(s) JÁ no stage, com o bot)
+#   .\diag.ps1                              # dumpa; no fim mostra o comando do diff
+#   .\diag.ps1 -HumanSeat 10 -BotSeat 11    # também roda o diff
 param(
     [int]$HumanSeat = -1,
     [int]$BotSeat   = -1,
-    [switch]$SkipServers,
-    [string]$Dll    = 'C:\temp\entitydiff.dll',
-    [string]$DbContainer = 'rakion-db',
-    [string]$GameDir = 'C:\Users\joaop\Desenvolvimento\Rakion\rakion-final'
+    [int]$Snapshots = 24,
+    [int]$IntervalMs = 2500,
+    [int]$EntBytes  = 0x2800,
+    [string]$DumpDir = 'C:\temp\entdiff'
 )
 $ErrorActionPreference = 'Stop'
-$here    = Split-Path -Parent $MyInvocation.MyCommand.Path
-$repo    = Resolve-Path (Join-Path $here '..\..')
-$dumpDir = 'C:\temp\entdiff'
+$here = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-function Step($n, $msg) { Write-Host "`n[$n] $msg" -ForegroundColor Cyan }
-
-# ---- 1) DLL ----
-Step 1 "Compilando a entitydiff.dll"
-& (Join-Path $here 'build.ps1') -ErrorAction Stop | Out-Host
-if (-not (Test-Path $Dll)) { throw "build falhou: $Dll não existe" }
-
-if (-not $SkipServers) {
-    # ---- 2) Docker + MariaDB ----
-    Step 2 "Garantindo Docker + MariaDB ($DbContainer)"
-    $dockerOk = $false
-    try { docker info 2>$null | Out-Null; $dockerOk = ($LASTEXITCODE -eq 0) } catch { $dockerOk = $false }
-    if (-not $dockerOk) {
-        Write-Host "  Docker parado — iniciando o Docker Desktop..." -ForegroundColor Yellow
-        $dd = "$env:ProgramFiles\Docker\Docker\Docker Desktop.exe"
-        if (Test-Path $dd) { Start-Process $dd | Out-Null }
-        for ($i = 0; $i -lt 60; $i++) {
-            Start-Sleep -Seconds 3
-            try { docker info 2>$null | Out-Null; if ($LASTEXITCODE -eq 0) { $dockerOk = $true; break } } catch {}
-        }
-        if (-not $dockerOk) { throw "Docker não subiu a tempo. Abra o Docker Desktop e rode de novo (ou -SkipServers)." }
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class Mem {
+    [DllImport("kernel32.dll", SetLastError=true)] public static extern IntPtr OpenProcess(uint a, bool i, int pid);
+    [DllImport("kernel32.dll", SetLastError=true)] public static extern bool ReadProcessMemory(IntPtr h, IntPtr addr, byte[] buf, int size, out IntPtr read);
+    [DllImport("kernel32.dll", SetLastError=true)] public static extern bool CloseHandle(IntPtr h);
+    const uint PROCESS_VM_READ = 0x0010, PROCESS_QUERY_INFORMATION = 0x0400;
+    public static IntPtr Open(int pid){ return OpenProcess(PROCESS_VM_READ|PROCESS_QUERY_INFORMATION, false, pid); }
+    public static uint RU(IntPtr h, uint addr){
+        byte[] b = new byte[4]; IntPtr n;
+        if (!ReadProcessMemory(h, (IntPtr)addr, b, 4, out n) || (int)n != 4) return 0;
+        return BitConverter.ToUInt32(b,0);
     }
-    $running = (docker ps --filter "name=$DbContainer" --format "{{.Names}}") -match $DbContainer
-    if (-not $running) { Write-Host "  subindo $DbContainer..." -ForegroundColor Yellow; docker start $DbContainer | Out-Null }
-    Write-Host "  MariaDB OK" -ForegroundColor Green
+    // resolve a entidade do slot (cadeia do GetPlayerEntity@0x36121530). 0 = slot vazio/erro.
+    public static uint SlotEntity(IntPtr h, int slot){
+        uint pNet = RU(h, 0x362ba778); if (pNet==0) return 0;
+        uint A = RU(h, pNet + 0x18);   if (A==0) return 0;
+        uint B = RU(h, A + 0x10);      if (B==0) return 0;
+        uint entry = B + (uint)slot*0x100;
+        if (RU(h, entry) == 0) return 0;    // primeiro campo 0 = slot sem player
+        return RU(h, entry + 4);            // CEntity*
+    }
+    public static byte[] Read(IntPtr h, uint addr, int len){
+        byte[] b = new byte[len]; IntPtr n;
+        ReadProcessMemory(h, (IntPtr)addr, b, len, out n);   // páginas ilegíveis ficam 0 (parcial ok)
+        return b;
+    }
+}
+"@
 
-    # ---- 3) stack de servidores ----
-    Step 3 "Subindo a stack de servidores"
-    & (Join-Path $repo 'server\RakionServer\start-stack.ps1') | Out-Host
-    Start-Sleep -Seconds 3
-} else {
-    Write-Host "`n[2-3] -SkipServers: assumindo Docker/MariaDB/stack já no ar." -ForegroundColor DarkGray
+# 1) acha o(s) rakion.exe (cada cliente é um processo; dumpa de todos — algum enxerga humano-peer + bot)
+$procs = @(Get-Process rakion -ErrorAction SilentlyContinue)
+if ($procs.Count -eq 0) { throw "rakion.exe não está rodando. Abra o(s) cliente(s), entre no STAGE com o bot, e rode de novo." }
+Write-Host "rakion.exe: $($procs.Count) processo(s) -> PIDs $($procs.Id -join ', ')" -ForegroundColor Cyan
+
+# 2) limpa dumps antigos
+if (Test-Path $DumpDir) { Remove-Item "$DumpDir\*" -Recurse -Force -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Force $DumpDir | Out-Null
+
+# 3) snapshots
+Write-Host "Dumpando $Snapshots snapshots a cada ${IntervalMs}ms. Mantenha o stage ativo (parado, andando, batendo)." -ForegroundColor Cyan
+for ($snap = 0; $snap -lt $Snapshots; $snap++) {
+    foreach ($p in $procs) {
+        $h = [Mem]::Open($p.Id)
+        if ($h -eq [IntPtr]::Zero) { continue }
+        try {
+            $pidDir = Join-Path $DumpDir ("pid{0}" -f $p.Id)
+            New-Item -ItemType Directory -Force $pidDir | Out-Null
+            $occ = @()
+            for ($slot = 0; $slot -lt 20; $slot++) {
+                $ent = [Mem]::SlotEntity($h, $slot)
+                if ($ent -eq 0) { continue }
+                $bytes = [Mem]::Read($h, $ent, $EntBytes)
+                [System.IO.File]::WriteAllBytes((Join-Path $pidDir ("slot{0:D2}_snap{1:D2}.bin" -f $slot, $snap)), $bytes)
+                $occ += ("{0}(0x{1:X8})" -f $slot, $ent)
+            }
+            if ($snap -eq 0) { Write-Host ("  PID {0}: slots com entidade = {1}" -f $p.Id, ($(if($occ){$occ -join ' '}else{'(nenhum — entrou no stage?)'}))) -ForegroundColor DarkGray }
+        } finally { [void][Mem]::CloseHandle($h) }
+    }
+    Start-Sleep -Milliseconds $IntervalMs
+}
+Write-Host "Dumps prontos em $DumpDir." -ForegroundColor Green
+
+# 4) diff (por PID — o cliente certo é o que tem AMBOS os seats)
+function Run-Diff($h, $b) {
+    Get-ChildItem $DumpDir -Directory | ForEach-Object {
+        $dir = $_.FullName
+        $hasH = Test-Path (Join-Path $dir ("slot{0:D2}_snap00.bin" -f $h))
+        $hasB = Test-Path (Join-Path $dir ("slot{0:D2}_snap00.bin" -f $b))
+        Write-Host "`n== $($_.Name): humano seat $h $(if($hasH){'OK'}else{'FALTA'}), bot seat $b $(if($hasB){'OK'}else{'FALTA'}) ==" -ForegroundColor Cyan
+        if ($hasH -and $hasB) { python (Join-Path $here 'diff_entities.py') $dir $h $b }
+        else { Write-Host "  (esse cliente não vê os dois seats como entidade — pule)" -ForegroundColor DarkGray }
+    }
 }
 
-# ---- 4) limpa dumps antigos ----
-Step 4 "Limpando dumps antigos em $dumpDir"
-if (Test-Path $dumpDir) { Remove-Item "$dumpDir\*" -Force -ErrorAction SilentlyContinue }
-New-Item -ItemType Directory -Force $dumpDir | Out-Null
-
-# ---- 5) launcher com a env ----
-Step 5 "Abrindo a launcher com RAKION_DIAG_DLL"
-$launcher = @(
-    Join-Path $here '..\RakionLauncher\bin\Debug\net9.0-windows\RakionLauncher.exe'
-    Join-Path $here '..\RakionLauncher\bin\Release\net9.0-windows\RakionLauncher.exe'
-) | Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $launcher) { throw "RakionLauncher.exe não achado — 'dotnet build client\RakionLauncher' antes." }
-# a launcher (fora da pasta do jogo) acha o rakion.exe pela env RAKION_DIR
-if (-not (Test-Path (Join-Path $GameDir 'Bin\rakion.exe'))) {
-    throw "rakion.exe não achado em $GameDir\Bin — passe -GameDir com a pasta real do jogo (a que tem \Bin\rakion.exe)."
-}
-$env:RAKION_DIR = $GameDir
-$env:RAKION_DIAG_DLL = $Dll
-Write-Host "  RAKION_DIR      = $GameDir" -ForegroundColor Green
-Write-Host "  RAKION_DIAG_DLL = $Dll" -ForegroundColor Green
-Start-Process -FilePath (Resolve-Path $launcher) | Out-Null
-Write-Host @"
-  -> Lance o cliente HOST pela launcher (injeção automática; status 'diag: injeção precoce agendada').
-     No jogo: cria sala -> 2o humano entra -> /addbot -> STAGE -> fique ~1 min (parado, andando, batendo).
-"@ -ForegroundColor White
-
-# ---- 6) espera os snapshots ----
-Step 6 "Aguardando os 24 snapshots (C:\temp\entdiff\done.txt) — Ctrl+C aborta"
-$deadline = (Get-Date).AddMinutes(15)
-while (-not (Test-Path "$dumpDir\done.txt") -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 3 }
-if (Test-Path "$dumpDir\done.txt") {
-    $bins = (Get-ChildItem "$dumpDir\slot*_snap*.bin" -ErrorAction SilentlyContinue).Count
-    Write-Host "  Concluído — $bins dumps." -ForegroundColor Green
-    if (Test-Path "$dumpDir\entitydiff.log") { Get-Content "$dumpDir\entitydiff.log" -Tail 6 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray } }
-} else {
-    Write-Host "  Timeout/abort: done.txt não apareceu. Veja $dumpDir\entitydiff.log." -ForegroundColor Yellow
-    return
-}
-
-# ---- 7) diff ----
-Step 7 "Diff humano vs bot"
 if ($HumanSeat -ge 0 -and $BotSeat -ge 0) {
-    python (Join-Path $here 'diff_entities.py') $dumpDir $HumanSeat $BotSeat
+    Run-Diff $HumanSeat $BotSeat
 } else {
-    Write-Host "  Pegue os seats no worldserver.log (host=0) e rode:" -ForegroundColor Cyan
-    Write-Host "    python `"$(Join-Path $here 'diff_entities.py')`" $dumpDir <seat_humano> <seat_bot>" -ForegroundColor White
-    Write-Host "  (ou rode de novo: .\diag.ps1 -SkipServers -HumanSeat <h> -BotSeat <b>)" -ForegroundColor DarkGray
+    Write-Host "`nPegue os seats no worldserver.log (host=0; humano-peer e bot) e rode:" -ForegroundColor Cyan
+    Write-Host "  .\diag.ps1 -HumanSeat <h> -BotSeat <b>   (re-dumpa e diffa)" -ForegroundColor White
+    Write-Host "  ou o diff direto num pidNN:  python .\diff_entities.py $DumpDir\pid<PID> <h> <b>" -ForegroundColor White
 }
