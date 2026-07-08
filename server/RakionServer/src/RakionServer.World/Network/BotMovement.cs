@@ -181,6 +181,14 @@ namespace RakionServer.World.Network
         public static bool UseClientBridge => false;
 
         /// <summary>
+        /// Envia o lockstep de sessão `0x0304` do bot (opens/pushes). HIPÓTESE 2026-07-08: o `0x0304` sintetizado
+        /// DESSINCRONIZA o gamestream confiável do cliente (o stream de ALLACTIONS em lockstep) → o combate congela
+        /// para TODOS quando o bot entra ("ninguém fica hitável"). Teste A/B: com FALSE o bot segue visível/andando
+        /// (0x4b/0x30a não dependem disto); se o combate 2-humanos parar de quebrar, o `0x0304` era o corruptor.
+        /// </summary>
+        public static bool BotSessionLockstepEnabled => false;
+
+        /// <summary>
         /// Datagrama 0x307 CreateNpc completo (50B): <c>[u16 0x0307][u32 seq][u8 srcSlot][corpo 43B]</c> — UNRELIABLE.
         /// O CORPO (43B) é a estrutura GOLDEN das 6 capturas reais de Cell; só o TRANSPORTE muda p/ unreliable: o
         /// dispatch do cliente é por-opcode (mascara 0x8000) e o create <c>0x0307</c> cai no mesmo handler

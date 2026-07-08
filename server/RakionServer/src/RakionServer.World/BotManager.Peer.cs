@@ -60,6 +60,7 @@ namespace RakionServer.World
         /// </summary>
         private void EnsureBotLockstep(Domain.Field f, PlayerRec rec, BotPlayer bot, long now)
         {
+            if (!Network.BotMovement.BotSessionLockstepEnabled) return;   // A/B: o 0x0304 do bot dessincroniza o gamestream do cliente? (ver flag)
             EnsureBotUdpSocket(bot);
             var link = LinkOf(bot);
             var sock = link.UdpSocket;
