@@ -149,6 +149,12 @@ namespace RakionServer.World.Network
             if (_sock == null) return;
             // slot do bot = srcSlot do header (offset 6) dos 0x30a/0x030f — usado p/ registrar o endpoint.
             byte botSlot = pkt.Length > 6 ? pkt[6] : (byte)0xff;
+            // Canal de lockstep 0x0304 (open/push) é PAREADO: entrega SÓ ao humano do dstSeat (byte 7 — no
+            // 0x0305 os bytes 6/7 são do ACKER, não roteáveis). Broadcast cruzava os canais (o master recebia
+            // o open endereçado ao joiner e vice-versa) — entre 2 humanos o relay natural nunca faz isso
+            // (exclui o sender e sobra só o par certo).
+            bool paired = pkt.Length >= 12 && pkt[1] == 0x03 && pkt[0] == 0x04;
+            byte dstSeat = paired ? pkt[7] : (byte)0xff;
             int n = 0;
             foreach (var sess in _world.Sessions)
             {
@@ -156,6 +162,7 @@ namespace RakionServer.World.Network
                 if (sess.UdpEndpoint.Equals(from)) continue;   // não ecoa ao sender
                 var f = _world.GetField(sess.FieldId);
                 if (f == null || f.BotCount == 0) continue;    // só fields com bots
+                if (paired && f.FindRec(sess)?.Slot != dstSeat) continue;   // canal pareado: só o par certo
                 // Registra o endpoint do bot (0x319) no cliente ANTES do 0x30a: faz o cliente gravar o socket do
                 // servidor como endpoint do slot do bot, destravando o gate de movimento (IsValidUDP_ForPlayer).
                 if (botSlot != 0xff) EnsureBotEndpointRegistered(sess.UdpEndpoint, botSlot);
@@ -350,12 +357,15 @@ namespace RakionServer.World.Network
                 return;
             }
 
-            // NETCODE da SESSÃO P2P da engine + 0x30a/0x030f gameplay + estado reliable entre peers
-            // (0x830c alive-flag/âncora, 0x8313 — família do canal; sem rota própria o 23B do bot caía no
-            // parse de ping). O 0x8315 de 8B já tem trilha própria (feedback 1583) acima.
-            if (WireFrames.IsReliableFrame(pkt) ||
-                (pkt.Length >= 2 && pkt[1] == 0x03 && (pkt[0] == 0x0a || pkt[0] == 0x0f)) ||
-                (pkt.Length >= 2 && pkt[1] == 0x83 && (pkt[0] == 0x0c || pkt[0] == 0x13)))
+            // NETCODE da SESSÃO P2P da engine: TODA a família de gameplay 0x03xx/0x83xx (0x83xx = 0x03xx com o
+            // bit de entrega reliable) é RELAY INTACTO — o papel do worldserv original. A whitelist antiga
+            // (0x30a/0x30f/0x830c/0x8313) DROPAVA o resto no parse de ping: o 0x8312 (estado/time do player
+            // novo, emitido quando um 3º peer registra) nunca chegava ao outro humano -> nunca ackeado ->
+            // retransmitido 1x/s p/ sempre -> a ativação de combate não completava ("ninguém se hita" com o
+            // bot presente; sem bot o 0x8312 nem existe). Exceções com trilha própria ANTES deste bloco:
+            // input 0x0040, feedback 1583 (0x8315 8B), 0x030d, lockstep 0x0304/0x0305/0x0319, NPC 0x07/0x0b.
+            // O 0x0311 (ataque) fica FORA (pkt[0] != 0x11): tem arbitragem própria no bloco abaixo.
+            if (pkt.Length >= 7 && (pkt[1] == 0x03 || pkt[1] == 0x83) && pkt[0] != 0x11)
             {
                 ushort mt = pkt.Length >= 2 ? (ushort)(pkt[0] | (pkt[1] << 8)) : (ushort)0;
                 Log.Ok("udp", "GAMEPLAY RX {0}B type=0x{1:X4} de {2} data={3}", pkt.Length, mt, from, Convert.ToHexString(pkt[..Math.Min(32, pkt.Length)]));
