@@ -473,28 +473,34 @@ namespace RakionServer.World.Network
         /// captura era de OUTRO mapa e ancorava o corpo físico da entidade promovida longe do modelo visual
         /// ("parede invisível"). Ordem dos floats: [ground X][ground Z][altura] (captura: 97,97,0). Decode §1.1.
         /// </summary>
-        public static byte[] BuildStageAddPlayer(BotPlayer bot, int seat)
+        /// <summary>Blob REAL de um CPlayerCharacter capturado in-game (hook externo em AddRemotePlayer, 2 humanos
+        /// no stage) — 67B que o cliente aceita como COMBATENTE válido (2 humanos se acertam). Usado como TEMPLATE
+        /// golden: o servidor patcha só a posição (o resto — appearance/stats/template — vem do dado real, não de
+        /// constantes inventadas que criavam entidade malformada = combate quebrando p/ todos). docs §22.8/22.9.</summary>
+        private static readonly byte[] RealCharBlob = {
+            0x08, 0x00,0x00,0x02,0x43, 0x00,0x00,0x02,0x43, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,
+            0x1f,0x00,0x00,0x00, 0x01,0x00,0x00,0x00, 0x00, 0x00,0x00,0x02,0x43, 0x00,0x00,0x02,0x43,
+            0x48,0xe1,0x7a,0x3f, 0x3c,0x00,0x00,0x00, 0x50,0x00,0x00,0x00, 0x78,0x00,0x00,0x00,
+            0x64,0x00,0x00,0x00, 0x04,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+        };
+
+        public static byte[] BuildStageAddPlayer(BotPlayer bot, int seat) =>
+            BuildStageBlob(seat, bot.X, bot.Y, bot.Z);
+
+        /// <summary>Monta [seat][67][blob], partindo do <see cref="RealCharBlob"/> golden e patchando SÓ a posição
+        /// (ground +0x01/+0x05/+0x09 e anchor +0x1a/+0x1e). Mantém appearance/stats/template do dado real.</summary>
+        private static byte[] BuildStageBlob(int seat, float x, float y, float z)
         {
+            var blob = (byte[])RealCharBlob.Clone();
+            BinaryPrimitives.WriteSingleLittleEndian(blob.AsSpan(0x01), x);   // ground X
+            BinaryPrimitives.WriteSingleLittleEndian(blob.AsSpan(0x05), z);   // ground Z
+            BinaryPrimitives.WriteSingleLittleEndian(blob.AsSpan(0x09), y);   // altura
+            BinaryPrimitives.WriteSingleLittleEndian(blob.AsSpan(0x1a), x);   // anchor X
+            BinaryPrimitives.WriteSingleLittleEndian(blob.AsSpan(0x1e), z);   // anchor Z
             using var w = new PacketWriter();
-            w.WriteByte((byte)seat);          // seat/senderSlot (distingue qual avatar)
-            w.WriteWord(67);                  // blobLen = 0x0043
-            w.WriteByte(StageSpawnLead);      // +00 lead
-            w.WriteSingle(bot.X);             // +01 ground X REAL do spawn do bot
-            w.WriteSingle(bot.Z);             // +05 ground Z REAL
-            w.WriteSingle(bot.Y);             // +09 altura (0 no chão — captura: 3º float = 0)
-            w.WriteSingle(0f);                // +0d 4o float do 1o bloco
-            w.WriteUInt32(StageSpawnAnimId);  // +11 id/anim
-            w.WriteUInt32(1);                 // +15 flag (ativo/visivel)
-            w.WriteByte(0);                   // +19 pad de alinhamento
-            w.WriteSingle(bot.X);             // +1a anchor X = posição atual (spawn parado)
-            w.WriteSingle(bot.Z);             // +1e anchor Z
-            w.WriteSingle(StageSpawnFacing);  // +22 facing/escala
-            w.WriteUInt32(90);                // +26 statA (captura)
-            w.WriteUInt32(100);               // +2a statB
-            w.WriteUInt32(110);               // +2e statC
-            w.WriteUInt32(100);               // +32 statD
-            w.WriteUInt32(15);                // +36 statE
-            w.WriteBytes(new byte[9]);        // +3a pad final (zeros) -> fecha 67
+            w.WriteByte((byte)seat);
+            w.WriteWord(67);
+            w.WriteBytes(blob);
             return w.ToArray();
         }
 
