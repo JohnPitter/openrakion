@@ -12,33 +12,34 @@ mesmo `0x4b`. A diferença tem de estar num campo da entidade do bot (team/alive
 
 ## Passos
 
-1. **Compilar a DLL** (x86; ajuste o caminho do vcvars em `build.bat` se necessário):
-   ```
-   client\RakionDiag\build.bat
-   ```
-   Gera `C:\temp\entitydiff.dll`.
+Tudo pela launcher via um script só. Do diretório `client\RakionDiag`:
 
-2. **Subir os servidores** normalmente (`start-stack.ps1`), Docker/MariaDB no ar.
+1. **Subir os servidores** normalmente (`start-stack.ps1`), Docker/MariaDB no ar.
 
-3. **Lançar os 2 clientes pela launcher COM a env var** apontando pra DLL — a injeção é precoce (no launch
-   suspenso, antes do anti-tamper armar). Ao menos o cliente do **HOST** precisa dela:
+2. **Rodar o diagnóstico** (compila a DLL se faltar, limpa dumps antigos, abre a launcher já com a env
+   `RAKION_DIAG_DLL` setada — a injeção é precoce, no launch suspenso, antes do anti-tamper armar):
    ```powershell
-   $env:RAKION_DIAG_DLL = "C:\temp\entitydiff.dll"
-   # abra a launcher NESTE terminal (pra herdar a env) e lance o cliente HOST
+   .\run-diag.ps1
    ```
-   A launcher mostra `diag: injeção precoce agendada (entitydiff.dll)` no status quando pega.
+   Lance o cliente **HOST** pela launcher que abriu (a injeção é automática; o status mostra
+   `diag: injeção precoce agendada`). O script espera os snapshots terminarem.
 
-4. **No jogo**: host cria a sala, o 2º humano entra, host dá `/addbot`, entrem no **stage** e **fiquem ~1
+3. **No jogo**: host cria a sala, o 2º humano entra, host dá `/addbot`, entrem no **stage** e **fiquem ~1
    minuto** (parados, andando e trocando golpes — o dump roda 24 snapshots a cada 2.5s).
 
-5. **Anote os seats** do log do servidor (`worldserver.log`): quem é o **humano-peer** (ex.: seat 10) e o
-   **bot** (ex.: seat 11). O host é seat 0.
+4. **Anote os seats** do `worldserver.log`: o **humano-peer** (ex.: seat 10) e o **bot** (ex.: seat 11).
+   O host é seat 0.
 
-6. **Diffar** (do lado do host, que é quem enxerga os dois como remotos):
+5. **Diffar** — ou passe os seats direto ao script (ele roda o diff no fim):
+   ```powershell
+   .\run-diag.ps1 -HumanSeat 10 -BotSeat 11
    ```
-   python client\RakionDiag\diff_entities.py C:\temp\entdiff 10 11
+   Ou, com os dumps já coletados, só o diff:
+   ```powershell
+   python .\diff_entities.py C:\temp\entdiff 10 11
    ```
-   (troque 10/11 pelos seats reais do humano-peer e do bot).
+
+> Só compilar a DLL, sem rodar: `.\build.ps1` (gera `C:\temp\entitydiff.dll`). Outro VS: `.\build.ps1 -Vcvars "<caminho\vcvarsall.bat>"`.
 
 ## Ler o resultado
 
