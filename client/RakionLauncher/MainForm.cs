@@ -182,6 +182,8 @@ internal sealed class MainForm : Form
                 WindowMode.PatchWindowedMode(pid);      // windowed real (não troca a resolução do desktop)
                 WindowMode.PatchNoDisplayReset(pid);    // não re-inicializa o display ao restaurar de minimizado
             }
+            var diag = DiagInject.MaybeInject(pid, hThread);   // RE/diagnóstico DEV opt-in (RAKION_DIAG_DLL); no-op sem a env
+            if (diag != null) Status(diag, false);
             GameLauncher.Resume(hThread);
 
             int w = _settings.ScreenWidth, h = _settings.ScreenHeight;   // alvo do framing = resolução escolhida
