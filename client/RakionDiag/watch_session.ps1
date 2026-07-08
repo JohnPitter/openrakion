@@ -36,8 +36,28 @@ public static class RkDiagMem {
 "@
 }
 
-$procs = @(Get-Process rakion -ErrorAction SilentlyContinue)
-if ($procs.Count -eq 0) { throw "rakion.exe não está rodando. Entre no stage e rode de novo." }
+# ESPERA o jogo entrar num stage (pode rodar o script antes de abrir/entrar na partida)
+function StageReady($procList) {
+    foreach ($pp in $procList) {
+        $hh = [RkDiagMem]::Open($pp.Id); if ($hh -eq [IntPtr]::Zero) { continue }
+        try {
+            $pn = [RkDiagMem]::RU($hh, 0x362ba778); if ($pn -eq 0) { continue }
+            $aa = [RkDiagMem]::RU($hh, $pn + 0x18);  if ($aa -eq 0) { continue }
+            $bb = [RkDiagMem]::RU($hh, $aa + 0x10);  if ($bb -eq 0) { continue }
+            for ($s=0; $s -lt 20; $s++) { if ([RkDiagMem]::RU($hh, $bb + [uint32]$s*0x100 + 4) -ne 0) { return $true } }
+        } finally { [void][RkDiagMem]::CloseHandle($hh) }
+    }
+    return $false
+}
+Write-Host "Aguardando o jogo entrar num STAGE (abra os clientes e entre na partida)..." -ForegroundColor Cyan
+$procs = @(); $deadline = (Get-Date).AddMinutes(20)
+while ((Get-Date) -lt $deadline) {
+    $procs = @(Get-Process rakion -ErrorAction SilentlyContinue)
+    if ($procs.Count -gt 0 -and (StageReady $procs)) { break }
+    Start-Sleep -Seconds 2
+}
+if ($procs.Count -eq 0 -or -not (StageReady $procs)) { throw "Nenhum rakion.exe num stage após a espera." }
+Write-Host "Stage detectado — PIDs $($procs.Id -join ', ')" -ForegroundColor Green
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 
 # escolhe o cliente do HOST (o que enxerga mais players remotos): mais entidades de slot com [entry+4].
