@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -266,6 +267,30 @@ namespace RakionServer.World.Network
             return _world.GetSession(slot) ?? _world.GetSessionByIp(from.Address.ToString());  // solo/legado
         }
 
+        // ---- hub do canal reliable P2P (0x0304 push / 0x0305 ack): token -> seat do PUSHER ----
+        private const byte PusherBot = 0xFE;
+        private const byte PusherUnknown = 0xFF;
+
+        /// <summary>Tokens dos pushes 0x0304 em trânsito (o ack 0x0305 ecoa o token em [8..11]). Devolve o
+        /// ack ao pusher certo; push do BOT (já ackeado pelo servidor) marca o token p/ consumir o ack.</summary>
+        private readonly Dictionary<uint, byte> _pushTokens = new();
+
+        private void RecordPushToken(byte[] pkt, byte pusherSeat)
+        {
+            if (pkt.Length < 12) return;
+            uint token = BinaryPrimitives.ReadUInt32LittleEndian(pkt.AsSpan(8));
+            lock (_pushTokens)
+            {
+                if (_pushTokens.Count > 8192) _pushTokens.Clear();   // cap de memória; canal re-sincroniza por retransmissão
+                _pushTokens[token] = pusherSeat;
+            }
+        }
+
+        private byte LookupPushToken(uint token)
+        {
+            lock (_pushTokens) return _pushTokens.TryGetValue(token, out byte seat) ? seat : PusherUnknown;
+        }
+
         /// <summary>Nome legível do frame p/ o rastro de jornada (só diagnóstico).</summary>
         private static string FrameName(ushort t) => t switch
         {
@@ -336,32 +361,66 @@ namespace RakionServer.World.Network
             if (pkt.Length >= 2 && pkt[0] == 0x0d && pkt[1] == 0x03) { Journey(_jt, from, "CONSUMIDO (keepalive)"); return; }
 
             // LOCKSTEP de sessão P2P (0x0304 open/push, 0x0305 ack) — dialeto REAL da captura de 2 humanos
-            // (docs/p2p-handshake-groundtruth.txt l.12-23; codec BotLockstep). O host abre/re-pusha o stream
-            // dele PARA O BOT neste socket (o 0x319 registrou o servidor como endpoint do bot). O servidor faz
-            // as duas pontas no lugar do bot: (a) ACKeia o push do host com o formato exato do joiner (bytes
-            // 6/7 = seat do ACKER — o eco-clone antigo mantinha os seats do host, o host descartava e re-pushava
-            // a cada 5s); (b) relaya ao host os opens/pushes que o BOT origina do socket dedicado (41xxx).
+            // (docs/p2p-handshake-groundtruth.txt l.12-23; codec BotLockstep). TODO o P2P transita pelo
+            // servidor (rastro de jornada: zero tráfego direto), então o servidor é o HUB do canal:
+            //  - push p/ um BOT   -> ACKeia no lugar dele (formato do joiner: bytes 6/7 = seat do ACKER);
+            //  - push p/ um HUMANO -> ENTREGA ao seat de destino (byte 7) e grava token->pusher;
+            //  - ack de um humano -> devolve ao PUSHER dono do token ecoado (bytes 8..11); token de push
+            //    do bot -> consome (já ackeado aqui). Sem essa volta o remetente re-transmitia o estado
+            //    reliable (0x8312 1x/s p/ sempre) e a ativação de combate nunca completava.
             if (pkt.Length >= 2 && pkt[1] == 0x03 && (pkt[0] == 0x04 || pkt[0] == 0x05 || pkt[0] == 0x19))
             {
-                if (from.Port >= BotUdpPortBase) { Journey(_jt, from, "relay BOT->humanos (lockstep do bot)"); RelayToAllFields(pkt, from); return; }
+                if (from.Port >= BotUdpPortBase)
+                {
+                    if (pkt[0] == 0x04) RecordPushToken(pkt, PusherBot);   // ack do humano a este push -> consumir
+                    int nb = RelayToAllFields(pkt, from);
+                    Journey(_jt, from, $"lockstep do BOT -> {nb} humano(s) (roteado por dstSeat)");
+                    return;
+                }
                 var ls = ResolveSender(from);
                 var lf = ls != null ? _world.GetField(ls.FieldId) : null;
                 byte dst = pkt.Length >= 8 ? BotLockstep.DstSeat(pkt) : (byte)0xff;
-                if (BotLockstep.IsPush(pkt) && lf != null && lf.RecAt(dst)?.IsBot == true)
+                if (BotLockstep.IsPush(pkt) && lf != null)
                 {
-                    try { _sock!.SendTo(BotLockstep.BuildAck(pkt, dst), from); } catch { }
-                    Journey(_jt, from, $"host seat {ls?.FieldSeat ?? 0xff} -> BOT seat {dst}: ACKEADO no lugar do bot (seq={BinaryPrimitives.ReadUInt32LittleEndian(pkt.AsSpan(2))})");
+                    var dstRec = lf.RecAt(dst);
+                    if (dstRec?.IsBot == true)
+                    {
+                        try { _sock!.SendTo(BotLockstep.BuildAck(pkt, dst), from); } catch { }
+                        Journey(_jt, from, $"PUSH humano seat {ls?.FieldSeat ?? 0xff} -> BOT seat {dst}: ACKEADO no lugar do bot (seq={BinaryPrimitives.ReadUInt32LittleEndian(pkt.AsSpan(2))})");
+                        return;
+                    }
+                    var dstSess = dstRec?.Session;
+                    if (dstSess?.UdpEndpoint != null && ls != null)
+                    {
+                        RecordPushToken(pkt, ls.FieldSeat);
+                        EnsureBotEndpointRegistered(dstSess.UdpEndpoint, ls.FieldSeat);   // server = peer[sender] no receptor
+                        try { _sock!.SendTo(pkt, dstSess.UdpEndpoint); } catch { }
+                        Journey(_jt, from, $"PUSH humano seat {ls.FieldSeat} -> humano seat {dst}: ENTREGUE (canal reliable)");
+                        return;
+                    }
+                    Journey(_jt, from, $"PUSH humano seat {ls?.FieldSeat ?? 0xff} -> seat {dst}: DROP (sem destino no field)");
                     return;
                 }
-                // Lockstep de um HUMANO (push p/ outro humano OU ack). HOJE não é relayado — só instrumentado
-                // p/ o diagnóstico saber se esse tráfego chega ao servidor e p/ quem vai (dst do push; no ack
-                // o byte 7 é o seat do ACKER, não roteável). Candidato ao muro se o stream P2P reliable entre
-                // humanos passar por aqui e morrer.
-                bool isPush = pkt[0] == 0x04;
-                var dstRec = lf?.RecAt(dst);
-                string alvo = dstRec == null ? "?" : dstRec.IsBot ? $"BOT seat {dst}" : $"humano seat {dst}";
-                Journey(_jt, from, $"CONSUMIDO (lockstep {(isPush ? "push" : "ack")} do humano seat {ls?.FieldSeat ?? 0xff} " +
-                    $"{(isPush ? $"-> {alvo}" : "(acker)")} — NÃO relayado)");
+                if (pkt[0] == 0x05 && pkt.Length >= 12 && lf != null)
+                {
+                    uint token = BinaryPrimitives.ReadUInt32LittleEndian(pkt.AsSpan(8));
+                    byte pusher = LookupPushToken(token);
+                    if (pusher != PusherBot && pusher != PusherUnknown)
+                    {
+                        var pSess = lf.RecAt(pusher)?.Session;
+                        if (pSess?.UdpEndpoint != null)
+                        {
+                            try { _sock!.SendTo(pkt, pSess.UdpEndpoint); } catch { }
+                            Journey(_jt, from, $"ACK do humano seat {ls?.FieldSeat ?? 0xff} -> pusher humano seat {pusher}: ENTREGUE");
+                            return;
+                        }
+                    }
+                    Journey(_jt, from, pusher == PusherBot
+                        ? "ACK ao push do BOT: consumido (push já ackeado em nome do bot)"
+                        : "ACK token desconhecido: consumido");
+                    return;
+                }
+                Journey(_jt, from, $"lockstep 0x03{pkt[0]:X2} do humano seat {ls?.FieldSeat ?? 0xff}: consumido (sem rota)");
                 return;
             }
 
