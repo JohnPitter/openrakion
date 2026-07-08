@@ -950,3 +950,31 @@ em memória a entidade-humano (combatível) vs a entidade-bot (fantasma)** — a
 `[+0x4854+seat*4]`. O campo que difere (alive/team/HP/`CPlayerSource`-connected) é o alvo EXATO: ou o servidor
 seta esse estado via uma msg que o bot ainda não manda, ou o `0x0304` do bot precisa fechar o registro de peer.
 Tool: `capture_addremote.exe` (estender p/ dumpar a entidade dos dois seats).
+
+## 22.10 O CHÃO ARQUITETURAL: o 0x4B registra o bot no GAMETICK reliable, que ele não pode alimentar (2026-07-08)
+Dois A/B testes conclusivos, com 2 humanos + bot no stage:
+- **Desligar o `0x0304` do bot (BotSessionLockstepEnabled=false): combate CONTINUA quebrado.** ⇒ não é o lockstep.
+- **Trocar o blob do 0x4B pelo blob REAL de um humano (byte-perfeito, que o cliente aceita como combatente):
+  combate CONTINUA quebrado.** ⇒ não é o conteúdo do blob.
+
+Cruzando com o que já sabíamos: o bot **type-7** (SEM 0x4B/AddRemotePlayer) **NÃO quebra** o combate (é fantasma
+de campo, dano arbitrado server-side). ⇒ **o gatilho é o próprio 0x4B/AddRemotePlayer.** Mecanismo:
+- O `0x30a` (movimento) corre num canal UNRELIABLE separado — por isso o bot ANDA mesmo com o combate quebrado.
+- O COMBATE roda no **gametick reliable em lockstep** (o `MSG_SEQ_ALLACTIONS` da SE1: cada tick agrega as ações
+  de TODOS os players registrados, determinístico). Registrar o bot como player (via 0x4B→AddRemotePlayer) faz o
+  cliente PASSAR A ESPERAR o bot em cada tick do gamestream. O bot não é peer real de gamestream (não contribui
+  ação por tick) → o lockstep TRAVA → o sim de combate congela p/ TODOS. Casa 1:1 com o sintoma
+  ("bot anda, mas ninguém fica hitável quando ele entra").
+
+**VERDADE FINAL (o chão, cravado dos dois lados):** o combate nativo (HIT×N) exige ser **participante do gametick
+reliable** (ação por tick), o que exige ser um **peer de sessão SE1 real**. Registrar o bot como player sem esse
+peer (o 0x4B, a única via de virar hitável) **quebra o lockstep determinístico**. Não é bug — é a arquitetura:
+- **type-7 (sem 0x4B):** não quebra o gametick, mas não é hitável nativo (dano arbitrado server-side). ✅ shippável.
+- **0x4B (AddRemotePlayer):** hitável-capaz, mas quebra o gametick (sem peer que ticka). ✗
+- meio-termo (hitável + não-quebra) = **peer de gamestream real** = a engine headless, que §22.6 provou NÃO formar
+  a sessão com o cliente (o P2P do stage não é sessão SE1). Semanas de RE incerta, possivelmente inviável sem o
+  binário do dedicated original.
+
+**RECOMENDAÇÃO:** consolidar no **type-7 + combate server-side** (1 humano × bot: anda humano, persegue, ataca,
+te MATA via HP arbitrado + 0x4f, feedback de HIT no chat de stage §22.x). Funciona e não quebra o combate. O
+contador HIT×N nativo e o cenário multi-humano-com-bot ficam documentados como muro do gametick-peer.
