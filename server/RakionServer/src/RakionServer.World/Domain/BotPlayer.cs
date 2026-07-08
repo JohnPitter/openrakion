@@ -436,10 +436,6 @@ namespace RakionServer.World.Domain
         /// <summary>Quando (TickCount64) o último 0x0311 saiu — abre a janela de swing do keystate.</summary>
         public long LastActionMs;
 
-        /// <summary>Os 2 opens do lockstep de sessão já foram enviados NESTA PARTIDA (o canal com o host abre
-        /// UMA vez por partida — na captura não há re-open por round; re-abrir é suspeito de "unknown error").</summary>
-        public bool LockstepOpenedMatch;
-
         /// <summary>O alive-flag 0x830c já foi baixado (payload 0) p/ a morte corrente — evita re-envio por tick.</summary>
         public bool AliveFlagDown;
 
@@ -472,7 +468,7 @@ namespace RakionServer.World.Domain
             LastActionHigh = 0;
             LastActionMs = 0;
             AliveFlagDown = false;
-            // LockstepOpenedMatch NÃO reseta: o canal com o host persiste entre rounds (captura).
+            // Os canais de lockstep (BotNetLink) NÃO resetam por round: persistem a partida toda (captura).
         }
     }
 }

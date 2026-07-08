@@ -418,8 +418,7 @@ namespace RakionServer.World
         {
             bot.SpawnedThisRound = true;
             bot.SpawnedMs = now;
-            DisposeLink(bot);                 // novo round: socket fresco (porta nova desambigua o round)
-            bot.InitStagePosition();
+            bot.InitStagePosition();          // socket/canais NÃO resetam por round: um cliente humano mantém os dele a partida toda
             if (IsObjectiveMode(f))
             {
                 var sp = GolemWarLayouts.For(f.MapId).SpawnFor(bot.Team);

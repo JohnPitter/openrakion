@@ -55,8 +55,8 @@ namespace RakionServer.World
             Log.Ok("bot", "[{0}] bot '{1}' (lvl {2} cls {3} dif {4}) -> field {5} seat {6} time {7}",
                 requester.Slot, name, level, cls, difficulty, f.Id, added.Value.Seat, added.Value.Bot.Team);
 
-            // Faz o cliente do host renderizar o bot no slot da sala (frame de roster sintetizado).
-            NotifyBotJoinedRoom(f, added.Value.Bot, added.Value.Seat, requester);
+            // Faz TODOS os clientes da sala renderizarem o bot no slot (mesmo trilho do join humano).
+            NotifyBotJoinedRoom(f, added.Value.Bot, added.Value.Seat);
             string difLabel = difficulty switch { BotDifficulty.Easy => "fácil", BotDifficulty.Hard => "difícil", _ => "normal" };
             return new AddBotResult(true,
                 $"{name} entrou (time {(added.Value.Bot.Team == 0 ? "vermelho" : "azul")}, {difLabel})",
@@ -73,8 +73,8 @@ namespace RakionServer.World
             int removed;
             if (all)
             {
-                // notifica cada slot antes de limpar (p/ o cliente do host esvaziar o slot) + fecha o link de rede
-                foreach (var r in f.BotRecs()) { NotifyBotLeftRoom(f, r.Slot, requester); if (r.Bot != null) DisposeLink(r.Bot); }
+                // notifica cada slot antes de limpar (p/ todos os clientes esvaziarem o slot) + fecha o link de rede
+                foreach (var r in f.BotRecs()) { NotifyBotLeftRoom(f, r.Slot); if (r.Bot != null) DisposeLink(r.Bot); }
                 removed = f.RemoveAllBots();
             }
             else
@@ -82,7 +82,7 @@ namespace RakionServer.World
                 PlayerRec? last = null;
                 foreach (var r in f.BotRecs()) last = r; // último bot
                 if (last == null) return 0;
-                NotifyBotLeftRoom(f, last.Slot, requester);
+                NotifyBotLeftRoom(f, last.Slot);
                 if (last.Bot != null) DisposeLink(last.Bot);   // fecha socket/peer do bot removido
                 f.ClearBotSeat(last.Slot);
                 removed = 1;
@@ -98,13 +98,12 @@ namespace RakionServer.World
         public void DiscardBots(Domain.Field f)
         {
             if (f.BotCount == 0) return;
-            // Esvazia o slot no cliente do host (0x3a member-leave por seat) ANTES de remover. Sem isto o
+            // Esvazia o slot em todos os clientes (0x3a member-leave por seat) ANTES de remover. Sem isto o
             // cliente segue mostrando o bot no slot após o fim do match/settle ("continuam visíveis"). Em
-            // LeaveField o host já saiu (Master = sessão morta) — o send é try/catch, então é inócuo.
-            var host = f.Master;
+            // LeaveField a sessão que saiu já morreu — o send é try/catch, então é inócuo.
             foreach (var r in f.BotRecs())
             {
-                if (host != null) NotifyBotLeftRoom(f, r.Slot, host);
+                NotifyBotLeftRoom(f, r.Slot);
                 if (r.Bot != null) DisposeLink(r.Bot);   // fecha socket/peer (o link mora no BotManager, não no domínio)
             }
             f.RemoveAllBots();

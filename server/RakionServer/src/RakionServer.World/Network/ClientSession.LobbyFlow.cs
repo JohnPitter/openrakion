@@ -279,12 +279,14 @@ namespace RakionServer.World.Network
                     // GameSeq e manda o tick 1583 (o cliente ecoa o seq; seq avancando = timer corre).
                     InField = true;
                     Status = 3;            // estado de CAMPO (Op_FieldUseItem exige Status==3; o 0x44/0x3A revertem p/ 2)
-                    StartGameClock();
-                    PaintQuickslot();      // re-registra as poções no campo — hipótese: o cliente zera o contador ao entrar no stage
                     // SPAWN no stage (0x4b): guarda o blob REAL que este humano subiu (posição/stats) e faz o spawn
-                    // MÚTUO humano↔humano relayando o blob real de cada peer (cada um vê o avatar do outro no lugar certo).
+                    // MÚTUO relayando o create de cada peer JÁ presente (humano ou bot) — ANTES do StartGameClock,
+                    // que spawna os bots do round e broadcasta o create deles aos presentes (ordem inversa duplicava
+                    // o create do bot neste cliente: uma vez pelo broadcast do spawn, outra pelo relay de chegada).
                     StageSpawnUpload = data;
                     { var stf = _server.GetField(FieldId); if (stf != null) _server.SpawnStageForHumans(stf, this); }
+                    StartGameClock();
+                    PaintQuickslot();      // re-registra as poções no campo — hipótese: o cliente zera o contador ao entrar no stage
                     Log.Ok("lobby", "[{0}] 0x4b (spawn) -> STAGE (Status=3, poções re-enviadas); relogio iniciado (udp={1})", Slot, UdpEndpoint?.ToString() ?? "-");
                     return true;
                 case 0x0f: return true; // keepalive do cliente: sem resposta TCP
@@ -535,7 +537,7 @@ namespace RakionServer.World.Network
             // deixava Phase=Pre → o bot nunca spawnava. Com bots o host é o único humano, então o round começa
             // no load dele (2 humanos usariam o all-loaded 0x54 do original).
             if (f.Mode != 0 && f.BotCount > 0 && f.Phase != Domain.MatchPhase.Playing) f.StartRound();
-            _server.Bots.SpawnFieldBotsInStage(f); // 0x45 dos bots + 0x54 begin AGORA (no load do host): timing + o begin que faltava
+            _server.Bots.SpawnFieldBotsInStage(f, this); // 0x48 ao loader + spawn dos bots ainda não spawnados no round
             Log.Ok("field", "[{0}] sala aplicada ao field {1}: mode={2} map={3} dur={4}s rounds={5}",
                 Slot, f.Id, f.Mode, f.MapId, f.RoundDurationSec, f.MaxRounds);
             // Sala Battle/PvP (mode != 0) = fluxo NETWORKED: o SERVER inicia o loop UDP com o 1o

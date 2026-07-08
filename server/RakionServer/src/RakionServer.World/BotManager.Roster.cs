@@ -14,66 +14,80 @@ namespace RakionServer.World
     public sealed partial class BotManager
     {
         /// <summary>
-        /// Member-join 0x38 ao host: faz o cliente desenhar o bot no slot. RE (FUN_00406f40 @0x40735a, offsets
-        /// confirmados pelas anotações Stack[] do disassembly): [38 00][status][slot][state][uid:u16][slotFlag]
-        /// [registro], len = registroLen + 8.
+        /// Member-join 0x38 do bot: broadcast a TODOS os humanos da sala — o MESMO trilho do join de um humano
+        /// (<see cref="Network.WorldHandlers"/> Op_RoomJoin). RE (FUN_00406f40 @0x40735a): [38 00][status][slot]
+        /// [state][uid:u16][slotFlag][registro], len = registroLen + 8.
         /// </summary>
-        private void NotifyBotJoinedRoom(Domain.Field f, BotPlayer bot, int seat, ClientSession host)
+        private void NotifyBotJoinedRoom(Domain.Field f, BotPlayer bot, int seat)
         {
-            try { host.SendLobby(BuildRoomMemberJoin(bot, seat)); }
-            catch (Exception ex) { Log.Debug("bot", "roster 0x38 falhou: {0}", ex.Message); return; }
-            Log.Ok("bot", "roster: 0x38 member-join '{0}' seat {1} (cls {2} lvl {3}) -> host [{4}]",
-                bot.Name, seat, bot.CharClass, bot.Level, host.Slot);
+            var join = BuildRoomMemberJoin(bot, seat);
+            int n = BroadcastLobbyToHumans(f, join);
+            Log.Ok("bot", "roster: 0x38 member-join '{0}' seat {1} (cls {2} lvl {3}) -> {4} humano(s)",
+                bot.Name, seat, bot.CharClass, bot.Level, n);
         }
 
-        /// <summary>Member-leave 0x3a ao host: esvazia o slot do bot. RE FUN_004091e0 @0x409403: [3a 00][slot], len 3.</summary>
-        private void NotifyBotLeftRoom(Domain.Field f, int seat, ClientSession host)
+        /// <summary>Member-leave 0x3a do bot a TODOS os humanos: esvazia o slot em cada cliente.
+        /// RE FUN_004091e0 @0x409403: [3a 00][slot], len 3.</summary>
+        private void NotifyBotLeftRoom(Domain.Field f, int seat)
         {
             using var w = new PacketWriter();
             w.WriteWord(0x3a);
             w.WriteByte((byte)seat);
-            try { host.SendLobby(w.ToArray()); } catch { }
-            Log.Debug("bot", "roster: 0x3a member-leave seat {0} -> host [{1}]", seat, host.Slot);
+            int n = BroadcastLobbyToHumans(f, w.ToArray());
+            Log.Debug("bot", "roster: 0x3a member-leave seat {0} -> {1} humano(s)", seat, n);
+        }
+
+        /// <summary>Envia um frame de lobby a todos os humanos conectados do field (trilho comum do roster).</summary>
+        private static int BroadcastLobbyToHumans(Domain.Field f, byte[] frame)
+        {
+            ClientSession[] humans;
+            lock (f.Players) humans = f.Players.ToArray();
+            int n = 0;
+            foreach (var h in humans)
+            {
+                if (!h.Connected) continue;
+                try { h.SendLobby(frame); n++; } catch { }
+            }
+            return n;
         }
 
         /// <summary>
-        /// Spawn 3D do bot no STAGE — emite o 0x4b AddPlayer (canal FIELD via SendMessage; NÃO o LOBBY) que
-        /// INSTANCIA o avatar no host. O corpo (decode byte-a-byte da captura MITM) é sintetizado pelo codec
-        /// <see cref="BotMovement.BuildStageAddPlayer"/>; aqui só se traduz estado→chamada e serializa.
+        /// Spawn 3D do bot no STAGE — o 0x4b AddPlayer (canal FIELD) vai a TODOS os humanos já no stage, o
+        /// MESMO modelo do spawn mútuo humano↔humano (<see cref="WorldServer.SpawnStageForHumans"/>): cada
+        /// cliente registra o bot como player, sem roster divergente entre peers (a assimetria "só o master"
+        /// era a suspeita do lockstep travado — §22.10 revisto). Quem carrega DEPOIS recebe o create na
+        /// chegada, pelo SpawnStageForHumans. Corpo sintetizado por <see cref="BotMovement.BuildStageAddPlayer"/>.
         /// </summary>
         private void NotifyBotAddPlayer(Domain.Field f, int seat, BotPlayer bot)
         {
-            var host = f.Master;
-            if (host == null) return;
-            // GATE DO GAMETICK (§22.10): o 0x4b registra o bot como player do gamestream reliable. Com 2+ humanos
-            // isso TRAVA o lockstep de combate P2P entre eles (o bot não ticka) -> "ninguém fica hitável". Só o
-            // caso SOLO (1 humano × bot) usa combate server-arbitrado, sem esse lockstep -> aí o 0x4b renderiza o
-            // bot com segurança. 2+ humanos: pula o create (combate humano↔humano intacto; bot não aparece p/ eles).
-            if (f.HumanCount > 1)
+            var body = BotMovement.BuildStageAddPlayer(bot, seat);
+            ClientSession[] humans;
+            lock (f.Players) humans = f.Players.ToArray();
+            int n = 0;
+            foreach (var h in humans)
             {
-                Log.Ok("bot", "stage: 0x4b AddPlayer PULADO p/ seat {0} (2+ humanos -> nao quebrar o gametick)", seat);
-                return;
+                if (!h.Connected || h.Status != 3) continue;   // só cliente já no stage aceita o create
+                try { h.SendMessage(0x4b, body); n++; } catch { }
             }
-            try { host.SendMessage(0x4b, BotMovement.BuildStageAddPlayer(bot, seat)); } catch { return; }
-            Log.Ok("bot", "stage: 0x4b AddPlayer seat {0} (cls {1} lvl {2}) -> host [{3}]",
-                seat, bot.CharClass, bot.Level, host.Slot);
+            Log.Ok("bot", "stage: 0x4b AddPlayer seat {0} (cls {1} lvl {2}) -> {3} humano(s)",
+                seat, bot.CharClass, bot.Level, n);
         }
 
         /// <summary>
-        /// Spawna os bots no STAGE no load do host (chamado do StartGameClock/0x4b). Sequência CRAVADA da
-        /// captura MITM real (stage_capture.txt): o servidor manda 0x48 FieldGameStart UMA vez e, em seguida,
-        /// 0x4b AddPlayer por bot — no canal FIELD. O 0x4b é o que INSTANCIA o avatar 3D do bot no mundo do
-        /// host. Gated por ClientFramesEnabled.
+        /// Spawna os bots no STAGE no load de um humano (chamado do StartGameClock/0x4b, por sessão).
+        /// Sequência CRAVADA da captura MITM real (stage_capture.txt): o servidor manda 0x48 FieldGameStart
+        /// ao cliente que carrega e, em seguida, 0x4b AddPlayer por bot — no canal FIELD. Bots já spawnados
+        /// neste round NÃO re-spawnam (o loader os recebe pelo spawn mútuo na chegada) — re-create duplicado
+        /// no outro cliente era corrupção. Gated por ClientFramesEnabled.
         /// </summary>
-        public void SpawnFieldBotsInStage(Domain.Field f)
+        public void SpawnFieldBotsInStage(Domain.Field f, ClientSession loader)
         {
             if (!BotMovement.ClientFramesEnabled || f.BotCount == 0) return;
-            var host = f.Master;
-            if (host == null) return;
-            try { host.SendMessage(0x48, BotMovement.BuildFieldGameStart()); } catch { }   // round-load (1x)
+            try { loader.SendMessage(0x48, BotMovement.BuildFieldGameStart()); } catch { }   // round-load (1x por cliente)
             long now = Environment.TickCount64;
             foreach (var rec in f.BotRecs())
-                SpawnBotIntoRound(f, rec, rec.Bot!, now);   // golden source do spawn (mesmo caminho do BotTick)
+                if (rec.Bot is { SpawnedThisRound: false } bot)
+                    SpawnBotIntoRound(f, rec, bot, now);   // golden source do spawn (mesmo caminho do BotTick)
         }
 
         /// <summary>0x38 member-join do BOT: registro genérico com o userid sintético (faixa alta) e o endereço

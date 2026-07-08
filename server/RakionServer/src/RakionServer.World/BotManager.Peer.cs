@@ -29,8 +29,9 @@ namespace RakionServer.World
         /// re-pusha o lado dele a cada ~5s).</summary>
         private const long LockstepPushIntervalMs = 1000;
 
-        /// <summary>Estado de rede (socket + lockstep) por bot — infra FORA do domínio. Criado on-demand;
-        /// descartado no round-reset (<see cref="DisposeLink"/> no spawn) e no descarte do bot.</summary>
+        /// <summary>Estado de rede (socket + canais de lockstep) por bot — infra FORA do domínio. Criado
+        /// on-demand no primeiro spawn; persiste a partida toda (como o socket de um cliente humano) e é
+        /// descartado no fim do match / remoção do bot (<see cref="DisposeLink"/>).</summary>
         private readonly ConcurrentDictionary<BotPlayer, BotNetLink> _links = new();
 
         /// <summary>Link de rede do bot (cria vazio on-demand).</summary>
@@ -54,40 +55,48 @@ namespace RakionServer.World
         }
 
         /// <summary>
-        /// LADO DO BOT do lockstep de sessão: DOIS opens (uma vez por round, como o joiner da captura) e um
-        /// push periódico com o seat do bot. Chamado todo BotTick (self-throttled). O host, ao receber estes
-        /// frames + o ack correto dos pushes DELE (UdpGameplay), fecha o canal → peer registrado.
+        /// LADO DO BOT do lockstep de sessão, POR HUMANO — o canal 0x0304 é PAREADO (como na captura 2301↔2302),
+        /// então o bot abre um canal com CADA humano do stage (dstSeat no byte 7 endereça o par): DOIS opens
+        /// (uma vez por partida por par) e push periódico com o seat do bot. Chamado todo BotTick
+        /// (self-throttled). Cada humano, ao receber estes frames + o ack correto dos pushes DELE
+        /// (UdpGameplay), fecha o canal → peer registrado.
         /// </summary>
         private void EnsureBotLockstep(Domain.Field f, PlayerRec rec, BotPlayer bot, long now)
         {
-            if (!Network.BotMovement.BotSessionLockstepEnabled) return;   // A/B: o 0x0304 do bot dessincroniza o gamestream do cliente? (ver flag)
             EnsureBotUdpSocket(bot);
             var link = LinkOf(bot);
             var sock = link.UdpSocket;
             if (sock == null) return;
 
-            var host = f.Master;
-            var hostRec = host != null ? f.FindRec(host) : null;
-            if (hostRec == null) return;
-            byte hostSeat = (byte)hostRec.Slot;
             byte botSeat = (byte)rec.Slot;
             var serverEp = new IPEndPoint(IPAddress.Loopback, _gameplayPort());
 
-            if (!bot.LockstepOpenedMatch)
+            ClientSession[] humans;
+            lock (f.Players) humans = f.Players.ToArray();
+            foreach (var h in humans)
             {
-                bot.LockstepOpenedMatch = true;   // canal abre 1x POR PARTIDA (não por round — captura)
-                for (int i = 0; i < 2; i++)   // captura l.12/14: o joiner abre o canal com DOIS opens
+                if (!h.Connected || h.Status != 3) continue;   // só quem já carregou o stage
+                var hRec = f.FindRec(h);
+                if (hRec == null) continue;
+                byte hSeat = (byte)hRec.Slot;
+                var ch = link.ChannelTo(hSeat);
+
+                if (!ch.Opened)
                 {
-                    uint seq = bot.UdpSeq++;
-                    try { sock.SendTo(BotLockstep.BuildOpen(seq, hostSeat, BotLockstep.NextToken(seq)), serverEp); } catch { }
+                    ch.Opened = true;   // canal abre 1x POR PARTIDA por par (não por round — captura)
+                    for (int i = 0; i < 2; i++)   // captura l.12/14: o joiner abre o canal com DOIS opens
+                    {
+                        uint seq = bot.UdpSeq++;
+                        try { sock.SendTo(BotLockstep.BuildOpen(seq, hSeat, BotLockstep.NextToken(seq)), serverEp); } catch { }
+                    }
+                    Log.Ok("peer", "lockstep OPEN '{0}' seat {1} -> humano seat {2} (canal de sessão P2P)", bot.Name, botSeat, hSeat);
                 }
-                Log.Ok("peer", "lockstep OPEN '{0}' seat {1} -> host seat {2} (canal de sessão P2P)", bot.Name, botSeat, hostSeat);
-            }
-            if (now >= link.NextLockstepPushMs)
-            {
-                link.NextLockstepPushMs = now + LockstepPushIntervalMs;
-                uint seq = bot.UdpSeq++;
-                try { sock.SendTo(BotLockstep.BuildPush(seq, botSeat, hostSeat, BotLockstep.NextToken(seq)), serverEp); } catch { }
+                if (now >= ch.NextPushMs)
+                {
+                    ch.NextPushMs = now + LockstepPushIntervalMs;
+                    uint seq = bot.UdpSeq++;
+                    try { sock.SendTo(BotLockstep.BuildPush(seq, botSeat, hSeat, BotLockstep.NextToken(seq)), serverEp); } catch { }
+                }
             }
         }
     }

@@ -56,6 +56,16 @@ namespace RakionServer.World
                 try { joiner.SendMessage(0x4b, Network.BotMovement.BuildStageAddPlayerFromUpload(other.FieldSeat, other.StageSpawnUpload)); } catch { }
                 Log.Ok("field", "spawn mútuo no stage: seat {0} <-> {1} (field {2})", joiner.FieldSeat, other.FieldSeat, f.Id);
             }
+            // BOTS já spawnados neste round: quem chega recebe o create deles pelo MESMO trilho (0x4b na
+            // chegada), como recebe o de qualquer humano. O spawn do bot em si broadcasta aos já-presentes
+            // (BotManager.NotifyBotAddPlayer) — os dois lados juntos mantêm o roster de players idêntico em
+            // todos os clientes (sem o registro assimétrico que travava o lockstep de combate).
+            foreach (var rec in f.BotRecs())
+            {
+                if (rec.Bot is not { SpawnedThisRound: true } bot) continue;
+                try { joiner.SendMessage(0x4b, Network.BotMovement.BuildStageAddPlayer(bot, rec.Slot)); } catch { }
+                Log.Ok("field", "spawn na chegada: bot seat {0} -> humano seat {1} (field {2})", rec.Slot, joiner.FieldSeat, f.Id);
+            }
         }
 
         /// <summary>Snapshot das salas publicáveis (IsRoom, host vivo) p/ o frame 0x36 — DTO de borda.</summary>

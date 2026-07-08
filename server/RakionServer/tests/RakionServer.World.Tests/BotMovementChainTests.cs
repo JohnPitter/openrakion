@@ -148,8 +148,8 @@ namespace RakionServer.World.Tests
         [Fact]
         public async Task BotTick_EmitsMovement_ThatReachesTheHumanEndpoint_WithChangingPosition()
         {
-            var (f, _, _, botSeat) = Arrange();
-            _world.Bots.SpawnFieldBotsInStage(f);            // caminho primário (load do host)
+            var (f, host, _, botSeat) = Arrange();
+            _world.Bots.SpawnFieldBotsInStage(f, host);      // caminho primário (load do host)
 
             // Roda o motor como o FieldEngineLoop faria (100ms), tempo bastante p/ passar o hold
             // de spawn (BotMoveStartDelayMs=2200) e acumular 0x30a andando.
@@ -189,8 +189,8 @@ namespace RakionServer.World.Tests
         [Fact]
         public async Task BotAttack_0x311_IsRelayed_NotArbitratedAgainstTheBotItself()
         {
-            var (f, _, bot, botSeat) = Arrange();
-            _world.Bots.SpawnFieldBotsInStage(f);
+            var (f, host, bot, botSeat) = Arrange();
+            _world.Bots.SpawnFieldBotsInStage(f, host);
 
             // Injeta um 0x0311 "do bot" direto no socket do servidor (como o EmitBotAttack faz) e
             // verifica que ele é RELAYADO ao humano (e não arbitrado como golpe humano->bot).
