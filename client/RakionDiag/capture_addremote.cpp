@@ -19,8 +19,13 @@
 #include <cstdint>
 #include <vector>
 
-static const DWORD ADDREMOTE = 0x3610e2b0;
-static const unsigned char ORIG6[6] = { 0x81, 0xEC, 0xE8, 0x09, 0x00, 0x00 }; // sub esp,0x9e8
+static const DWORD ADDREMOTE = 0x3610e2b0;   // entrada real (pode estar hookada por outra DLL de diag)
+// Hookamos LOGO APÓS o prólogo (0x3610e2b0: sub esp,0x9e8 = 6B), em 0x3610e2b6 (mov eax,[0x36299990] = 5B).
+// Isso COEXISTE com um hook de entrada (ex.: sessprobe.dll rouba os 6 bytes de 0x3610e2b0): o trampolim dele
+// roda o `sub esp` e cai em 0x3610e2b6 -> onde estamos. E funciona igual sem hook nenhum. Robusto aos dois casos.
+static const DWORD HOOK_AT = 0x3610e2b6;
+static const unsigned char DISPLACED[5] = { 0xA1, 0x90, 0x99, 0x29, 0x36 }; // mov eax,[0x36299990]
+static const DWORD CONT = HOOK_AT + 5;       // 0x3610e2bb (continuação após a instrução deslocada)
 static const DWORD ENGINE_BASE = 0x36000000;
 
 static volatile bool g_stop = false;
@@ -78,39 +83,14 @@ int main(int argc, char** argv)
     HANDLE h = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION, FALSE, pid);
     if (!h) { printf("[cap] OpenProcess falhou err=%lu\n", GetLastError()); return 2; }
 
-    // valida o prologo de AddRemotePlayer no alvo (engine.dll base fixa 0x36000000)
-    unsigned char cur[16];
+    // valida a instrução deslocada em HOOK_AT (0x3610e2b6, mov eax,[0x36299990]) — intacta com ou sem
+    // hook de entrada de outra DLL (esta só rouba os 6 bytes de 0x3610e2b0). base fixa 0x36000000.
+    unsigned char cur[8];
     SIZE_T rd;
-    if (!ReadProcessMemory(h, (void*)ADDREMOTE, cur, 16, &rd) || rd < 6) { printf("[cap] read do prologo falhou\n"); return 3; }
-    if (memcmp(cur, ORIG6, 6) != 0) {
-        // Prologo != original -> a função JÁ está hookada em runtime (jogo/anti-tamper). DIAGNÓSTICO READ-ONLY:
-        // segue o jmp, lê o destino e identifica o módulo dono — sem escrever nada.
-        printf("[cap] prologo JA HOOKADO em runtime: %02x %02x %02x %02x %02x %02x\n", cur[0], cur[1], cur[2], cur[3], cur[4], cur[5]);
-        FILE* dg = fopen("C:\\temp\\addremote_probe.log", "w");
-        fprintf(dg, "[probe] 0x%08lx (16B): ", ADDREMOTE);
-        for (int i = 0; i < 16; i++) fprintf(dg, "%02x ", cur[i]);
-        fprintf(dg, "\n");
-        if (cur[0] == 0xE9) {
-            int32_t rel = *(int32_t*)(cur + 1);
-            DWORD tgt = ADDREMOTE + 5 + rel;
-            fprintf(dg, "[probe] E9 jmp -> 0x%08lx\n", tgt);
-            // de quem é o destino?
-            MEMORY_BASIC_INFORMATION mbi;
-            if (VirtualQueryEx(h, (void*)tgt, &mbi, sizeof(mbi))) {
-                char modname[MAX_PATH] = {0};
-                GetModuleFileNameExA(h, (HMODULE)mbi.AllocationBase, modname, MAX_PATH);
-                fprintf(dg, "[probe] destino: AllocBase=%p State=%lx Type=%lx Protect=%lx  modulo='%s'\n",
-                        mbi.AllocationBase, mbi.State, mbi.Type, mbi.Protect, modname[0] ? modname : "(sem nome/memoria privada)");
-            }
-            unsigned char tb[48];
-            if (ReadProcessMemory(h, (void*)tgt, tb, 48, &rd)) {
-                fprintf(dg, "[probe] 0x%08lx (48B no destino): ", tgt);
-                for (int i = 0; i < 48; i++) fprintf(dg, "%02x ", tb[i]);
-                fprintf(dg, "\n");
-            }
-        }
-        fclose(dg);
-        printf("[cap] diagnostico read-only gravado em C:\\temp\\addremote_probe.log (nada foi escrito no jogo)\n");
+    if (!ReadProcessMemory(h, (void*)HOOK_AT, cur, 5, &rd) || rd < 5) { printf("[cap] read de HOOK_AT falhou\n"); return 3; }
+    if (memcmp(cur, DISPLACED, 5) != 0) {
+        printf("[cap] HOOK_AT inesperado: %02x %02x %02x %02x %02x (esperava mov eax,[0x36299990]) — engine build diferente?\n",
+               cur[0], cur[1], cur[2], cur[3], cur[4]);
         CloseHandle(h);
         return 4;
     }
@@ -125,49 +105,53 @@ int main(int argc, char** argv)
     std::vector<uint8_t> zero(0x1000, 0);
     WriteProcessMemory(h, BUF, zero.data(), zero.size(), NULL);
 
-    // ---- monta o shellcode (roda no contexto do alvo; entrada = entry de AddRemotePlayer) ----
-    // [esp]=ret [esp+4]=seat [esp+8]=blobLen [esp+0xC]=blob ; ecx=this
+    // ---- monta o shellcode (roda no alvo em HOOK_AT=0x3610e2b6, JÁ após `sub esp,0x9e8`) ----
+    // esp = entry-0x9e8. args originais: ret=[esp+0x9e8] seat=[esp+0x9ec] blobLen=[esp+0x9f0] blob=[esp+0x9f4].
+    // ecx = this (intacto). Após pushad(0x20)+pushfd(4)+mov ebp,esp -> ebp+0x24 alcança o esp de entrada.
+    //   ret=ebp+0xa0c seat=ebp+0xa10 blobLen=ebp+0xa14 blob=ebp+0xa18 ; this=ecx salvo em ebp+0x1c
     Emit e;
+    auto movEax = [&](uint32_t disp) { e.o({ 0x8B, 0x85 }); e.d32(disp); };   // mov eax,[ebp+disp32]
     e.o({ 0x60 });                    // pushad
     e.o({ 0x9C });                    // pushfd
     e.o({ 0x89, 0xE5 });              // mov ebp, esp
-    e.o({ 0xFC });                    // cld (rep movsb p/ frente)
+    e.o({ 0xFC });                    // cld
     e.o({ 0xBF }); e.d32((uint32_t)BUF);         // mov edi, BUF
-    e.o({ 0xFF, 0x07 });              // inc dword [edi]  (contador)
-    e.o({ 0x8B, 0x45, 40 }); e.o({ 0x89, 0x47, 0x04 });   // seat  [ebp+40] -> [edi+4]
-    e.o({ 0x8B, 0x45, 44 }); e.o({ 0x89, 0x47, 0x08 });   // blobLen [ebp+44] -> [edi+8]
-    e.o({ 0x8B, 0x45, 48 }); e.o({ 0x89, 0x47, 0x0C });   // blob  [ebp+48] -> [edi+0xC]
-    e.o({ 0x8B, 0x45, 28 }); e.o({ 0x89, 0x47, 0x10 });   // this  [ebp+28] -> [edi+0x10]
-    e.o({ 0x8B, 0x45, 36 }); e.o({ 0x89, 0x47, 0x14 });   // ret   [ebp+36] -> [edi+0x14]
+    e.o({ 0xFF, 0x07 });              // inc dword [edi]
+    movEax(0xa10); e.o({ 0x89, 0x47, 0x04 });    // seat    -> [edi+4]
+    movEax(0xa14); e.o({ 0x89, 0x47, 0x08 });    // blobLen -> [edi+8]
+    movEax(0xa18); e.o({ 0x89, 0x47, 0x0C });    // blob    -> [edi+0xC]
+    e.o({ 0x8B, 0x45, 0x1C }); e.o({ 0x89, 0x47, 0x10 });   // this (ecx) [ebp+0x1c] -> [edi+0x10]
+    movEax(0xa0c); e.o({ 0x89, 0x47, 0x14 });    // ret     -> [edi+0x14]
     // copia 0x200 bytes do blob -> BUF+0x20 (se blob != 0)
-    e.o({ 0x8B, 0x75, 48 });          // mov esi,[ebp+48]  (blob)
+    e.o({ 0x8B, 0xB5 }); e.d32(0xa18);           // mov esi,[ebp+0xa18]  (blob)
     e.o({ 0x85, 0xF6 });              // test esi,esi
     e.o({ 0x74, 0x0A });              // jz +0x0A (pula lea+mov ecx+rep = 3+5+2)
-    e.o({ 0x8D, 0x7F, 0x20 });        // lea edi,[edi+0x20]   (edi ainda = BUF)
+    e.o({ 0x8D, 0x7F, 0x20 });        // lea edi,[edi+0x20]  (edi ainda = BUF)
     e.o({ 0xB9 }); e.d32(0x200);      // mov ecx,0x200
     e.o({ 0xF3, 0xA4 });              // rep movsb
     // (skip target)
     e.o({ 0x9D });                    // popfd
     e.o({ 0x61 });                    // popad
-    e.o({ 0x81, 0xEC, 0xE8, 0x09, 0x00, 0x00 });  // sub esp,0x9e8 (prologo original)
-    e.o({ 0xE9 });                    // jmp ADDREMOTE+6
+    e.o({ 0xA1, 0x90, 0x99, 0x29, 0x36 });       // instrução DESLOCADA: mov eax,[0x36299990]
+    e.o({ 0xE9 });                    // jmp CONT (0x3610e2bb)
     uint32_t jmpAt = (uint32_t)CAVE + (uint32_t)e.b.size() - 1;
-    e.d32((ADDREMOTE + 6) - (jmpAt + 5));
+    e.d32(CONT - (jmpAt + 5));
 
     if (!WriteProcessMemory(h, CAVE, e.b.data(), e.b.size(), NULL)) { printf("[cap] write do CAVE falhou err=%lu\n", GetLastError()); return 6; }
 
-    // ---- detour: E9 rel32 em ADDREMOTE -> CAVE (+ nop no 6o byte) ----
-    unsigned char det[6] = { 0xE9, 0, 0, 0, 0, 0x90 };
-    *(uint32_t*)(det + 1) = (uint32_t)CAVE - (ADDREMOTE + 5);
+    // ---- detour: E9 rel32 em HOOK_AT (5B exatos = tam. do mov eax) -> CAVE ----
+    unsigned char det[5] = { 0xE9, 0, 0, 0, 0 };
+    *(uint32_t*)(det + 1) = (uint32_t)CAVE - (HOOK_AT + 5);
     DWORD old;
-    if (!VirtualProtectEx(h, (void*)ADDREMOTE, 6, PAGE_EXECUTE_READWRITE, &old)) { printf("[cap] VirtualProtectEx falhou err=%lu\n", GetLastError()); return 7; }
-    BOOL wok = WriteProcessMemory(h, (void*)ADDREMOTE, det, 6, NULL);
-    VirtualProtectEx(h, (void*)ADDREMOTE, 6, old, &old);
+    if (!VirtualProtectEx(h, (void*)HOOK_AT, 5, PAGE_EXECUTE_READWRITE, &old)) { printf("[cap] VirtualProtectEx falhou err=%lu\n", GetLastError()); return 7; }
+    BOOL wok = WriteProcessMemory(h, (void*)HOOK_AT, det, 5, NULL);
+    VirtualProtectEx(h, (void*)HOOK_AT, 5, old, &old);
+    FlushInstructionCache(h, (void*)HOOK_AT, 5);
     if (!wok) { printf("[cap] write do detour falhou err=%lu\n", GetLastError()); return 8; }
-    printf("[cap] detour INSTALADO. Poll ativo — entre no stage com o 2o player. Ctrl+C p/ sair (des-detoura).\n");
+    printf("[cap] detour INSTALADO em 0x%08lx. Poll ativo — entre no stage com o 2o player. Ctrl+C p/ sair (des-detoura).\n", HOOK_AT);
 
     FILE* log = fopen("C:\\temp\\addremote_capture.log", "w");
-    fprintf(log, "[cap] hook externo em AddRemotePlayer @0x%08lx  BUF=%p CAVE=%p pid=%lu\n", ADDREMOTE, BUF, CAVE, pid);
+    fprintf(log, "[cap] hook externo em AddRemotePlayer (HOOK_AT 0x%08lx)  BUF=%p CAVE=%p pid=%lu\n", HOOK_AT, BUF, CAVE, pid);
     fflush(log);
 
     // ---- POLL do contador ----
@@ -201,11 +185,11 @@ int main(int argc, char** argv)
         Sleep(20);
     }
 
-    // ---- restaura o prologo original (des-detoura) ----
-    if (VirtualProtectEx(h, (void*)ADDREMOTE, 6, PAGE_EXECUTE_READWRITE, &old)) {
-        WriteProcessMemory(h, (void*)ADDREMOTE, ORIG6, 6, NULL);
-        VirtualProtectEx(h, (void*)ADDREMOTE, 6, old, &old);
-        FlushInstructionCache(h, (void*)ADDREMOTE, 6);
+    // ---- restaura a instrução deslocada em HOOK_AT (des-detoura) ----
+    if (VirtualProtectEx(h, (void*)HOOK_AT, 5, PAGE_EXECUTE_READWRITE, &old)) {
+        WriteProcessMemory(h, (void*)HOOK_AT, DISPLACED, 5, NULL);
+        VirtualProtectEx(h, (void*)HOOK_AT, 5, old, &old);
+        FlushInstructionCache(h, (void*)HOOK_AT, 5);
     }
     printf("[cap] detour removido. %lu captura(s). Log: C:\\temp\\addremote_capture.log\n", lastCount);
     if (log) fclose(log);
