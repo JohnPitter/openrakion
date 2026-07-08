@@ -491,6 +491,7 @@ namespace RakionServer.World.Network
                             if (pkt.Length >= 19) rec.LastHeading = BinaryPrimitives.ReadInt16LittleEndian(pkt.AsSpan(17)); // +0a do corpo = heading (graus)
                             rec.LastPositionMs = nowMs;
                             sf.ExpandHumanHull(nx, nz);   // chão VÁLIDO empírico p/ o clamp do bot (onde o humano pisou)
+                            Domain.WalkGrid.For(sf.MapId).MarkWalked(nx, nz);   // ensina o grid: humano pisou = chão (parede = célula nunca pisada)
                         }
                     }
                     // RELAY HUMANO->HUMANO (2 clientes): o 0x30a/0x30f/reliable do humano vai aos OUTROS humanos do
