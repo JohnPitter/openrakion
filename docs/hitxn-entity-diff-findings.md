@@ -47,3 +47,25 @@ alimentar o mesmo canal confirmado que um peer real (a incerteza da fronteira de
 
 `client/RakionDiag/diag.ps1` (leitura externa), `diff_entities.py` (two-way), `three_way.py` (local+humano
 vs bot). Dumps em `C:\temp\entdiff\pid<PID>\`.
+
+---
+
+# Fase 2 — encarar o gametick confirmado (task #24)
+
+Como o diff de entidade descartou "campo faltante", o alvo é o **contador de gametick confirmado**: a
+sequência que o cliente só avança quando agrega a ação de TODOS os players registrados; o HIT×N é creditado
+nesse tick. Com o bot (que não ticka como peer real) registrado, a agregação não fecha → o tick confirmado
+trava → HIT congela p/ todos.
+
+**RE estática (engine.dll, base 0x36000000):**
+- Cadeia de estado: `pNet=[0x362ba778]`; `A(CSessionState)=[pNet+0x18]` (A+0xc = nº slots, A+0x10 = tabela de
+  players stride 0x100); `G(tick object)=[pNet+0x2c]`.
+- `SessionStateLoop@0x3610cde8` roda o tick; `0x36103040` (ecx=G) é o EMISSOR da ação local por-tick — monta
+  e envia o `0x30f` a cada 100ms (push 0x30f @0x36103106, send via `pNet+0x119c`), gated por is-server
+  (`[0x3636f260]->vt[+8]`) + timers (`[0x36215608]`). Estrutura de tick em `G+0x264`.
+
+**Medição ao vivo (o atalho — RE estática do agregador é semanas):** `watch_session.ps1` amostra A e G por
+leitura externa e reporta os dwords MONOTÔNICOS (contadores de tick). Rodar 2×:
+1. `.\watch_session.ps1 -Tag sem-bot` — 2 humanos batendo (HIT ok) → contadores AVANÇAM.
+2. `.\watch_session.ps1 -Tag com-bot` — 2 humanos + bot (HIT congela) → o tick CONFIRMADO TRAVA.
+O offset que avança em (1) e trava em (2) = o gametick confirmado, o alvo do fix server-side.
