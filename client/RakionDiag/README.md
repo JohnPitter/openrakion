@@ -40,6 +40,8 @@ Depois pegue os seats no `worldserver.log` (host = 0; o **humano-peer** e o **bo
 - `-HumanSeat <n> -BotSeat <n>` — roda o diff desses seats no fim.
 - `-SkipServers` — pula Docker/MariaDB/stack (quando já estão no ar).
 - `-Dll <caminho>` — DLL alternativa. `-DbContainer <nome>` — container do MariaDB (default `rakion-db`).
+- `-GameDir <pasta>` — pasta do jogo (a que tem `\Bin\rakion.exe`); default `...\Rakion\rakion-final`.
+  Setada como `RAKION_DIR` pra a launcher (fora da pasta do jogo) achar o `rakion.exe`.
 
 > Só compilar a DLL: `.\build.ps1` (gera `C:\temp\entitydiff.dll`). Outro VS: `.\build.ps1 -Vcvars "<...\vcvarsall.bat>"`.
 

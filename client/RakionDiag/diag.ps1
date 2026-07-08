@@ -12,7 +12,8 @@ param(
     [int]$BotSeat   = -1,
     [switch]$SkipServers,
     [string]$Dll    = 'C:\temp\entitydiff.dll',
-    [string]$DbContainer = 'rakion-db'
+    [string]$DbContainer = 'rakion-db',
+    [string]$GameDir = 'C:\Users\joaop\Desenvolvimento\Rakion\rakion-final'
 )
 $ErrorActionPreference = 'Stop'
 $here    = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -65,7 +66,13 @@ $launcher = @(
     Join-Path $here '..\RakionLauncher\bin\Release\net9.0-windows\RakionLauncher.exe'
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $launcher) { throw "RakionLauncher.exe não achado — 'dotnet build client\RakionLauncher' antes." }
+# a launcher (fora da pasta do jogo) acha o rakion.exe pela env RAKION_DIR
+if (-not (Test-Path (Join-Path $GameDir 'Bin\rakion.exe'))) {
+    throw "rakion.exe não achado em $GameDir\Bin — passe -GameDir com a pasta real do jogo (a que tem \Bin\rakion.exe)."
+}
+$env:RAKION_DIR = $GameDir
 $env:RAKION_DIAG_DLL = $Dll
+Write-Host "  RAKION_DIR      = $GameDir" -ForegroundColor Green
 Write-Host "  RAKION_DIAG_DLL = $Dll" -ForegroundColor Green
 Start-Process -FilePath (Resolve-Path $launcher) | Out-Null
 Write-Host @"
