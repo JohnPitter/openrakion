@@ -879,3 +879,51 @@ rakion.exe traduz nessa chamada** — e isso só sai por **RE ao vivo** (hook do
 via DLL de diagnóstico do launcher — dev-only — com um 2º player REAL entrando p/ capturar `seat/len/blob` e a
 origem no fio). É o método `diagnostico-runtime-quebra-loop-de-RE` + `rakion-final-binario-diferente-re-ao-vivo`.
 Artefatos estáticos: `scratchpad/{find_addremote,callers,xref_ptr,disasm_fn,imports_of,ref_imm}.py`.
+
+## 22.8 CAPTURA VIVA do create-combatente + formato da mensagem CRAVADO (2026-07-07 madrugada) ✅
+Injeção de DLL FALHOU (anti-tamper bloqueia LoadLibrary: `hmod=0`, DLL não mapeia), mas o **hook EXTERNO por
+code-cave** (só `VirtualProtectEx`/`WriteProcessMemory`, as primitivas dos patches de janela) FUNCIONOU. Tool:
+`client/RakionDiag/capture_addremote.exe` (hooka em `0x3610e2b6`, logo após o prólogo de 6B — coexiste com um
+hook de entrada de outra DLL, ex.: sessprobe). Com **2 clientes REAIS no mesmo stage Golem War**, capturado:
+
+**AddRemotePlayer(seat=10, blobLen=67, blob) — caller = engine.dll `0x36193dcd` (NÃO o rakion.exe packed!).**
+O create é chamado de DENTRO da engine.dll — a claim "trigger atrás do packer" de §22.7 estava ERRADA; o
+trigger é um handler da própria engine.
+
+**Handler CRAVADO — `FUN_36193d70` (a "create remote player from message"):**
+```
+0x36193d70: push ebp; mov ebp,esp; and esp,-8; sub esp,0x410
+0x36193d81: mov edx,[ebp+8]        ; edx = ARG1 = ponteiro da MENSAGEM
+0x36193d8b: mov al,[edx]           ; byte[0] = SEAT
+0x36193d91: mov ax,[edx+1]         ; word[1..2] = BLOBLEN (u16)
+0x36193d9f: lea esi,[edx+3]        ; &blob = message+3
+0x36193dab: rep movsd/movsb        ; copia blobLen bytes p/ buffer local
+0x36193db4: mov ecx,[0x3636d240]   ; objeto (CSessionState) ; edx=vtable
+0x36193dc0..c6: push blob; push blobLen; push seat
+0x36193dc7: call [edx+0x254]       ; == AddRemotePlayer (chamada VIRTUAL vtable+0x254 -> por isso 0 callers E8)
+```
+⇒ **FORMATO DA MENSAGEM DE CREATE-COMBATENTE: `[seat:u8][blobLen:u16 LE][blob (CPlayerCharacter, blobLen bytes)]`.**
+O `blob` traz appearance/stats/template — e o CGame do cliente vivo já está init (sem appearance-wall, §22.2 era
+só do headless). `FUN_36193d70` sem caller direto/ponteiro estático (dispatch runtime ou no packer) — mas
+IRRELEVANTE: temos o formato + um blob real.
+
+**BLOB REAL capturado (seat 10, 67=0x43 bytes) — golden source p/ sintetizar o do bot:**
+```
+08 00 00 02 43 00 00 02 43 00 00 00 00 00 00 00
+00 1f 00 00 00 01 00 00 00 00 00 00 02 43 00 00
+02 43 48 e1 7a 3f 3c 00 00 00 50 00 00 00 78 00
+00 00 64 00 00 00 04 00 00 00 00 00 00 00 00 00
+00 00 00
+```
+Pistas: `0x0243`(=579) repetido (class/model id?); `0x3f7ae148`=float 0.98 @+0x22; ints 60/80/120/100/4 @+0x26..
+(stats). Decode fino pendente, mas um exemplo real basta p/ replay+adaptar (seat/nome).
+
+**O QUE FALTA (único item p/ HIT×N/kill/colisão nativos): o FRAMING NA REDE.** A `[seat][blobLen][blob]` chega
+ao `FUN_36193d70` pelo sistema de mensagem confiável (stream `0x0304` P2P entre peers). Preciso do **wrap exato
+no fio** (header do bloco reliable que carrega essa msg) p/ o servidor SINTETIZAR e entregar ao cliente do humano
+como se viesse do peer do bot. Como o add-player humano↔humano corre P2P DIRETO (não pelo nosso relay), o próximo
+passo é **capturar o UDP no join de 2 clientes** (sniffer no loopback, achar o frame ~70B que carrega o blob
+`08 00 00 02 43...`) OU hookar o dispatcher (caller de `FUN_36193d70`) ao vivo p/ ler a msg reliable crua.
+REGRA: a entrega final é **server-side** (síntese da msg), injeção só serviu de RE (proibido injetar p/
+funcionalidade — [[sem-ddl-injetada-tudo-server-side]]). Tool de captura: `client/RakionDiag/capture_addremote.exe`;
+log `C:\temp\addremote_capture.log`.
