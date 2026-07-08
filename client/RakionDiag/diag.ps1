@@ -20,11 +20,11 @@ param(
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-if (-not ('Mem' -as [type])) {
+if (-not ('RkDiagMem' -as [type])) {
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
-public static class Mem {
+public static class RkDiagMem {
     [DllImport("kernel32.dll", SetLastError=true)] public static extern IntPtr OpenProcess(uint a, bool i, int pid);
     [DllImport("kernel32.dll", SetLastError=true)] public static extern bool ReadProcessMemory(IntPtr h, IntPtr addr, byte[] buf, int size, out IntPtr read);
     [DllImport("kernel32.dll", SetLastError=true)] public static extern bool CloseHandle(IntPtr h);
@@ -75,9 +75,9 @@ while ((Get-Date) -lt $waitUntil) {
         # algum cliente já num stage? (SlotEntity de qualquer slot != 0)
         $ready = $false
         foreach ($p in $procs) {
-            $h = [Mem]::Open($p.Id); if ($h -eq [IntPtr]::Zero) { continue }
-            try { for ($s = 0; $s -lt 20; $s++) { if ([Mem]::SlotEntity($h, $s) -ne 0) { $ready = $true; break } } }
-            finally { [void][Mem]::CloseHandle($h) }
+            $h = [RkDiagMem]::Open($p.Id); if ($h -eq [IntPtr]::Zero) { continue }
+            try { for ($s = 0; $s -lt 20; $s++) { if ([RkDiagMem]::SlotEntity($h, $s) -ne 0) { $ready = $true; break } } }
+            finally { [void][RkDiagMem]::CloseHandle($h) }
             if ($ready) { break }
         }
         if ($ready) { break }
@@ -97,16 +97,16 @@ New-Item -ItemType Directory -Force $DumpDir | Out-Null
 Write-Host "Dumpando $Snapshots snapshots a cada ${IntervalMs}ms. Mantenha o stage ativo (parado, andando, batendo)." -ForegroundColor Cyan
 for ($snap = 0; $snap -lt $Snapshots; $snap++) {
     foreach ($p in $procs) {
-        $h = [Mem]::Open($p.Id)
+        $h = [RkDiagMem]::Open($p.Id)
         if ($h -eq [IntPtr]::Zero) { continue }
         try {
             $pidDir = Join-Path $DumpDir ("pid{0}" -f $p.Id)
             New-Item -ItemType Directory -Force $pidDir | Out-Null
             # snap 0: loga a estrutura CRUA da tabela de slots (4 dwords/slot) — revela onde estão os remotos.
             if ($snap -eq 0) {
-                $dbg = @("== PID $($p.Id) tabela de slots (SlotTable=0x$('{0:X8}' -f ([Mem]::SlotTable($h)))) ==")
+                $dbg = @("== PID $($p.Id) tabela de slots (SlotTable=0x$('{0:X8}' -f ([RkDiagMem]::SlotTable($h)))) ==")
                 for ($slot = 0; $slot -lt 20; $slot++) {
-                    $line = [Mem]::SlotDbg($h, $slot)
+                    $line = [RkDiagMem]::SlotDbg($h, $slot)
                     if ($line -notmatch '^\[\+0\]=00000000 \[\+4\]=00000000 \[\+8\]=00000000') { $dbg += ("  slot {0,2}: {1}" -f $slot, $line) }
                 }
                 $dbg | Set-Content (Join-Path $pidDir "slottable.txt")
@@ -114,14 +114,14 @@ for ($snap = 0; $snap -lt $Snapshots; $snap++) {
             }
             $occ = @()
             for ($slot = 0; $slot -lt 20; $slot++) {
-                $ent = [Mem]::SlotEntity($h, $slot)
+                $ent = [RkDiagMem]::SlotEntity($h, $slot)
                 if ($ent -eq 0) { continue }
-                $bytes = [Mem]::Read($h, $ent, $EntBytes)
+                $bytes = [RkDiagMem]::Read($h, $ent, $EntBytes)
                 [System.IO.File]::WriteAllBytes((Join-Path $pidDir ("slot{0:D2}_snap{1:D2}.bin" -f $slot, $snap)), $bytes)
                 $occ += ("{0}(0x{1:X8})" -f $slot, $ent)
             }
             if ($snap -eq 0) { Write-Host ("  PID {0}: slots com entidade = {1}" -f $p.Id, ($(if($occ){$occ -join ' '}else{'(nenhum)'}))) -ForegroundColor DarkGray }
-        } finally { [void][Mem]::CloseHandle($h) }
+        } finally { [void][RkDiagMem]::CloseHandle($h) }
     }
     Start-Sleep -Milliseconds $IntervalMs
 }
