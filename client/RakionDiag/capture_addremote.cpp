@@ -63,6 +63,33 @@ static DWORD FindGamePid()
     return found;
 }
 
+static const DWORD ENT_ARRAY_OFF = 0x4854;   // [mgr + seat*4 + 0x4854] = ponteiro da entidade do seat
+
+// Dumpa as entidades de todos os seats ocupados (ponteiro != 0) — p/ DIFFAR humano combatível vs bot fantasma.
+static void DumpEntities(HANDLE h, FILE* log, DWORD mgr, unsigned bytes, unsigned gen)
+{
+    SIZE_T rd;
+    fprintf(log, "\n===== ENTIDADES gen#%u (mgr=0x%08lx) =====\n", gen, mgr);
+    std::vector<unsigned char> buf(bytes);
+    for (int seat = 0; seat < 20; seat++) {
+        DWORD ent = 0;
+        if (!ReadProcessMemory(h, (void*)(mgr + seat * 4 + ENT_ARRAY_OFF), &ent, 4, &rd) || rd != 4 || ent == 0) continue;
+        if (!ReadProcessMemory(h, (void*)ent, buf.data(), bytes, &rd) || rd < bytes) {
+            fprintf(log, "  seat %2d ent=0x%08lx (ilegivel, lido %zu)\n", seat, ent, rd);
+            continue;
+        }
+        fprintf(log, "  --- seat %2d  ent=0x%08lx  (team %d por slot) ---\n", seat, ent, seat < 10 ? 0 : 1);
+        for (unsigned i = 0; i < bytes; i += 16) {
+            fprintf(log, "    +%04x: ", i);
+            for (unsigned j = 0; j < 16; j++) fprintf(log, "%02x ", buf[i + j]);
+            fprintf(log, " |");
+            for (unsigned j = 0; j < 16; j++) { unsigned char c = buf[i + j]; fputc((c >= 0x20 && c < 0x7f) ? c : '.', log); }
+            fprintf(log, "|\n");
+        }
+    }
+    fflush(log);
+}
+
 // Emissor de shellcode.
 struct Emit {
     std::vector<uint8_t> b;
@@ -129,7 +156,16 @@ int main(int argc, char** argv)
     e.o({ 0x8D, 0x7F, 0x20 });        // lea edi,[edi+0x20]  (edi ainda = BUF)
     e.o({ 0xB9 }); e.d32(0x200);      // mov ecx,0x200
     e.o({ 0xF3, 0xA4 });              // rep movsb
-    // (skip target)
+    // (skip target) — resolve o PLAYER-MANAGER: [0x3636f260](CGame)->[0](vtable)->[+8]() -> mgr em eax.
+    // Entidade do seat = [mgr + seat*4 + 0x4854] (mesma cadeia do AddRemotePlayer). Guarda mgr em BUF+0x18.
+    e.o({ 0x8B, 0x0D }); e.d32(0x3636f260);      // mov ecx,[0x3636f260]  (CGame)
+    e.o({ 0x85, 0xC9 });              // test ecx,ecx
+    e.o({ 0x74, 0x0D });              // jz +0x0D (pula se CGame nulo)
+    e.o({ 0x8B, 0x01 });              // mov eax,[ecx]        (vtable)
+    e.o({ 0xFF, 0x50, 0x08 });        // call [eax+8]         (getter -> mgr em eax)
+    e.o({ 0xBF }); e.d32((uint32_t)BUF);         // mov edi,BUF  (getter clobra edi)
+    e.o({ 0x89, 0x47, 0x18 });        // mov [edi+0x18],eax   (mgr)
+    // (skipmgr)
     e.o({ 0x9D });                    // popfd
     e.o({ 0x61 });                    // popad
     e.o({ 0xA1, 0x90, 0x99, 0x29, 0x36 });       // instrução DESLOCADA: mov eax,[0x36299990]
@@ -154,8 +190,8 @@ int main(int argc, char** argv)
     fprintf(log, "[cap] hook externo em AddRemotePlayer (HOOK_AT 0x%08lx)  BUF=%p CAVE=%p pid=%lu\n", HOOK_AT, BUF, CAVE, pid);
     fflush(log);
 
-    // ---- POLL do contador ----
-    DWORD lastCount = 0;
+    // ---- POLL do contador + dump periódico das entidades ----
+    DWORD lastCount = 0, mgr = 0, lastDump = GetTickCount(), gen = 0;
     while (!g_stop) {
         DWORD cnt = 0;
         if (ReadProcessMemory(h, BUF, &cnt, 4, &rd) && cnt != lastCount) {
@@ -163,6 +199,7 @@ int main(int argc, char** argv)
             if (ReadProcessMemory(h, BUF, rec, sizeof(rec), &rd)) {
                 DWORD seat = *(DWORD*)(rec + 4), blen = *(DWORD*)(rec + 8);
                 DWORD blob = *(DWORD*)(rec + 0x0C), thiz = *(DWORD*)(rec + 0x10), ret = *(DWORD*)(rec + 0x14);
+                DWORD m = *(DWORD*)(rec + 0x18); if (m) mgr = m;   // player-manager resolvido pelo shellcode
                 DWORD retRva = (ret >= ENGINE_BASE && ret < ENGINE_BASE + 0x400000) ? (ret - ENGINE_BASE) : 0;
                 fprintf(log, "\n[#%lu] AddRemotePlayer seat=%lu (0x%02lx) blobLen=%lu blob=0x%08lx this=0x%08lx caller=0x%08lx%s\n",
                         cnt, seat & 0xff, seat & 0xff, blen & 0xffff, blob, thiz, ret,
@@ -178,10 +215,13 @@ int main(int argc, char** argv)
                     fprintf(log, "|\n");
                 }
                 fflush(log);
-                printf("[cap] CAPTURA #%lu: seat=%lu blobLen=%lu (ver C:\\temp\\addremote_capture.log)\n", cnt, seat & 0xff, blen & 0xffff);
+                printf("[cap] CAPTURA #%lu: seat=%lu blobLen=%lu mgr=0x%08lx (ver C:\\temp\\addremote_capture.log)\n", cnt, seat & 0xff, blen & 0xffff, mgr);
+                if (mgr) DumpEntities(h, log, mgr, 0x1000, gen++);   // dump imediato pós-create
             }
             lastCount = cnt;
         }
+        DWORD nowt = GetTickCount();
+        if (mgr && nowt - lastDump > 4000) { DumpEntities(h, log, mgr, 0x1000, gen++); lastDump = nowt; }   // rolling: pega mudanças (ativação de combate)
         Sleep(20);
     }
 
