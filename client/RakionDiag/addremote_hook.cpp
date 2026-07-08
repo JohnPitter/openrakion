@@ -134,8 +134,15 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID)
         char path[MAX_PATH];
         sprintf(path, "C:\\temp\\addremote_hook_%lu.log", GetCurrentProcessId());   // por-PID (2 clientes não colidem)
         g_log = fopen(path, "w");
-        // engine.dll é import ESTÁTICO do rakion.exe -> já mapeada no attach; guarda por robustez
-        for (int i = 0; i < 40 && !GetModuleHandleA("engine.dll"); i++) Sleep(50);
+        // IDENTIDADE do processo em que a DLL caiu (p/ diagnosticar injeção no processo errado/stub)
+        char exe[MAX_PATH] = {0};
+        GetModuleFileNameA(nullptr, exe, MAX_PATH);
+        if (g_log) { fprintf(g_log, "[dll] attach em pid=%lu  exe=%s\n", GetCurrentProcessId(), exe); fflush(g_log); }
+        // espera a engine.dll aparecer (até ~20s): se o processo é um stub que só depois mapeia a engine,
+        // ou está em init, 2s era curto. Loga quando aparece.
+        HMODULE eng = nullptr;
+        for (int i = 0; i < 400; i++) { eng = GetModuleHandleA("engine.dll"); if (eng) break; Sleep(50); }
+        if (g_log) { fprintf(g_log, "[dll] engine.dll %s (apos espera)\n", eng ? "APARECEU" : "NUNCA apareceu"); fflush(g_log); }
         Install();
     }
     return TRUE;
