@@ -144,9 +144,9 @@ namespace RakionServer.World.Network
         /// O bot envia 0x30a do seu socket dedicado; o servidor recebe e repassa ao host pelo socket
         /// do servidor — o mesmo canal que o relay original do worldserv.
         /// </summary>
-        private void RelayToAllFields(byte[] pkt, IPEndPoint from)
+        private int RelayToAllFields(byte[] pkt, IPEndPoint from)
         {
-            if (_sock == null) return;
+            if (_sock == null) return 0;
             // slot do bot = srcSlot do header (offset 6) dos 0x30a/0x030f — usado p/ registrar o endpoint.
             byte botSlot = pkt.Length > 6 ? pkt[6] : (byte)0xff;
             // Canal de lockstep 0x0304 (open/push) é PAREADO: entrega SÓ ao humano do dstSeat (byte 7 — no
@@ -168,8 +168,8 @@ namespace RakionServer.World.Network
                 if (botSlot != 0xff) EnsureBotEndpointRegistered(sess.UdpEndpoint, botSlot);
                 try { _sock.SendTo(pkt, sess.UdpEndpoint); n++; } catch { }
             }
-            if (n > 0) Log.Ok("udp", "RELAY bot -> {0} humano(s) ({1}B)", n, pkt.Length);
-            else Log.Debug("udp", "RELAY bot: 0 humanos em fields com bots ({0}B)", pkt.Length);
+            if (n == 0) Log.Debug("udp", "RELAY bot: 0 humanos em fields com bots ({0}B)", pkt.Length);
+            return n;
         }
 
         /// <summary>
@@ -223,11 +223,11 @@ namespace RakionServer.World.Network
         /// aos OUTROS humanos do MESMO field, registrando (0x319) o endpoint do servidor como peer do sender em cada
         /// receptor (senão o 0x30a relayado não passa em IsValidUDP_ForPlayer). Do _sock do servidor — mesma origem do
         /// register. 2 clientes na mesma máquina: cada um vê o movimento do outro.</summary>
-        private void RelayHumanToOthers(byte[] pkt, ClientSession sender, Domain.Field? field)
+        private int RelayHumanToOthers(byte[] pkt, ClientSession sender, Domain.Field? field)
         {
-            if (_sock == null || field == null) return;
+            if (_sock == null || field == null) return 0;
             byte seat = sender.FieldSeat;
-            if (seat >= 0x14) return;
+            if (seat >= 0x14) return 0;
             int n = 0;
             foreach (var s in _world.Sessions)
             {
@@ -236,7 +236,7 @@ namespace RakionServer.World.Network
                 EnsureBotEndpointRegistered(s.UdpEndpoint, seat);   // server = peer[seat] no receptor -> passa o filtro
                 try { _sock.SendTo(pkt, s.UdpEndpoint); n++; } catch { }
             }
-            if (n > 0) Log.Debug("udp", "RELAY humano seat {0} -> {1} outro(s) ({2}B)", seat, n, pkt.Length);
+            return n;
         }
 
         /// <summary>Resolve a sessao remetente de um pacote UDP (por endpoint exato, senao por IP).</summary>
@@ -266,9 +266,32 @@ namespace RakionServer.World.Network
             return _world.GetSession(slot) ?? _world.GetSessionByIp(from.Address.ToString());  // solo/legado
         }
 
+        /// <summary>Nome legível do frame p/ o rastro de jornada (só diagnóstico).</summary>
+        private static string FrameName(ushort t) => t switch
+        {
+            0x4000 => "INPUT", 0x030d => "KEEPALIVE", 0x8315 => "FB1583", 0x030a => "MOVE", 0x030f => "KEYSTATE",
+            0x0304 => "LS-PUSH", 0x0305 => "LS-ACK", 0x0319 => "PEER-REG", 0x0311 => "ATAQUE",
+            0x830c => "ALIVE/ANCHOR", 0x8312 => "PEER-STATE", 0x8313 => "CH-CTRL", 0x8307 => "NPC-CREATE",
+            0x030b => "NPC-MOVE", 0x0104 => "ACAO-CAMPO", 0x0204 => "ACAO-CAMPO",
+            _ => "?"
+        };
+
+        /// <summary>Frame de alta frequência (10 Hz+) — rastro em DEBUG p/ não afogar o log; o resto vai em OK.</summary>
+        private static bool IsChatty(ushort t) => t is 0x030a or 0x030f or 0x4000 or 0x8315 or 0x030d;
+
+        /// <summary>Rastro de jornada de UM datagrama: tipo + origem + VEREDITO de roteamento. Combat-relevante
+        /// em OK; alta-frequência em DEBUG. É a fonte única p/ diagnosticar "por onde o pacote foi".</summary>
+        private void Journey(ushort type, IPEndPoint from, string verdict)
+        {
+            bool bot = from.Port >= BotUdpPortBase;
+            if (IsChatty(type)) Log.Debug("jornada", "0x{0:X4} {1} {2} {3}B :: {4}", type, FrameName(type), bot ? "BOT" : "hum", 0, verdict);
+            else Log.Ok("jornada", "0x{0:X4} {1} de {2} ({3}) :: {4}", type, FrameName(type), from, bot ? "BOT" : "humano", verdict);
+        }
+
         private void Process(IPEndPoint from, byte[] pkt)
         {
             Log.Debug("udp", "RX {0}B de {1}: {2}", pkt.Length, from, Convert.ToHexString(pkt));
+            ushort _jt = pkt.Length >= 2 ? (ushort)(pkt[0] | (pkt[1] << 8)) : (ushort)0;
 
             // GAMEPLAY: input do cliente (marker 0x4000, 11B: [0040][cc][00000000][val u32]).
             // ECHO IMEDIATO 1:1 (fiel a captura original): CADA 0040 do cliente -> UM tick 1583 com o
@@ -287,6 +310,7 @@ namespace RakionServer.World.Network
                     var gs = _world.GetSessionByIp(from.Address.ToString());
                     if (gs != null) gs.LastInput = pkt[7];
                 }
+                Journey(_jt, from, "CONSUMIDO (input do cliente; sem relay — original tbm consome)");
                 return;
             }
             // FEEDBACK 1583 do cliente (8B): o client ecoa seq/state de gameplay. Antes caia em
@@ -305,10 +329,11 @@ namespace RakionServer.World.Network
                 {
                     Log.Debug("udp", "feedback 1583 sem sessao ({0}) seq={1:X2} state={2:X2}", from, pkt[2], pkt[7]);
                 }
+                Journey(_jt, from, "CONSUMIDO (feedback 1583; na captura é P2P — nós não relayamos)");
                 return;
             }
             // ACK 0x030d do cliente (7B): consome.
-            if (pkt.Length >= 2 && pkt[0] == 0x0d && pkt[1] == 0x03) return;
+            if (pkt.Length >= 2 && pkt[0] == 0x0d && pkt[1] == 0x03) { Journey(_jt, from, "CONSUMIDO (keepalive)"); return; }
 
             // LOCKSTEP de sessão P2P (0x0304 open/push, 0x0305 ack) — dialeto REAL da captura de 2 humanos
             // (docs/p2p-handshake-groundtruth.txt l.12-23; codec BotLockstep). O host abre/re-pusha o stream
@@ -318,22 +343,25 @@ namespace RakionServer.World.Network
             // a cada 5s); (b) relaya ao host os opens/pushes que o BOT origina do socket dedicado (41xxx).
             if (pkt.Length >= 2 && pkt[1] == 0x03 && (pkt[0] == 0x04 || pkt[0] == 0x05 || pkt[0] == 0x19))
             {
-                if (from.Port >= BotUdpPortBase) { RelayToAllFields(pkt, from); return; }   // lado do BOT -> host
+                if (from.Port >= BotUdpPortBase) { Journey(_jt, from, "relay BOT->humanos (lockstep do bot)"); RelayToAllFields(pkt, from); return; }
                 var ls = ResolveSender(from);
                 var lf = ls != null ? _world.GetField(ls.FieldId) : null;
-                if (BotLockstep.IsPush(pkt) && lf != null)
+                byte dst = pkt.Length >= 8 ? BotLockstep.DstSeat(pkt) : (byte)0xff;
+                if (BotLockstep.IsPush(pkt) && lf != null && lf.RecAt(dst)?.IsBot == true)
                 {
-                    byte dst = BotLockstep.DstSeat(pkt);
-                    if (lf.RecAt(dst)?.IsBot == true)
-                    {
-                        try { _sock!.SendTo(BotLockstep.BuildAck(pkt, dst), from); } catch { }
-                        Log.Ok("udp", "LOCKSTEP push do host -> bot seat {0} ACKEADO (seq={1}) {2}", dst,
-                            BinaryPrimitives.ReadUInt32LittleEndian(pkt.AsSpan(2)), Convert.ToHexString(pkt));
-                        return;
-                    }
+                    try { _sock!.SendTo(BotLockstep.BuildAck(pkt, dst), from); } catch { }
+                    Journey(_jt, from, $"host seat {ls?.FieldSeat ?? 0xff} -> BOT seat {dst}: ACKEADO no lugar do bot (seq={BinaryPrimitives.ReadUInt32LittleEndian(pkt.AsSpan(2))})");
+                    return;
                 }
-                Log.Ok("udp", "LOCKSTEP 0x03{0:X2} {1}B de {2} (seat={3}) {4}", pkt[0], pkt.Length, from,
-                    ls?.Slot ?? -1, Convert.ToHexString(pkt[..System.Math.Min(16, pkt.Length)]));
+                // Lockstep de um HUMANO (push p/ outro humano OU ack). HOJE não é relayado — só instrumentado
+                // p/ o diagnóstico saber se esse tráfego chega ao servidor e p/ quem vai (dst do push; no ack
+                // o byte 7 é o seat do ACKER, não roteável). Candidato ao muro se o stream P2P reliable entre
+                // humanos passar por aqui e morrer.
+                bool isPush = pkt[0] == 0x04;
+                var dstRec = lf?.RecAt(dst);
+                string alvo = dstRec == null ? "?" : dstRec.IsBot ? $"BOT seat {dst}" : $"humano seat {dst}";
+                Journey(_jt, from, $"CONSUMIDO (lockstep {(isPush ? "push" : "ack")} do humano seat {ls?.FieldSeat ?? 0xff} " +
+                    $"{(isPush ? $"-> {alvo}" : "(acker)")} — NÃO relayado)");
                 return;
             }
 
@@ -352,7 +380,7 @@ namespace RakionServer.World.Network
                     Log.Ok("udp", "CAPTURE-CELL 0x{0:X2}07 {1}B de {2}: {3}", pkt[1], pkt.Length, from, hex);
                     BridgeIo.CaptureCreateNpc(pkt.Length, from.ToString(), hex);
                 }
-                else Log.Ok("udp", "RELAY NPC bot 0x{0:X2}{1:X2} {2}B de {3}", pkt[1], pkt[0], pkt.Length, from);
+                Journey(_jt, from, "relay NPC (0x07/0x0b) a todos do field");
                 RelayNpcToFields(pkt, from);
                 return;
             }
@@ -410,13 +438,14 @@ namespace RakionServer.World.Network
                     // MESMO field. Registra o endpoint do servidor como peer do sender no receptor (0x319) p/ passar
                     // no IsValidUDP_ForPlayer. Sem isto o 2º humano fica "fantasma" (só se vê). O avatar é criado pelo
                     // spawn mútuo 0x4b (SpawnStageForHumans); aqui só o movimento.
-                    RelayHumanToOthers(pkt, sender, sf);
+                    int nh = RelayHumanToOthers(pkt, sender, sf);
+                    Journey(_jt, from, $"RELAY humano seat {sender.FieldSeat} -> {nh} outro(s) do field {sf?.Id ?? -1}");
                     return;
                 }
                 // Pacote do BOT (srcSlot=bot) OU fonte realmente desconhecida -> RELAY aos humanos no field
                 // (do _sock do servidor — mesma origem que o 0x319 registra, p/ passar no IsValidUDP_ForPlayer).
-                Log.Ok("udp", "RELAY bot 0x{0:X2}{1:X2} {2}B srcSlot={3} de {4}", pkt[0], pkt[1], pkt.Length, srcSlot, from);
-                RelayToAllFields(pkt, from);
+                int nb = RelayToAllFields(pkt, from);
+                Journey(_jt, from, $"RELAY do BOT srcSlot={srcSlot} -> {nb} humano(s)");
                 return;
             }
 
@@ -433,25 +462,29 @@ namespace RakionServer.World.Network
                 byte srcSlot = pkt[6];
                 if (f != null && f.RecAt(srcSlot)?.IsBot == true)
                 {
-                    Log.Ok("udp", "RELAY golpe do bot 0x0311 srcSlot={0} de {1}", srcSlot, from);
-                    RelayToAllFields(pkt, from);   // ataque do BOT -> alvo prevê própria morte; não arbitrar
+                    int nb = RelayToAllFields(pkt, from);
+                    Journey(_jt, from, $"ATAQUE do BOT srcSlot={srcSlot} -> RELAY a {nb} humano(s) (alvo prevê própria morte)");
                     return;
                 }
                 var arec = f != null ? f.FindRec(attacker!) : null;
-                if (f != null && arec != null && !arec.IsBot && f.BotCount > 0)
+                if (f != null && arec != null && !arec.IsBot)
                 {
                     ushort actionId = BinaryPrimitives.ReadUInt16LittleEndian(pkt.AsSpan(8));
-                    Log.Ok("udp", "golpe 0x0311 do humano seat {0} (field {1} bots {2}) action=0x{3:X4}", arec.Slot, f.Id, f.BotCount, actionId);
-                    int? killed = f.ResolveBotHitByHuman(arec.Slot, actionId, out int hitBotSlot);
-                    if (hitBotSlot >= 0) BridgeIo.SignalHit(hitBotSlot);   // ponte: dispara o contador HIT×N nativo no cliente
-                    if (killed is int botSeat)
-                        f.BroadcastField(0x4f, new byte[] { (byte)botSeat, 0, (byte)arec.Slot, f.Score0, f.Score1 });
+                    // ARBITRA o hit nos BOTS inimigos (só o bot não tem cliente p/ reportar a própria morte).
+                    int killedBots = 0, hitBots = 0;
+                    if (f.BotCount > 0)
+                    {
+                        int? killed = f.ResolveBotHitByHuman(arec.Slot, actionId, out int hitBotSlot);
+                        if (hitBotSlot >= 0) { hitBots = 1; BridgeIo.SignalHit(hitBotSlot); }
+                        if (killed is int botSeat) { killedBots = 1; f.BroadcastField(0x4f, new byte[] { (byte)botSeat, 0, (byte)arec.Slot, f.Score0, f.Score1 }); }
+                    }
+                    // RELAY o ataque aos OUTROS HUMANOS do field (o alvo humano prevê o próprio hit — modelo
+                    // cliente-autoritativo, como no P2P onde o 0x0311 corre peer-a-peer). Sem isto o hit do
+                    // atacante nunca chega ao cliente da vítima humana quando há um bot no field.
+                    int nh = RelayHumanToOthers(pkt, attacker!, f);
+                    Journey(_jt, from, $"ATAQUE humano seat {arec.Slot} action=0x{actionId:X4}: arbitrado vs bots (hit={hitBots} kill={killedBots}) + RELAY a {nh} humano(s)");
                 }
-                else if (f != null)
-                {
-                    Log.Ok("udp", "golpe 0x0311 srcSlot={0} NÃO arbitrado (arec={1} isBot={2} bots={3})",
-                        srcSlot, arec?.Slot ?? -1, arec?.IsBot == true, f.BotCount);
-                }
+                else Journey(_jt, from, $"ATAQUE srcSlot={srcSlot}: DROP (sender não resolvido no field)");
                 return;
             }
 
@@ -482,8 +515,7 @@ namespace RakionServer.World.Network
                 }
                 // O melee do humano chega por 0x0311 (confirmado no log: 0 pacotes 0x0401), arbitrado lá;
                 // este bloco só RELAYA a ação de campo aos outros peers (sem arbitrar = sem caminho duplo).
-                Log.Debug("udp", "acao de campo 0x{0:X2}{1:X2} relay p/ {2} outro(s) do field {3} (exclui sender)",
-                    pkt[1], pkt[0], n, senderField);
+                Journey(_jt, from, $"AÇÃO-CAMPO -> RELAY a {n} outro(s) do field {senderField} (exclui sender)");
                 return;
             }
 
@@ -492,7 +524,7 @@ namespace RakionServer.World.Network
             // (FUN_00425d80: *body=slot, *(body+1)=key==user+0x1464; echo data = body[0xc].)
             // >= 23: o handler lê echoData em [19..22] (ReadUInt32 @19). Frames reliable curtos (21-22B) caíam aqui
             // e estouravam IndexOutOfRange no AsSpan(19) — input externo nunca pode lançar (CLAUDE.md).
-            if (pkt.Length < 23) { Log.Debug("udp", "pkt curto {0}B", pkt.Length); return; }
+            if (pkt.Length < 23) { Journey(_jt, from, $"DROP pkt curto {pkt.Length}B (não bateu em nenhuma rota — frame não roteado!)"); return; }
             ushort slot = BinaryPrimitives.ReadUInt16LittleEndian(pkt.AsSpan(5));
             uint key = BinaryPrimitives.ReadUInt32LittleEndian(pkt.AsSpan(7));
             // 2 CLIENTES NA MESMA MAQUINA: o cliente manda slot=0 FIXO (o 0x0C fixa slot 0), entao GetSession(0)
@@ -525,6 +557,7 @@ namespace RakionServer.World.Network
             BinaryPrimitives.WriteUInt32LittleEndian(echo.AsSpan(8), echoData);
             try { _sock!.SendTo(echo, from); Log.Info("udp", "[{0}] echo 0x0201 R=1 (port2) -> {1}", slot, from); }
             catch (Exception ex) { Log.Debug("udp", "echo {0}: {1}", from, ex.Message); }
+            Journey(_jt, from, $"HANDSHAKE ping seat {s.FieldSeat} -> echo 0x0201");
         }
     }
 }
