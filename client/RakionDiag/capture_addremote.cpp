@@ -63,30 +63,60 @@ static DWORD FindGamePid()
     return found;
 }
 
-static const DWORD ENT_ARRAY_OFF = 0x4854;   // [mgr + seat*4 + 0x4854] = ponteiro da entidade do seat
+// Lê 4B de um endereço do alvo (0 se falhar).
+static DWORD RD32(HANDLE h, DWORD addr) { DWORD v = 0; SIZE_T rd; return (ReadProcessMemory(h, (void*)addr, &v, 4, &rd) && rd == 4) ? v : 0; }
 
-// Dumpa as entidades de todos os seats ocupados (ponteiro != 0) — p/ DIFFAR humano combatível vs bot fantasma.
-static void DumpEntities(HANDLE h, FILE* log, DWORD mgr, unsigned bytes, unsigned gen)
+static void HexRegion(HANDLE h, FILE* log, const char* label, DWORD base, DWORD from, unsigned bytes)
 {
-    SIZE_T rd;
-    fprintf(log, "\n===== ENTIDADES gen#%u (mgr=0x%08lx) =====\n", gen, mgr);
-    std::vector<unsigned char> buf(bytes);
-    for (int seat = 0; seat < 20; seat++) {
-        DWORD ent = 0;
-        if (!ReadProcessMemory(h, (void*)(mgr + seat * 4 + ENT_ARRAY_OFF), &ent, 4, &rd) || rd != 4 || ent == 0) continue;
-        if (!ReadProcessMemory(h, (void*)ent, buf.data(), bytes, &rd) || rd < bytes) {
-            fprintf(log, "  seat %2d ent=0x%08lx (ilegivel, lido %zu)\n", seat, ent, rd);
-            continue;
-        }
-        fprintf(log, "  --- seat %2d  ent=0x%08lx  (team %d por slot) ---\n", seat, ent, seat < 10 ? 0 : 1);
-        for (unsigned i = 0; i < bytes; i += 16) {
-            fprintf(log, "    +%04x: ", i);
-            for (unsigned j = 0; j < 16; j++) fprintf(log, "%02x ", buf[i + j]);
-            fprintf(log, " |");
-            for (unsigned j = 0; j < 16; j++) { unsigned char c = buf[i + j]; fputc((c >= 0x20 && c < 0x7f) ? c : '.', log); }
-            fprintf(log, "|\n");
-        }
+    SIZE_T rd; std::vector<unsigned char> buf(bytes);
+    if (!ReadProcessMemory(h, (void*)(base + from), buf.data(), bytes, &rd) || rd < bytes) { fprintf(log, "  %s @0x%08lx+0x%lx: ilegivel (lido %zu)\n", label, base, from, rd); return; }
+    fprintf(log, "  %s (0x%08lx + 0x%lx):\n", label, base, from);
+    for (unsigned i = 0; i < bytes; i += 16) {
+        fprintf(log, "    +%04lx: ", from + i);
+        for (unsigned j = 0; j < 16; j++) fprintf(log, "%02x ", buf[i + j]);
+        fprintf(log, " |");
+        for (unsigned j = 0; j < 16; j++) { unsigned char c = buf[i + j]; fputc((c >= 0x20 && c < 0x7f) ? c : '.', log); }
+        fprintf(log, "|\n");
     }
+}
+
+// Segue o ponteiro da entidade de um seat e dumpa o objeto (se for ponteiro válido).
+static void DumpEntityAt(HANDLE h, FILE* log, const char* src, int seat, DWORD ptr, unsigned bytes)
+{
+    if (ptr == 0) return;
+    if (ptr < 0x10000 || ptr == 1) { fprintf(log, "  [%s] seat %2d -> 0x%08lx (nao-ponteiro: flag/idx)\n", src, seat, ptr); return; }
+    SIZE_T rd; std::vector<unsigned char> buf(bytes);
+    if (!ReadProcessMemory(h, (void*)ptr, buf.data(), bytes, &rd) || rd < bytes) { fprintf(log, "  [%s] seat %2d ent=0x%08lx (ilegivel)\n", src, seat, ptr); return; }
+    fprintf(log, "  [%s] seat %2d  ENTIDADE=0x%08lx  (team %d por slot):\n", src, seat, ptr, seat < 10 ? 0 : 1);
+    for (unsigned i = 0; i < bytes; i += 16) {
+        fprintf(log, "    +%04x: ", i);
+        for (unsigned j = 0; j < 16; j++) fprintf(log, "%02x ", buf[i + j]);
+        fprintf(log, " |");
+        for (unsigned j = 0; j < 16; j++) { unsigned char c = buf[i + j]; fputc((c >= 0x20 && c < 0x7f) ? c : '.', log); }
+        fprintf(log, "|\n");
+    }
+}
+
+// Diagnostica o LAYOUT: p/ cada seat, mostra os valores das tabelas candidatas (mgr+0x4854, CSessionState+0x1d20)
+// e segue os que forem ponteiros. Dumpa também as regiões cruas p/ achar a tabela de estado por-player.
+static void DumpEntities(HANDLE h, FILE* log, DWORD sessState, DWORD mgr, unsigned bytes, unsigned gen)
+{
+    fprintf(log, "\n===== SNAPSHOT gen#%u  CSessionState=0x%08lx  mgr=0x%08lx =====\n", gen, sessState, mgr);
+    // valores por-seat das duas tabelas candidatas
+    fprintf(log, "  seat | mgr+0x4854+s*4 | sess+0x1d20+s*4\n");
+    for (int s = 0; s < 20; s++) {
+        DWORD a = mgr ? RD32(h, mgr + s * 4 + 0x4854) : 0;
+        DWORD b = sessState ? RD32(h, sessState + s * 4 + 0x1d20) : 0;
+        if (a || b) fprintf(log, "   %2d  | 0x%08lx     | 0x%08lx\n", s, a, b);
+    }
+    // segue o que for ponteiro (entidade) das duas tabelas
+    for (int s = 0; s < 20; s++) {
+        if (mgr) DumpEntityAt(h, log, "mgr+4854", s, RD32(h, mgr + s * 4 + 0x4854), bytes);
+        if (sessState) DumpEntityAt(h, log, "sess+1d20", s, RD32(h, sessState + s * 4 + 0x1d20), bytes);
+    }
+    // regiões cruas p/ localizar a tabela de estado por-player (alive/team/HP) na sessão
+    if (sessState) { HexRegion(h, log, "sess+0x1c00", sessState, 0x1c00, 0x400); HexRegion(h, log, "sess+0x2000", sessState, 0x2000, 0x400); }
+    if (mgr) HexRegion(h, log, "mgr+0x4840", mgr, 0x4840, 0x80);
     fflush(log);
 }
 
@@ -191,7 +221,7 @@ int main(int argc, char** argv)
     fflush(log);
 
     // ---- POLL do contador + dump periódico das entidades ----
-    DWORD lastCount = 0, mgr = 0, lastDump = GetTickCount(), gen = 0;
+    DWORD lastCount = 0, mgr = 0, sess = 0, lastDump = GetTickCount(), gen = 0;
     while (!g_stop) {
         DWORD cnt = 0;
         if (ReadProcessMemory(h, BUF, &cnt, 4, &rd) && cnt != lastCount) {
@@ -200,6 +230,7 @@ int main(int argc, char** argv)
                 DWORD seat = *(DWORD*)(rec + 4), blen = *(DWORD*)(rec + 8);
                 DWORD blob = *(DWORD*)(rec + 0x0C), thiz = *(DWORD*)(rec + 0x10), ret = *(DWORD*)(rec + 0x14);
                 DWORD m = *(DWORD*)(rec + 0x18); if (m) mgr = m;   // player-manager resolvido pelo shellcode
+                if (thiz) sess = thiz;                              // CSessionState (this do AddRemotePlayer)
                 DWORD retRva = (ret >= ENGINE_BASE && ret < ENGINE_BASE + 0x400000) ? (ret - ENGINE_BASE) : 0;
                 fprintf(log, "\n[#%lu] AddRemotePlayer seat=%lu (0x%02lx) blobLen=%lu blob=0x%08lx this=0x%08lx caller=0x%08lx%s\n",
                         cnt, seat & 0xff, seat & 0xff, blen & 0xffff, blob, thiz, ret,
@@ -215,13 +246,13 @@ int main(int argc, char** argv)
                     fprintf(log, "|\n");
                 }
                 fflush(log);
-                printf("[cap] CAPTURA #%lu: seat=%lu blobLen=%lu mgr=0x%08lx (ver C:\\temp\\addremote_capture.log)\n", cnt, seat & 0xff, blen & 0xffff, mgr);
-                if (mgr) DumpEntities(h, log, mgr, 0x1000, gen++);   // dump imediato pós-create
+                printf("[cap] CAPTURA #%lu: seat=%lu blobLen=%lu this=0x%08lx mgr=0x%08lx\n", cnt, seat & 0xff, blen & 0xffff, sess, mgr);
+                DumpEntities(h, log, sess, mgr, 0x800, gen++);   // dump imediato pós-create
             }
             lastCount = cnt;
         }
         DWORD nowt = GetTickCount();
-        if (mgr && nowt - lastDump > 4000) { DumpEntities(h, log, mgr, 0x1000, gen++); lastDump = nowt; }   // rolling: pega mudanças (ativação de combate)
+        if ((mgr || sess) && nowt - lastDump > 4000) { DumpEntities(h, log, sess, mgr, 0x800, gen++); lastDump = nowt; }   // rolling: pega a ativacao de combate
         Sleep(20);
     }
 
