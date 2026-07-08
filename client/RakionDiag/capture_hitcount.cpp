@@ -137,8 +137,8 @@ int main(int argc, char** argv)
     if (!wok) { printf("[hit] write detour falhou err=%lu\n", GetLastError()); return 8; }
     printf("[hit] detour INSTALADO. BATA no oponente. Ctrl+C p/ sair (des-detoura). Log: C:\\temp\\hitcount.log\n");
 
-    FILE* log = fopen("C:\\temp\\hitcount.log", "w");
-    fprintf(log, "[hit] hook AddHitCount @0x%08lx BUF=%p CAVE=%p pid=%lu\n", ADDHITCOUNT, BUF, CAVE, pid);
+    FILE* log = fopen("C:\\temp\\hitcount.log", "a");   // APPEND (não apaga runs anteriores)
+    fprintf(log, "\n===== RUN pid=%lu @tick %lu — hook AddHitCount @0x%08lx =====\n", pid, GetTickCount(), ADDHITCOUNT);
     fflush(log);
 
     // POLL do contador: cada nova chamada = uma linha (this, inflictor, combo count, group)
