@@ -45,6 +45,15 @@ namespace RakionServer.World
         {
             var host = f.Master;
             if (host == null) return;
+            // GATE DO GAMETICK (§22.10): o 0x4b registra o bot como player do gamestream reliable. Com 2+ humanos
+            // isso TRAVA o lockstep de combate P2P entre eles (o bot não ticka) -> "ninguém fica hitável". Só o
+            // caso SOLO (1 humano × bot) usa combate server-arbitrado, sem esse lockstep -> aí o 0x4b renderiza o
+            // bot com segurança. 2+ humanos: pula o create (combate humano↔humano intacto; bot não aparece p/ eles).
+            if (f.HumanCount > 1)
+            {
+                Log.Ok("bot", "stage: 0x4b AddPlayer PULADO p/ seat {0} (2+ humanos -> nao quebrar o gametick)", seat);
+                return;
+            }
             try { host.SendMessage(0x4b, BotMovement.BuildStageAddPlayer(bot, seat)); } catch { return; }
             Log.Ok("bot", "stage: 0x4b AddPlayer seat {0} (cls {1} lvl {2}) -> host [{3}]",
                 seat, bot.CharClass, bot.Level, host.Slot);
