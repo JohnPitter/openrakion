@@ -20,6 +20,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+if (-not ('Mem' -as [type])) {
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -60,6 +61,7 @@ public static class Mem {
     }
 }
 "@
+}
 
 # 1) ESPERA o(s) rakion.exe estar(em) num STAGE (a cadeia resolve entidade). Você pode rodar o script ANTES
 #    de abrir o jogo — ele aguarda você abrir os clientes e entrar na partida com o bot.
