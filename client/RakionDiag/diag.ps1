@@ -34,14 +34,24 @@ public static class Mem {
         if (!ReadProcessMemory(h, (IntPtr)addr, b, 4, out n) || (int)n != 4) return 0;
         return BitConverter.ToUInt32(b,0);
     }
-    // resolve a entidade do slot (cadeia do GetPlayerEntity@0x36121530). 0 = slot vazio/erro.
-    public static uint SlotEntity(IntPtr h, int slot){
+    // base da tabela de slots (ses_apltPlayers): pNet[0x18][0x10]. Entrada = 0x100 bytes.
+    public static uint SlotTable(IntPtr h){
         uint pNet = RU(h, 0x362ba778); if (pNet==0) return 0;
         uint A = RU(h, pNet + 0x18);   if (A==0) return 0;
-        uint B = RU(h, A + 0x10);      if (B==0) return 0;
-        uint entry = B + (uint)slot*0x100;
-        if (RU(h, entry) == 0) return 0;    // primeiro campo 0 = slot sem player
-        return RU(h, entry + 4);            // CEntity*
+        return RU(h, A + 0x10);
+    }
+    // ponteiro da entidade do slot = [entry+4] (o GetPlayerEntity só valida [entry]!=0 p/ o LOCAL; os
+    // REMOTOS têm [entry]==0 mas [entry+4] aponta a entidade). Aceita se for ponteiro de heap plausível.
+    public static uint SlotEntity(IntPtr h, int slot){
+        uint B = SlotTable(h); if (B==0) return 0;
+        uint cand = RU(h, B + (uint)slot*0x100 + 4);
+        return (cand >= 0x10000 && cand < 0x7fff0000) ? cand : 0;
+    }
+    // dump cru dos 4 primeiros dwords de cada slot (diagnóstico da estrutura da tabela).
+    public static string SlotDbg(IntPtr h, int slot){
+        uint B = SlotTable(h); if (B==0) return "";
+        uint e = B + (uint)slot*0x100;
+        return String.Format("[+0]={0:X8} [+4]={1:X8} [+8]={2:X8} [+C]={3:X8}", RU(h,e), RU(h,e+4), RU(h,e+8), RU(h,e+0xC));
     }
     public static byte[] Read(IntPtr h, uint addr, int len){
         byte[] b = new byte[len]; IntPtr n;
@@ -90,6 +100,16 @@ for ($snap = 0; $snap -lt $Snapshots; $snap++) {
         try {
             $pidDir = Join-Path $DumpDir ("pid{0}" -f $p.Id)
             New-Item -ItemType Directory -Force $pidDir | Out-Null
+            # snap 0: loga a estrutura CRUA da tabela de slots (4 dwords/slot) — revela onde estão os remotos.
+            if ($snap -eq 0) {
+                $dbg = @("== PID $($p.Id) tabela de slots (SlotTable=0x$('{0:X8}' -f ([Mem]::SlotTable($h)))) ==")
+                for ($slot = 0; $slot -lt 20; $slot++) {
+                    $line = [Mem]::SlotDbg($h, $slot)
+                    if ($line -notmatch '^\[\+0\]=00000000 \[\+4\]=00000000 \[\+8\]=00000000') { $dbg += ("  slot {0,2}: {1}" -f $slot, $line) }
+                }
+                $dbg | Set-Content (Join-Path $pidDir "slottable.txt")
+                $dbg | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+            }
             $occ = @()
             for ($slot = 0; $slot -lt 20; $slot++) {
                 $ent = [Mem]::SlotEntity($h, $slot)
@@ -98,7 +118,7 @@ for ($snap = 0; $snap -lt $Snapshots; $snap++) {
                 [System.IO.File]::WriteAllBytes((Join-Path $pidDir ("slot{0:D2}_snap{1:D2}.bin" -f $slot, $snap)), $bytes)
                 $occ += ("{0}(0x{1:X8})" -f $slot, $ent)
             }
-            if ($snap -eq 0) { Write-Host ("  PID {0}: slots com entidade = {1}" -f $p.Id, ($(if($occ){$occ -join ' '}else{'(nenhum — entrou no stage?)'}))) -ForegroundColor DarkGray }
+            if ($snap -eq 0) { Write-Host ("  PID {0}: slots com entidade = {1}" -f $p.Id, ($(if($occ){$occ -join ' '}else{'(nenhum)'}))) -ForegroundColor DarkGray }
         } finally { [void][Mem]::CloseHandle($h) }
     }
     Start-Sleep -Milliseconds $IntervalMs
