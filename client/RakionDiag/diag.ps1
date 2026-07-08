@@ -51,10 +51,31 @@ public static class Mem {
 }
 "@
 
-# 1) acha o(s) rakion.exe (cada cliente é um processo; dumpa de todos — algum enxerga humano-peer + bot)
-$procs = @(Get-Process rakion -ErrorAction SilentlyContinue)
-if ($procs.Count -eq 0) { throw "rakion.exe não está rodando. Abra o(s) cliente(s), entre no STAGE com o bot, e rode de novo." }
-Write-Host "rakion.exe: $($procs.Count) processo(s) -> PIDs $($procs.Id -join ', ')" -ForegroundColor Cyan
+# 1) ESPERA o(s) rakion.exe estar(em) num STAGE (a cadeia resolve entidade). Você pode rodar o script ANTES
+#    de abrir o jogo — ele aguarda você abrir os clientes e entrar na partida com o bot.
+Write-Host "Aguardando o jogo entrar num STAGE (abra o(s) cliente(s) e entre na partida com o bot)..." -ForegroundColor Cyan
+Write-Host "  (Ctrl+C aborta.)" -ForegroundColor DarkGray
+$procs = @()
+$waitUntil = (Get-Date).AddMinutes(20)
+while ((Get-Date) -lt $waitUntil) {
+    $procs = @(Get-Process rakion -ErrorAction SilentlyContinue)
+    if ($procs.Count -gt 0) {
+        # algum cliente já num stage? (SlotEntity de qualquer slot != 0)
+        $ready = $false
+        foreach ($p in $procs) {
+            $h = [Mem]::Open($p.Id); if ($h -eq [IntPtr]::Zero) { continue }
+            try { for ($s = 0; $s -lt 20; $s++) { if ([Mem]::SlotEntity($h, $s) -ne 0) { $ready = $true; break } } }
+            finally { [void][Mem]::CloseHandle($h) }
+            if ($ready) { break }
+        }
+        if ($ready) { break }
+    }
+    Start-Sleep -Seconds 2
+}
+if ($procs.Count -eq 0 -or (Get-Date) -ge $waitUntil) {
+    throw "Nenhum rakion.exe num stage após a espera. Confirme que o jogo ABRE (a injeção foi removida) e que você entrou na partida com o bot."
+}
+Write-Host "Stage detectado — rakion.exe: $($procs.Count) processo(s) (PIDs $($procs.Id -join ', '))" -ForegroundColor Green
 
 # 2) limpa dumps antigos
 if (Test-Path $DumpDir) { Remove-Item "$DumpDir\*" -Recurse -Force -ErrorAction SilentlyContinue }
