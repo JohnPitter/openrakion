@@ -354,22 +354,15 @@ namespace RakionServer.World.Domain
             Integrate(tanx * Profile.MoveSpeed * 0.18f, tanz * Profile.MoveSpeed * 0.18f);
         }
 
-        /// <summary>Grid de chão andável do mapa (colisão de parede REAL, modelo input-de-cliente): célula
-        /// pisada por humano/rota = chão; nunca pisada = parede. Setado pelo BotTick junto de <see cref="Walk"/>.</summary>
-        public WalkGrid? Grid;
-
-        /// <summary>Integra a velocidade atual rumo à desejada (o vetor desejado É o "WASD" do bot), limitada
-        /// pela aceleração do perfil, e aplica à posição COM colisão — o dono da entidade simula o movimento,
-        /// como o cliente de um humano faz: (1) AABB externo da arena (<see cref="Walk"/>); (2) grid de chão
-        /// pisável (<see cref="Grid"/>) com DESLIZE de parede estilo WASD: passo cheio bloqueado → tenta só o
-        /// eixo X, só o eixo Z; os dois bloqueados = parede de frente, para. A posição publicada no 0x30a
-        /// nunca entra em célula de parede.</summary>
+        /// <summary>Integra a velocidade atual rumo à desejada, limitada pela aceleração do perfil, e aplica à
+        /// posição. Colisão de parede: clampa a posição ao AABB caminhável da arena (<see cref="Walk"/>) e zera
+        /// a componente de velocidade que empurra contra a parede — o bot desliza pela parede em vez de
+        /// atravessá-la (o movimento é 0x30a direto, sem física do cliente, então a colisão é aqui).</summary>
         private void Integrate(float desVx, float desVz)
         {
             float a = Profile.Acceleration;
             VelX = Approach(VelX, desVx, a);
             VelZ = Approach(VelZ, desVz, a);
-            float px = X, pz = Z;                 // posição pré-passo (chão válido conhecido)
             X += VelX; Z += VelZ;
 
             if (Walk is { } wb)
@@ -378,12 +371,6 @@ namespace RakionServer.World.Domain
                 if (cx != X) VelX = 0f;   // bateu na parede X: mata a velocidade normal (não "gruda" acumulando)
                 if (cz != Z) VelZ = 0f;   // idem Z
                 X = cx; Z = cz;
-            }
-            if (Grid is { } g && !g.IsOpen(X, Z))
-            {
-                if (g.IsOpen(X, pz)) { Z = pz; VelZ = 0f; }        // desliza ao longo da parede em X
-                else if (g.IsOpen(px, Z)) { X = px; VelX = 0f; }   // desliza ao longo da parede em Z
-                else { X = px; Z = pz; VelX = 0f; VelZ = 0f; }     // canto/parede de frente: para no chão válido
             }
         }
 
@@ -407,10 +394,8 @@ namespace RakionServer.World.Domain
             float dx = X - fromX, dz = Z - fromZ;
             float len = MathF.Sqrt(dx * dx + dz * dz);
             if (len < 0.01f) { dx = 0f; dz = -1f; len = 1f; }       // degenerado (colado): empurra p/ -Z
-            float px = X, pz = Z;
             X += dx / len * dist;
             Z += dz / len * dist;
-            if (Grid is { } g && !g.IsOpen(X, Z)) { X = px; Z = pz; }   // não cambaleia p/ dentro da parede
             Yaw = MathF.Atan2(fromX - X, fromZ - Z) * (180f / MathF.PI);   // encara o atacante
         }
 

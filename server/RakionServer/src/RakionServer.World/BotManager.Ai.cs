@@ -90,7 +90,6 @@ namespace RakionServer.World
                 var mapWalk = Domain.GolemWarLayouts.WalkFor(f.MapId);
                 var hull = f.HumanHull(2f);
                 bot.Walk = mapWalk is { } mw ? (hull is { } h ? mw.Union(h) : mw) : hull;
-                bot.Grid = Domain.WalkGrid.For(f.MapId);   // chão pisável real (paredes internas) — ver Integrate
 
                 // 1) SPAWN (fallback p/ bot só visto pelo BotTick; o caminho primário é SpawnFieldBotsInStage
                 //    no load do host): marca playing e, com os frames ligados, instancia o avatar via 0x4b
@@ -426,8 +425,6 @@ namespace RakionServer.World
                 bot.X = sp.X; bot.Z = sp.Z;   // spawn REAL do mapa (Y no chão); a rota assume daqui
             }
             rec.State = 4; rec.Dead = false; bot.Dead = false;
-            bot.Grid = Domain.WalkGrid.For(f.MapId);
-            bot.Grid.MarkWalked(bot.X, bot.Z);   // o ponto de spawn é chão por definição (bot nunca nasce preso)
             bot.SpawnGen++;                   // nova entidade na engine -> a ponte invalida o cache e re-acha
             if (BotMovement.UseNpcAvatar)
                 SpawnBotAsNpc(f, rec, bot);                   // 0x307 CreateNpc: entidade de colisão acertável
