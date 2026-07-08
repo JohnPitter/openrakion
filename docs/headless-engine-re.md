@@ -927,3 +927,26 @@ passo é **capturar o UDP no join de 2 clientes** (sniffer no loopback, achar o 
 REGRA: a entrega final é **server-side** (síntese da msg), injeção só serviu de RE (proibido injetar p/
 funcionalidade — [[sem-ddl-injetada-tudo-server-side]]). Tool de captura: `client/RakionDiag/capture_addremote.exe`;
 log `C:\temp\addremote_capture.log`.
+
+## 22.9 O bot É criado nativo — mas falta a ATIVAÇÃO DE COMBATE (peer vivo), não o create (2026-07-08)
+Teste in-game com o hook + `/addbot`: **o 0x4B do bot DISPARA o `AddRemotePlayer`** (capturado: seat=10,
+blobLen=67, mesmo caller `0x36193dcd`; blob do bot estruturalmente idêntico ao humano — lead 08, animId 31,
+flag 1, facing 0.98, só posição/stats diferem). ⇒ **o muro do "create" CAIU**: o bot é instanciado como
+entidade remota nativa (visível, anda pelo 0x30a relayado). O "fantasma" histórico era do caminho 0x307/type-7,
+NÃO deste 0x4B.
+
+**MAS o bot não é atingível** (sem HIT×N, sem animação de dano). Diagnóstico decisivo in-game:
+- **2 humanos SE ACERTAM** (HIT×N aparece entre eles) no nosso servidor. Combate funciona com peer real.
+- **`0x4C` NÃO é a ativação:** o servidor DROPA o `0x4C` do humano ("NAO-PORTADO 4C em campo") — o humano A
+  nunca recebe o `0x4C` do humano B — e mesmo assim os dois se acertam. Sintetizar 0x4C pro bot não resolve.
+- Bot e humano recebem o MESMO: `0x4B` (cria) + `0x30a` relayado (move). Iguais. ⇒ a diferença é só o
+  **registro de peer de sessão VIVO** (o handshake reliable `0x0304`): o humano completa (ackeia certo, vira peer
+  combatível); o `0x0304` sintetizado do bot (`BotLockstep`) aparentemente NÃO fecha esse registro no cliente.
+  Casa com [[lockstep-p2p-dialeto-real]] ("validação HIT×N pendente") e [[hitxn-muro-estado-combatente]]
+  ("estado de COMBATENTE, não em bytes").
+
+**PRÓXIMO PASSO cirúrgico (task #21):** pôr 1 humano + 1 humano REAL + o bot no MESMO stage; hookar e **comparar
+em memória a entidade-humano (combatível) vs a entidade-bot (fantasma)** — ambas em CGame player-manager
+`[+0x4854+seat*4]`. O campo que difere (alive/team/HP/`CPlayerSource`-connected) é o alvo EXATO: ou o servidor
+seta esse estado via uma msg que o bot ainda não manda, ou o `0x0304` do bot precisa fechar o registro de peer.
+Tool: `capture_addremote.exe` (estender p/ dumpar a entidade dos dois seats).
