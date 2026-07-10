@@ -110,7 +110,7 @@ namespace RakionServer.World
                     if (!bot.AliveFlagDown)
                     {
                         bot.AliveFlagDown = true;
-                        EmitBotAliveFlag(rec, bot, alive: false);
+                        EmitBotAliveFlag(f, rec, bot, alive: false);
                     }
                     if (f.Phase == MatchPhase.Playing && bot.DueForRespawn(now, BotRespawnDelayMs))
                     {
@@ -122,14 +122,14 @@ namespace RakionServer.World
                         else
                             f.BroadcastField(0x45, new[] { (byte)rec.Slot });   // 0x45 fantasma — a ponte re-acha e segue movendo
                         bot.AliveFlagDown = false;
-                        EmitBotAliveFlag(rec, bot, alive: true);
+                        EmitBotAliveFlag(f, rec, bot, alive: true);
                         Log.Ok("bot", "field {0}: '{1}' RESPAWN seat {2} (apos {3}ms)", f.Id, bot.Name, rec.Slot, BotRespawnDelayMs);
                     }
                     continue;
                 }
 
-                // Lockstep de sessão P2P (registro do bot como peer no host — colisão/HIT×N nativos):
-                // opens 1x por round + push periódico, self-throttled. Ver BotManager.Peer/BotLockstep.
+                // Só existe lockstep do bot no modo solo. Em 2+ humanos, registrar um player sem gametick
+                // próprio congela o combate nativo entre os clientes.
                 EnsureBotLockstep(f, rec, bot, now);
 
                 // 2) DECISÃO: alvo mais próximo + intenção de ataque, em cadência própria.
@@ -262,15 +262,9 @@ namespace RakionServer.World
                 ushort[] pat = BotComboPatterns[pool[bot.ComboVariant % pool.Length]];
                 ushort actionId = pat[bot.ComboStep - 1];
                 EmitBotAttack(rec, bot, actionId);
-                // DANO bot→humano (server-side): o golpe do bot te acerta em alcance → HP virtual decrementa; ao
-                // zerar, o servidor te MATA via broadcast 0x4f (o MESMO caminho pelo qual o teu cliente já renderiza
-                // a morte do bot). É o bot "revidando" de verdade, sem depender do peer nativo.
-                int? deadHuman = f.ResolveHumanHitByBot(rec, actionId);
-                if (deadHuman is int hSeat)
-                {
-                    f.BroadcastField(0x4f, new byte[] { (byte)hSeat, 0, (byte)rec.Slot, f.Score0, f.Score1 });
-                    Log.Ok("bot", "field {0}: BOT seat {1} MATOU humano seat {2} (0x4f sintetizado)", f.Id, rec.Slot, hSeat);
-                }
+                // O 0x0311 já é relayado ao cliente do humano. A vítima decide a própria morte e a reporta
+                // por 0x4f; sintetizar esse evento aqui desincroniza o estado e interrompe o HIT×N.
+                f.TryAnnounceBotHitOnHuman(rec);
                 bot.ComboStep++;
                 if (bot.ComboStep > pat.Length)   // combo terminou -> descansa
                 {
@@ -430,12 +424,15 @@ namespace RakionServer.World
                 SpawnBotAsNpc(f, rec, bot);                   // 0x307 CreateNpc: entidade de colisão acertável
             else if (BotMovement.ClientFramesEnabled)
             {
-                NotifyBotAddPlayer(f, rec.Slot, bot);         // 0x4b: instancia o avatar no stage do host
+                bool avatarRegistered = NotifyBotAddPlayer(f, rec.Slot, bot);
                 if (!BotMovement.UseClientBridge)
                 {
                     EnsureBotUdpSocket(bot);                  // origem dos 0x30a sintetizados (via relay do servidor)
-                    EnsureBotLockstep(f, rec, bot, now);      // abre o canal de sessão P2P com o host (peer real)
-                    EmitBotAliveFlag(rec, bot, alive: true);  // anuncia o avatar em-combate (0x830c kind 0x2a = 1)
+                    if (avatarRegistered)
+                    {
+                        EnsureBotLockstep(f, rec, bot, now);
+                        EmitBotAliveFlag(f, rec, bot, alive: true);
+                    }
                 }
             }
         }
@@ -499,7 +496,7 @@ namespace RakionServer.World
         /// 0 na morte — o estado que os peers reais trocam por round e que o gate de hit valida (ALIVE).
         /// Via socket do bot → relay do servidor, como todo tráfego do bot.
         /// </summary>
-        private void EmitBotAliveFlag(PlayerRec rec, BotPlayer bot, bool alive)
+        private void EmitBotAliveFlag(Domain.Field f, PlayerRec rec, BotPlayer bot, bool alive)
         {
             EnsureBotUdpSocket(bot);
             var sock = LinkOf(bot).UdpSocket;

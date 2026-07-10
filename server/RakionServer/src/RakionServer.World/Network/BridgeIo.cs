@@ -1,22 +1,18 @@
 using System.IO;
 using System.Text;
-using System.Threading;
 
 namespace RakionServer.World.Network
 {
     /// <summary>
     /// Contrato de arquivos com a ponte de injeção no cliente (<c>bot_render.dll</c>). A ponte roda DENTRO do
     /// <c>rakion.exe</c> e fura o muro do peer por dentro: lê <c>bot_pos.txt</c> (posições dos bots →
-    /// <c>SetPlacement</c> nativo = o bot ANDA na tela) e <c>bot_hit.txt</c> (sinal de acerto humano→bot →
-    /// <c>AddHitCount</c> nativo = o contador HIT×N aparece). Infra pura de I/O; o domínio entrega os números.
+    /// <c>SetPlacement</c> nativo = o bot ANDA na tela). Infra pura de I/O; o domínio entrega os números.
     /// Mecanismo PROVADO in-game (ver memória bot-movimento-injecao-cliente-real): loopback de arquivo a ~20Hz.
     /// </summary>
     internal static class BridgeIo
     {
         private const string Dir = @"C:\temp";
         private static readonly string BotPosPath = Path.Combine(Dir, "bot_pos.txt");
-        private static readonly string HitPath = Path.Combine(Dir, "bot_hit.txt");
-        private static int _hitSeq;
 
         static BridgeIo()
         {
@@ -29,14 +25,6 @@ namespace RakionServer.World.Network
         internal static void WriteBotPositions(StringBuilder lines)
         {
             try { File.WriteAllText(BotPosPath, lines.ToString()); } catch { }
-        }
-
-        /// <summary>Sinaliza um acerto humano→bot. A ponte vê o contador subir (borda) e chama <c>AddHitCount</c>
-        /// no humano local → o contador HIT×N nativo aparece. Formato <c>"seq slot"</c>: <paramref name="botSlot"/>
-        /// identifica o bot e o seq monotônico evita re-disparo do mesmo acerto.</summary>
-        internal static void SignalHit(int botSlot)
-        {
-            try { File.WriteAllText(HitPath, $"{Interlocked.Increment(ref _hitSeq)} {botSlot}\n"); } catch { }
         }
 
         private static readonly string BotNpcPath = Path.Combine(Dir, "bot_npc.txt");

@@ -25,8 +25,8 @@ posicionamento do fallback (`SpawnBotIntoRound`, com o spawn REAL do mapa no mod
 
 ## Validado IN-GAME (log do teste no mapa gravity)
 - ✅ **Anda** no stage — emite 0x30a; o gate do cliente abre via 0x319 + eco lockstep 0x0305.
-- ✅ **Luta e LEVA dano** server-side — o humano deu **36 acertos + 7 mortes do bot** (arbitragem
-  `Field.ResolveBotHitByHuman`; melee chega por **0x0311**, dano 40, dist 1–2.6).
+- ✅ **Luta e LEVA dano** server-side — `0x0311` abre o golpe e o vetor `aimX/aimZ` do próximo `0x30a`
+  confirma a interseção em `Field.ResolvePendingBotHitByHuman`; dano 40 e morte/placar no backend.
 - ✅ **Renasce** no round (revive no lugar, sem teleporte).
 - ✅ **Combos autênticos e variados** — actionIds REAIS capturados do humano: cadeia de M1
   `0x0400→0x0C00` + especiais `0x14/0x19` (pulo/skill). 5 padrões rotativos.

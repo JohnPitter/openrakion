@@ -1,3 +1,4 @@
+using System;
 using RakionServer.World.Domain;
 using Xunit;
 
@@ -242,62 +243,147 @@ namespace RakionServer.World.Tests
             f.State = 2; f.Phase = MatchPhase.Playing;            // PvP em jogo (gate do hit)
             var human = f.RecAt(0)!;                              // seat 0 = time 0 (inimigo do bot)
             human.State = 4; human.LastX = 0; human.LastZ = 0; human.LastPositionMs = 1;
+            human.LastAttackMs = Environment.TickCount64;
             human.LastHeading = 180;                             // olha p/ +Z (onde os bots são posicionados) — cone de mira
             return (f, added.Seat, added.Bot, human);
         }
 
         [Fact]
-        public void ResolveBotHitByHuman_KillsBotInRange()
+        public void ResolvePendingBotHitByHuman_KillsBotOnVectorIntersection()
         {
             var (f, botSeat, bot, _) = PvpFieldWithBot();
             bot.X = 0; bot.Z = 2;      // dentro do alcance (HumanMeleeRange 6.5)
             bot.Hp = 40;               // um golpe (dano 40) é letal
 
-            int? dead = f.ResolveBotHitByHuman(0, actionId: 1, hitBotSlot: out int hitSlot);
+            int? dead = f.ResolvePendingBotHitByHuman(0, aimX: 0, aimZ: 4, hitBotSlot: out int hitSlot);
 
             Assert.Equal(botSeat, dead);
-            Assert.Equal(botSeat, hitSlot);   // o out reporta qual bot levou o acerto (sinal HIT×N à ponte)
+            Assert.Equal(botSeat, hitSlot);   // o out reporta qual bot levou o acerto
             Assert.True(bot.Dead);
             Assert.True(f.RecAt(botSeat)!.Dead);   // OnPlayerDeath marcou o rec
         }
 
         [Fact]
-        public void ResolveBotHitByHuman_MissesOutOfRange()
+        public void ResolvePendingBotHitByHuman_MissesOutOfRange()
         {
             var (f, _, bot, _) = PvpFieldWithBot();
             bot.X = 0; bot.Z = 100;    // fora do alcance
 
-            Assert.Null(f.ResolveBotHitByHuman(0, actionId: 1, hitBotSlot: out int hitSlot));
+            Assert.Null(f.ResolvePendingBotHitByHuman(0, aimX: 0, aimZ: 4, hitBotSlot: out int hitSlot));
             Assert.Equal(-1, hitSlot);   // errou -> nenhum bot sinalizado
             Assert.False(bot.Dead);
             Assert.Equal(bot.MaxHp, bot.Hp);   // sem dano
         }
 
         [Fact]
-        public void ResolveBotHitByHuman_ThrottlesRepeatedHits()
+        public void ResolvePendingBotHitByHuman_ThrottlesRepeatedHits()
         {
-            var (f, _, bot, _) = PvpFieldWithBot();
+            var (f, _, bot, human) = PvpFieldWithBot();
             bot.X = 0; bot.Z = 2;
             bot.Hp = 100;   // valor determinístico (independe do MaxHp de balanceamento)
 
-            Assert.Null(f.ResolveBotHitByHuman(0, 1, out int firstHit));   // 1o golpe: aplica dano (100->60), não mata
+            Assert.Null(f.ResolvePendingBotHitByHuman(0, 0, 4, out int firstHit));
             ushort afterFirst = bot.Hp;
             Assert.Equal(60, afterFirst);
             Assert.True(firstHit >= 0);                  // acerto não-fatal TAMBÉM é sinalizado (incrementa o HIT×N)
-            Assert.Null(f.ResolveBotHitByHuman(0, 1, out int secondHit));   // imediato: throttle (cooldown) -> ignorado
+            human.LastAttackMs = Environment.TickCount64;
+            Assert.Null(f.ResolvePendingBotHitByHuman(0, 0, 4, out int secondHit));
             Assert.Equal(afterFirst, bot.Hp);            // sem dano adicional
             Assert.Equal(-1, secondHit);                 // throttle -> nenhum sinal (não conta combo no cooldown)
         }
 
         [Fact]
-        public void ResolveBotHitByHuman_IgnoredOutsidePvpPlay()
+        public void ResolvePendingBotHitByHuman_IgnoredOutsidePvpPlay()
         {
             var (f, _, bot, _) = PvpFieldWithBot();
             bot.X = 0; bot.Z = 2;
             f.Phase = MatchPhase.Pre;   // ainda em countdown -> não arbitra hit
 
-            Assert.Null(f.ResolveBotHitByHuman(0, 1, out _));
+            Assert.Null(f.ResolvePendingBotHitByHuman(0, 0, 4, out _));
             Assert.Equal(bot.MaxHp, bot.Hp);
+        }
+
+        [Fact]
+        public void ResolvePendingBotHitByHuman_RequiresRecentAttack()
+        {
+            var (f, _, bot, human) = PvpFieldWithBot();
+            bot.X = 0; bot.Z = 2;
+            human.LastAttackMs = 0;
+
+            Assert.Null(f.ResolvePendingBotHitByHuman(0, 0, 4, out int hitSlot));
+            Assert.Equal(-1, hitSlot);
+            Assert.Equal(bot.MaxHp, bot.Hp);
+        }
+
+        [Fact]
+        public void ResolvePendingBotHitByHuman_DoesNotStealImpactFromCloserHuman()
+        {
+            var (f, _, bot, _) = PvpFieldWithBot();
+            bot.X = 0; bot.Z = 3;
+            var humanTarget = f.RecAt(11)!;
+            humanTarget.State = 4;
+            humanTarget.LastPositionMs = 1;
+            humanTarget.LastX = 0;
+            humanTarget.LastZ = 2;
+
+            Assert.Null(f.ResolvePendingBotHitByHuman(0, 0, 4, out int hitSlot));
+            Assert.Equal(-1, hitSlot);
+            Assert.Equal(bot.MaxHp, bot.Hp);
+        }
+
+        [Fact]
+        public void ResolvePendingBotHitByHuman_ProximityWithoutVectorIntersectionMisses()
+        {
+            var (f, _, bot, _) = PvpFieldWithBot();
+            bot.X = 0; bot.Z = 2;
+
+            Assert.Null(f.ResolvePendingBotHitByHuman(0, aimX: 4, aimZ: 0, out int hitSlot));
+            Assert.Equal(-1, hitSlot);
+            Assert.Equal(bot.MaxHp, bot.Hp);
+        }
+
+        [Fact]
+        public void BotHitOnHuman_DoesNotSynthesizeDeath()
+        {
+            var (f, botSeat, bot, human) = PvpFieldWithBot();
+            bot.TargetSeat = human.Slot;
+            bot.X = 0; bot.Z = 2;
+            human.HitCombo = 4;
+
+            bool announced = f.TryAnnounceBotHitOnHuman(f.RecAt(botSeat)!);
+
+            Assert.True(announced);
+            Assert.True(human.Playing);
+            Assert.False(human.Dead);
+            Assert.Equal(0u, f.RecAt(botSeat)!.Score);
+            Assert.Equal(0, human.HitCombo);
+        }
+
+        [Fact]
+        public void HumanMovement_ReconcilesClientAuthoritativeRespawn()
+        {
+            var (f, _, _, human) = PvpFieldWithBot();
+            human.State = 1;
+            human.Dead = true;
+
+            bool reconciled = f.ReconcileHumanMovement(human);
+
+            Assert.True(reconciled);
+            Assert.True(human.Playing);
+            Assert.False(human.Dead);
+        }
+
+        [Fact]
+        public void HumanMovement_DoesNotReviveOutsidePlayingPhase()
+        {
+            var (f, _, _, human) = PvpFieldWithBot();
+            human.State = 1;
+            human.Dead = true;
+            f.Phase = MatchPhase.RoundEnd;
+
+            Assert.False(f.ReconcileHumanMovement(human));
+            Assert.Equal(1, human.State);
+            Assert.True(human.Dead);
         }
 
         // ---- respawn do bot no round (o bot não tem cliente p/ pedir o próprio respawn) ----

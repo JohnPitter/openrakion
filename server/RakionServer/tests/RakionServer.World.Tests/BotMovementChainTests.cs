@@ -117,6 +117,7 @@ namespace RakionServer.World.Tests
 
             var f = new Field(0) { Mode = 1, MapId = 210, MaxRounds = 3, RoundDurationSec = 300, IsRoom = true };
             int hostSeat = f.AssignSeat(host);
+            f.Add(host);
             host.FieldId = f.Id;
             f.Master = host;
             f.MasterSlot = hostSeat;
@@ -143,6 +144,45 @@ namespace RakionServer.World.Tests
             if (prop.CanWrite) { prop.SetValue(s, true); return; }
             typeof(ClientSession).GetField("<Connected>k__BackingField",
                 BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(s, true);
+        }
+
+        private (Socket Udp, Socket TcpClient, Socket TcpServer, int Seat) AddSecondHuman(Field field)
+        {
+            var udp = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            udp.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+            var tcp = TcpPair();
+            var session = new ClientSession(tcp.server, 1, _world)
+            {
+                CharName = "Observador",
+                CharClass = 1,
+                CharLevel = 5,
+                InField = true,
+                SlotActive = true,
+                Status = 3,
+                FieldId = field.Id,
+                UdpEndpoint = (IPEndPoint)udp.LocalEndPoint!,
+            };
+            SetConnected(session);
+            RegisterSession(session);
+            int seat = field.AssignSeat(session);
+            field.Add(session);
+            session.FieldSeat = (byte)seat;
+            field.RecAt(seat)!.State = 4;
+            return (udp, tcp.client, tcp.server, seat);
+        }
+
+        private static List<byte[]> ReceiveAvailable(Socket socket, int timeoutMs)
+        {
+            var packets = new List<byte[]>();
+            var buffer = new byte[2048];
+            long deadline = Environment.TickCount64 + timeoutMs;
+            while (Environment.TickCount64 < deadline)
+            {
+                if (!socket.Poll(25_000, SelectMode.SelectRead)) continue;
+                int size = socket.Receive(buffer);
+                packets.Add(buffer.AsSpan(0, size).ToArray());
+            }
+            return packets;
         }
 
         [Fact]
@@ -211,6 +251,95 @@ namespace RakionServer.World.Tests
 
             Assert.True(relayed, "0x0311 do bot não foi relayado ao humano");
             Assert.Equal(hpBefore, bot.Hp);   // não pode ter sido arbitrado contra o próprio bot
+        }
+
+        [Fact]
+        public async Task HumanAttackWithBotAndSecondHuman_WaitsForReliableImpact()
+        {
+            var (f, host, bot, _) = Arrange();
+            var other = AddSecondHuman(f);
+            using Socket otherUdp = other.Udp;
+            using Socket otherTcpClient = other.TcpClient;
+            using Socket otherTcpServer = other.TcpServer;
+            var human = f.FindRec(host)!;
+            human.LastX = 0f;
+            human.LastZ = 0f;
+            human.LastHeading = 180f;
+            human.LastPositionMs = Environment.TickCount64;
+            bot.X = 0f;
+            bot.Z = 2f;
+
+            var wirePlayer = new BotPlayer(99, "wire", 1, 1, human.Team);
+            byte[] attack = BotMovement.BuildAttackDatagram(wirePlayer, human.Slot, actionId: 1);
+            _fakeClientUdp.SendTo(attack, new IPEndPoint(IPAddress.Loopback, _udp.Port));
+
+            await Task.Delay(300);
+            Assert.Equal(bot.MaxHp, bot.Hp);
+
+            List<byte[]> otherFrames = ReceiveAvailable(otherUdp, 300);
+            Assert.Contains(otherFrames, p =>
+                p.Length >= 10 && BitConverter.ToUInt16(p, 0) == BotMovement.MsgAttack);
+        }
+
+        [Fact]
+        public async Task AttackVectorIntersection_DamagesBotAndConfirmsHitCount()
+        {
+            var (f, host, bot, _) = Arrange();
+            var human = f.FindRec(host)!;
+            human.LastX = 0f;
+            human.LastZ = 0f;
+            human.LastHeading = 180f;
+            human.LastPositionMs = Environment.TickCount64;
+            bot.X = 0f;
+            bot.Z = 2f;
+
+            var wirePlayer = new BotPlayer(100, "wire", 1, 1, human.Team);
+            byte[] attack = BotMovement.BuildAttackDatagram(wirePlayer, human.Slot, actionId: 1);
+            _fakeClientUdp.SendTo(attack, new IPEndPoint(IPAddress.Loopback, _udp.Port));
+            await Task.Delay(50);
+
+            wirePlayer.X = human.LastX;
+            wirePlayer.Z = human.LastZ;
+            wirePlayer.AimZ = 4f;
+            byte[] action = BotMovement.BuildActionDatagram(wirePlayer, human.Slot, moving: false);
+            _fakeClientUdp.SendTo(action, new IPEndPoint(IPAddress.Loopback, _udp.Port));
+
+            await Task.Delay(300);
+
+            Assert.True(bot.Hp < bot.MaxHp);
+            Assert.Contains(_rx.ToArray(), packet =>
+                packet.Length == 8 && BitConverter.ToUInt16(packet, 0) == BotMovement.MsgHitCount);
+        }
+
+        [Fact]
+        public void ReliableGameplayAck_ReturnsToTheOriginalHumanSender()
+        {
+            var (field, host, _, _) = Arrange();
+            var other = AddSecondHuman(field);
+            using Socket otherUdp = other.Udp;
+            using Socket otherTcpClient = other.TcpClient;
+            using Socket otherTcpServer = other.TcpServer;
+            while (_rx.TryDequeue(out _)) { }
+
+            byte hostSeat = (byte)field.FindRec(host)!.Slot;
+            const uint reliableSequence = 0x12345678;
+            byte[] reliableState = { 0x12, 0x83, 0x78, 0x56, 0x34, 0x12, hostSeat, 0x01 };
+            _fakeClientUdp.SendTo(reliableState, new IPEndPoint(IPAddress.Loopback, _udp.Port));
+
+            List<byte[]> receivedByOther = ReceiveAvailable(otherUdp, 300);
+            Assert.Contains(receivedByOther, packet => packet.AsSpan().SequenceEqual(reliableState));
+
+            byte otherSeat = (byte)other.Seat;
+            byte[] ack = new byte[11];
+            ack[1] = 0x40;
+            BinaryPrimitives.WriteUInt32LittleEndian(ack.AsSpan(2), 0x87654321);
+            ack[6] = otherSeat;
+            BinaryPrimitives.WriteUInt32LittleEndian(ack.AsSpan(7), reliableSequence);
+            otherUdp.SendTo(ack, new IPEndPoint(IPAddress.Loopback, _udp.Port));
+
+            Assert.True(SpinWait.SpinUntil(
+                () => Array.Exists(_rx.ToArray(), packet => packet.AsSpan().SequenceEqual(ack)),
+                1000), "o ACK 0x4000 não voltou ao humano que enviou o reliable 0x8312");
         }
 
         public void Dispose()

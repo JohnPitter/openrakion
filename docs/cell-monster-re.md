@@ -301,8 +301,9 @@ Lógica: bucketiza `dmtType` (`0xa/0xb/0xe → 0xa`, resto → 1); se o grupo mu
 O "HIT × N" é **automático e local**: aparece quando a `ReceiveDamage` do alvo roda no cliente do
 atacante com `inflictor == jogador local`. Para o humano ver HIT×N batendo no bot, o bot precisa ser
 **entidade real simulada no cliente do humano**, com `ENF_ALIVE` setado, **team inimigo** em +0x26c
-(0x0a/0x14, nunca 0) e **HP>0** em +0x624. Satisfeito isso, o counter "vem de graça" — não há pacote
-de contador a sintetizar.
+(0x0a/0x14, nunca 0) e **HP>0** em +0x624. Satisfeito isso, o counter "vem de graça". O avatar type-7 não
+gera o impacto nativo `0x0311(12B) → 0x8315`; por isso o servidor testa o vetor do golpe no `0x30a` e usa
+`0x315` somente depois da interseção confirmada, para atualizar o HUD. Ver `hitbox-re-findings.md`.
 
 ---
 

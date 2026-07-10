@@ -24,19 +24,16 @@ namespace RakionServer.World.Domain
 
         // ---- posição server-side (atualizada pelo relay do 0x30a do humano; lida pela IA do bot) ----
         public float LastX, LastY, LastZ;
-        public float LastHeading;        // graus (do 0x30a) — direção que o humano OLHA; p/ o cone de acerto
+        public float LastHeading;        // graus do 0x30a; usado pela IA para orientação do humano
         public long LastPositionMs;      // timestamp da última atualização de posição
+        public ushort LastAttackActionId;
+        public long LastAttackMs;       // ataque 0x311 aguardando o action-vector do próximo 0x30a
 
-        /// <summary>HP VIRTUAL do humano no match (server-side) p/ o dano bot→humano: o HP real é client-authoritative
-        /// (o servidor não o vê), então rastreamos um HP paralelo; ao zerar pelos golpes do bot, o servidor sintetiza
-        /// a morte do humano (0x4f). Reset por round. 0 = ainda não inicializado (setado no 1º golpe/round).</summary>
-        public ushort MatchHp;
-        /// <summary>Throttle do último golpe do bot NESTE humano (TickCount64) — evita instakill por 0x311 repetidos.</summary>
+        /// <summary>Throttle do último anúncio de golpe do bot neste humano (TickCount64).</summary>
         public long LastBotHitMs;
 
         /// <summary>Combo de acertos consecutivos deste humano nos bots (encadeia dentro de
-        /// <see cref="Field.HitComboWindowMs"/>) — alimenta o "HIT x N" visível via chat de stage
-        /// (o contador nativo do HUD exige peer de sessão real — muro do cliente).</summary>
+        /// <see cref="Field.HitComboWindowMs"/>) — alimenta somente o detalhe no chat.</summary>
         public int HitCombo;
         /// <summary>TickCount64 do último acerto que contou no combo.</summary>
         public long LastHitComboMs;
@@ -527,10 +524,15 @@ namespace RakionServer.World.Domain
             // REVIVE todos os ocupantes do match no início do round (cada round é um começo fresco — os mortos do
             // round anterior renascem). Antes só revivia State==3, deixando os mortos (State==1) fora do round seguinte
             // -> sem "evento de morte" o fim de round não disparava (round intermitente não encerrando).
-            foreach (var r in Slots) if (r.Occupied)
+            foreach (var r in Slots)
             {
-                r.Dead = false; if (r.State == 3 || r.State == 1) r.State = 4; r.Bot?.ResetForRound();
-                r.MatchHp = HumanMatchHp; r.HitCombo = 0;   // HP virtual/combo por round (senão o round seguinte herda o HP gasto)
+                if (!r.Occupied) continue;
+
+                r.Dead = false;
+                if (r.State == 3 || r.State == 1)
+                    r.State = 4;
+                r.Bot?.ResetForRound();
+                r.HitCombo = 0;
             }
             RecomputeMvp();
             Log.Ok("field", "field {0} round {1} iniciado (dur={2}s mode={3})", Id, Round, RoundDurationSec, Mode);
@@ -704,9 +706,9 @@ namespace RakionServer.World.Domain
         private const long HitComboWindowMs = 4000;
 
         /// <summary>
-        /// Linha de chat de STAGE a todos os humanos do field — feedback visível do combate server-side.
+        /// Linha de chat de STAGE a todos os humanos do field — feedback detalhado do combate server-side.
         /// Forma do handler original de 3D-chat (FUN_004244f0): [u16 0x47][00][cstring], canal lobby.
-        /// É o substituto do HUD nativo de HIT×N (que exige peer de sessão real — muro do cliente).
+        /// Não interfere no contador nativo do combate humano↔humano.
         /// </summary>
         public void AnnounceStage(string text)
         {
@@ -715,79 +717,41 @@ namespace RakionServer.World.Domain
             BroadcastLobby(w.ToArray());
         }
 
-        /// <summary>
-        /// Arbitra um golpe do humano <paramref name="attackerSeat"/> (0x311) contra o BOT inimigo mais próximo
-        /// dentro do alcance — o bot não tem cliente p/ reportar a própria morte (combate cliente-autoritativo),
-        /// então o SERVIDOR detecta e aplica. Geometria = distância XZ ao alcance (cone/raycast exato = §11).
-        /// Aplica o dano (placeholder por <paramref name="actionId"/> até a RE de iteminfo/combo, §11); se o bot
-        /// zera HP, marca a morte (<see cref="OnPlayerDeath"/> credita o humano + placar/round) e devolve o seat
-        /// do bot morto p/ o chamador broadcastar o 0x4f. Devolve null se não houve morte (errou/sobreviveu/throttle).
-        /// </summary>
-        public int? ResolveBotHitByHuman(int attackerSeat, ushort actionId, out int hitBotSlot, byte cause = 0)
+        private const long AttackVectorWindowMs = 500;
+        private const float PlayerHitRadius = 1.25f;
+
+        /// <summary>Consome um ataque 0x311 pendente e testa o vetor real enviado no 0x30a seguinte contra
+        /// os inimigos. O bot só recebe dano se for o primeiro corpo atravessado pelo segmento do golpe.</summary>
+        public int? ResolvePendingBotHitByHuman(int attackerSeat, float aimX, float aimZ,
+            out int hitBotSlot)
         {
             hitBotSlot = -1;
-            if (State != 2 || Phase == MatchPhase.Pre || Mode == 0)
-            {
-                Log.Ok("combat", "field {0}: golpe seat {1} IGNORADO (gate PvP: State={2} Phase={3} Mode={4})",
-                    Id, attackerSeat, State, Phase, Mode);
-                return null;   // só PvP em jogo
-            }
+            if (State != 2 || Phase != MatchPhase.Playing || Mode == 0) return null;
             var a = RecAt(attackerSeat);
-            if (a == null || !a.Playing || a.IsBot || a.LastPositionMs == 0)
-            {
-                Log.Ok("combat", "field {0}: golpe seat {1} IGNORADO (atacante inválido: null={2} playing={3} isBot={4} posMs={5})",
-                    Id, attackerSeat, a == null, a?.Playing == true, a?.IsBot == true, a?.LastPositionMs ?? 0);
-                return null;
-            }
-
-            // Direção que o humano OLHA (do heading do 0x30a). Mesma convenção do EncodeActionBody (Yaw+180):
-            // o vetor "look" = ângulo (heading-180) → (lookX,lookZ) = (-sin, -cos). O acerto SÓ conta se o bot
-            // estiver no CONE à frente (senão o golpe foi pro lado/trás e o número não deve aparecer).
-            float hdg = a.LastHeading * (MathF.PI / 180f);
-            float lookX = -MathF.Sin(hdg), lookZ = -MathF.Cos(hdg);
-            const float ConeDotMin = 0.20f;   // ~cos(78°): golpe dentro de ±78° da mira
-
-            PlayerRec? best = null;       // melhor alvo DENTRO do alcance E do cone
-            PlayerRec? nearest = null;    // bot inimigo mais próximo (mesmo fora) — diagnóstico do "errou"
-            float bestD2 = HumanMeleeRange * HumanMeleeRange;
-            float nearestD2 = float.MaxValue;
-            float bestDot = -2f;
-            int enemyBots = 0;
-            foreach (var r in Slots)
-            {
-                if (!r.IsBot || r.Bot == null || r.Dead || r.Team == a.Team || !r.Playing) continue;
-                enemyBots++;
-                float dx = r.Bot.X - a.LastX, dz = r.Bot.Z - a.LastZ;
-                float d2 = dx * dx + dz * dz;
-                if (d2 < nearestD2) { nearestD2 = d2; nearest = r; }
-                float len = MathF.Sqrt(d2);
-                float dot = len > 0.01f ? (dx * lookX + dz * lookZ) / len : 1f;   // >0 = bot à frente da mira
-                if (d2 <= bestD2 && dot >= ConeDotMin) { bestD2 = d2; best = r; bestDot = dot; }
-                if (best == null && r == nearest) bestDot = dot;   // diagnóstico: dot do +perto p/ calibrar a convenção
-            }
-            if (best?.Bot == null)
-            {
-                Log.Ok("combat", "field {0}: golpe seat {1} ERROU — bots={2}, +perto seat {3} a {4:F1} (alc {5}, hdg {10:F0}°, dot {11:F2}, cone≥{12}); humano=({6:F1},{7:F1}) bot=({8:F1},{9:F1})",
-                    Id, attackerSeat, enemyBots, nearest?.Slot ?? -1, nearest != null ? MathF.Sqrt(nearestD2) : -1f,
-                    HumanMeleeRange, a.LastX, a.LastZ, nearest?.Bot?.X ?? 0f, nearest?.Bot?.Z ?? 0f, a.LastHeading, bestDot, ConeDotMin);
-                return null;
-            }
-
             long now = Environment.TickCount64;
+            if (a == null || !a.Playing || a.IsBot || a.LastPositionMs == 0 ||
+                a.LastAttackMs == 0) return null;
+
+            long attackAge = now - a.LastAttackMs;
+            ushort actionId = a.LastAttackActionId;
+            a.LastAttackMs = 0; // um 0x311 abre exatamente uma tentativa; nenhum 0x30a posterior pode reutilizá-la
+            if (attackAge > AttackVectorWindowMs) return null;
+
+            var best = FindFirstEnemyOnAttackSegment(a, aimX, aimZ,
+                out float along, out float perpendicular);
+            if (best?.Bot == null) return null;
             if (now - best.Bot.LastHitMs < BotHitCooldownMs)
-            {
-                Log.Ok("combat", "field {0}: golpe seat {1} no bot seat {2} THROTTLE ({3}ms<{4}ms)",
-                    Id, attackerSeat, best.Slot, now - best.Bot.LastHitMs, BotHitCooldownMs);
                 return null;
-            }
+
             best.Bot.LastHitMs = now;
-            hitBotSlot = best.Slot;   // acerto confirmado (mesmo não-fatal) — a infra sinaliza o HIT×N à ponte
+            hitBotSlot = best.Slot;
             ushort dmg = MeleeDamageFor(actionId);
             bool died = best.Bot.TakeDamage(dmg);
-            best.Bot.ApplyKnockback(a.LastX, a.LastZ, died ? DeathKnockbackDist : HitKnockbackDist);   // recuo visível (0x30a)
-            if (!died) best.Bot.Stagger(now, BotHitStaggerMs);   // cambaleia + interrompe o combo (reação de hit)
-            Log.Ok("combat", "field {0}: humano seat {1} ACERTOU bot seat {2} -{3} (HP {4}/{5}) dist={6:F1} action=0x{7:X4}{8}",
-                Id, attackerSeat, best.Slot, dmg, best.Bot.Hp, best.Bot.MaxHp, MathF.Sqrt(bestD2), actionId, died ? " -> MORREU" : "");
+            best.Bot.ApplyKnockback(a.LastX, a.LastZ, died ? DeathKnockbackDist : HitKnockbackDist);
+            if (!died) best.Bot.Stagger(now, BotHitStaggerMs);
+            Log.Ok("combat", "field {0}: vetor do golpe seat {1} -> bot seat {2} -{3} (HP {4}/{5}) eixo={6:F2} lateral={7:F2} action=0x{8:X4}{9}",
+                Id, attackerSeat, best.Slot, dmg, best.Bot.Hp, best.Bot.MaxHp, along, perpendicular,
+                actionId, died ? " -> MORREU" : "");
             a.HitCombo = (now - a.LastHitComboMs <= HitComboWindowMs) ? a.HitCombo + 1 : 1;
             a.LastHitComboMs = now;
             AnnounceStage(died
@@ -795,53 +759,84 @@ namespace RakionServer.World.Domain
                 : $"HIT : x{a.HitCombo} >> {best.Bot.Name} {best.Bot.Hp}/{best.Bot.MaxHp}");
             if (!died) return null;       // sobreviveu
 
-            OnPlayerDeath(best.Slot, attackerSeat, cause);
+            OnPlayerDeath(best.Slot, attackerSeat, 0);
             return best.Slot;
         }
 
-        /// <summary>HP VIRTUAL inicial do humano p/ o dano do bot (server-side; o HP real é client-authoritative).</summary>
-        private const ushort HumanMatchHp = 400;
+        private PlayerRec? FindFirstEnemyOnAttackSegment(PlayerRec attacker, float aimX, float aimZ,
+            out float bestAlong, out float bestPerpendicular)
+        {
+            float vectorLength = MathF.Sqrt(aimX * aimX + aimZ * aimZ);
+            PlayerRec? best = null;
+            bestAlong = float.MaxValue;
+            bestPerpendicular = float.MaxValue;
+            if (vectorLength < 0.25f) return null;
+
+            float reach = MathF.Min(vectorLength, HumanMeleeRange);
+            float dirX = aimX / vectorLength, dirZ = aimZ / vectorLength;
+            foreach (var candidate in Slots)
+            {
+                if (!candidate.Playing || candidate.Dead || candidate.Team == attacker.Team || candidate.Slot == attacker.Slot)
+                    continue;
+                if (!candidate.IsBot && candidate.LastPositionMs == 0) continue;
+
+                float targetX = candidate.Bot?.X ?? candidate.LastX;
+                float targetZ = candidate.Bot?.Z ?? candidate.LastZ;
+                float dx = targetX - attacker.LastX, dz = targetZ - attacker.LastZ;
+                float along = dx * dirX + dz * dirZ;
+                if (along < 0f || along > reach + PlayerHitRadius || along >= bestAlong) continue;
+                float lateralX = dx - dirX * along, lateralZ = dz - dirZ * along;
+                float perpendicular = MathF.Sqrt(lateralX * lateralX + lateralZ * lateralZ);
+                if (perpendicular > PlayerHitRadius) continue;
+                best = candidate;
+                bestAlong = along;
+                bestPerpendicular = perpendicular;
+            }
+            return best;
+        }
 
         /// <summary>Alcance do golpe do BOT no humano (coord). O bot encara o alvo por construção (Yaw aponta ao
         /// alvo), então basta o reach — sem cone. Um pouco maior que o anel de luta (2.6) p/ o golpe conectar.</summary>
         private const float BotMeleeRange = 3.5f;
 
         /// <summary>
-        /// Arbitra um golpe do BOT (<paramref name="botRec"/>, 0x0311) contra o humano-alvo dele. O dano ao humano é
-        /// server-side (o HP real é client-authoritative; rastreamos <see cref="PlayerRec.MatchHp"/> virtual). Em
-        /// alcance, aplica dano; ao zerar, SINTETIZA a morte do humano — broadcast 0x4f (killer = bot), o MESMO
-        /// caminho pelo qual o cliente já renderiza a morte do bot. Faz o bot ser uma AMEAÇA REAL (te mata), sem o
-        /// peer nativo. Devolve o seat do humano MORTO (p/ o chamador broadcastar o 0x4f) ou null.
+        /// Registra um golpe do bot no humano-alvo apenas como feedback. O ataque já chega ao cliente por 0x0311;
+        /// a vítima é a fonte autoritativa da própria morte e a reporta por 0x4f. Fabricar a morte aqui colocava o
+        /// registro do humano em State=1 sem um respawn correspondente e interrompia o HIT×N de toda a partida.
         /// </summary>
-        public int? ResolveHumanHitByBot(PlayerRec botRec, ushort actionId)
+        public bool TryAnnounceBotHitOnHuman(PlayerRec botRec)
         {
-            if (State != 2 || Phase == MatchPhase.Pre || Mode == 0) return null;
+            if (State != 2 || Phase != MatchPhase.Playing || Mode == 0) return false;
             var bot = botRec.Bot;
-            if (bot == null) return null;
+            if (bot == null) return false;
             var h = RecAt(bot.TargetSeat);
-            if (h == null || h.IsBot || !h.Playing || h.Dead || h.LastPositionMs == 0) return null;
-            if (h.MatchHp == 0) h.MatchHp = HumanMatchHp;   // (re)inicializa ao entrar vivo no round/respawn
+            if (h == null || h.IsBot || !h.Playing || h.Dead || h.LastPositionMs == 0) return false;
 
             float dx = h.LastX - bot.X, dz = h.LastZ - bot.Z;
             float d2 = dx * dx + dz * dz;
-            if (d2 > BotMeleeRange * BotMeleeRange) return null;   // fora do alcance do bot
+            if (d2 > BotMeleeRange * BotMeleeRange) return false;
 
             long now = Environment.TickCount64;
-            if (now - h.LastBotHitMs < BotHitCooldownMs) return null;   // throttle anti-instakill
+            if (now - h.LastBotHitMs < BotHitCooldownMs) return false;
             h.LastBotHitMs = now;
 
-            ushort dmg = MeleeDamageFor(actionId);
-            h.MatchHp = (ushort)Math.Max(0, h.MatchHp - dmg);
-            Log.Ok("combat", "field {0}: BOT seat {1} ACERTOU humano seat {2} -{3} (HP virtual {4}) dist={5:F1}{6}",
-                Id, botRec.Slot, h.Slot, dmg, h.MatchHp, MathF.Sqrt(d2), h.MatchHp == 0 ? " -> MORREU" : "");
-            h.HitCombo = 0;   // apanhar quebra a sequência do SEU "HIT x N" (semântica do contador nativo)
-            AnnounceStage(h.MatchHp == 0
-                ? $"{bot.Name} : te FINALIZOU"
-                : $"{bot.Name} : te acertou -{dmg} (HP {h.MatchHp}/{HumanMatchHp})");
-            if (h.MatchHp > 0) return null;
+            h.HitCombo = 0;
+            AnnounceStage($"{bot.Name} : te acertou");
+            return true;
+        }
 
-            OnPlayerDeath(h.Slot, botRec.Slot, 0);   // morte do humano pelo bot (credita o bot + placar/round)
-            return h.Slot;
+        /// <summary>
+        /// Reconcilia um humano que voltou a emitir movimento durante o round. O cliente para de mandar 0x30a
+        /// enquanto está na death-cam; voltar a enviá-lo indica que o respawn client-authoritative terminou.
+        /// </summary>
+        public bool ReconcileHumanMovement(PlayerRec human)
+        {
+            if (Phase != MatchPhase.Playing || human.IsBot || human.State != 1) return false;
+
+            human.State = 4;
+            human.Dead = false;
+            Log.Ok("field", "field {0}: humano seat {1} reconciliado como playing após movimento", Id, human.Slot);
+            return true;
         }
 
         /// <summary>Dano de melee por actionId do 0x311 — PLACEHOLDER até a RE de arma/combo→dano (iteminfo, §11).

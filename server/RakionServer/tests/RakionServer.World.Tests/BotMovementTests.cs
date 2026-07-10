@@ -138,6 +138,16 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
+        public void HitCountDatagram_UsesTheBotAsVisualSource()
+        {
+            var bot = new BotPlayer(1, "Vyl", 5, 1, team: 1) { UdpSeq = 0x1234 };
+
+            byte[] packet = BotMovement.BuildHitCountDatagram(bot, seat: 0x0a);
+
+            Assert.Equal(new byte[] { 0x15, 0x03, 0x34, 0x12, 0, 0, 0x0a, 0x0a }, packet);
+        }
+
+        [Fact]
         public void Datagrams_ShareMonotonicSeqPerBot()
         {
             var bot = new BotPlayer(6, "Nyx", 5, 1, team: 1);

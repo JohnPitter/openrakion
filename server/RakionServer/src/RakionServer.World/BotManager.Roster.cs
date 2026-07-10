@@ -51,14 +51,7 @@ namespace RakionServer.World
             return n;
         }
 
-        /// <summary>
-        /// Spawn 3D do bot no STAGE — o 0x4b AddPlayer (canal FIELD) vai a TODOS os humanos já no stage, o
-        /// MESMO modelo do spawn mútuo humano↔humano (<see cref="WorldServer.SpawnStageForHumans"/>): cada
-        /// cliente registra o bot como player, sem roster divergente entre peers (a assimetria "só o master"
-        /// era a suspeita do lockstep travado — §22.10 revisto). Quem carrega DEPOIS recebe o create na
-        /// chegada, pelo SpawnStageForHumans. Corpo sintetizado por <see cref="BotMovement.BuildStageAddPlayer"/>.
-        /// </summary>
-        private void NotifyBotAddPlayer(Domain.Field f, int seat, BotPlayer bot)
+        private bool NotifyBotAddPlayer(Domain.Field f, int seat, BotPlayer bot)
         {
             var body = BotMovement.BuildStageAddPlayer(bot, seat);
             ClientSession[] humans;
@@ -71,6 +64,7 @@ namespace RakionServer.World
             }
             Log.Ok("bot", "stage: 0x4b AddPlayer seat {0} (cls {1} lvl {2}) -> {3} humano(s)",
                 seat, bot.CharClass, bot.Level, n);
+            return n > 0;
         }
 
         /// <summary>

@@ -1,7 +1,8 @@
 # start-stack.ps1 — sobe todo o stack .NET do OpenRakion.
 # Os web apps (launcher :80, admin :8080) precisam do runtime ASP.NET; como o .NET aqui é
 # user-local, exportamos DOTNET_ROOT para o apphost achar o Microsoft.AspNetCore.App.
-$env:DOTNET_ROOT = "$env:LOCALAPPDATA\Microsoft\dotnet"
+$userDotnet = "$env:USERPROFILE\.dotnet"
+if (Test-Path $userDotnet) { $env:DOTNET_ROOT = $userDotnet }
 $root = $PSScriptRoot
 $bin = "bin\Release\net9.0"
 

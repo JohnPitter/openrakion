@@ -7,6 +7,40 @@
 > são EMPACOTADAS, offsets não transferem: [[rakion-final-binario-diferente-re-ao-vivo]]) que cravou
 > a arquitetura da entrega e isolou os dois muros restantes.
 
+## Confirmação de impacto no P2P real e descarte do atalho 0x315 (2026-07-10)
+
+A análise do `rakion.bin` usado pelo cliente em `rakion-final` encontrou uma segunda entrada para o
+contador, independente de `ReceiveDamage`. O dispatcher de gameplay `FUN_00411760@0x411760` valida
+primeiro o remetente com `CSessionState::IsValidUDP_ForPlayer` e então trata:
+
+```text
+case 0x315:
+    message >> hitKind;
+    local = FieldInfo::GetLocalPlayer();
+    if (local != null) CPlayer::AddHitCount(local, hitKind);
+```
+
+O `ReceiveDamage` chama o mesmo `AddHitCount` com `hitKind=0x0A`, mas a captura golden humano↔humano não
+usa `0x315`. O encadeamento observado no fio é `0x830c → 0x0311 → 0x8315`: `0x0311` inicia/propaga o ataque
+e o `0x8315` reliable posterior confirma o impacto. Cada `0x83xx` entregue recebe um ACK `0x4000`, cujo
+`u32` no offset 7 referencia a sequência confirmada e precisa voltar ao peer que enviou o reliable.
+
+Enviar `0x315` ao receber apenas o `0x311` foi descartado: alcance/cone no instante da animação fazia o
+contador aparecer sem o golpe atravessar o bot. O teste ao vivo confirmou que o cliente nunca produz o
+`0x0311` de 12 bytes nem o `0x8315` contra o avatar type-7, portanto esses frames não podem confirmar o bot.
+
+A confirmação server-side usa a combinação que o cliente realmente fornece: o `0x0311` de 10 bytes abre uma
+única tentativa e o próximo `0x30a` entrega o vetor `aimX/aimZ` do golpe. O World testa esse segmento contra
+os corpos inimigos e só aplica dano se o bot for o primeiro corpo atravessado. Proximidade sem interseção não
+conta. O `0x315` é enviado ao atacante somente depois dessa colisão server-side, para atualizar o HUD.
+
+O handler `0x315` continua sendo um achado válido de RE, mas não é usado como confirmação de contato. Ele
+incrementa um contador diretamente, sem provar colisão, faísca, reação ou dano no alvo.
+
+Além da morte humana fabricada, havia uma falha no hub UDP: o World consumia `0x8315` e `0x4000` como se fossem
+feedback/input local. Com bot no stage, isso deixava o `0x8312` retransmitindo sem ACK e impedia a ativação
+normal do combate entre humanos. O World agora relaya `0x8315` e roteia cada `0x4000` ao remetente original.
+
 ## Mapa cravado (tudo em engine.dll, RVAs reais via EAT)
 
 | símbolo | VA | papel |
@@ -80,7 +114,8 @@ A **repulsão prova só a colisão de MOVIMENTO** — nenhum desses gates de COM
 inicializados no path de CPlayer real (via `AddRemotePlayer`, empacotado) — nosso `0x4b` cria o corpo
 mas não roda esse init, então team/alive/template/active ficam por sorte. É por isso que o corpo
 existe (repele) mas o raycast do golpe, mesmo achando o corpo, **sai no primeiro gate** (template ou
-team=0) → zero HIT×N. **Não há pacote de contador a mandar; falta o ESTADO de combatente na entidade.**
+   team=0) → zero HIT×N pelo caminho de dano. O `0x315` acima é apenas um handler diagnóstico e não substitui
+   o estado de combatente nem a confirmação real de contato.
 
 ## ATAQUE AOS DOIS MUROS (RE 2026-07-06, sessão longa) — cravado na engine.dll
 

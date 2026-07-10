@@ -49,9 +49,7 @@ namespace RakionServer.World.Network
         public int RoomId { get; set; } = -1;                // room/chat atual (indice em World.Rooms)
         public System.Net.IPEndPoint? UdpEndpoint { get; set; } // endpoint UDP de gameplay (aprendido)
         public byte GameSeq;                                    // relogio/frame da partida (tick 1583); avanca = timer corre
-        public byte LastInput = 5;                              // ultimo valor de input do cliente (0040 pkt[7]); o server ECOA no 1583
-        public byte LastGameplayFeedbackSeq;                    // ultimo seq ecoado pelo cliente em 1583 client->world
-        public byte LastGameplayFeedbackState;                  // ultimo estado ecoado pelo cliente em 1583 client->world
+        public byte LastInput = 5;                              // estado inicial usado pelo clock 1583 no PvP sem outro humano
         private int _gameClockStarted;
         public uint UdpKey { get; set; }                     // user+0x1464 (chave de sessao UDP, validada nos pacotes)
         public int FieldHandleRaw { get; set; }              // valor cru de user+0x1460

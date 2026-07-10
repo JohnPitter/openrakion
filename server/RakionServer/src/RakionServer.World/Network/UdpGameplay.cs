@@ -25,8 +25,6 @@ namespace RakionServer.World.Network
     public sealed class UdpGameplay
     {
         public const int MaxPacket = 0x4b0; // 1200, igual ao recvfrom do binario
-        private const byte ClientInputOp0 = 0x00;
-        private const byte ClientInputOp1 = 0x40;
         private const byte GameplayFeedbackOp0 = 0x15;
         private const byte GameplayFeedbackOp1 = 0x83;
         private const byte DefaultGameplayState = 0x0a;
@@ -167,6 +165,8 @@ namespace RakionServer.World.Network
                 // Registra o endpoint do bot (0x319) no cliente ANTES do 0x30a: faz o cliente gravar o socket do
                 // servidor como endpoint do slot do bot, destravando o gate de movimento (IsValidUDP_ForPlayer).
                 if (botSlot != 0xff) EnsureBotEndpointRegistered(sess.UdpEndpoint, botSlot);
+                if (pkt.Length >= 7 && pkt[1] == 0x83)
+                    RecordReliableDelivery(f, sess, BinaryPrimitives.ReadUInt32LittleEndian(pkt.AsSpan(2)), PusherBot);
                 try { _sock.SendTo(pkt, sess.UdpEndpoint); n++; } catch { }
             }
             if (n == 0) Log.Debug("udp", "RELAY bot: 0 humanos em fields com bots ({0}B)", pkt.Length);
@@ -235,6 +235,8 @@ namespace RakionServer.World.Network
                 if (s == sender || s.UdpEndpoint == null || s.FieldId != field.Id) continue;
                 if (!s.InField && s.Status != 3) continue;
                 EnsureBotEndpointRegistered(s.UdpEndpoint, seat);   // server = peer[seat] no receptor -> passa o filtro
+                if (pkt.Length >= 7 && pkt[1] == 0x83)
+                    RecordReliableDelivery(field, s, BinaryPrimitives.ReadUInt32LittleEndian(pkt.AsSpan(2)), seat);
                 try { _sock.SendTo(pkt, s.UdpEndpoint); n++; } catch { }
             }
             return n;
@@ -246,6 +248,26 @@ namespace RakionServer.World.Network
             foreach (var s in _world.Sessions)
                 if (s.UdpEndpoint != null && s.UdpEndpoint.Equals(from)) return s;
             return _world.GetSessionByIp(from.Address.ToString());
+        }
+
+        private void ApplyPendingHumanAttackVector(Domain.Field field, Domain.PlayerRec attacker,
+            ClientSession session, byte[] packet)
+        {
+            if (_sock == null || session.UdpEndpoint == null || packet.Length < 26) return;
+            const float scale = 0.01f;
+            float aimX = BinaryPrimitives.ReadInt16LittleEndian(packet.AsSpan(20)) * scale;
+            float aimZ = BinaryPrimitives.ReadInt16LittleEndian(packet.AsSpan(24)) * scale;
+            int? killed = field.ResolvePendingBotHitByHuman(attacker.Slot, aimX, aimZ,
+                out int hitBotSlot);
+            if (hitBotSlot < 0) return;
+
+            var bot = field.RecAt(hitBotSlot)?.Bot;
+            if (bot == null) return;
+            EnsureBotEndpointRegistered(session.UdpEndpoint, (byte)hitBotSlot);
+            try { _sock.SendTo(BotMovement.BuildHitCountDatagram(bot, hitBotSlot), session.UdpEndpoint); }
+            catch { }
+            if (killed is int botSeat)
+                field.BroadcastField(0x4f, new byte[] { (byte)botSeat, 0, (byte)attacker.Slot, field.Score0, field.Score1 });
         }
 
         /// <summary>Resolve a sessao de um PING de handshake UDP. O ping manda slot=0 FIXO -> GetSession(0) daria o
@@ -274,6 +296,28 @@ namespace RakionServer.World.Network
         /// <summary>Tokens dos pushes 0x0304 em trânsito (o ack 0x0305 ecoa o token em [8..11]). Devolve o
         /// ack ao pusher certo; push do BOT (já ackeado pelo servidor) marca o token p/ consumir o ack.</summary>
         private readonly Dictionary<uint, byte> _pushTokens = new();
+        private readonly Dictionary<(int FieldId, byte ReceiverSeat, uint Sequence), byte> _reliableSenders = new();
+
+        private void RecordReliableDelivery(Domain.Field field, ClientSession receiver, uint sequence, byte senderSeat)
+        {
+            var receiverRec = field.FindRec(receiver);
+            if (receiverRec == null) return;
+            lock (_reliableSenders)
+            {
+                if (_reliableSenders.Count > 8192) _reliableSenders.Clear();
+                _reliableSenders[(field.Id, (byte)receiverRec.Slot, sequence)] = senderSeat;
+            }
+        }
+
+        private byte TakeReliableSender(int fieldId, byte receiverSeat, uint sequence)
+        {
+            lock (_reliableSenders)
+            {
+                var key = (fieldId, receiverSeat, sequence);
+                if (!_reliableSenders.Remove(key, out byte senderSeat)) return PusherUnknown;
+                return senderSeat;
+            }
+        }
 
         private void RecordPushToken(byte[] pkt, byte pusherSeat)
         {
@@ -294,7 +338,7 @@ namespace RakionServer.World.Network
         /// <summary>Nome legível do frame p/ o rastro de jornada (só diagnóstico).</summary>
         private static string FrameName(ushort t) => t switch
         {
-            0x4000 => "INPUT", 0x030d => "KEEPALIVE", 0x8315 => "FB1583", 0x030a => "MOVE", 0x030f => "KEYSTATE",
+            0x4000 => "REL-ACK", 0x030d => "KEEPALIVE", 0x8315 => "IMPACT/CLK", 0x030a => "MOVE", 0x030f => "KEYSTATE",
             0x0304 => "LS-PUSH", 0x0305 => "LS-ACK", 0x0319 => "PEER-REG", 0x0311 => "ATAQUE",
             0x830c => "ALIVE/ANCHOR", 0x8312 => "PEER-STATE", 0x8313 => "CH-CTRL", 0x8307 => "NPC-CREATE",
             0x030b => "NPC-MOVE", 0x0104 => "ACAO-CAMPO", 0x0204 => "ACAO-CAMPO",
@@ -318,43 +362,33 @@ namespace RakionServer.World.Network
             Log.Debug("udp", "RX {0}B de {1}: {2}", pkt.Length, from, Convert.ToHexString(pkt));
             ushort _jt = pkt.Length >= 2 ? (ushort)(pkt[0] | (pkt[1] << 8)) : (ushort)0;
 
-            // GAMEPLAY: input do cliente (marker 0x4000, 11B: [0040][cc][00000000][val u32]).
-            // ECHO IMEDIATO 1:1 (fiel a captura original): CADA 0040 do cliente -> UM tick 1583 com o
-            // MESMO val (pkt[7]), respondido NA HORA. O timer global de 150ms desacoplava o echo do
-            // input -> em combos/cargas/troca-de-arma (vals mudando rapido) perdia vals intermediarios
-            // e a acao nao COMPLETAVA (combo nao encadeia, carga "comeca e termina rapido", troca de
-            // arma so 1x). Movimento ja funcionava; este 1:1 destrava a sequencia das acoes.
-            if (pkt.Length >= 2 && pkt[0] == ClientInputOp0 && pkt[1] == ClientInputOp1)
+            // ACK do reliable de gameplay: [0x4000][seq próprio:u32][seat do acker:u8][seq confirmado:u32].
+            // Na captura real ele volta ao peer que enviou 0x83xx. Consumir aqui deixava o 0x8312 pendente e
+            // bloqueava a ativação de combate quando o bot ocupava um seat.
+            if (pkt.Length >= 11 && pkt[0] == 0x00 && pkt[1] == 0x40)
             {
-                // DESCOBERTA (frida, world real): o combate solo PvE e' CLIENT-SIDE; o world real NAO ecoa
-                // 1583 no stage — so CONSUMIMOS o input. Nas salas BATTLE/PvP (Mode != 0) o relogio 1583 e'
-                // DIRIGIDO PELO TIMER do motor (WorldServer, ~150ms, GameSeq INCREMENTANDO — seq fixo congela
-                // o personagem). NAO ecoar 1:1 aqui: eco devolve seq fixo (=val) e vira tempestade de 2ms.
-                if (pkt.Length >= 8)
+                var acker = ResolveSender(from);
+                var field = acker != null ? _world.GetField(acker.FieldId) : null;
+                var ackerRec = field?.FindRec(acker!);
+                uint confirmedSequence = BinaryPrimitives.ReadUInt32LittleEndian(pkt.AsSpan(7));
+                if (field != null && ackerRec != null)
                 {
-                    var gs = _world.GetSessionByIp(from.Address.ToString());
-                    if (gs != null) gs.LastInput = pkt[7];
+                    byte reliableSender = TakeReliableSender(field.Id, (byte)ackerRec.Slot, confirmedSequence);
+                    if (reliableSender == PusherBot)
+                    {
+                        Journey(_jt, from, $"ACK reliable seq={confirmedSequence} do BOT consumido");
+                        return;
+                    }
+
+                    var destination = reliableSender != PusherUnknown ? field.RecAt(reliableSender)?.Session : null;
+                    if (destination?.UdpEndpoint != null)
+                    {
+                        try { _sock!.SendTo(pkt, destination.UdpEndpoint); } catch { }
+                        Journey(_jt, from, $"ACK reliable seq={confirmedSequence} -> humano seat {reliableSender}");
+                        return;
+                    }
                 }
-                Journey(_jt, from, "CONSUMIDO (input do cliente; sem relay — original tbm consome)");
-                return;
-            }
-            // FEEDBACK 1583 do cliente (8B): o client ecoa seq/state de gameplay. Antes caia em
-            // "pkt curto" e escondia o lockstep de combate/carga. Ainda nao aplicamos regra de
-            // negocio aqui; esta trilha e a fonte unica para a futura maquina de estado de acoes.
-            if (pkt.Length == 8 && pkt[0] == GameplayFeedbackOp0 && pkt[1] == GameplayFeedbackOp1)
-            {
-                var gs = ResolveSender(from);
-                if (gs != null)
-                {
-                    gs.LastGameplayFeedbackSeq = pkt[2];
-                    gs.LastGameplayFeedbackState = pkt[7];
-                    Log.Debug("udp", "[{0}] feedback 1583 seq={1:X2} state={2:X2}", gs.Slot, pkt[2], pkt[7]);
-                }
-                else
-                {
-                    Log.Debug("udp", "feedback 1583 sem sessao ({0}) seq={1:X2} state={2:X2}", from, pkt[2], pkt[7]);
-                }
-                Journey(_jt, from, "CONSUMIDO (feedback 1583; na captura é P2P — nós não relayamos)");
+                Journey(_jt, from, $"ACK reliable seq={confirmedSequence} sem remetente pendente");
                 return;
             }
             // ACK 0x030d do cliente (7B): consome.
@@ -444,13 +478,25 @@ namespace RakionServer.World.Network
                 return;
             }
 
+            // 0x8315 confirma um impacto que o cliente detectou contra outro combatente nativo. O bot type-7
+            // não entra nessa hit-list e nunca provoca este pacote; aqui preservamos apenas o P2P humano.
+            if (pkt.Length == 8 && pkt[0] == GameplayFeedbackOp0 && pkt[1] == GameplayFeedbackOp1)
+            {
+                var attacker = ResolveSender(from);
+                var field = attacker != null ? _world.GetField(attacker.FieldId) : null;
+                int relayed = attacker != null && field != null ? RelayHumanToOthers(pkt, attacker, field) : 0;
+                Journey(_jt, from, $"IMPACTO/clock nativo: relay a {relayed} humano(s)");
+                return;
+            }
+
             // NETCODE da SESSÃO P2P da engine: TODA a família de gameplay 0x03xx/0x83xx (0x83xx = 0x03xx com o
             // bit de entrega reliable) é RELAY INTACTO — o papel do worldserv original. A whitelist antiga
             // (0x30a/0x30f/0x830c/0x8313) DROPAVA o resto no parse de ping: o 0x8312 (estado/time do player
             // novo, emitido quando um 3º peer registra) nunca chegava ao outro humano -> nunca ackeado ->
             // retransmitido 1x/s p/ sempre -> a ativação de combate não completava ("ninguém se hita" com o
             // bot presente; sem bot o 0x8312 nem existe). Exceções com trilha própria ANTES deste bloco:
-            // input 0x0040, feedback 1583 (0x8315 8B), 0x030d, lockstep 0x0304/0x0305/0x0319, NPC 0x07/0x0b.
+            // ACK reliable 0x0040, impacto/clock 0x8315 de 8B, 0x030d, lockstep
+            // 0x0304/0x0305/0x0319 e NPC 0x07/0x0b.
             // O 0x0311 (ataque) fica FORA (pkt[0] != 0x11): tem arbitragem própria no bloco abaixo.
             if (pkt.Length >= 7 && (pkt[1] == 0x03 || pkt[1] == 0x83) && pkt[0] != 0x11)
             {
@@ -490,7 +536,9 @@ namespace RakionServer.World.Network
                             rec.LastX = nx; rec.LastY = ny; rec.LastZ = nz;
                             if (pkt.Length >= 19) rec.LastHeading = BinaryPrimitives.ReadInt16LittleEndian(pkt.AsSpan(17)); // +0a do corpo = heading (graus)
                             rec.LastPositionMs = nowMs;
+                            sf.ReconcileHumanMovement(rec);
                             sf.ExpandHumanHull(nx, nz);   // chão VÁLIDO empírico p/ o clamp do bot (onde o humano pisou)
+                            ApplyPendingHumanAttackVector(sf, rec, sender, pkt);
                         }
                     }
                     // RELAY HUMANO->HUMANO (2 clientes): o 0x30a/0x30f/reliable do humano vai aos OUTROS humanos do
@@ -512,8 +560,8 @@ namespace RakionServer.World.Network
             // (offset 6) — NÃO o IP (no loopback bot e humano colidem em 127.0.0.1). Dois casos:
             //  - srcSlot = BOT: é o ataque do BOT -> RELAY aos humanos (o cliente do alvo prevê o próprio hit/morte,
             //    modelo cliente-autoritativo). NÃO arbitrar, senão o bot se auto-mata (bug do loopback).
-            //  - srcSlot = HUMANO: o servidor ARBITRA o hit nos BOTS inimigos (o bot não tem cliente p/ reportar a
-            //    própria morte) via Field.ResolveBotHitByHuman e, na morte, broadcasta o 0x4f sintetizado.
+            //  - srcSlot = HUMANO: é início/estado de ataque, não confirmação de impacto. Apenas relaya; usar
+            //    proximidade aqui fabricava hits quando o jogador só chegava perto do bot.
             if (pkt.Length >= 10 && pkt[0] == 0x11 && pkt[1] == 0x03)
             {
                 var attacker = ResolveSender(from);
@@ -529,19 +577,18 @@ namespace RakionServer.World.Network
                 if (f != null && arec != null && !arec.IsBot)
                 {
                     ushort actionId = BinaryPrimitives.ReadUInt16LittleEndian(pkt.AsSpan(8));
-                    // ARBITRA o hit nos BOTS inimigos (só o bot não tem cliente p/ reportar a própria morte).
-                    int killedBots = 0, hitBots = 0;
-                    if (f.BotCount > 0)
+                    if (pkt.Length == 10)
                     {
-                        int? killed = f.ResolveBotHitByHuman(arec.Slot, actionId, out int hitBotSlot);
-                        if (hitBotSlot >= 0) { hitBots = 1; BridgeIo.SignalHit(hitBotSlot); }
-                        if (killed is int botSeat) { killedBots = 1; f.BroadcastField(0x4f, new byte[] { (byte)botSeat, 0, (byte)arec.Slot, f.Score0, f.Score1 }); }
+                        arec.LastAttackActionId = actionId;
+                        arec.LastAttackMs = Environment.TickCount64;
                     }
                     // RELAY o ataque aos OUTROS HUMANOS do field (o alvo humano prevê o próprio hit — modelo
                     // cliente-autoritativo, como no P2P onde o 0x0311 corre peer-a-peer). Sem isto o hit do
                     // atacante nunca chega ao cliente da vítima humana quando há um bot no field.
                     int nh = RelayHumanToOthers(pkt, attacker!, f);
-                    Journey(_jt, from, $"ATAQUE humano seat {arec.Slot} action=0x{actionId:X4}: arbitrado vs bots (hit={hitBots} kill={killedBots}) + RELAY a {nh} humano(s)");
+                    Journey(_jt, from, pkt.Length == 10
+                        ? $"ATAQUE humano seat {arec.Slot} action=0x{actionId:X4}: RELAY a {nh}; aguarda vetor do próximo 0x30a"
+                        : $"IMPACTO nativo humano seat {arec.Slot}: RELAY a {nh} humano(s)");
                 }
                 else Journey(_jt, from, $"ATAQUE srcSlot={srcSlot}: DROP (sender não resolvido no field)");
                 return;

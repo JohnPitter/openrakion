@@ -951,30 +951,18 @@ em memória a entidade-humano (combatível) vs a entidade-bot (fantasma)** — a
 seta esse estado via uma msg que o bot ainda não manda, ou o `0x0304` do bot precisa fechar o registro de peer.
 Tool: `capture_addremote.exe` (estender p/ dumpar a entidade dos dois seats).
 
-## 22.10 O CHÃO ARQUITETURAL: o 0x4B registra o bot no GAMETICK reliable, que ele não pode alimentar (2026-07-08)
-Dois A/B testes conclusivos, com 2 humanos + bot no stage:
-- **Desligar o `0x0304` do bot (BotSessionLockstepEnabled=false): combate CONTINUA quebrado.** ⇒ não é o lockstep.
-- **Trocar o blob do 0x4B pelo blob REAL de um humano (byte-perfeito, que o cliente aceita como combatente):
-  combate CONTINUA quebrado.** ⇒ não é o conteúdo do blob.
+## 22.10 Correção da hipótese do gametick: o stage usa o P2P UDP do Rakion (2026-07-10)
+A hipótese de que o `0x4B` fazia o cliente esperar `MSG_SEQ_ALLACTIONS` foi descartada ao voltar para a captura
+completa de dois humanos: não há esse bloco no fio do stage. O combate observado usa a família P2P UDP
+`0x830c → 0x0311 → 0x8315`, além de `0x030a/0x030f` e do canal `0x0304/0x0305`.
 
-Cruzando com o que já sabíamos: o bot **type-7** (SEM 0x4B/AddRemotePlayer) **NÃO quebra** o combate (é fantasma
-de campo, dano arbitrado server-side). ⇒ **o gatilho é o próprio 0x4B/AddRemotePlayer.** Mecanismo:
-- O `0x30a` (movimento) corre num canal UNRELIABLE separado — por isso o bot ANDA mesmo com o combate quebrado.
-- O COMBATE roda no **gametick reliable em lockstep** (o `MSG_SEQ_ALLACTIONS` da SE1: cada tick agrega as ações
-  de TODOS os players registrados, determinístico). Registrar o bot como player (via 0x4B→AddRemotePlayer) faz o
-  cliente PASSAR A ESPERAR o bot em cada tick do gamestream. O bot não é peer real de gamestream (não contribui
-  ação por tick) → o lockstep TRAVA → o sim de combate congela p/ TODOS. Casa 1:1 com o sintoma
-  ("bot anda, mas ninguém fica hitável quando ele entra").
+A captura também mostrou que todo `0x83xx` entregue recebe um ACK `0x4000`, com a sequência confirmada no
+offset 7. O World consumia esse ACK e o `0x8315`; com bot presente, o `0x8312` ficava pendente e o combate entre
+humanos não ativava corretamente. O hub agora registra o remetente de cada reliable por destinatário e devolve
+o ACK ao peer original. ACK de reliable emitido pelo bot é consumido porque não existe socket cliente do bot.
 
-**VERDADE FINAL (o chão, cravado dos dois lados):** o combate nativo (HIT×N) exige ser **participante do gametick
-reliable** (ação por tick), o que exige ser um **peer de sessão SE1 real**. Registrar o bot como player sem esse
-peer (o 0x4B, a única via de virar hitável) **quebra o lockstep determinístico**. Não é bug — é a arquitetura:
-- **type-7 (sem 0x4B):** não quebra o gametick, mas não é hitável nativo (dano arbitrado server-side). ✅ shippável.
-- **0x4B (AddRemotePlayer):** hitável-capaz, mas quebra o gametick (sem peer que ticka). ✗
-- meio-termo (hitável + não-quebra) = **peer de gamestream real** = a engine headless, que §22.6 provou NÃO formar
-  a sessão com o cliente (o P2P do stage não é sessão SE1). Semanas de RE incerta, possivelmente inviável sem o
-  binário do dedicated original.
-
-**RECOMENDAÇÃO:** consolidar no **type-7 + combate server-side** (1 humano × bot: anda humano, persegue, ataca,
-te MATA via HP arbitrado + 0x4f, feedback de HIT no chat de stage §22.x). Funciona e não quebra o combate. O
-contador HIT×N nativo e o cenário multi-humano-com-bot ficam documentados como muro do gametick-peer.
+Arquitetura adotada: o bot continua sendo um ator autoritativo do servidor, ocupa roster/seat e recebe `0x4B`
+em todos os clientes. Presença e movimento usam o P2P capturado. Contra type-7, o cliente não emite o `0x8315`;
+o World combina o `0x311` de intenção com o vetor `aimX/aimZ` do próximo `0x30a` e testa um segmento contra os
+corpos inimigos. Dano e `0x315` visual só nascem se esse segmento atravessar primeiro o bot. Combate
+humano→humano permanece integralmente nativo. Não há segunda instância do cliente.

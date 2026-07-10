@@ -314,12 +314,11 @@ perseguir/patrulhar → mirar/atacar com cooldown), síntese de movimento (`Emit
 1. **Renderizar o movimento do bot no host** — **RESOLVIDO server-side via handshake 0x319** (§10.3).
    O muro do peer NÃO exigia engine headless: era um endpoint UDP por-player não-registrado. O atalho
    do `0x4b` segue refutado (§4.2: movimento é só `0x30a` UDP).
-2. **Detecção de hit humano→bot** — **IMPLEMENTADO** (`Field.ResolveBotHitByHuman` + `BotPlayer.TakeDamage`,
-   chamado no 0x311 do humano em `UdpGameplay`). O bot não reporta a própria morte (cliente-autoritativo), então
-   o servidor arbitra: no 0x311 do humano, acha o bot inimigo mais próximo dentro de `HumanMeleeRange` (6.5),
-   aplica dano (throttle anti-instakill) e, na morte, sintetiza o **0x4f** `[botSeat,cause,killerSeat,score]`.
-   APROXIMAÇÃO: geometria = distância XZ (cone/raycast por arma = §11); dano = placeholder 40 (`MeleeDamageFor`,
-   até a RE de `actionId`→arma→dano, §11).
+2. **Detecção de hit humano→bot** — **IMPLEMENTADO** (`Field.ResolvePendingBotHitByHuman` +
+   `BotPlayer.TakeDamage`). O `0x311` de 10 bytes abre uma tentativa e o próximo `0x30a` fornece o vetor real
+   `aimX/aimZ`. O servidor testa o segmento contra todos os inimigos: o bot só recebe dano se for o primeiro
+   corpo atravessado. Na morte, sintetiza o **0x4f** `[botSeat,cause,killerSeat,score]`; em cada acerto confirmado,
+   envia `0x315` ao atacante para o HUD. Dano ainda é placeholder 40 (`MeleeDamageFor`).
 3. **O golpe do bot no humano** — funciona pelo modelo nativo: o bot emite 0x311/action-vec, **o
    cliente do humano prevê o hit e reporta a própria morte (0x4f killer=botSeat)** — *desde que o
    golpe do bot chegue ao humano* (mesmo muro do item 1).

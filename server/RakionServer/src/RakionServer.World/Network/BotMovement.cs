@@ -43,6 +43,7 @@ namespace RakionServer.World.Network
 
         /// <summary>Evento de golpe; o tail u16 = actionId (arma/combo/skill) (§4).</summary>
         public const ushort MsgAttack = 0x0311;
+        public const ushort MsgHitCount = 0x0315;
 
         /// <summary>
         /// CreateNpc — cria uma ENTIDADE NPC remota de COLISÃO REAL (acertável), o mecanismo PRÓPRIO da
@@ -169,7 +170,7 @@ namespace RakionServer.World.Network
         /// nasce do join de SESSÃO da engine, que exige um peer de sessão REAL (2º cliente); impossível em
         /// 1-cliente offline. O caminho NPC (este flag=true) faria o bot virar MONSTRO e arriscava não
         /// renderizar. O type-7 entrega o bot jogável: anda + IA + colide + dano/morte/respawn + placar/vitória
-        /// (só falta o número do HIT×N no HUD, cosmético, atrás do muro arquitetural). Insumo p/ o dia de um
+        /// Faísca/animação de dano continuam atrás do muro arquitetural. Insumo p/ o dia de um
         /// 2º cliente: docs/hitbox-re-findings.md (RVAs de IsApplyReliableUDP/HandleMessage/ChangeTeam/+0x1d20).
         /// </summary>
         public static bool UseNpcAvatar => false;
@@ -390,6 +391,17 @@ namespace RakionServer.World.Network
             w.WriteByte((byte)seat);         // +07 sub = seat do bot
             w.WriteWord(actionId);           // +08 actionId
             return w.ToArray();              // 10B
+        }
+
+        /// <summary>Confirma ao atacante o contador local somente depois que a hitbox server-side atravessa o bot.</summary>
+        public static byte[] BuildHitCountDatagram(BotPlayer bot, int seat, byte hitKind = 0x0a)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(MsgHitCount);
+            w.WriteUInt32(bot.UdpSeq++);
+            w.WriteByte((byte)seat);
+            w.WriteByte(hitKind);
+            return w.ToArray();
         }
 
         // ---- SPAWN/MOVE como NPC (0x307/0x30b) — entidade de COLISÃO real, fura o type-7 ----
