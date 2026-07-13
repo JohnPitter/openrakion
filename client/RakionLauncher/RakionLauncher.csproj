@@ -28,6 +28,8 @@
     <!-- Assets de UI (ícone + arte) embutidos no exe. Derivados do cliente, NÃO versionados (ver Assets\
          README.md). O glob tolera a ausência: quem clona sem os assets ainda compila (UI degrada sem eles). -->
     <EmbeddedResource Include="Assets\*.ico;Assets\*.png;Assets\*.bmp" />
+    <EmbeddedResource Include="..\RakionClientCompat\bin\version.dll" LogicalName="RakionLauncher.Native.version.dll" />
+    <EmbeddedResource Include="..\RakionClientCompat\bin\verorig.dll" LogicalName="RakionLauncher.Native.verorig.dll" />
   </ItemGroup>
 
   <ItemGroup>
@@ -37,5 +39,9 @@
   <ItemGroup>
     <None Include="launcher.settings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <Target Name="BuildClientCompatibility" BeforeTargets="PrepareForBuild">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\RakionClientCompat\build.ps1&quot;" />
+  </Target>
 
 </Project>

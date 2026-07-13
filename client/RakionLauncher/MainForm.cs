@@ -151,6 +151,7 @@ internal sealed class MainForm : Form
             }
 
             _settings.Save(_iniPath, _modeFile);   // garante o m_bActiveFullScreen certo no INI antes de lançar
+            ClientCompatibility.Install(_binDir);
             string mode = _settings.DisplayMode;
             // Lança SUSPENSO, aplica o patch do modo janela (se não for fullscreen) ANTES de o engine trocar a
             // resolução do desktop, e só então resume — senão a "janela" cobre a tela na resolução do INI.
