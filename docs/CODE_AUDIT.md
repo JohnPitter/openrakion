@@ -15,7 +15,7 @@
 | `Broker/Systems.cs` | 1797 | 4.5x | god-file decompilado; 790 ln são framework `Ini`/`Profile` |
 | `World/Network/ClientSession.cs` | 1032 | 2.6x | socket + replay + handlers de shop/PU + god-object de estado |
 | `World/Database/WorldDatabase.cs` | 669 | 1.7x | repositório monolítico, mas **coeso e limpo** |
-| `World/WorldServer.cs` | 607 | 1.5x | host de infra **+ motor de partida** misturados |
+| `World/WorldServer.cs` | ~~607~~ **459** | ✅ | **DESACOPLADO (2026-07-03)**: 5 serviços de domínio extraídos (`Services/ItemCatalog`, `ProgressionService`, `EnchantService`, `BuddyService` + `BotManager`) e núcleo fatiado em partials por concern (`.Fields.cs`, `.Sessions.cs`); resta só bootstrap/match-engine. Todos os arquivos <600 |
 | `World/Network/WorldHandlers.ReconCombatB.cs` | 516 | 1.3x | seat + relay de combate |
 | `World/Domain/Field.cs` | 506 | 1.3x | domínio **+ wire-codec** misturados |
 | `World/Network/WorldHandlers.ReconRoomA.cs` | 395 | — | **arquivo inteiro morto** (ver P0) |
@@ -41,7 +41,7 @@ Verificar cada item (grep dos call-sites) antes de apagar; vários foram confirm
 
 ### P2 — Separar domínio de infra (regra de negócio fora de I/O/rede)
 - **Economia** (compra `Op_RoomMemberQuery`, venda `SellBoxSlot`, `HandleBuyPowerUser`, `CreditSoloResult`) vive em handlers de rede/sessão — mover para um `ShopService`/`Economy` de domínio; o handler só serializa.
-- **Motor de partida** (`MatchTick`/`SettleMatch`/`GrantExp`/clocks) em `WorldServer` → extrair `MatchEngine`.
+- **Progressão** (`GrantExp`/`ApplyStageResult`/`SettleLevels`/curva) → ✅ **EXTRAÍDA** p/ `Services/ProgressionService` (2026-07-03); idem refino→`EnchantService`, catálogo→`ItemCatalog`, buddy→`BuddyService`. **Resta**: o motor de partida puro (`MatchTick`/`SettleMatch`/clocks) segue no `WorldServer` (bootstrap) — extração p/ `MatchEngine` é o próximo passo natural (entrelaçado com o loop de field).
 - **Wire-codec em entidade de domínio**: `Field.Build0x48/49/4a`/`BuildMatchEnd`/`SerializeListEntry` → mover para um `FieldWireCodec`/camada Network; `Combat_*` de `ReconCombatA` viram métodos de `Field`/`PlayerRec`.
 
 ### P3 — Dedup + segurança por construção

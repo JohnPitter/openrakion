@@ -15,11 +15,16 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="RakionServer.World.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="MySqlConnector" Version="2.3.*" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\RakionServer.Common\RakionServer.Common.csproj" />
+    <ProjectReference Include="..\RakionServer.Peer\RakionServer.Peer.csproj" />
   </ItemGroup>
 
 </Project>

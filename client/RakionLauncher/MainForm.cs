@@ -157,13 +157,19 @@ internal sealed class MainForm : Form
             // Valida as credenciais no auth web ANTES de lançar (aviso de login inválido). A senha em hex é a
             // mesma usada no argv do jogo — calcula uma vez e reusa no launch.
             string hexPass = GameLauncher.HexPass(_pass.Text);
-            _play.Enabled = false;
-            Status("Validando login…", false);
-            var login = await AuthClient.LoginAsync(ServerConfig.BaseUrl(_clientDir), user, hexPass);
-            _play.Enabled = true;
-            if (login == AuthClient.LoginResult.Invalid) { Status("Login ID ou senha inválidos.", true); return; }
-            if (login == AuthClient.LoginResult.Unreachable)
-            { Status($"Servidor de login indisponível ({ServerConfig.AuthHost(_clientDir)}). O servidor está no ar?", true); return; }
+            // Bypass do pré-voo p/ CONTROLE de interop contra o worldserv ORIGINAL (docker): o :80 do original é o
+            // auth PHP do jogo, sem a rota /launcherlogin. Com o marcador C:\temp\launcher_nologin.txt presente,
+            // pula a validação e lança (o rakion.exe faz o próprio login no :40708). No-op sem o marcador.
+            if (!File.Exists(@"C:\temp\launcher_nologin.txt"))
+            {
+                _play.Enabled = false;
+                Status("Validando login…", false);
+                var login = await AuthClient.LoginAsync(ServerConfig.BaseUrl(_clientDir), user, hexPass);
+                _play.Enabled = true;
+                if (login == AuthClient.LoginResult.Invalid) { Status("Login ID ou senha inválidos.", true); return; }
+                if (login == AuthClient.LoginResult.Unreachable)
+                { Status($"Servidor de login indisponível ({ServerConfig.AuthHost(_clientDir)}). O servidor está no ar?", true); return; }
+            }
 
             _settings.Save(_iniPath, _modeFile);   // garante o m_bActiveFullScreen certo no INI antes de lançar
             string mode = _settings.DisplayMode;
@@ -181,6 +187,7 @@ internal sealed class MainForm : Form
             int w = _settings.ScreenWidth, h = _settings.ScreenHeight;   // alvo do framing = resolução escolhida
             new Thread(() => WindowMode.FrameGameWindow(pid, mode, w, h)) { IsBackground = true }.Start();
             new Thread(() => WindowMode.PatchKeyHook(pid)) { IsBackground = true }.Start();
+            new Thread(() => BotHitCompatibility.InstallWhenReady(pid)) { IsBackground = true }.Start();
 
             // Botão SEGUE HABILITADO: troca o login e clique START de novo p/ abrir uma 2ª conta na mesma máquina.
             Status($"Rakion iniciado ({user}). Para uma 2ª conta: troque o login e clique START de novo.", false);

@@ -181,6 +181,16 @@ namespace RakionServer.World.Network
             var rec = field.RecAt(seat);
             if (rec == null) return;
 
+            // GOLEM/BOSS WAR (regra oficial softnyx): mortos NÃO renascem. Recusa o respawn (0x45) de quem já morreu
+            // no round em andamento; o spawn INICIAL e o de novo round vêm com Dead=false / fase Pre e passam normal.
+            if ((field.Mode == (byte)GameMode.Golem || field.Mode == (byte)GameMode.Boss)
+                && field.Phase == MatchPhase.Playing && rec.Dead)
+            {
+                rec.Session?.SendMessage(0x45, new[] { (byte)seat, (byte)1 });   // result 1 = spawn recusado
+                Log.Info("field", "respawn recusado (field {0} seat {1}: modo {2} sem respawn)", field.Id, seat, field.Mode);
+                return;
+            }
+
             sbyte result;
             if (field.State != 2)
             {

@@ -391,7 +391,7 @@ namespace RakionServer.World.Network
             }
             else return;
 
-            field.LastRoundWinner = dir;   // +0x2bd
+            field.RoundEndCause = dir;     // +0x2bd
             field.Phase = MatchPhase.RoundEnd; // +0x2b4 = 2
             field.DeadlineMs = Environment.TickCount64 + 15000;
 
@@ -503,12 +503,11 @@ namespace RakionServer.World.Network
                 return; // x!=0 && y!=0 -> LAB_00405ed6 (nada)
             }
 
-            field.LastRoundWinner = 2;          // +0x2bd = 2 (cause)
+            field.RoundEndCause = 2;            // +0x2bd = 2 (cause)
             field.Phase = MatchPhase.RoundEnd;  // +0x2b4 = 2
             field.DeadlineMs = Environment.TickCount64 + 15000;
 
-            byte[] body = { 2, field.WinnerSide, field.Wins0, field.Wins1 };
-            field.BroadcastFieldPlaying(0x4a, body);
+            field.BroadcastFieldPlaying(0x4a, field.Build0x4a());
             Log.Ok("field", "[{0}] facing x={1} y={2} (w0={3} w1={4})", u.Slot, x, y, field.Wins0, field.Wins1);
         }
     }

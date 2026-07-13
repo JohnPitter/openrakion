@@ -38,3 +38,12 @@ Thumbs.db
 *.log.err
 .buddymark
 .logmark
+
+# ===== Build outputs .NET / nativos =====
+bin/
+obj/
+out/
+*.obj
+**/native/*.exe
+**/native/*.pdb
+**/TestResults/

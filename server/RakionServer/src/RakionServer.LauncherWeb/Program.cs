@@ -9,7 +9,9 @@ using RakionServer.Common;
 //   fetch?app&ver -> lista de auto-update (fetchapp/fetchfile); vazio = atualizado
 //   qualquer outra coisa (note/file/config) -> 200 vazio (comportamento que funciona no cliente patcheado)
 var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.UseUrls("http://0.0.0.0:80");
+// Bind padrão :80 (porta do launcher_web.py original); sobreponível por ASPNETCORE_URLS / --urls para subir
+// numa porta livre quando o :80 está ocupado (ex.: captura P2P com o servidor original no :80).
+builder.WebHost.UseUrls(builder.Configuration["urls"] ?? "http://0.0.0.0:80");
 var app = builder.Build();
 
 // Fonte ÚNICA da config do launcher = appsettings.json (ConnectionStrings:Rakion), sobreponível por

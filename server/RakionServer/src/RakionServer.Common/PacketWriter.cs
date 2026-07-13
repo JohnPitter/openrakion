@@ -28,6 +28,9 @@ namespace RakionServer.Common
 
         public PacketWriter WriteUInt32(uint value) { _bw.Write(value); return this; }
 
+        /// <summary>float32 little-endian IEEE-754 (posicoes/orientacao do protocolo do world).</summary>
+        public PacketWriter WriteSingle(float value) { _bw.Write(value); return this; }
+
         /// <summary>String prefixada por tamanho (1 byte) + ASCII, como no broker.</summary>
         public PacketWriter WriteString(string s)
         {
