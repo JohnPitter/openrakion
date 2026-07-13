@@ -112,3 +112,15 @@ O ack correto + o lado-bot do canal são exatamente o que o fio dos 2 humanos mo
 não prova ONDE o cliente decide criar a entidade com colisão. Se o HIT×N não vier mesmo com o canal
 estabelecido, o próximo passo é diffar o que o host recebe nos dois cenários DEPOIS do canal (0x830c/
 0x8313/0x8315, os reliable de gameplay da captura que o bot ainda não fala).
+
+## Reteste nativo (2026-07-13) — refutado no jogo
+
+O reteste ocorreu depois da correção que isolou completamente o P2P humano↔humano. O bot manteve
+uma máquina de handshake por humano: `OPEN 1 → ACK → OPEN 2 → ACK → PUSH → ACK → estabelecido`.
+Cada frame só avança quando o cliente confirma o token correspondente; perdas repetem o mesmo frame.
+As âncoras `0x830c` só começam depois do terceiro ACK, impedindo que mensagens reliable cheguem antes
+da criação do canal.
+
+Mesmo com esse fluxo, o HIT no bot não funcionou no cliente real. A opção de promover o bot sintético a
+`CPlayer` apenas pelo handshake está refutada. O runtime voltou ao protocolo estável anterior e o contador
+visual passou para `RakionClientCompat`, sem regra de dano no launcher.

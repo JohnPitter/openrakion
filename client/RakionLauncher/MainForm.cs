@@ -172,6 +172,7 @@ internal sealed class MainForm : Form
             }
 
             _settings.Save(_iniPath, _modeFile);   // garante o m_bActiveFullScreen certo no INI antes de lançar
+            ClientCompatibility.Install(_binDir);
             string mode = _settings.DisplayMode;
             // Lança SUSPENSO, aplica os patches ANTES de o engine inicializar (mutex p/ multi-instância; modo
             // janela ANTES de trocar a resolução do desktop), e só então resume.
@@ -187,7 +188,6 @@ internal sealed class MainForm : Form
             int w = _settings.ScreenWidth, h = _settings.ScreenHeight;   // alvo do framing = resolução escolhida
             new Thread(() => WindowMode.FrameGameWindow(pid, mode, w, h)) { IsBackground = true }.Start();
             new Thread(() => WindowMode.PatchKeyHook(pid)) { IsBackground = true }.Start();
-            new Thread(() => BotHitCompatibility.InstallWhenReady(pid)) { IsBackground = true }.Start();
 
             // Botão SEGUE HABILITADO: troca o login e clique START de novo p/ abrir uma 2ª conta na mesma máquina.
             Status($"Rakion iniciado ({user}). Para uma 2ª conta: troque o login e clique START de novo.", false);
