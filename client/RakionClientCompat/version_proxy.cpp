@@ -38,8 +38,27 @@ namespace
 constexpr uintptr_t PatchAddress = 0x351533e9;
 constexpr uintptr_t ContinueAddress = PatchAddress + 5;
 constexpr uintptr_t RangedDamageReturnAddress = 0x3519f5ad;
+constexpr uintptr_t PlayerUpdateAddress = 0x35165170;
+constexpr uintptr_t PlayerUpdateContinueAddress = PlayerUpdateAddress + 8;
+constexpr uintptr_t SetAliveAddress = 0x35130b70;
+constexpr uintptr_t SetDeadAddress = 0x35135810;
+// CEntity::FallDownToFloor @ engine.dll (base 0x36000000). void __thiscall(this): casta 4 raios p/ baixo
+// dos cantos da collision-box, acha o chão mais alto e ajusta SÓ o Y ao piso real (mantém X/Z) via
+// SetPlacement — sem tocar velocidade/eventos. É a geometry query do invariante #7 da golden capture,
+// feita pela própria engine (nada de struct de raio montado à mão). Aterra o avatar-fantasma do bot.
+constexpr uintptr_t FallDownToFloorAddress = 0x36124ce0;
+constexpr BYTE ExpectedFallDownToFloor[] = { 0x64, 0xa1, 0x00, 0x00, 0x00, 0x00, 0x6a, 0xff };
 constexpr uint32_t ReceiveDamageStackReturnOffset = 0x4d4;
 constexpr BYTE Expected[] = { 0x68, 0x30, 0xa6, 0x2b, 0x35 };
+constexpr BYTE ExpectedPlayerUpdate[] = { 0x6a, 0xff, 0x64, 0xa1, 0x00, 0x00, 0x00, 0x00 };
+constexpr int MaxPlayerSeats = 20;
+volatile LONG GroundSnapEnabled = 0;   // 1 só após verificar o prólogo de FallDownToFloor (fail-closed)
+constexpr const char* LifecyclePath = "C:\\temp\\bot_lifecycle.txt";
+volatile LONG DesiredLifecycleSequence[MaxPlayerSeats]{};
+volatile LONG DesiredDeadState[MaxPlayerSeats]{};
+volatile LONG AppliedLifecycleSequence[MaxPlayerSeats]{};
+volatile LONG LoggedLifecycleSequence[MaxPlayerSeats]{};
+uintptr_t PlayerUpdateContinue = PlayerUpdateContinueAddress;
 constexpr const char* VersionExports[] = {
     "GetFileVersionInfoA", "GetFileVersionInfoByHandle", "GetFileVersionInfoExA",
     "GetFileVersionInfoExW", "GetFileVersionInfoSizeA", "GetFileVersionInfoSizeExA",
@@ -110,6 +129,104 @@ void EmitJump(std::vector<BYTE>& code, uintptr_t source, uintptr_t target)
     Emit32(code, static_cast<uint32_t>(target - (source + 5)));
 }
 
+void LoadLifecycleSnapshot()
+{
+    std::ifstream input(LifecyclePath);
+    int seat{};
+    int generation{};
+    unsigned long sequence{};
+    int dead{};
+    while (input >> seat >> generation >> sequence >> dead)
+    {
+        if (seat < 0 || seat >= MaxPlayerSeats || generation < 0 || sequence == 0) continue;
+        InterlockedExchange(&DesiredDeadState[seat], dead == 0 ? 0 : 1);
+        InterlockedExchange(&DesiredLifecycleSequence[seat], static_cast<LONG>(sequence));
+    }
+}
+
+void LogAppliedLifecycles()
+{
+    for (int seat = 0; seat < MaxPlayerSeats; ++seat)
+    {
+        LONG applied = InterlockedCompareExchange(&AppliedLifecycleSequence[seat], 0, 0);
+        LONG logged = InterlockedCompareExchange(&LoggedLifecycleSequence[seat], 0, 0);
+        if (applied == 0 || applied == logged) continue;
+        InterlockedExchange(&LoggedLifecycleSequence[seat], applied);
+        LONG dead = InterlockedCompareExchange(&DesiredDeadState[seat], 0, 0);
+        char message[96]{};
+        _snprintf_s(message, _countof(message), _TRUNCATE,
+            "lifecycle seat=%d seq=%ld state=%s aplicado", seat, applied, dead != 0 ? "dead" : "alive");
+        Log(message);
+    }
+}
+
+void __stdcall ApplyLifecycleOnGameThread(void* player)
+{
+    __try
+    {
+        if (!player) return;
+        int seat = *reinterpret_cast<BYTE*>(static_cast<BYTE*>(player) + 0x264);
+        if (seat < 0 || seat >= MaxPlayerSeats) return;
+        LONG desired = InterlockedCompareExchange(&DesiredLifecycleSequence[seat], 0, 0);
+        if (desired == 0) return;   // seat sem lifecycle publicado = não é um bot: não tocar
+        LONG dead = InterlockedCompareExchange(&DesiredDeadState[seat], 0, 0);
+
+        // GROUND-SNAP por-frame do bot (invariante #7 da golden capture): o avatar do bot é entidade
+        // dirigida-por-rede, sem física local, então flutuava sobre o mapa. FallDownToFloor consulta a
+        // geometria do CWorld (4 raios p/ baixo) e ajusta SÓ o Y ao chão real — mantém o X/Z que a rede
+        // já pôs. Só p/ BOTS (guard desired!=0) e só VIVOS (o morto está na anim de queda). Roda toda frame
+        // do update do player, DEPOIS da rede aplicar a posição. NUNCA em humano real (não tem lifecycle
+        // publicado) → não quebra pulos deles. Fail-closed se a build de engine.dll não casou o prólogo.
+        if (dead == 0 && InterlockedCompareExchange(&GroundSnapEnabled, 0, 0) != 0)
+        {
+            using GroundFn = void(__thiscall*)(void*);
+            reinterpret_cast<GroundFn>(FallDownToFloorAddress)(player);
+        }
+
+        LONG applied = InterlockedCompareExchange(&AppliedLifecycleSequence[seat], 0, 0);
+        if (desired == applied) return;
+        using LifecycleFn = void(__thiscall*)(void*);
+        auto transition = reinterpret_cast<LifecycleFn>(dead != 0 ? SetDeadAddress : SetAliveAddress);
+        transition(player);
+        InterlockedExchange(&AppliedLifecycleSequence[seat], desired);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+    }
+}
+
+__declspec(naked) void PlayerUpdateHook()
+{
+    __asm
+    {
+        pushfd
+        pushad
+        push ecx
+        call ApplyLifecycleOnGameThread
+        popad
+        popfd
+        push -1
+        mov eax, fs:[0]
+        jmp dword ptr [PlayerUpdateContinue]
+    }
+}
+
+bool InstallPlayerUpdateHook()
+{
+    auto* patch = reinterpret_cast<BYTE*>(PlayerUpdateAddress);
+    if (std::memcmp(patch, ExpectedPlayerUpdate, sizeof(ExpectedPlayerUpdate)) != 0) return false;
+
+    DWORD oldProtection{};
+    if (!VirtualProtect(patch, sizeof(ExpectedPlayerUpdate), PAGE_EXECUTE_READWRITE, &oldProtection)) return false;
+    std::vector<BYTE> detour;
+    EmitJump(detour, PlayerUpdateAddress, reinterpret_cast<uintptr_t>(&PlayerUpdateHook));
+    std::memcpy(patch, detour.data(), detour.size());
+    std::memset(patch + detour.size(), 0x90, sizeof(ExpectedPlayerUpdate) - detour.size());
+    VirtualProtect(patch, sizeof(ExpectedPlayerUpdate), oldProtection, &oldProtection);
+    FlushInstructionCache(GetCurrentProcess(), patch, sizeof(ExpectedPlayerUpdate));
+    return true;
+}
+
 std::vector<BYTE> BuildCode(uintptr_t cave)
 {
     std::vector<BYTE> code;
@@ -174,8 +291,30 @@ DWORD WINAPI InstallCompatibility(void*)
     std::memcpy(patch, detour.data(), detour.size());
     VirtualProtect(patch, sizeof(Expected), oldProtection, &oldProtection);
     FlushInstructionCache(GetCurrentProcess(), patch, sizeof(Expected));
-    Log("compatibilidade HIT/SHOT instalada");
-    return 0;
+    if (!InstallPlayerUpdateHook())
+    {
+        Log("hook player-like de lifecycle falhou");
+        return 4;
+    }
+    // Ground-snap: só habilita se a build de engine.dll casar o prólogo de FallDownToFloor (fail-closed —
+    // build incompatível não faz o snap, sem patchar endereço desconhecido). Ver critério de não-regressão.
+    if (std::memcmp(reinterpret_cast<BYTE*>(FallDownToFloorAddress), ExpectedFallDownToFloor,
+                    sizeof(ExpectedFallDownToFloor)) == 0)
+    {
+        InterlockedExchange(&GroundSnapEnabled, 1);
+        Log("ground-snap do bot habilitado (FallDownToFloor verificado)");
+    }
+    else
+    {
+        Log("ground-snap DESABILITADO: engine.dll nao casou o prologo de FallDownToFloor");
+    }
+    Log("compatibilidade HIT/SHOT e lifecycle instalada");
+    for (;;)
+    {
+        LoadLifecycleSnapshot();
+        LogAppliedLifecycles();
+        Sleep(10);
+    }
 }
 }
 
