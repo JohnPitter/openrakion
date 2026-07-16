@@ -1,0 +1,61 @@
+# -*- coding: utf-8 -*-
+# Extrai o request 0x0F KeepAlive no cliente e no World.
+# Saidas: C:\temp\engine_keep_alive.txt e C:\temp\world_keep_alive.txt
+# @category Rakion
+from ghidra.app.decompiler import DecompInterface
+from ghidra.util.task import ConsoleTaskMonitor
+
+
+TARGETS = {
+    "worldserv.exe": (
+        (0x0041FB30, "handler C->S 0x0F KeepAlive"),
+        (0x0040BBB0, "mede o intervalo da sessao"),
+    ),
+    "engine.dll": (
+        (0x36190C70, "builder C->S 0x0F KeepAlive"),
+    ),
+}
+
+OUTPUTS = {
+    "worldserv.exe": r"C:\temp\world_keep_alive.txt",
+    "engine.dll": r"C:\temp\engine_keep_alive.txt",
+}
+
+
+def decompile(function, decompiler, monitor):
+    result = decompiler.decompileFunction(function, 300, monitor)
+    if result and result.decompileCompleted():
+        return result.getDecompiledFunction().getC()
+    return "(falha na decompilacao)"
+
+
+def ascii_text(value):
+    return value.encode("ascii", "replace").decode("ascii")
+
+
+program_name = currentProgram.getName().lower()
+if program_name not in TARGETS:
+    raise RuntimeError("programa nao suportado: %s" % program_name)
+
+manager = currentProgram.getFunctionManager()
+decompiler = DecompInterface()
+decompiler.openProgram(currentProgram)
+monitor = ConsoleTaskMonitor()
+output_path = OUTPUTS[program_name]
+
+with open(output_path, "w") as output:
+    output.write("PROGRAM=%s\n" % currentProgram.getName())
+    for address, purpose in TARGETS[program_name]:
+        function = manager.getFunctionAt(toAddr(address))
+        if function is None:
+            disassemble(toAddr(address))
+            function = createFunction(toAddr(address), None)
+        output.write("\n===== %s @ %08x - %s =====\n" % (
+            function.getName() if function else "funcao ausente",
+            address,
+            purpose,
+        ))
+        if function:
+            output.write(ascii_text(decompile(function, decompiler, monitor)))
+
+print("KeepAlive extraido: %s" % output_path)

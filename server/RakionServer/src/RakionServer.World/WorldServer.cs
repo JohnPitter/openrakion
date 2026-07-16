@@ -1,12 +1,15 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using RakionServer.Common;
 using RakionServer.World.Database;
+using RakionServer.World.Domain;
+using RakionServer.World.Infrastructure;
 using RakionServer.World.Network;
 using RakionServer.World.CharSelect;
 
@@ -17,10 +20,12 @@ namespace RakionServer.World
     /// conexoes TCP (porta do jogo), liga os sockets UDP de gameplay, mantem o
     /// canal IPC com o broker e o estado das sessoes/usuarios.
     /// </summary>
-    public sealed class WorldServer
+    public sealed partial class WorldServer
     {
         private readonly WorldConfig _cfg;
         private readonly WorldDatabase _db;
+        private readonly ChatModerationEngine _chatModeration;
+        private readonly ICharacterDeleteNotifier _characterDeleteNotifier;
         private BrokerLink? _broker;
 
         private Socket? _listener;
@@ -28,60 +33,197 @@ namespace RakionServer.World
         private CancellationTokenSource? _cts;
 
         private readonly ConcurrentDictionary<ushort, ClientSession> _sessions = new();
-        private readonly ConcurrentDictionary<string, DateTime> _validated = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<Guid, byte> _settlementsInFlight = new();
+        private readonly ConcurrentDictionary<Guid, byte> _settlementsApplied = new();
+        private readonly ConcurrentDictionary<int, SemaphoreSlim> _characterLocks = new();
+        private readonly SemaphoreSlim _characterNameLock = new(1, 1);
+        private readonly SemaphoreSlim _buddyIdentityLock = new(1, 1);
         private int _currentUsers;
         private int _nextSlotHint;
 
-        /// <summary>Canais/IDCs do mundo (this+0x60/0x64/0x68). Padrao: 1 canal normal.</summary>
-        public readonly List<Domain.Channel> Channels = new() { new Domain.Channel(1, "Channel 1") };
+        /// <summary>Grupos/IDCs externos (this+0x60/0x64/0x68), validados pelo opcode 0x01.</summary>
+        public readonly List<Domain.WorldGroup> Groups = new() { new Domain.WorldGroup(1, false) };
+
+        /// <summary>Canais sociais internos (this+0xd8/0xdc). Padrão v258: owner 100 + channel01.</summary>
+        public readonly List<Domain.Channel> Channels = new()
+        {
+            new Domain.Channel(0, new Domain.ChannelOptions { Name = LobbyFrames.ChannelName })
+        };
 
         /// <summary>Variaveis de servidor setaveis por GM (this+0x51c8, 0x200 entradas u32). Opcodes 0x08/0x0a.</summary>
         public readonly uint[] GmVars = new uint[0x200];
 
-        /// <summary>Referencia de ping e contador de matches (anti-cheat de latencia, opcode 0x61).</summary>
-        public int PingReference;
-        public int PingMatchCount;
+        /// <summary>Referência e contador do challenge/echo World 0x61.</summary>
+        public int EchoReference;
+        public int EchoMatchCount;
 
         /// <summary>Fields/partidas (this+0xe4) e rooms/chat (this+0xdc).</summary>
         public readonly List<Domain.Field> Fields = new();
         public readonly List<Domain.Room> Rooms = new() { new Domain.Room(0) };
+        private readonly object _fieldCreationLock = new();
 
-        public Domain.Field? GetField(int id) => id < 0 ? null : Fields.Find(f => f.Id == id);
+        public Domain.Field? GetField(int id)
+        {
+            if (id < 0) return null;
+            lock (Fields) return Fields.Find(field => field.Id == id);
+        }
         public Domain.Room? GetRoom(int id) => id < 0 ? null : Rooms.Find(r => r.Id == id);
 
-        private int _nextFieldId;
-
+        // O paginador de FUN_00422C90 usa zero como cursor/sentinela; fields pesquisáveis
+        // começam em 1. O caminho dedicado mode=0 não ocupa essa lista no World original.
         /// <summary>
         /// Aloca um field/sala (espelha a varredura de this+0xe4 por slot livre no
         /// RoomCreate FUN_00423580). Cria a entrada no dominio e devolve o Field.
         /// </summary>
-        public Domain.Field CreateField(string name, byte mapId, byte mode, ushort capacity, ClientSession master)
+        public Domain.Field CreateField(RoomCreationOptions options, ClientSession master)
         {
-            lock (Fields)
+            lock (_fieldCreationLock)
             {
-                var f = new Domain.Field(_nextFieldId++)
+                int fieldId;
+                lock (Fields) fieldId = FindFreeFieldId();
+                if (fieldId < 0)
+                    throw new InvalidOperationException("O limite de salas do World foi atingido.");
+
+                var field = new Domain.Field(fieldId)
                 {
-                    Name = name,
-                    Mode = mode,
-                    MapId = mapId,
-                    // capacity e ushort (ate ~0x4ba=1210 nas salas ranqueadas); o cast cru truncava >255.
-                    // Clamp: 0 -> default 8; acima de 255 satura em byte.MaxValue (sem wrap).
-                    MaxPlayers = capacity == 0 ? (byte)8 : (byte)System.Math.Min((int)capacity, byte.MaxValue),
-                    Master = master,
-                    MasterSlot = master.Slot,
+                    Name = options.Name,
+                    Password = options.Password,
+                    Description = options.Description,
+                    Searchable = options.Searchable,
+                    Mode = options.Mode,
+                    MapId = options.MapId,
+                    MaxPlayers = options.Capacity,
+                    MaxRounds = options.Rounds,
+                    RoundDurationSec = options.DurationSeconds,
+                    FragLimit = options.FragLimit,
+                    MinLevel = options.MinLevel,
+                    MaxLevel = options.MaxLevel,
+                    LevelRangeCode = options.LevelRangeCode,
                     State = 1, // ocupado (field+8 != 0)
+                    // State=1 também representa match encerrado. Uma sala recém-criada não possui
+                    // resultado pendente; ResetMatch troca para false somente no start autorizado.
+                    Settled = true,
                 };
-                f.Add(master);
-                Fields.Add(f);
-                // FUN_0040b7b0: vincula o master ao field (estado "em field")
-                master.FieldId = f.Id;
-                master.InField = true;
-                master.FieldSecondary = true;
-                master.Status = Domain.UserStatus.InField;
+                if (!JoinField(master, field, true))
+                    throw new InvalidOperationException("Não foi possível alocar o master da sala.");
+                lock (Fields) Fields.Add(field);
                 Log.Info("field", "[{0}] criou field {1} '{2}' (map={3} mode={4} cap={5})",
-                    master.Slot, f.Id, name, mapId, mode, f.MaxPlayers);
-                return f;
+                    master.Slot, field.Id, options.Name, options.MapId, options.Mode,
+                    field.MaxPlayers);
+                return field;
             }
+        }
+
+        private int FindFreeFieldId()
+        {
+            int upperBound = Math.Clamp(_cfg.MaxField, 1, ushort.MaxValue + 1);
+            for (int id = 1; id < upperBound; id++)
+                if (!Fields.Exists(field => field.Id == id)) return id;
+            return -1;
+        }
+
+        public bool JoinField(ClientSession session, Domain.Field field, bool asMaster)
+        {
+            if (session.FieldId >= 0 && session.FieldId != field.Id) LeaveField(session);
+            lock (field.SyncRoot)
+            {
+                if (field.State != 1 || field.Count >= field.MaxPlayers ||
+                    (!asMaster && field.IsVotePenalized(session, Environment.TickCount64))) return false;
+                field.Add(session);
+                int seat = field.AssignSeat(session);
+                if (seat < 0)
+                {
+                    field.Remove(session);
+                    return false;
+                }
+                session.FieldId = field.Id;
+                session.FieldSeat = (byte)seat;
+                session.FieldObjectIndex = (ushort)seat;
+                field.Slots[seat].UsesTunneling = session.UdpObservedEndpoint == null;
+                session.InField = true;
+                session.FieldSecondary = true;
+                session.SecondActive = true;
+                session.Status = Domain.UserStatus.FieldLobby;
+                if (asMaster)
+                {
+                    field.Master = session;
+                    field.MasterSlot = seat;
+                }
+                Log.Info("room", "[{0}] entrou na sala {1} seat={2} master={3}",
+                    session.Slot, field.Id, seat, asMaster);
+                return true;
+            }
+        }
+
+        public RoomJoinStatus TryJoinRoom(
+            ClientSession session, Domain.Field field, string password)
+        {
+            lock (field.SyncRoot)
+            {
+                if (field.State == 0) return RoomJoinStatus.Unavailable;
+                if (field.State == 2) return RoomJoinStatus.InGame;
+                if (session.CharLevel < field.MinLevel || session.CharLevel > field.MaxLevel)
+                    return RoomJoinStatus.Ineligible;
+                if (field.IsVotePenalized(session, Environment.TickCount64))
+                    return RoomJoinStatus.VotePenalty;
+                if (field.Count >= field.MaxPlayers) return RoomJoinStatus.Full;
+                if (!string.Equals(field.Password, password, StringComparison.Ordinal))
+                    return RoomJoinStatus.InvalidPassword;
+                return JoinField(session, field, false)
+                    ? RoomJoinStatus.Success
+                    : RoomJoinStatus.Full;
+            }
+        }
+
+        public Domain.RoomListSnapshot[] ListJoinableFields(int startId, int maxCount)
+        {
+            Domain.Field[] fields;
+            lock (Fields) fields = Fields.ToArray();
+            return fields
+                .Where(field => field.Searchable)
+                .Select(field => field.CaptureRoomListSnapshot())
+                .Where(field => field.FieldId >= startId && !field.InGame)
+                .Take(Math.Clamp(maxCount, 0, 10))
+                .ToArray();
+        }
+
+        public Domain.RoomListSnapshot[] ListJoinableFields(
+            ClientSession session, Domain.RoomListQuery query)
+        {
+            Domain.Field[] fields;
+            lock (Fields) fields = Fields.ToArray();
+            IEnumerable<Domain.RoomListSnapshot> candidates = fields
+                .Where(field => field.Searchable)
+                .Select(field => field.CaptureRoomListSnapshot());
+            candidates = query.Forward
+                ? candidates.Where(field => field.FieldId > query.Cursor)
+                    .OrderBy(field => field.FieldId)
+                : candidates.Where(field => field.FieldId < query.Cursor)
+                    .OrderByDescending(field => field.FieldId);
+            return candidates
+                .Where(field => query.Includes(field, session.CharLevel))
+                .Take(query.MaxCount)
+                .ToArray();
+        }
+
+        public bool TryQuickJoinField(ClientSession session, out Domain.Field? joinedField)
+        {
+            Domain.Field[] fields;
+            lock (Fields) fields = Fields.ToArray();
+            foreach (Domain.Field field in fields)
+            {
+                lock (field.SyncRoot)
+                {
+                    if (!field.Searchable || field.Mode == 0 || field.Master == session) continue;
+                    if (TryJoinRoom(session, field, "") == RoomJoinStatus.Success)
+                    {
+                        joinedField = field;
+                        return true;
+                    }
+                }
+            }
+            joinedField = null;
+            return false;
         }
 
         /// <summary>
@@ -93,11 +235,18 @@ namespace RakionServer.World
         public Domain.Field EnsureFieldForSession(ClientSession s)
         {
             Domain.Field f = GetField(s.FieldId)
-                ?? CreateField(s.CharName.Length > 0 ? s.CharName : $"field{s.Slot}", mapId: 0, mode: 0, capacity: 8, master: s);
-            f.State = 2; // field+8 = 2 (em jogo)
-            int seat = f.AssignSeat(s);
-            if (seat >= 0) { s.FieldSeat = (byte)seat; s.FieldObjectIndex = (ushort)seat; }
-            if (f.MasterSlot < 0 || f.MasterSlot >= 0x14) f.MasterSlot = seat;
+                ?? CreateField(new RoomCreationOptions
+                {
+                    Name = s.CharName.Length > 0 ? s.CharName : $"field{s.Slot}",
+                    CapacityOverride = 8
+                }, s);
+            lock (f.SyncRoot)
+            {
+                f.State = 2;
+                int seat = f.AssignSeat(s);
+                if (seat >= 0) { s.FieldSeat = (byte)seat; s.FieldObjectIndex = (ushort)seat; }
+                if (f.MasterSlot < 0 || f.MasterSlot >= 0x14) f.MasterSlot = seat;
+            }
             return f;
         }
 
@@ -106,19 +255,142 @@ namespace RakionServer.World
         {
             var f = GetField(s.FieldId);
             if (f == null) return;
-            f.Remove(s);
-            s.FieldId = -1;
-            if (f.Count == 0)
+            lock (f.SyncRoot)
             {
-                lock (Fields) Fields.Remove(f);
-                Log.Info("field", "field {0} '{1}' liberado (vazio)", f.Id, f.Name);
+                RemoveFieldMember(f, s);
             }
         }
 
-        public WorldServer(WorldConfig cfg, WorldDatabase db)
+        public bool TryKickFieldMember(
+            ClientSession requester, byte targetSeat, out ClientSession? victim)
+        {
+            victim = null;
+            var field = GetField(requester.FieldId);
+            if (field == null) return false;
+            lock (field.SyncRoot)
+            {
+                if (field.Master != requester) return false;
+                var record = field.RecAt(targetSeat);
+                if (record?.Session == null || record.Session == requester || !record.Occupied)
+                    return false;
+                victim = record.Session;
+                RemoveFieldMember(field, victim);
+                return true;
+            }
+        }
+
+        public bool TryRemoveFieldMember(
+            ClientSession requester, byte targetSeat, out ClientSession? victim,
+            out bool unauthorized)
+        {
+            victim = null;
+            unauthorized = false;
+            var field = GetField(requester.FieldId);
+            if (field == null) return false;
+            lock (field.SyncRoot)
+            {
+                var requesterRecord = field.FindRec(requester);
+                if (requesterRecord == null) return false;
+                if (requester.SubStatus != Domain.UserSubStatus.Gm &&
+                    requester.SubStatus != Domain.UserSubStatus.Special &&
+                    requesterRecord.Slot != field.MasterSlot)
+                {
+                    unauthorized = true;
+                    return false;
+                }
+                var record = field.RecAt(targetSeat);
+                if (record?.Session == null || !record.Occupied ||
+                    record.Session.SubStatus == Domain.UserSubStatus.Special)
+                    return false;
+                victim = record.Session;
+                RemoveFieldMember(field, victim);
+                return true;
+            }
+        }
+
+        private void RemoveFieldMember(Domain.Field field, ClientSession session)
+        {
+            if (field.State == 1 && !field.Settled) _ = SettleMatchAsync(field);
+            byte departedSeat = session.FieldSeat;
+            bool wasMaster = field.Master == session;
+            var voteFinal = field.CancelVoteForDeparture(departedSeat);
+            if (voteFinal != null)
+                field.BroadcastFieldPlaying(0x5f, FieldVoteFrames.ResultBody(voteFinal), session);
+            bool roundEnded = field.ApplyPlayerDeparture(departedSeat);
+            bool tunnelingDisabled =
+                field.UnregisterTunnelingPresence(departedSeat) == Domain.TunnelingPresenceChange.Disabled;
+            field.Remove(session);
+            ClearFieldState(session);
+            if (field.Count == 0)
+            {
+                lock (Fields) Fields.Remove(field);
+                Log.Info("field", "field {0} '{1}' liberado (vazio)", field.Id, field.Name);
+                return;
+            }
+
+            field.BroadcastField(0x3a, new[] { departedSeat });
+            if (tunnelingDisabled) field.BroadcastField(0x55, Array.Empty<byte>());
+            if (roundEnded) field.BroadcastFieldPlaying(0x4a, field.Build0x4a());
+            if (!wasMaster) return;
+            var replacement = FindReplacementMaster(field);
+            if (replacement?.Session == null) return;
+            field.Master = replacement.Session;
+            field.MasterSlot = replacement.Slot;
+            field.BroadcastField(0x3c, new[] { (byte)replacement.Slot });
+            Log.Info("room", "field {0}: master transferido para sessão {1}",
+                field.Id, replacement.Session.Slot);
+        }
+
+        private static Domain.PlayerRec? FindReplacementMaster(Domain.Field field)
+        {
+            foreach (byte state in new byte[] { 4, 3 })
+            {
+                var preferred = Array.Find(field.Slots,
+                    record => record.State == state && record.Session != null);
+                if (preferred != null) return preferred;
+            }
+            return Array.Find(field.Slots,
+                record => record.Occupied && record.Session != null);
+        }
+
+        public bool TryCloseField(ClientSession requester, out ClientSession[] members)
+        {
+            members = Array.Empty<ClientSession>();
+            var field = GetField(requester.FieldId);
+            if (field == null) return false;
+            lock (field.SyncRoot)
+            {
+                if (field.Master != requester) return false;
+                members = field.Players.ToArray();
+                foreach (var member in members)
+                {
+                    field.Remove(member);
+                    ClearFieldState(member);
+                }
+                field.Master = null;
+                field.MasterSlot = -1;
+                field.State = 0;
+                lock (Fields) Fields.Remove(field);
+                Log.Info("room", "field {0} '{1}' fechado pelo host", field.Id, field.Name);
+                return true;
+            }
+        }
+
+        private static void ClearFieldState(ClientSession session)
+        {
+            session.FieldId = -1;
+            session.FieldSeat = Domain.Field.NoSeat;
+            session.FieldObjectIndex = Domain.Field.NoSeat;
+        }
+
+        public WorldServer(
+            WorldConfig cfg, WorldDatabase db, ICharacterDeleteNotifier? characterDeleteNotifier = null)
         {
             _cfg = cfg;
             _db = db;
+            _chatModeration = BuildChatModeration();
+            _characterDeleteNotifier = characterDeleteNotifier ??
+                new CharacterDeletePickupNotifier(cfg.CharacterDelete);
         }
 
         public bool Locked { get; private set; }                 // this+0x50 (servidor fechado p/ GM)
@@ -133,17 +405,45 @@ namespace RakionServer.World
         /// <summary>Sessao por slot (indice do pacote UDP de gameplay).</summary>
         public ClientSession? GetSession(ushort slot) => _sessions.TryGetValue(slot, out var s) ? s : null;
 
-        /// <summary>
-        /// Sessao por IP de origem. O 0x0C replayado fixa slot 0, entao o cliente sempre
-        /// manda slot 0 nos pacotes UDP; quando o slot nao casa com a sessao TCP real (que
-        /// tem slot incremental), resolvemos pelo IP do remetente (fallback do handshake UDP).
-        /// </summary>
-        public ClientSession? GetSessionByIp(string ip)
+        public ClientSession? GetSessionByUdpEndpoint(IPEndPoint endpoint)
         {
             foreach (var s in _sessions.Values)
-                if (s.Connected && s.SlotActive && s.RemoteIp == ip)
+                if (s.Connected && s.SlotActive &&
+                    ((s.UdpEndpoint1?.Equals(endpoint) ?? false) || (s.UdpEndpoint2?.Equals(endpoint) ?? false)))
                     return s;
             return null;
+        }
+
+        private byte[]? AcceptUdpPort1Handshake(IPEndPoint endpoint, byte[] packet) =>
+            AcceptUdpHandshake(endpoint, packet, GameplayUdpHandshake.Port1Type, 0);
+
+        public byte[]? AcceptUdpPort2Handshake(IPEndPoint endpoint, byte[] packet) =>
+            AcceptUdpHandshake(endpoint, packet, GameplayUdpHandshake.Port2Type, 1);
+
+        private byte[]? AcceptUdpHandshake(IPEndPoint endpoint, byte[] packet, ushort type, byte endpointIndex)
+        {
+            if (!GameplayUdpHandshake.TryParse(packet, type, out var handshake)) return null;
+            ClientSession? session = GetSession(handshake.Slot);
+            if (session == null || !session.Connected || !session.SlotActive) return null;
+            if (!IPAddress.TryParse(session.RemoteIp, out var tcpAddress) || !tcpAddress.Equals(endpoint.Address))
+            {
+                Log.Warn("udp", "[{0}] handshake rejeitado: IP UDP {1} difere do TCP {2}",
+                    handshake.Slot, endpoint.Address, session.RemoteIp);
+                return null;
+            }
+            if (handshake.SessionKey != session.UdpKey)
+            {
+                Log.Warn("udp", "[{0}] handshake rejeitado: chave {1:X8} inválida", handshake.Slot, handshake.SessionKey);
+                return null;
+            }
+
+            session.NotifyUdpReady(endpoint, handshake.AdvertisedEndpoint, endpointIndex);
+            if (endpointIndex == 0)
+                _ = _db.UpdateConnectionRealIpAsync(
+                    session.ConnectionLogId, handshake.AdvertisedEndpoint.Address.ToString());
+            Log.Info("udp", "[{0}] endpoint UDP{1} autenticado em {2}; P2P anunciado {3}",
+                handshake.Slot, endpointIndex + 1, endpoint, handshake.AdvertisedEndpoint);
+            return handshake.BuildEcho(endpointIndex);
         }
 
         /// <summary>Envia um tick de gameplay (1583 + SEQ) ao endpoint UDP do jogador.</summary>
@@ -167,7 +467,7 @@ namespace RakionServer.World
                     foreach (var f in snapshot)
                     {
                         if (f.State == 2) MatchTick(f);
-                        else if (f.State == 1 && !f.Settled) SettleMatch(f);
+                        else if (f.State == 1 && !f.Settled) await SettleMatchAsync(f);
                     }
 
                 }
@@ -193,13 +493,16 @@ namespace RakionServer.World
                     lock (Fields) snapshot = Fields.ToArray();
                     foreach (var f in snapshot)
                     {
-                        if (f.State != 2) continue;   // solo E PvP — sem o clock o cliente solo nao manda input (trava no briefing)
-                        foreach (var r in f.Slots)
+                        lock (f.SyncRoot)
                         {
-                            var s = r.Session;
-                            if (s == null || !r.Occupied || s.UdpEndpoint == null) continue;
-                            unchecked { s.GameSeq++; }
-                            _udpGame?.SendTick(s.UdpEndpoint, s.GameSeq);
+                            if (f.State != 2) continue;
+                            foreach (var r in f.Slots)
+                            {
+                                var s = r.Session;
+                                if (s == null || !r.Occupied || s.UdpEndpoint == null) continue;
+                                unchecked { s.GameSeq++; }
+                                _udpGame?.SendTick(s.UdpEndpoint, s.GameSeq);
+                            }
                         }
                     }
                 }
@@ -218,65 +521,41 @@ namespace RakionServer.World
         private void MatchTick(Domain.Field f)
         {
             long now = Environment.TickCount64;
-
-            switch (f.Phase)
+            lock (f.SyncRoot)
             {
-                case Domain.MatchPhase.Playing:
-                    // SOLO PvE (Mode 0, time-attack Stage Clear): combate + countdown + clear sao
-                    // CLIENT-SIDE. NAO re-enviar 0x48 (re-envio glitchava o countdown 3->1 e
-                    // interrompia combos) e NAO rodar logica de round/placar; o cliente conduz.
-                    if (f.Mode == 0) break;
+                Domain.FieldVoteFinal? voteFinal = f.TickVote(now);
+                if (voteFinal != null)
+                {
+                    f.BroadcastFieldPlaying(0x5f, Network.FieldVoteFrames.ResultBody(voteFinal));
+                    Log.Info("vote", "field {0}: voto expirou/finalizou yes={1} no={2} abstain={3} penalidade={4}",
+                        f.Id, voteFinal.Yes, voteFinal.No, voteFinal.Abstain, voteFinal.PenaltyApplied);
+                }
+                if (f.Phase == Domain.MatchPhase.Playing && f.Mode != 0 &&
+                    f.Warned30 == 0 && f.DeadlineMs - now <= 30000)
+                {
+                    f.Warned30 = 1;
+                    Log.Info("field", "field {0} round {1}: 30s restantes", f.Id, f.Round);
+                }
 
-                    // PvP (GOLEM/DEATHMATCH/TEAMDEATH/BOSS): motor de round servidor-side.
-                    // SEM re-broadcast periodico de 0x48: o re-envio interrompia combos no solo e a
-                    // captura do room flow (mitm_full_113423) mostra UM 0x48 so na entrada. O cliente
-                    // conta o tempo sozinho a partir dele; cadencia real em PvP = pendente de captura.
-                    if (f.Warned30 == 0 && f.RemainingSec() <= 30)
-                    {
-                        f.Warned30 = 1; // field+0x2be (flag aviso de 30s)
-                        Log.Info("field", "field {0} round {1}: 30s restantes", f.Id, f.Round);
-                    }
-                    // tempo esgotado -> fim de round por placar (FUN_00409940 deadline)
-                    if (now >= f.DeadlineMs)
-                    {
-                        f.EndRound(f.DecideRoundWinnerByScore());
-                        // FIELD 0x4a aos playing: body=[cause/2bd][2bf][2c0][2c1] (mesmo layout dos
-                        // handlers 0x4a/0x4d de fim-de-round)
-                        f.BroadcastFieldPlaying(0x4a,
-                            new byte[] { f.LastRoundWinner, f.WinnerSide, f.Wins0, f.Wins1 });
-                    }
-                    break;
-
-                case Domain.MatchPhase.RoundEnd:
-                    if (now >= f.DeadlineMs)
-                    {
-                        f.Round++;
-                        if (f.Round > f.MaxRounds)
-                        {
-                            f.EndMatch(2); // acabaram os rounds (empate em rounds)
-                            f.BroadcastLobby(f.BuildMatchEnd(2));
-                            _fieldStatusBeat.TryRemove(f.Id, out _);
-                        }
-                        else if (f.CountPlaying() == 0)
-                        {
-                            f.EndMatch(5); // sem jogadores
-                            f.BroadcastLobby(f.BuildMatchEnd(5));
-                            _fieldStatusBeat.TryRemove(f.Id, out _);
-                        }
-                        else
-                        {
-                            // PROXIMO ROUND: reinicia o relogio/golens e anuncia (0x49 NovoRound + 0x48).
-                            f.StartRound();
-                            f.BroadcastLobby(f.Build0x49());
-                            f.BroadcastLobby(f.Build0x48());
-                            Log.Ok("field", "field {0} -> round {1}/{2} (w0={3} w1={4})", f.Id, f.Round, f.MaxRounds, f.Wins0, f.Wins1);
-                        }
-                    }
-                    break;
-
-                case Domain.MatchPhase.Pre:
-                default:
-                    break;
+                Domain.MatchLifecycleTransition transition = f.AdvanceLifecycle(now);
+                switch (transition.Event)
+                {
+                    case Domain.MatchLifecycleEvent.EngageStarted:
+                        f.BroadcastLobby(f.Build0x48());
+                        break;
+                    case Domain.MatchLifecycleEvent.RoundTimedOut:
+                        f.BroadcastFieldPlaying(0x4a, f.Build0x4a());
+                        break;
+                    case Domain.MatchLifecycleEvent.NextRoundStarted:
+                        f.BroadcastLobby(f.Build0x49());
+                        Log.Ok("field", "field {0} -> round {1}/{2} (w0={3} w1={4})",
+                            f.Id, f.Round, f.MaxRounds, f.Wins0, f.Wins1);
+                        break;
+                    case Domain.MatchLifecycleEvent.MatchEnded:
+                        f.BroadcastLobby(f.BuildMatchEnd(transition.Reason));
+                        _fieldStatusBeat.TryRemove(f.Id, out _);
+                        break;
+                }
             }
         }
 
@@ -286,25 +565,81 @@ namespace RakionServer.World
         /// Wins1; empate = draw p/ todos) e atualiza o overlay em memoria (CharWin/Lose/Draw).
         /// Mode 0 (solo PvE) nao liquida — o resultado vem do cliente pelos 0x50/0x53.
         /// </summary>
-        private void SettleMatch(Domain.Field f)
+        private async Task SettleMatchAsync(Domain.Field f)
         {
-            f.Settled = true;
-            if (f.Mode == 0) return;
-            byte winner = f.Wins0 > f.Wins1 ? (byte)0 : f.Wins1 > f.Wins0 ? (byte)1 : (byte)2;
-            foreach (var r in f.Slots)
+            MatchSettlementSnapshot? snapshot;
+            lock (f.SyncRoot)
             {
-                var s = r.Session;
-                if (s == null || !r.Occupied || s.ActiveCharId <= 0) continue;
-                int win = 0, lose = 0, draw = 0;
-                if (winner == 2) draw = 1;
-                else if (r.Team == winner) win = 1;
-                else lose = 1;
-                s.CharWin += (uint)win; s.CharLose += (uint)lose; s.CharDraw += (uint)draw;
-                _ = _db.AddCharacterResultAsync(s.ActiveCharId, win, lose, draw, exp: 0);
-                Log.Ok("field", "field {0} settle: char {1} seat {2} -> {3} (score {4})",
-                    f.Id, s.ActiveCharId, r.Slot, win != 0 ? "WIN" : lose != 0 ? "LOSE" : "DRAW", r.Score);
+                if (f.Settled) return;
+                if (f.Mode == 0) { f.Settled = true; return; }
+                if (f.MatchId == Guid.Empty)
+                {
+                    Log.Error("field", "field {0}: match sem identidade; settle adiado", f.Id);
+                    return;
+                }
+                snapshot = CaptureSettlement(f);
+                if (snapshot.Players.Count == 0) { f.Settled = true; return; }
+            }
+
+            if (!_settlementsInFlight.TryAdd(snapshot.MatchId, 0)) return;
+            try
+            {
+                Database.MatchSettlementEntry[] pending = snapshot.Players
+                    .Select(player => new Database.MatchSettlementEntry(
+                        player.CharacterId, player.Win, player.Lose, player.Draw))
+                    .ToArray();
+                if (!await _db.SettleMatchAsync(snapshot.MatchId, pending)) return;
+
+                if (_settlementsApplied.TryAdd(snapshot.MatchId, 0))
+                {
+                    foreach (MatchSettlementPlayer player in snapshot.Players)
+                    {
+                        player.Session.CharWin += (uint)player.Win;
+                        player.Session.CharLose += (uint)player.Lose;
+                        player.Session.CharDraw += (uint)player.Draw;
+                        Log.Ok("field", "field {0} settle: char {1} seat {2} -> {3} (score {4})",
+                            snapshot.FieldId, player.CharacterId, player.Seat,
+                            player.Win != 0 ? "WIN" : player.Lose != 0 ? "LOSE" : "DRAW",
+                            player.ResultPoints);
+                    }
+                }
+
+                lock (f.SyncRoot)
+                    if (f.MatchId == snapshot.MatchId && f.State == 1) f.Settled = true;
+            }
+            finally
+            {
+                _settlementsInFlight.TryRemove(snapshot.MatchId, out _);
             }
         }
+
+        internal Task SettleEndedMatchAsync(Domain.Field field) => SettleMatchAsync(field);
+
+        private static MatchSettlementSnapshot CaptureSettlement(Domain.Field field)
+        {
+            byte winner = field.Wins0 > field.Wins1 ? (byte)0 :
+                field.Wins1 > field.Wins0 ? (byte)1 : (byte)2;
+            var players = new List<MatchSettlementPlayer>();
+            foreach (Domain.PlayerRec record in field.Slots)
+            {
+                ClientSession? session = record.Session;
+                if (session == null || !record.Occupied || session.ActiveCharId <= 0) continue;
+                (int win, int lose, int draw) = MatchOutcome(record.Team, winner);
+                players.Add(new(session, session.ActiveCharId, record.Slot, record.ResultPoints,
+                    win, lose, draw));
+            }
+            return new(field.MatchId, field.Id, players);
+        }
+
+        private sealed record MatchSettlementSnapshot(
+            Guid MatchId, int FieldId, IReadOnlyList<MatchSettlementPlayer> Players);
+
+        private sealed record MatchSettlementPlayer(
+            ClientSession Session, int CharacterId, int Seat, uint ResultPoints,
+            int Win, int Lose, int Draw);
+
+        private static (int Win, int Lose, int Draw) MatchOutcome(byte team, byte winner) =>
+            winner == 2 ? (0, 0, 1) : team == winner ? (1, 0, 0) : (0, 1, 0);
 
         /// <summary>
         /// Dispara o 0x48 FieldStatus de inicio (handler 0x48 / FUN_00408440): o player marcou ready.
@@ -312,32 +647,32 @@ namespace RakionServer.World
         /// </summary>
         public void NotifyPlayerReady(Domain.Field f, ClientSession s)
         {
-            // Time-attack solo: cada entrada no stage RECOMECA o cronometro do 0:00. Reseta o DeadlineMs
-            // (RemainingSec volta ao cheio = 603); senao um field reaproveitado (Phase ja Playing -> StartRound
-            // nao roda) deixaria o DeadlineMs obsoleto e o HUD comecaria fora do zero.
-            f.DeadlineMs = Environment.TickCount64 + (f.RoundDurationSec + 3) * 1000L;
-            bool started = f.OnPlayerReady(s);
-            if (started)
+            lock (f.SyncRoot)
             {
-                _fieldStatusBeat[f.Id] = Environment.TickCount64;
-                f.BroadcastLobby(f.Build0x48());
-                Log.Ok("field", "[{0}] partida iniciada no field {1} (0x48 a {2} player(s))", s.Slot, f.Id, f.CountPlaying());
-            }
-            else
-            {
-                // spawn tardio / aguardando os demais: 0x48 so a este player
-                try { s.SendEncryptedFrame(f.Build0x48()); } catch { }
+                long now = Environment.TickCount64;
+                bool started = f.OnPlayerReady(s, now);
+                if (started)
+                {
+                    _fieldStatusBeat[f.Id] = now;
+                    f.BroadcastLobby(f.Build0x48());
+                    Log.Ok("field", "[{0}] partida iniciada no field {1} (0x48 a {2} player(s))",
+                        s.Slot, f.Id, f.CountPlaying());
+                }
+                else
+                {
+                    try { s.SendEncryptedFrame(f.Build0x48()); } catch { }
+                }
             }
         }
 
         /// <summary>Define o estado "servidor fechado" (GM open/close, opcode 0x03).</summary>
         public void SetLocked(bool locked) => Locked = locked;
 
-        /// <summary>Desconecta todos os usuarios que nao sao GM (usado no GM close).</summary>
+        /// <summary>Desconecta todos os usuários sem authority GM.</summary>
         public void DisconnectNonGm(byte reason)
         {
             foreach (var s in _sessions.Values)
-                if (s.Status != 0 && s.Status != Domain.UserStatus.LobbyGm)
+                if (s.Status != 0 && !s.IsGm)
                     s.Disconnect(reason);
         }
         public WorldConfig Config => _cfg;
@@ -355,7 +690,8 @@ namespace RakionServer.World
 
             // canal IPC com o broker — fica dono da porta UDP de IPC (= _cfg.Port,
             // a mesma usada pelo gameplay no original; aqui o BrokerLink a possui).
-            _broker = new BrokerLink(_cfg, GetStats, ValidateLoginAsync);
+            _broker = new BrokerLink(_cfg, GetStats,
+                AcceptUdpPort1Handshake, _cfg.BrokerCode);
             _broker.Start();
 
             // UDP de gameplay (recv + relay aos peers do field). Roda na porta de gameplay
@@ -363,7 +699,9 @@ namespace RakionServer.World
             int gamePort = _cfg.UdpPort2 != _cfg.Port ? _cfg.UdpPort2 : _cfg.UdpPort1;
             if (gamePort != _cfg.Port)
             {
-                _udpGame = new UdpGameplay(this, gamePort);
+                _udpGame = new UdpGameplay(
+                    this, gamePort, _cfg.UdpRelayCompatibilityEnabled,
+                    _cfg.UdpRelayPacketsPerSecond, _cfg.UdpRelayBurst);
                 _udpGame.Start();
             }
 
@@ -372,10 +710,11 @@ namespace RakionServer.World
             _ = Task.Run(() => GameClockLoopAsync(_cts.Token));   // relogio 1583 (150ms) das salas Battle/PvP
 
             await _db.PingAsync();
-            await _db.EnsureSchemaAsync();     // provisiona itembox.qslot + pu_config se faltarem
+            await _db.EnsureSchemaAsync();     // migra inventário canônico + provisiona economia/config
             PuConfig = await _db.LoadPuConfigAsync();
-            Log.Ok("shop", "pu_config: preço={0} bônus={1} {2}d  xp×{3} gold×{4}{5}", PuConfig.Price,
-                PuConfig.BonusPoints, PuConfig.DurationDays, PuConfig.ExpMult, PuConfig.GoldMult,
+            Log.Ok("shop", "pu_config: preço={0}/{1} bônus={2} {3}d  xp×{4} gold×{5}{6}",
+                PuConfig.Price, PuConfig.RenewalPrice, PuConfig.BonusPoints,
+                PuConfig.DurationDays, PuConfig.ExpMult, PuConfig.GoldMult,
                 PuConfig.PromoActive ? " (promo ON)" : "");
             EnchantConfig = await _db.LoadEnchantConfigAsync();
             Log.Ok("enchant", "config: {0} catalisador(es)  evento×{1} PU×{2}",
@@ -383,7 +722,36 @@ namespace RakionServer.World
             await LoadItemDefsCacheAsync();   // catalogo de itens (iteminfo) p/ a compra 0x2e
             _levelCurve = await _db.LoadLevelCurveAsync(); // curva de exp por classe (level-up 0x50)
             Log.Ok("level", "curva de level carregada: {0} entradas (classlevelinfo)", _levelCurve.Count);
+            _cellLevelCurve = await _db.LoadCellLevelCurveAsync();
+            _cellLevel99Cap = CellLevelExp(0, 99) ?? 0;
+            Log.Ok("level", "curva de cell carregada: {0} entradas (npcinfo), teto99={1}",
+                _cellLevelCurve.Count, _cellLevel99Cap);
+            IReadOnlyList<StageContentDefinition> stageContent = StageContentLoader.LoadEmbedded();
+            _stageCatalog = new Domain.StageCatalog(
+                await _db.LoadStageCatalogAsync(), stageContent);
+            int inconsistentThresholds = stageContent.Count(
+                stage => !stage.RankThresholdsConsistent);
+            int inconsistentFlows = stageContent.Count(
+                stage => !stage.FlowReferencesConsistent);
+            int duplicateFlowNames = stageContent.Count(
+                stage => !stage.FlowNamesUnique);
+            Log.Ok("stage", "catálogo carregado: {0} stages (stageinfo + LevelData v258)",
+                _stageCatalog.Count);
+            if (inconsistentThresholds > 0)
+                Log.Warn("stage", "{0} stages possuem thresholds de rank inconsistentes; " +
+                    "cálculo autoritativo de rank permanece desativado neles", inconsistentThresholds);
+            if (inconsistentFlows > 0)
+                Log.Warn("stage", "{0} stages possuem referências de fluxo sem destino nos " +
+                    "assets v258; o cliente deixa o bloco afetado parcialmente inicializado",
+                    inconsistentFlows);
+            if (duplicateFlowNames > 0)
+                Log.Warn("stage", "{0} stages possuem nomes de fluxo duplicados nos assets " +
+                    "v258; o cliente resolve para a primeira declaração", duplicateFlowNames);
+            if (_stageCatalog.Count != 48)
+                Log.Warn("stage", "catálogo incompleto: esperado=48 atual={0}", _stageCatalog.Count);
             _ = Task.Run(() => ConfigReloadLoopAsync(_cts.Token));   // reload a quente de pu_config/enchant_* (admin sem restart)
+            _ = Task.Run(() => InventoryExpirationLoopAsync(_cts.Token));
+            _ = Task.Run(() => PowerUserExpirationLoopAsync(_cts.Token));
             Log.Ok("world", "World Server pronto (ServerId={0})", _cfg.ServerId);
         }
 
@@ -418,133 +786,22 @@ namespace RakionServer.World
         /// <summary>Exp TOTAL p/ avancar do nivel atual (classlevelinfo). 0 = sem proximo nivel.</summary>
         public int NextLevelExp(byte cls, byte level) => _levelCurve.TryGetValue((cls, level), out var e) ? e : 0;
 
-        /// <summary>
-        /// Credita exp ao char ativo e processa level-ups (FUN_0040d300): acumula CharExp,
-        /// sobe CharLevel/CharLevelPoint e persiste exp + nivel no characterinfo. O threshold de cada
-        /// nivel e' o MEIO do intervalo da curva classlevelinfo ((curva[L-1]+curva[L])/2) — house-rule
-        /// p/ "barra cheia = upa" exato (o cliente desenha o cheio no meio do span; ver loop).
-        /// Devolve quantos niveis subiu (0 = nenhum).
-        /// </summary>
-        public int GrantExp(ClientSession s, uint exp)
-        {
-            if (s.ActiveCharId <= 0 || exp == 0) return 0;
-            s.CharExp += exp;
-            _ = _db.AddCharacterResultAsync(s.ActiveCharId, 0, 0, 0, exp);
-            return SettleLevels(s);
-        }
-
-        /// <summary>Aplica o RESULTADO de um stage solo (handler 0x53): bônus de PU sobre exp/gold, credita gold
-        /// (saldo + DB), grava o MELHOR rank do stage (userstageinfo) e concede exp (curva classlevelinfo).
-        /// Devolve o nº de level-ups. Regra de negócio do motor de partida/progressão — fora do handler de rede.</summary>
-        public int ApplyStageResult(ClientSession s, byte stage, byte rank, uint exp, uint gold)
-        {
-            exp = s.BonusExp(exp); gold = s.BonusGold(gold);                       // bônus de PU (pu_config)
-            s.Gold += gold;
-            if (gold > 0 && s.GameInfoId > 0) _ = _db.AddGoldAsync(s.GameInfoId, (int)gold);
-            if (rank > 0 && s.ActiveCharId > 0) _ = _db.SaveStageRankAsync(s.ActiveCharId, stage, rank); // melhor rank por stage
-            return GrantExp(s, exp);
-        }
-
-        /// <summary>Aplica o UPGRADE do refino (handler 0x74 = clique de upgrade). SERVER-AUTHORITATIVE: este build do
-        /// worldserv DESCARTAVA o roll de FUN_0040c310 (o cliente fica em "Upgrading Now" esperando o resultado), então
-        /// reconstruímos o comportamento pretendido — valida (CUser::CheckEnchantReinforce), ROLA a probabilidade,
-        /// aplica o delta de nível na arma (persiste itembox.level) e consome catalyzer + materiais. Regra do motor de
-        /// refino — fora do handler de rede. Devolve o result code (0=+1, 1=nada, 2=-1; 6/7/8 = erro de validação).</summary>
-        public byte ApplyEnchant(ClientSession s, byte weaponSlot, byte catalyzerSlot,
-            System.Collections.Generic.IReadOnlyList<byte> materialSlots)
-        {
-            // VALIDAÇÃO (FUN_0040c310): arma presente e <8000, catalyzer 0x32c9..0x32cd, materiais 0x36b1..0x36b3,
-            // caps de nível. Erro -> 6/7/8 (o cliente mostra "não dá"), sem mexer no estado.
-            int weaponId = BoxItemAt(s, weaponSlot);
-            int catId = BoxItemAt(s, catalyzerSlot);
-            if (weaponId == 0 || weaponId >= 8000) return 6;
-            if (!EnchantConfig.TryGetCatalyzer(catId, out var cat)) return 7;   // catalisador desconhecido
-            int curLevel = weaponSlot < s.BoxLevel.Count ? s.BoxLevel[weaponSlot] : 0;
-            if (curLevel >= 15) return 6;
-            if (curLevel > cat.LevelCap) return 8;             // arma acima do teto do catalisador (Mithril +4, etc.)
-            int j1 = 0, j2 = 0, j3 = 0;
-            foreach (byte ms in materialSlots)
-            {
-                int mid = BoxItemAt(s, ms);
-                if (mid == 0x36b1) j1++;
-                else if (mid == 0x36b2) j2++;
-                else if (mid == 0x36b3) j3++;
-                else return 7;
-            }
-
-            // ROLL server-authoritative (a fórmula de probabilidade roda no servidor) -> delta de nível.
-            // s.PuActive entra no roll: a EnchantConfig aplica o multiplicador de Power User (e o de evento).
-            byte result = RollEnchant(catId, curLevel, j1, j2, j3, s.PuActive);
-            int delta = EnchantDelta(result);
-            int newLevel = System.Math.Clamp(curLevel + delta, 0, 15);
-            if (weaponSlot < s.BoxLevel.Count) s.BoxLevel[weaponSlot] = newLevel;
-            int wRow = weaponSlot < s.BoxRowId.Count ? s.BoxRowId[weaponSlot] : 0;
-            if (wRow > 0) _ = _db.UpdateItemBoxLevelAsync(wRow, newLevel);          // persiste o +N
-
-            // CONSOME catalyzer + materiais (some do box; remoção persistida pela linha EXATA do itembox)
-            Consume(s, catalyzerSlot);
-            foreach (byte ms in materialSlots) Consume(s, ms);
-
-            Log.Ok("enchant", "[{0}] refino: arma slot {1} +{2}->+{3} (result={4}); catalyzer {5:x} + {6} joia(s) [j1={7} j2={8} j3={9}] consumidos",
-                s.Slot, weaponSlot, curLevel, newLevel, result, catId, materialSlots.Count, j1, j2, j3);
-            return result;
-        }
-
-        /// <summary>Lê o itemId de uma célula do box (0 = vazia/fora de faixa).</summary>
-        private static int BoxItemAt(ClientSession s, byte slot) => slot < s.BoxItems.Count ? s.BoxItems[slot] : 0;
-
-        /// <summary>Esvazia a célula e persiste a remoção da linha EXATA do itembox.</summary>
-        private void Consume(ClientSession s, byte slot)
-        {
-            var (_, rowId) = s.ClearBoxCell(slot);
-            if (rowId > 0) _ = _db.DeleteItemBoxByIdAsync(rowId);
-        }
-
-        /// <summary>Roleta do refino: a probabilidade de sucesso vem da <see cref="EnchantConfig"/> (banco —
-        /// coeficientes por catalisador + multiplicadores de evento/PU; estrutura do polinômio fiel ao FUN_0040c310).
-        /// Aqui só sorteamos sucesso vs falha e, na falha, se vira downgrade (-1) ou nada. Destroy (result 5) é
-        /// neutralizado neste build. Devolve o result code (0=+1, 1=nada, 2=-1).</summary>
-        private byte RollEnchant(int catalyzerId, int curLevel, int j1, int j2, int j3, bool puActive)
-        {
-            double p0 = EnchantConfig.SuccessChance(catalyzerId, curLevel, j1, j2, j3, puActive);
-            if (_rng.NextDouble() < p0) return 0;   // SUCESSO +1
-            double downgrade = (1.0 - p0) * EnchantConfig.DowngradeFactor(curLevel);
-            return _rng.NextDouble() < downgrade ? (byte)2 : (byte)1;   // 2=-1 (downgrade) ou 1=nada
-        }
-
-        private static int EnchantDelta(byte resultCode) => resultCode switch
-        {
-            0 => +1, 2 => -1, 3 => -2, 4 => -3, _ => 0,
-        };
-
-        private readonly System.Random _rng = new();
-
-        /// <summary>Sobe os niveis PENDENTES pela curva (sem creditar exp) e persiste. Chamado ao GANHAR exp
-        /// (<see cref="GrantExp"/>) E no LOAD do char — um char carregado JÁ acima do limiar upa na hora, sem
-        /// precisar ganhar exp de novo. Devolve quantos niveis subiu (0 = nenhum).</summary>
+        /// <summary>Sobe níveis pendentes pela curva durante o load do personagem.</summary>
         public int SettleLevels(ClientSession s)
         {
             if (s.ActiveCharId <= 0) return 0;
-            int ups = 0;
-            while (s.CharLevel < 99)
-            {
-                int full = NextLevelExp(s.CharClass, s.CharLevel);              // curva ORIGINAL: exp do proximo nivel (curva[L])
-                if (full <= 0) break;                                           // teto da curva (sem proximo nivel)
-                int floor = NextLevelExp(s.CharClass, (byte)(s.CharLevel - 1)); // exp do nivel atual (curva[L-1])
-                // HOUSE-RULE (desvio consciente; o DB fica intacto): o cliente desenha a barra "cheia" a ~2/5 do
-                // span do nivel (display nv4 = 496 ~ 386 + (658-386)*2/5 = 494). O meio-a-meio antigo (522)
-                // deixava a barra visualmente cheia SEM upar. Subimos nesse ponto p/ "barra cheia = upa".
-                int next = floor + (full - floor) * 2 / 5;
-                if (s.CharExp < next) break;
-                s.CharLevel++;
-                s.CharLevelPoint++;
-                ups++;
-            }
+            var before = new CharacterProgressionState(
+                s.CharExp, s.CharLevel, (byte)Math.Min(s.CharLevelPoint, byte.MaxValue));
+            CharacterProgressionState after = CharacterProgression.Project(
+                before, 0, level => NextLevelExp(s.CharClass, level));
+            int ups = after.Level - before.Level;
             if (ups > 0)
             {
-                _ = _db.UpdateCharacterLevelAsync(s.ActiveCharId, s.CharLevel, (byte)Math.Min(s.CharLevelPoint, 255));
+                s.CharLevel = after.Level;
+                s.CharLevelPoint = after.LevelPoint;
+                _ = _db.UpdateCharacterLevelAsync(s.ActiveCharId, after.Level, after.LevelPoint);
                 Log.Ok("level", "[{0}] char {1} LEVEL UP -> {2} (+{3} nivel(is), exp total {4})",
-                    s.Slot, s.ActiveCharId, s.CharLevel, ups, s.CharExp);
+                    s.Slot, s.ActiveCharId, after.Level, ups, s.CharExp);
             }
             return ups;
         }
@@ -648,31 +905,42 @@ namespace RakionServer.World
             return false;
         }
 
-        /// <summary>Resolve o nome esperado da sessao (validada pelo broker). Vazio = nao validada.</summary>
-        public string ResolveSessionName(string userId)
-            => _validated.ContainsKey(userId) ? userId : "";
-
         /// <summary>
         /// Sucesso do login (FUN_0041f6c0): promove a sessao e envia o LoginComplete
         /// imediatamente (o handler original responde ali mesmo). A carga do jogo e o
         /// log de conexao no DB rodam em background para nao atrasar a resposta.
         /// </summary>
-        public async Task OnLoginSuccessAsync(ClientSession s, string userId, string field2, string field3, ushort tail)
+        public async Task OnLoginSuccessAsync(
+            ClientSession s, string account, string password, ushort tail)
         {
+            if (_cfg.AuthType == 0)
+            {
+                WorldDatabase.Account? identity = await _db.AuthenticateCredentialAsync(
+                    account, password, _cfg.AllowPasswordLogin, _cfg.RequiredClientBuild);
+                if (identity == null)
+                {
+                    Log.Warn("auth", "[{0}] credencial recusada para '{1}'", s.Slot, account);
+                    s.SendLoginError(Protocol.LoginError.SubInvalidCredential);
+                    return;
+                }
+                s.Authority = identity.Authority;
+                s.Country = identity.Country;
+                s.SubStatus = identity.Authority > 0
+                    ? Domain.UserSubStatus.Gm
+                    : Domain.UserSubStatus.Normal;
+            }
             s.SlotActive = true;
             s.Authenticated = true;
-            // field2 = USER/conta (login: connType, userID='D' artefato, field2=user, field3=senha). userId
-            // parseado ('D') NAO e' a conta -> usar field2 ('test') p/ achar usergameinfo/cash/char no DB.
-            s.UserId = field2.Length > 0 ? field2 : userId;
+            s.UserId = account;
             s.Status = Domain.UserStatus.LoggedIn;
-            s.CharName = field2;
-            s.GroupId = Channels.Count > 0 ? Channels[0].Id : 0;   // canal default (origem real: locale/IDC do client)
+            s.CharName = account;
+            s.GroupId = Groups.Count > 0 ? Groups[0].Id : 0;
             Interlocked.Increment(ref _currentUsers);
 
             // Carrega gold/cash/level/itens do DB ANTES do 0x0C: a síntese do 0x0C serializa gold/cash do
             // estado vivo (o display reflete a compra). Sincrono p/ garantir s.Gold/s.Cash setados no 0x0C.
             await LoadAndLogAsync(s, s.UserId);
-            s.SendLoginResponse();   // 0x0C sintetizado (lista de chars) + 0x0D — 0x10 vai apos o handshake UDP
+            s.SendLoginResponse();   // 0x0C + 0x0D + 0x10; o challenge não depende do handshake UDP
         }
 
         private async Task LoadAndLogAsync(ClientSession s, string userId)
@@ -683,20 +951,45 @@ namespace RakionServer.World
                 Log.Warn("login", "[{0}] '{1}' logado mas sem usergameinfo (DB indisponivel?)", s.Slot, userId);
                 return;
             }
-            s.Game = new WorldDatabaseInfo { UserId = gi.Id, Name = gi.Name, CharName = gi.CharName, Gold = gi.Gold };
+            s.Game = new WorldDatabaseInfo
+            {
+                UserId = gi.Id,
+                Name = gi.Name,
+                CharName = gi.CharName,
+                Gold = gi.Gold,
+                Bag = gi.Bag,
+                CharacterSlots = gi.CharacterSlots
+            };
             s.GameInfoId = gi.Id;                                       // usergameinfo.id (debito gold + useriteminfo.userid)
+            s.BuddyName = gi.BuddyName;
+            s.TutorialClear = gi.TutorialClear;
             s.Gold = (uint)(gi.Gold < 0 ? 0 : gi.Gold);
             int cash = await _db.GetCashAsync(userId);                  // cash keyed por account-name
             s.Cash = (uint)(cash < 0 ? 0 : cash);
+            if (_cfg.Chat.Enabled)
+            {
+                ChatPersistenceState chatState = await _db.LoadChatStateAsync(userId);
+                s.ChatState.Load(chatState.MutedUntilUtc, chatState.BlockedAccounts);
+            }
+            s.BagCount = gi.Bag;
+            s.CharacterSlotCount = gi.CharacterSlots;
+            s.StageLevelFreeMarker = gi.StageLevelFreeMarker;
+            s.ClanId = gi.ClanId;
             s.PowerLevelPoint = (uint)(gi.PowerLevelPoint < 0 ? 0 : gi.PowerLevelPoint); // PU Bonus Points -> 0x0C @48
             s.PuActive = gi.PuActive;                                   // powertimedate > now -> bônus de XP/gold
             s.ExpBonusActive = gi.PuActive;                            // flag original do bônus de XP (user+0x236c)
+            s.PuExpiresAt = gi.PuExpiresAt;
+            int expiredItems = await _db.PurgeExpiredInventoryAsync(gi.Id);
+            if (expiredItems < 0)
+                Log.Warn("login", "[{0}] limpeza de itens expirados falhou; loads manterão o filtro", s.Slot);
             if (gi.PuActive) Log.Info("shop", "[{0}] PU ATIVO -> bônus xp×{1} gold×{2}", s.Slot,
                 PuConfig.EffectiveExpMult(DateTime.Now), PuConfig.EffectiveGoldMult(DateTime.Now));
             var ch = await _db.LoadActiveCharacterAsync(gi.Id);
             if (ch != null)
             {
-                s.ActiveCharId = ch.Id;                                 // useriteminfo.characterid
+                // O original mantém user+0x14A4 zerado até o request 0x14. O personagem
+                // marcado como used serve apenas para montar o preview inicial do 0x0C.
+                s.PreviewCharId = ch.Id;
                 s.CharClass = ch.Class;                                 // classe -> curva de level (0x50)
                 s.CharExp = ch.Exp < 0 ? 0 : ch.Exp;                    // exp acumulado (level-up server-side)
                 s.CharLevel = ch.Level == 0 ? (byte)1 : ch.Level;       // overlay 0x0C @96 (nivel na tela)
@@ -704,6 +997,7 @@ namespace RakionServer.World
                 s.CharLose = (uint)(ch.Lose < 0 ? 0 : ch.Lose);         // overlay 0x0C @77
                 s.CharDraw = (uint)(ch.Draw < 0 ? 0 : ch.Draw);         // overlay 0x0C @81
                 s.CharLevelPoint = (uint)(ch.LevelPoint);               // pontos de level -> overlay 0x0C @101
+                s.PotionSlotCount = ch.PotionSlots;
                 SettleLevels(s);                                        // upa niveis pendentes JÁ no load (barra cheia do relog)
                 // stats alocados (hit1..maxcp) -> Stats[0..9], p/ a alocacao 0x33 partir do valor real salvo
                 s.Stats[0] = ch.Hit1; s.Stats[1] = ch.Hit2; s.Stats[2] = ch.Hit3; s.Stats[3] = ch.Hit4;
@@ -711,32 +1005,47 @@ namespace RakionServer.World
                 s.Stats[8] = ch.Speed; s.Stats[9] = ch.Maxcp;
                 if (s.CharName.Length == 0) s.CharName = ch.Name;
                 s.Items = await _db.LoadItemsAsync(ch.Id);              // inventario do char p/ o Box (0x2f)
-                // armazem (itembox) -> exibido no box + slot da compra. FILTRA p/ só gear (type<=5): itens
-                // não-gear (transform/especial/lotto) ficam no DB mas NÃO carregam no box -> sem célula
-                // invisível e sem crash do painel no "Previous" (ver IsBoxDisplayable).
-                var loadedBox = await _db.LoadItemBoxAsync(gi.Id);
-                // SETS (type 10) são BUNDLES de peças de gear (iteminfo hit1-4/chit/ap = itemIds dos membros).
-                // Desempacota no armazem (troca o set pelas peças) — o cliente não tem ação de "usar set", então
-                // sem isto o set fica inerte no box. Idempotente: após desempacotar não resta set p/ desempacotar.
+                var invalidItems = s.Items.FindAll(item => !IsActiveItemValid(ch, item));
+                if (invalidItems.Count > 0)
+                {
+                    int moved = await _db.MoveInvalidItemsToStorageAsync(
+                        gi.Id, ch.Id, invalidItems.ConvertAll(item => item.Id), StorageCapacity(s));
+                    if (moved < 0)
+                        Log.Error("login", "[{0}] equipamento incompatível não pôde ser normalizado", s.Slot);
+                    else
+                    {
+                        Log.Warn("login", "[{0}] {1} item(ns) incompatível(is) movido(s) ao storage",
+                            s.Slot, moved);
+                        s.Items = await _db.LoadItemsAsync(ch.Id);
+                    }
+                }
+                // useriteminfo canônico: todos os itens ocupam célula; apenas os tipos compatíveis
+                // são renderizados no grid legado do cliente (ver IsBoxDisplayable).
+                var loadedBox = await _db.LoadStorageItemsAsync(gi.Id);
                 var setsInBox = loadedBox.FindAll(t => IsSet(t.ItemId));
                 if (setsInBox.Count > 0)
                 {
-                    var doneSets = new HashSet<int>();
                     foreach (var t in setsInBox)
-                        if (doneSets.Add(t.ItemId)) await _db.UnpackSetInBoxAsync(gi.Id, t.ItemId, ExpandSetMembers(t.ItemId));
-                    loadedBox = await _db.LoadItemBoxAsync(gi.Id);          // recarrega já desempacotado
-                    Log.Ok("login", "[{0}] {1} set(s) type-10 desempacotado(s) no armazem", s.Slot, doneSets.Count);
+                        await _db.UnpackSetInStorageAsync(
+                            gi.Id, t, ExpandSetMembers(t.ItemId), StorageCapacity(s));
+                    loadedBox = await _db.LoadStorageItemsAsync(gi.Id);
+                    Log.Ok("login", "[{0}] {1} set(s) legado(s) type-10 processado(s) no armazem",
+                        s.Slot, setsInBox.Count);
                 }
                 var boxGear = loadedBox.FindAll(t => IsBoxDisplayable(t.ItemId));   // só gear entra no grid
-                s.SetBoxItems(boxGear);   // consolida poções por id (1 célula + contador); gear 1 por célula, com nível de refino
-                s.LoadPotionSlot(await _db.LoadQuickslotAsync(gi.Id));     // quickslot de pocao persistido (itembox.qslot)
+                s.SetBoxItems(loadedBox); // inclui células ocultas na ocupação; render filtra por compatibilidade
+                s.LoadActiveItems(s.Items);
+                s.LoadPotionSlot(await _db.LoadQuickslotAsync(gi.Id, ch.Id));
+                if (!await s.PersistStorageLayoutAsync())
+                    Log.Warn("login", "[{0}] layout do armazém não pôde ser normalizado", s.Slot);
                 s.StageRanks = await _db.LoadStageRanksAsync(ch.Id);       // ranks de stage -> overlay 0x0C@333 (RANK X CLEAR na seleção)
                 int boxHidden = loadedBox.Count - boxGear.Count;
                 Log.Ok("login", "[{0}] char ativo='{1}' id={2} class={3} lvl={4} itens={5} box={6}{7}", s.Slot, ch.Name, ch.Id, ch.Class, ch.Level, s.Items.Count, boxGear.Count, boxHidden > 0 ? $" (+{boxHidden} não-gear ocultos)" : "");
             }
             else { Log.Warn("login", "[{0}] '{1}' sem char ativo (characterinfo.used=1 ausente)", s.Slot, userId); }
             s.LoginCharList = await BuildLoginCharListAsync(s);   // lista de chars do char-select (0x0C), sintetizada do DB
-            await _db.LogUserConnectAsync(gi.Id, userId, _cfg.ServerId, s.RemoteIp);
+            s.ConnectionLogId = await _db.LogUserConnectAsync(new ConnectionLogStart(
+                gi.Id, userId, _cfg.ServerId, s.RemoteIp, s.Country));
             Log.Ok("login", "[{0}] '{1}' logado (char='{2}', gold={3}, cash={4}) — {5}/{6} online",
                 s.Slot, userId, gi.CharName, s.Gold, s.Cash, CurrentUsers, MaxUser);
         }
@@ -745,17 +1054,27 @@ namespace RakionServer.World
         private async Task<CharList> BuildLoginCharListAsync(ClientSession s)
         {
             var chars = await _db.LoadCharactersAsync(s.GameInfoId);
-            var quickslot = await _db.LoadQuickslotAsync(s.GameInfoId);   // account-level (itembox.qslot)
+            int previewCharacterId = s.ActiveCharId > 0 ? s.ActiveCharId : s.PreviewCharId;
+            var quickslot = previewCharacterId > 0
+                ? await _db.LoadQuickslotAsync(s.GameInfoId, previewCharacterId)
+                : new List<(int Cell, int ItemId, int Count)>();
             var summaries = new List<CharSummary>(chars.Count);
             foreach (var ch in chars)
             {
                 var ranks = await _db.LoadStageRanksAsync(ch.Id);
-                summaries.Add(BuildCharSummary(ch, ranks, ch.Id == s.ActiveCharId ? quickslot : null));
+                var items = await _db.LoadItemsAsync(ch.Id);
+                summaries.Add(BuildCharSummary(
+                    ch, items, ranks, ch.Id == previewCharacterId ? quickslot : null));
             }
             return new CharList
             {
-                AccountName = chars.Count > 0 ? chars[0].Name : s.CharName,   // @41 (truncado a 2 chars no writer)
-                UserId = (uint)s.GameInfoId,
+                DisplayName = string.IsNullOrEmpty(s.BuddyName) ? s.CharName : s.BuddyName,
+                Clan = _cfg.Clan.Enabled
+                    ? await _db.LoadClanLoginSnapshotAsync(s.GameInfoId, s.ClanId)
+                    : Domain.ClanLoginSnapshot.Empty,
+                NetworkSlot = s.Slot,
+                Country = checked((ushort)Math.Clamp(s.Country, 0, ushort.MaxValue)),
+                SlotCount = s.CharacterSlotCount,
                 Gold = s.Gold,
                 Cash = s.Cash,
                 PowerLevelPoint = (ushort)Math.Min(s.PowerLevelPoint, (uint)ushort.MaxValue),
@@ -763,23 +1082,150 @@ namespace RakionServer.World
             };
         }
 
-        private static CharSummary BuildCharSummary(CharacterInfo ch, byte[] ranks,
+        private CharSummary BuildCharSummary(CharacterInfo ch, IReadOnlyList<UserItem> items, byte[] ranks,
             List<(int Cell, int ItemId, int Count)>? quickslot)
         {
-            // Equip NÃO entra no char-select: o preview 3D veste o gear no modelo da classe e crasha em classes
-            // sem o bone da arma ('Weapon01_ON_R'). TODO: reabilitar (só armadura, ou tratar o bone por classe).
+            CharacterPreview preview = CharacterPreviewProjection.Build(ch, items, FindItemDef);
             var qs = new ushort[6];
             if (quickslot != null)
                 foreach (var (cell, itemId, _) in quickslot)
-                    if (cell is >= 13 and <= 18) qs[cell - 13] = (ushort)itemId;
+                    if (cell <= 18 && InventoryEntitlementRules.IsPotionCellUnlocked(cell, ch.PotionSlots))
+                        qs[cell - 13] = (ushort)itemId;
             return new CharSummary
             {
-                Name = ch.Name, Slot = ch.Slot, Class = ch.Class,
-                Level = ch.Level == 0 ? (byte)1 : ch.Level, Exp = (uint)Math.Max(0, ch.Exp), LevelPoint = ch.LevelPoint,
-                Win = (uint)Math.Max(0, ch.Win), Lose = (uint)Math.Max(0, ch.Lose), Draw = (uint)Math.Max(0, ch.Draw),
+                CharacterId = ch.Id,
+                Name = ch.Name,
+                Slot = ch.Slot,
+                Class = ch.Class,
+                Level = ch.Level == 0 ? (byte)1 : ch.Level,
+                Exp = (uint)Math.Max(0, ch.Exp),
+                LevelPoint = ch.LevelPoint,
+                Win = (uint)Math.Max(0, ch.Win),
+                Lose = (uint)Math.Max(0, ch.Lose),
+                Draw = (uint)Math.Max(0, ch.Draw),
                 Stats = new ushort[] { ch.Hit1, ch.Hit2, ch.Hit3, ch.Hit4, ch.Chit, ch.Hp, ch.Ap, ch.AttackSpeed, ch.Speed, ch.Maxcp },
-                Quickslot = qs, StageRanks = ranks ?? System.Array.Empty<byte>(),
+                Equip = preview.Equipment,
+                Enhance = preview.Enhancement,
+                Quickslot = qs,
+                StageRanks = ranks ?? System.Array.Empty<byte>(),
             };
+        }
+
+        private bool IsActiveItemValid(CharacterInfo character, UserItem item)
+        {
+            ItemDef? definition = FindItemDef(item.ItemId);
+            if (definition == null ||
+                !EquipmentRules.CanPlace(definition, item.Slot, character.Class, character.Level))
+                return false;
+            return item.Slot < 13 ||
+                   InventoryEntitlementRules.IsPotionCellUnlocked(item.Slot, character.PotionSlots);
+        }
+
+        public async Task<CharacterSelectStatus> SelectCharacterAsync(ClientSession s, int characterId)
+        {
+            if (!CharacterLifecycleRules.CanSelect(
+                    s.GameInfoId, s.ActiveCharId, characterId)) return CharacterSelectStatus.SystemError;
+            var gate = _characterLocks.GetOrAdd(s.GameInfoId, _ => new SemaphoreSlim(1, 1));
+            await gate.WaitAsync();
+            try
+            {
+                if (s.ActiveCharId != 0) return CharacterSelectStatus.SystemError;
+                CharacterSelectResult result = await _db.SelectCharacterAsync(s.GameInfoId, characterId);
+                if (result.Status != CharacterSelectStatus.Success) return result.Status;
+                CharacterInfo ch = result.Character!;
+
+                s.ActiveCharId = ch.Id;
+                s.PreviewCharId = ch.Id;
+                s.CharName = ch.Name;
+                s.CharClass = ch.Class;
+                s.CharLevel = ch.Level == 0 ? (byte)1 : ch.Level;
+                s.CharExp = Math.Max(0, ch.Exp);
+                s.CharWin = (uint)Math.Max(0, ch.Win);
+                s.CharLose = (uint)Math.Max(0, ch.Lose);
+                s.CharDraw = (uint)Math.Max(0, ch.Draw);
+                s.CharLevelPoint = ch.LevelPoint;
+                s.PotionSlotCount = ch.PotionSlots;
+                s.Stats[0] = ch.Hit1; s.Stats[1] = ch.Hit2; s.Stats[2] = ch.Hit3; s.Stats[3] = ch.Hit4;
+                s.Stats[4] = ch.Chit; s.Stats[5] = ch.Hp; s.Stats[6] = ch.Ap; s.Stats[7] = ch.AttackSpeed;
+                s.Stats[8] = ch.Speed; s.Stats[9] = ch.Maxcp;
+                s.Items = await _db.LoadItemsAsync(ch.Id);
+                s.StageRanks = await _db.LoadStageRanksAsync(ch.Id);
+                s.LoginCharList = await BuildLoginCharListAsync(s);
+                Log.Ok("character", "[{0}] selecionou char '{1}' id={2} class={3} lvl={4}",
+                    s.Slot, ch.Name, ch.Id, ch.Class, ch.Level);
+                return CharacterSelectStatus.Success;
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }
+
+        public async Task<Database.CharacterDeleteResult> DeleteCharacterAsync(
+            ClientSession s, int characterId, string deleteKey)
+        {
+            if (s.GameInfoId <= 0 || characterId <= 0) return Database.CharacterDeleteResult.NotFound;
+            var gate = _characterLocks.GetOrAdd(s.GameInfoId, _ => new SemaphoreSlim(1, 1));
+            await gate.WaitAsync();
+            try
+            {
+                var outcome = await _db.DeleteCharacterAsync(s.GameInfoId, characterId, deleteKey);
+                var result = outcome.Result;
+                if (result == Database.CharacterDeleteResult.DeleteKeySent)
+                {
+                    return await CharacterDeleteKeyDelivery.CompleteAsync(
+                        outcome, _characterDeleteNotifier,
+                        key => _db.RevokeCharacterDeleteKeyAsync(
+                            s.GameInfoId, characterId, key));
+                }
+                if (result != Database.CharacterDeleteResult.Success) return result;
+                s.LoginCharList = await BuildLoginCharListAsync(s);
+                Log.Ok("character", "[{0}] excluiu char id={1}", s.Slot, characterId);
+                return result;
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }
+
+        public async Task<Database.BuddyNameChangeResult> ChangeBuddyNameAsync(ClientSession s, string buddyName)
+        {
+            if (!Domain.LegacyIdentity.IsValidBuddyName(buddyName))
+                return Database.BuddyNameChangeResult.Failed;
+            await _buddyIdentityLock.WaitAsync();
+            try
+            {
+                var result = await _db.ChangeBuddyNameAsync(s.GameInfoId, buddyName);
+                if (result == Database.BuddyNameChangeResult.Success)
+                {
+                    s.BuddyName = buddyName;
+                    Log.Ok("character", "[{0}] buddyname alterado para '{1}'", s.Slot, buddyName);
+                }
+                return result;
+            }
+            finally
+            {
+                _buddyIdentityLock.Release();
+            }
+        }
+
+        public async Task MarkTutorialClearAsync(ClientSession s)
+        {
+            if (s.GameInfoId <= 0 || s.TutorialClear) return;
+            var gate = _characterLocks.GetOrAdd(s.GameInfoId, _ => new SemaphoreSlim(1, 1));
+            await gate.WaitAsync();
+            try
+            {
+                if (s.TutorialClear) return;
+                if (!await _db.MarkTutorialClearAsync(s.GameInfoId)) return;
+                s.TutorialClear = true;
+                Log.Ok("character", "[{0}] tutorial concluído", s.Slot);
+            }
+            finally
+            {
+                gate.Release();
+            }
         }
 
         public async Task RemoveSessionAsync(ClientSession s)
@@ -787,12 +1233,13 @@ namespace RakionServer.World
             if (_sessions.TryRemove(s.Slot, out _))
             {
                 LeaveField(s);
+                LeaveChannel(s, true);
                 if (s.Authenticated)
                     Interlocked.Decrement(ref _currentUsers);
+                await _db.CloseConnectionLogAsync(s.ConnectionLogId, s.DisconnectReason);
                 Log.Info("world", "[{0}] sessao encerrada ('{1}') — {2}/{3} online",
                     s.Slot, s.UserId, CurrentUsers, MaxUser);
             }
-            await Task.CompletedTask;
         }
 
         // ---- broker -----------------------------------------------------------
@@ -800,16 +1247,5 @@ namespace RakionServer.World
         private BrokerLink.Stats GetStats()
             => new BrokerLink.Stats(MaxUser, CurrentUsers, _cfg.MaxField, 0);
 
-        /// <summary>Validador chamado pelo broker (RequestLogin) — autentica no DB.</summary>
-        private async Task<BrokerLink.LoginResult> ValidateLoginAsync(string userId, string password, ushort ipcId)
-        {
-            var acc = await _db.AuthenticateAsync(userId, password);
-            if (acc == null)
-                return new BrokerLink.LoginResult(1, ipcId, ""); // result != 0 = falha
-
-            _validated[userId] = DateTime.UtcNow; // sessao validada (o TCP login vai casar o nome)
-            Log.Ok("broker", "login validado para '{0}' (ipcId={1})", userId, ipcId);
-            return new BrokerLink.LoginResult(0, ipcId, "");
-        }
     }
 }

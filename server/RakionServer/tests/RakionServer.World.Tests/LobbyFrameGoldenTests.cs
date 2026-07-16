@@ -1,3 +1,5 @@
+using System.Net;
+using RakionServer.World.Domain;
 using RakionServer.World.Network;
 using Xunit;
 
@@ -6,9 +8,9 @@ namespace RakionServer.World.Tests
     /// <summary>
     /// Golden test dos frames da cadeia lobby->canal->sala->stage SINTETIZADOS por <see cref="LobbyFrames"/>.
     /// Os builders foram cravados da decompilação do worldserv (objdump): cada frame é emitido com seu LEN
-    /// REAL (3º arg do send) + zero-pad até o bloco de 12B. Os bytes além do LEN real, na captura, eram LIXO
-    /// DE STACK — VARIAM entre sessões (provado por diff do golden vs mitm_full_113423.log), logo NÃO são
-    /// replicados. As CONSTANTES e o DADO DE SESSÃO (userid 999=0x03e7, nome "JP", stage 432s) são exigidos
+    /// REAL (3º arg do send). Os bytes além do LEN real, na captura, eram LIXO DE STACK e variam entre
+    /// sessões, portanto não integram os arrays lógicos. As CONSTANTES e o DADO DE SESSÃO (userid 999=0x03e7,
+    /// nome "JP", stage 432s) são exigidos
     /// byte-a-byte contra a captura do original. NENHUM frame de lobby carrega handle de sessão na cauda: a
     /// volta-à-lista pós-clear re-manda os MESMOS 0x1f/0x1e/0x36 da entrada (mitm_move_133859 l.460/461 ==
     /// l.19/20). <see cref="Synth_Is_Domain_Sourced"/> prova que userid/nome vêm do domínio (não é blob fixo).
@@ -36,15 +38,58 @@ namespace RakionServer.World.Tests
             Assert.Equal("440002000100000061736464", Hex(LobbyFrames.MatchEnd(2, "asdd")));
 
         [Fact]
-        public void Endpoints_LocalDefault_MatchesOriginal() =>
-            Assert.Equal("0e00007f00000108fd7f00000108fd000000000000000000",
-                Hex(LobbyFrames.Endpoints(new byte[] { 127, 0, 0, 1 }, 2301)));
+        public void Endpoints_DistinctPorts_MatchOriginalCapture() =>
+            Assert.Equal("0e00007f000001c9fc7f000001c9fd",
+                Hex(LobbyFrames.Endpoints(
+                    new IPEndPoint(IPAddress.Loopback, 51708),
+                    new IPEndPoint(IPAddress.Loopback, 51709))));
+
+        [Fact]
+        public void Endpoints_WithoutAuthenticatedUdp_DoNotPublishLoopbackFallback() =>
+            Assert.Equal("0e0000000000000000000000000000",
+                Hex(LobbyFrames.Endpoints(
+                    NetworkEndpointCodec.Unspecified, NetworkEndpointCodec.Unspecified)));
 
         // ---- Acks curtos cravados da decompilação: LEN real + zero-pad (cauda capturada era lixo de stack) ----
 
         [Fact]
-        public void SpawnAck_RealLen3_ZeroPad() =>           // RE FUN_0041fef0: LEN=3 [14 00][status]; resto era lixo
-            Assert.Equal("140000000000000000000000", Hex(LobbyFrames.SpawnAck()));
+        public void CharacterSelectAck_HasExactLogicalLength() =>
+            Assert.Equal("140000", Hex(LobbyFrames.CharacterSelectAck()));
+
+        [Theory]
+        [InlineData(Database.CharacterSelectStatus.SystemError, "140001")]
+        [InlineData(Database.CharacterSelectStatus.NotFound, "140002")]
+        public void CharacterSelect_ErrorStatusesAreCanonical(
+            Database.CharacterSelectStatus status, string expected) =>
+            Assert.Equal(expected, Hex(LobbyFrames.CharacterSelectAck(status)));
+
+        [Theory]
+        [InlineData(1, "130001")]
+        [InlineData(2, "130002")]
+        [InlineData(3, "130003")]
+        [InlineData(5, "130005")]
+        [InlineData(6, "130006")]
+        [InlineData(7, "130007")]
+        [InlineData(9, "130009")]
+        public void CharacterDeleteAck_IsDeterministic(byte status, string expected) =>
+            Assert.Equal(expected, Hex(LobbyFrames.CharacterDeleteAck(status)));
+
+        [Fact]
+        public void CharacterDeleteSuccessCarriesOriginalClanSnapshot() =>
+            Assert.Equal(
+                "1300004433221105436c616e000403020106050a0908070e0d0c0b1211100f4d617374657200",
+                Hex(LobbyFrames.CharacterDeleteAck(0, new ClanLoginSnapshot
+                {
+                    Id = 0x11223344,
+                    Grade = 5,
+                    Name = "Clan",
+                    Rank = 0x01020304,
+                    Members = 0x0506,
+                    Point = 0x0708090A,
+                    MemberPoint = 0x0B0C0D0E,
+                    MemberRank = 0x0F101112,
+                    MasterCharacterName = "Master",
+                })));
 
         [Fact]
         public void GameListEmpty_RealLen3_ZeroPad() =>      // RE FUN_00422c90/@0x41c0b7: lista vazia (solo) = LEN=3 [36 00][00]
@@ -58,6 +103,32 @@ namespace RakionServer.World.Tests
         public void MatchStartAck_RealLen3_ZeroPad() =>      // RE FUN_004079d0: LEN=3 [43 00][status]; [handle][3b...] era lixo
             Assert.Equal("430000000000000000000000", Hex(LobbyFrames.MatchStartAck()));
 
+        [Theory]
+        [InlineData(1, "430001000000000000000000")]
+        [InlineData(2, "430002000000000000000000")]
+        [InlineData(3, "430003000000000000000000")]
+        public void MatchStartAck_PreservesFailureStatus(byte status, string expected) =>
+            Assert.Equal(expected, Hex(LobbyFrames.MatchStartAck(status)));
+
+        [Fact]
+        public void GameList_SerializesOriginalFieldEntryOrderAndPadsBlock()
+        {
+            var field = new RoomListSnapshot(
+                7, true, false, 3, 2, 5, 40, 9, 1, 3, 2, 12,
+                0x11223344, 10, "Sala", 0x5566);
+
+            Assert.Equal(
+                "3600010700010003020528090103020c443322110a0000000000000053616c6100665500",
+                Hex(LobbyFrames.GameList(new[] { field })));
+        }
+
+        [Fact]
+        public void RoomJoinAndCreateResults_PreserveIdentifiersAndStatus()
+        {
+            Assert.Equal("3b0002090000000000000000", Hex(LobbyFrames.RoomCreateAck(9, 2)));
+            Assert.Equal("380003000000000000000000", Hex(LobbyFrames.RoomJoinResult(3)));
+        }
+
         [Fact]
         public void StageEndResult_Clear_RealLen6_ZeroPad() =>   // RE FUN_00405a90: 2bd=2 (clear) -> 6 bytes + padding
             Assert.Equal("4a0002010100000000000000", Hex(LobbyFrames.StageEndResult(2)));
@@ -65,6 +136,42 @@ namespace RakionServer.World.Tests
         [Fact]
         public void StageEndResult_Death_RealLen6_ZeroPad() =>   // RE GameDiePlayer FUN_004087d0: 2bd=1 (morte) -> mesma forma, byte[2]=1
             Assert.Equal("4a0001010100000000000000", Hex(LobbyFrames.StageEndResult(1)));
+
+        [Fact]
+        public void InventoryEnterAck_MatchesOriginalCapture() =>
+            Assert.Equal("2c00008deb863f",
+                Hex(LobbyFrames.InventoryEnterAck(new byte[] { 0x8d, 0xeb, 0x86, 0x3f })));
+
+        [Theory]
+        [InlineData(1, "2c000100000000")]
+        [InlineData(2, "2c000200000000")]
+        public void InventoryEnterResult_UsesStatusAndZeroReference(byte status, string expected) =>
+            Assert.Equal(expected, Hex(LobbyFrames.InventoryEnterResult(status)));
+
+        [Theory]
+        [InlineData(0, "2d0000")]
+        [InlineData(1, "2d0001")]
+        [InlineData(2, "2d0002")]
+        public void InventoryLeaveResult_UsesLogicalThreeByteFrame(byte status, string expected) =>
+            Assert.Equal(expected, Hex(LobbyFrames.InventoryLeaveResult(status)));
+
+        [Theory]
+        [InlineData(false, 3, "2e0003")]
+        [InlineData(true, 3, "2f0003")]
+        public void StorageMutationError_UsesRequestOpcode(
+            bool sale, byte status, string expected) =>
+            Assert.Equal(expected, Hex(LobbyFrames.StorageMutationError(sale, status)));
+
+        [Fact]
+        public void StorageSaleAck_MatchesOriginalMinimalSnapshotLayout() =>
+            Assert.Equal(
+                "150000004433221188776655e903380400000780841e0005341200000000",
+                Hex(LobbyFrames.StorageSaleAck(
+                    0x11223344, 0x55667788, 1001, 1080, 7, 2_000_000, 5, 0x1234)));
+
+        [Fact]
+        public void StageResultAck_UsesCapturedRealLength() =>
+            Assert.Equal("530000020400", Hex(LobbyFrames.StageResultAck(2, 4, System.Array.Empty<ushort>())));
 
         // ---- Frames com registro de player (entrada E volta-à-lista): LEN real + zero-pad (cauda era lixo) ----
 
@@ -88,7 +195,8 @@ namespace RakionServer.World.Tests
             Assert.Contains("e7034a50", a);    // userid 999 (e703) + nome "JP" (4a50)
             Assert.Contains("d2045a5a", b);    // userid 1234 (d204) + nome "ZZ" (5a5a)
             Assert.NotEqual(a, b);             // entradas distintas -> frames distintos (não é blob fixo)
-            Assert.Contains("646368616e6e656c3031", Hex(LobbyFrames.ChannelList(1234, "ZZ"))); // "dchannel01" é const
+            // 0x64 é owner sentinel 100; o nome real começa em "channel01".
+            Assert.Contains("646368616e6e656c3031", Hex(LobbyFrames.ChannelList(1234, "ZZ")));
         }
     }
 }

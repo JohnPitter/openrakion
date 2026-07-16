@@ -134,6 +134,13 @@ Port=40708
 [Broker]
 IP=127.0.0.1
 Port=40706
+Code=
+[Authentication]
+Type=0
+AllowPasswordLogin=1
+[Client]
+RequiredAppId=0
+RequiredBuildVersion=0
 [DB]
 IP=127.0.0.1
 Port=3306
@@ -147,6 +154,23 @@ Name=rakion
 - `Settings.ini` — IP/porta do broker (padrão `0.0.0.0:40706`).
 - `GameServers.ini` — a lista de mundos. O `World1` já aponta para `127.0.0.1:40708`.
   Para anunciar um IP público, mude `wan=` e `lan_wan=1`.
+
+### LauncherWeb — ticket e atualização
+
+O serviço falha fechado se Legacy/Auth estiver habilitado sem connection string. Para rollout
+local do ticket:
+
+```powershell
+$env:ConnectionStrings__Rakion='Server=127.0.0.1;Database=rakion;Uid=launcher_app;Pwd=troque;'
+$env:Legacy__Enabled='false'
+$env:Auth__Enabled='true'
+$env:LauncherWeb__Url='http://127.0.0.1:80'
+```
+
+Depois de distribuir um launcher com `ticketAuthEnabled=true`, troque
+`AllowPasswordLogin=0` e configure `RequiredAppId/RequiredBuildVersion` para a release publicada.
+Os dois valores em zero deixam o gate de build desligado. Para update assinado e HTTPS externo, siga
+[`docs/protocol/launcher-auth-update.md`](../../docs/protocol/launcher-auth-update.md).
 
 ---
 
@@ -168,7 +192,9 @@ dotnet run --project src/RakionServer.Buddy -c Release
 # Terminal 4 — LauncherWeb (auth do launcher, :80)
 dotnet run --project src/RakionServer.LauncherWeb -c Release
 
-# Terminal 5 — Admin (painel web, http://localhost:8080)  [opcional]
+# Terminal 5 — Admin (painel web, http://127.0.0.1:8080)  [opcional]
+$env:Admin__Password='troque-por-uma-senha-forte'
+$env:ConnectionStrings__Rakion='Server=127.0.0.1;Port=3306;Database=rakion;Uid=admin_app;Pwd=troque;'
 dotnet run --project src/RakionServer.Admin -c Release
 ```
 
@@ -226,7 +252,7 @@ No log do World você verá `login userID='test'` e `'test' logado (char='...', 
 
 O cliente original do Rakion v258 carrega o **GameGuard (nProtect)** — anticheat de
 terceiros cujo servidor de auth está **morto**. Esta reconstrução **não emula** o GameGuard
-(é fora de escopo; ver `../../docs/protocol-world.md`/`README.md`). Implicações:
+(é fora de escopo; ver `../../docs/protocol/world.md` e `../../docs/README.md`). Implicações:
 
 - O **servidor .NET não exige GameGuard** — ele aceita clientes que não falam GG (diferente
   do servidor nativo original, que gateia a conexão no handshake do GG).
@@ -240,8 +266,8 @@ terceiros cujo servidor de auth está **morto**. Esta reconstrução **não emul
 
 ## 9. Criar contas
 
-A forma fácil é o **painel admin** em **http://localhost:8080** (senha de amostra `rakion`, em
-`src/RakionServer.Admin/appsettings.json` → `Admin:Password`): aba **Contas** → criar/editar conta,
+A forma fácil é o **painel admin** em **http://127.0.0.1:8080**. Defina `Admin__Password` e
+`ConnectionStrings__Rakion` antes de iniciar: aba **Contas** → criar/editar conta,
 trocar senha, ajustar **gold/cash** e **adicionar itens** ao inventário. Ou direto no banco:
 ```sql
 USE rakion;
@@ -269,7 +295,7 @@ INSERT INTO usergameinfo (id,name,gold) VALUES (2,'meunick',10000);
 
 - **Build:** `dotnet build RakionServer.sln -c Release`
 - **Publicar:** `dotnet publish src/RakionServer.World/RakionServer.World.csproj -c Release -o out/world`
-- **Protocolo:** `../../docs/protocol-world.md` (world) e `../../docs/protocol-buddy.md` (buddy)
+- **Protocolo:** `../../docs/protocol/world.md` (World) e `../../docs/protocol/buddy.md` (Buddy)
 - **Arquitetura/estado:** `README.md`
 - **Estender (novos handlers):** preencha os métodos em
   `src/RakionServer.World/Network/WorldHandlers*.cs` (cada opcode é um método; o endereço

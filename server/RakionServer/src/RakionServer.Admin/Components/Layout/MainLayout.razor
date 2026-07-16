@@ -5,10 +5,12 @@
         <div class="brand">OpenRakion · Admin</div>
         <NavLink href="/" Match="NavLinkMatch.All">Dashboard</NavLink>
         <NavLink href="/accounts">Contas</NavLink>
+        <NavLink href="/clans">Clãs</NavLink>
         <NavLink href="/poweruser">Power User</NavLink>
         <NavLink href="/refino">Refino</NavLink>
         <NavLink href="/updates">Updates</NavLink>
         <form method="post" action="/auth/logout" style="padding:16px 18px;margin-top:14px;border-top:1px solid var(--line);">
+            <AntiforgeryToken />
             <button class="ghost" type="submit">Sair</button>
         </form>
     </nav>

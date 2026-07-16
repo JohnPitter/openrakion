@@ -31,6 +31,34 @@ dotnet publish -c Release -r win-x64 --self-contained true \
 
 Roda elevado (o `rakion.exe` exige admin; `CreateProcess` sem elevar = erro 740) — ver `app.manifest`.
 
+## Login por ticket e update assinado
+
+O launcher pode trocar a senha por um ticket aleatório de 20 caracteres antes de iniciar o jogo e
+aplicar releases assinadas com ECDSA P-256/SHA-256. Em servidor remoto, a URL precisa ser HTTPS.
+
+```json
+{
+  "updatesEnabled": true,
+  "ticketAuthEnabled": true,
+  "updateBaseUrl": "https://launcher.exemplo.com/",
+  "appId": 11001,
+  "baseVersion": 258,
+  "publicKeyPemPath": "update-public.pem"
+}
+```
+
+Copie a chave pública para junto do launcher. Se a emissão do ticket falhar, o jogo não é aberto e
+não há fallback silencioso para a senha. O launcher inclui `appId` e a versão persistida em
+`.update/version` no ticket; o World pode exigir esse par com `RequiredAppId` e
+`RequiredBuildVersion`. Para testar somente o updater:
+
+```powershell
+dotnet RakionLauncher.dll --update-only C:\Rakion
+```
+
+O passo a passo de servidor, publicação, rollout e rollback está em
+[`docs/protocol/launcher-auth-update.md`](../../docs/protocol/launcher-auth-update.md).
+
 ## Assets
 
 Os assets de UI (`Assets/*.ico|png|bmp`) são de domínio público e ficam **versionados** — ver

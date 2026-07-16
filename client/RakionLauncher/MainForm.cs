@@ -13,10 +13,11 @@ internal sealed class MainForm : Form
     private const string ServerId = "1A";
 
     private readonly string _clientDir, _binDir, _iniPath, _modeFile;
+    private readonly LauncherConfig _launcherConfig;
     private GameSettings _settings;
 
-    private readonly TextBox _user = new() { Text = "test" };
-    private readonly TextBox _pass = new() { UseSystemPasswordChar = true, Text = "test" };
+    private readonly TextBox _user = new();
+    private readonly TextBox _pass = new() { UseSystemPasswordChar = true };
     private readonly Button _play = new() { Text = "START\nGAME" };
     private readonly Button _options = new() { Text = "GAME\nOPTION" };
     private readonly Label _status = new();
@@ -31,6 +32,7 @@ internal sealed class MainForm : Form
         _iniPath = Path.Combine(_clientDir, "Scripts", "PersistentSymbols.ini");
         _modeFile = Path.Combine(_clientDir, "display.mode");
         _settings = GameSettings.Load(_iniPath, _modeFile);
+        _launcherConfig = LauncherConfig.Load();
 
         Text = "Rakion Launcher";
         Icon = Theme.LoadIcon("app.ico");
@@ -126,19 +128,37 @@ internal sealed class MainForm : Form
         Status($"Modo de tela: {ModeLabel(_settings.DisplayMode)}   ·   {_settings.ScreenWidth} x {_settings.ScreenHeight}", false);
     }
 
-    private void OnPlay(object? sender, EventArgs e)
+    private async void OnPlay(object? sender, EventArgs e)
     {
+        _play.Enabled = false;
         try
         {
             if (!File.Exists(Path.Combine(_binDir, GameLauncher.GameProcess))) { Status($"rakion.exe não encontrado em {_binDir}", true); return; }
             if (_user.Text.Trim() == "") { Status("informe o usuário", true); return; }
+            if (_pass.Text == "") { Status("informe a senha", true); return; }
+
+            int clientVersion = UpdateClient.GetInstalledVersion(
+                _clientDir, _launcherConfig.BaseVersion);
+            if (_clients == 0 && _launcherConfig.UpdatesEnabled)
+            {
+                var updater = new UpdateClient();
+                var progress = new Progress<string>(message => Status(message, false));
+                clientVersion = await updater.ApplyLatestAsync(
+                    _clientDir, _launcherConfig, progress);
+                Status($"Cliente validado na versão {clientVersion}.", false);
+                if (!File.Exists(Path.Combine(_binDir, GameLauncher.GameProcess)))
+                    throw new FileNotFoundException("O update não contém rakion.exe.");
+            }
 
             _settings.Save(_iniPath, _modeFile);   // garante o m_bActiveFullScreen certo no INI antes de lançar
             string mode = _settings.DisplayMode;
             // Lança SUSPENSO, aplica o patch do modo janela (se não for fullscreen) ANTES de o engine trocar a
             // resolução do desktop, e só então resume — senão a "janela" cobre a tela na resolução do INI.
             string user = _user.Text.Trim();
-            var (pid, hThread) = GameLauncher.LaunchSuspended(_binDir, user, GameLauncher.HexPass(_pass.Text), ServerId);
+            string credential = await new LaunchAuthenticator().GetCredentialAsync(
+                _launcherConfig, clientVersion, user, _pass.Text);
+            var (pid, hThread) = GameLauncher.LaunchSuspended(
+                _binDir, user, GameLauncher.HexPass(credential), ServerId);
             WindowMode.Log($"launch cliente #{_clients + 1}: user='{user}' pid={pid}");   // diagnóstico: que conta foi lançada
             WindowMode.PatchMultiInstance(pid);         // libera abrir mais de um cliente (neutraliza o mutex)
             if (mode != WindowMode.Fullscreen)
@@ -158,6 +178,7 @@ internal sealed class MainForm : Form
             Status($"Rakion iniciado — {_clients} cliente(s) aberto(s). Pode abrir outro no START GAME.", false);
         }
         catch (Exception ex) { Status(ex.Message, true); }
+        finally { _play.Enabled = true; }
     }
 
     private void Status(string msg, bool error) { _status.ForeColor = error ? Color.Firebrick : Theme.Ink; _status.Text = msg; }

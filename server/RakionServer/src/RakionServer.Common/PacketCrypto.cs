@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 
 namespace RakionServer.Common
@@ -76,7 +77,7 @@ namespace RakionServer.Common
                 Array.Clear(block);
                 // prefixo de 4 bytes = IV CONSTANTE (ctx+0x20c). Confirmado na RE: FUN_00401670
                 // escreve so a saida (param_2), NAO atualiza o IV -> sem encadeamento (mesmo prefixo por bloco).
-                BitConverter.TryWriteBytes(block.AsSpan(0, 4), _iv);
+                BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(0, 4), _iv);
                 int n = Math.Min(PlainBlock, plain.Length - i * PlainBlock);
                 plain.Slice(i * PlainBlock, n).CopyTo(block.AsSpan(4));
                 enc.TransformBlock(block, 0, CipherBlock, outBuf, i * CipherBlock);
@@ -99,6 +100,27 @@ namespace RakionServer.Common
                 Array.Copy(block, 4, outBuf, i * PlainBlock, PlainBlock);
             }
             return outBuf;
+        }
+
+        public bool TryDecrypt(ReadOnlySpan<byte> cipher, out byte[] plain)
+        {
+            plain = Array.Empty<byte>();
+            if (!Enabled || cipher.Length == 0 || cipher.Length % CipherBlock != 0)
+                return false;
+            int blocks = cipher.Length / CipherBlock;
+            byte[] output = new byte[blocks * PlainBlock];
+            byte[] block = new byte[CipherBlock];
+            using var aes = NewAes();
+            using var dec = aes.CreateDecryptor();
+            for (int i = 0; i < blocks; i++)
+            {
+                byte[] input = cipher.Slice(i * CipherBlock, CipherBlock).ToArray();
+                dec.TransformBlock(input, 0, CipherBlock, block, 0);
+                if (BinaryPrimitives.ReadUInt32LittleEndian(block) != _iv) return false;
+                Array.Copy(block, 4, output, i * PlainBlock, PlainBlock);
+            }
+            plain = output;
+            return true;
         }
 
         /// <summary>

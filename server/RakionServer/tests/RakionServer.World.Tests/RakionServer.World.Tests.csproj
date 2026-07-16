@@ -16,7 +16,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\RakionServer.Broker\RakionServer.Broker.csproj" />
+    <ProjectReference Include="..\..\src\RakionServer.Buddy\RakionServer.Buddy.csproj" />
+    <ProjectReference Include="..\..\src\RakionServer.Admin\RakionServer.Admin.csproj" />
+    <ProjectReference Include="..\..\src\RakionServer.LauncherWeb\RakionServer.LauncherWeb.csproj" />
+    <ProjectReference Include="..\..\src\RakionServer.Ranking\RakionServer.Ranking.csproj" />
     <ProjectReference Include="..\..\src\RakionServer.World\RakionServer.World.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>

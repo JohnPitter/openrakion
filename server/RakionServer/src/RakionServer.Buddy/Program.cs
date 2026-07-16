@@ -19,8 +19,19 @@ namespace RakionServer.Buddy
             Log.Info("boot", " Rakion Buddy Server (.NET) — reconstruido do DLL");
             Log.Info("boot", "================================================");
 
-            int[] ports = ResolvePorts(args);
-            var server = new BuddyServer(ports);
+            string? iniPath = args.Length > 0 && args[0].EndsWith(".ini", StringComparison.OrdinalIgnoreCase)
+                ? args[0]
+                : Environment.GetEnvironmentVariable("RAKION_WORLD_INI");
+            string[] portArguments = iniPath == null ? args : args[1..];
+            BuddyConfig config = BuddyConfig.Load(iniPath, portArguments);
+            var database = new BuddyDatabase(config.ConnectionString);
+            try { await database.EnsureSchemaAsync(); }
+            catch (Exception ex)
+            {
+                Log.Error("boot", "falha ao preparar banco Buddy: {0}", ex.Message);
+                return 1;
+            }
+            var server = new BuddyServer(config, database);
 
             var stop = new CancellationTokenSource();
             void RequestStop() { try { if (!stop.IsCancellationRequested) stop.Cancel(); } catch (ObjectDisposedException) { } }
@@ -36,16 +47,6 @@ namespace RakionServer.Buddy
 
             server.Stop();
             return 0;
-        }
-
-        private static int[] ResolvePorts(string[] args)
-        {
-            string spec = args.Length > 0 ? string.Join(",", args)
-                        : (Environment.GetEnvironmentVariable("RAKION_BUDDY_PORTS") ?? "8500,8504");
-            var list = new System.Collections.Generic.List<int>();
-            foreach (var part in spec.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                if (int.TryParse(part, out int p)) list.Add(p);
-            return list.Count > 0 ? list.ToArray() : new[] { 8500, 8504 };
         }
     }
 }

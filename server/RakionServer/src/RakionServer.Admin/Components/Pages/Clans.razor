@@ -1,0 +1,172 @@
+@page "/clans"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AdminDb Db
+@inject AdminIdentity Identity
+
+<PageTitle>Clãs — OpenRakion Admin</PageTitle>
+<h1>Clãs</h1>
+
+@if (!Identity.IsAllowed(AdminPermission.ClanWrite))
+{
+    <div class="card"><p>Seu papel não possui permissão para alterar clãs.</p></div>
+}
+else
+{
+    @if (_message is not null) { <div class="toast @_messageKind">@_message</div> }
+
+    <div class="card">
+        <h2>Criar clã</h2>
+        <div class="row">
+            <div><label>Nome do clã</label><input @bind="_newClanName" maxlength="12" /></div>
+            <div><label>Conta do mestre</label><input @bind="_newMaster" maxlength="16" /></div>
+            <div><label>Motivo/ticket</label><input @bind="_reason" maxlength="200" /></div>
+            <button @onclick="CreateClan">Criar</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Clãs existentes</h2>
+        <table>
+            <thead><tr><th>ID</th><th>Nome</th><th>Mestre</th><th>Membros</th><th>Pontos</th><th>Rank</th></tr></thead>
+            <tbody>
+                @foreach (ClanRow clan in _clans)
+                {
+                    <tr class="click" @onclick="() => SelectClan(clan)">
+                        <td>@clan.Id</td><td>@clan.Name</td>
+                        <td>@clan.MasterAccount / @clan.MasterCharacter</td>
+                        <td>@clan.Members</td><td>@clan.Point</td><td>@clan.Rank</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (_selected is not null)
+    {
+        <div class="card">
+            <h2>@_selected.Name <span class="mut">#@_selected.Id</span></h2>
+            <div class="row">
+                <div><label>Conta alvo</label><input @bind="_account" maxlength="16" /></div>
+                <button @onclick="AddMember">Adicionar</button>
+                <button class="sec" @onclick="TransferMaster">Transferir liderança</button>
+                <button class="danger" @onclick="RemoveMember">Remover</button>
+            </div>
+            <div class="row" style="margin-top:12px;">
+                <div><label>Superior na árvore (vazio remove)</label><input @bind="_parent" maxlength="16" /></div>
+                <button class="sec" @onclick="SetParent">Atualizar árvore</button>
+            </div>
+
+            <table style="margin-top:18px;">
+                <thead><tr><th>Conta</th><th>Personagem</th><th>Pontos</th><th>Rank</th><th>Superior</th><th>Árvore</th></tr></thead>
+                <tbody>
+                    @foreach (ClanMemberRow member in _members)
+                    {
+                        <tr class="click" @onclick="() => _account = member.AccountName">
+                            <td>@member.AccountName @(member.IsMaster ? "★" : "")</td>
+                            <td>@member.CharacterName</td><td>@member.Point</td><td>@member.Rank</td>
+                            <td>@member.TreeUpperAccount</td><td>@member.TreeRank</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <div class="row" style="margin-top:20px;">
+                <div><label>Digite @_selected.Name para confirmar dissolução</label>
+                    <input @bind="_dissolveConfirmation" maxlength="12" /></div>
+                <button class="danger" @onclick="Dissolve">Dissolver clã</button>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private IReadOnlyList<ClanRow> _clans = [];
+    private IReadOnlyList<ClanMemberRow> _members = [];
+    private ClanRow? _selected;
+    private string _newClanName = "", _newMaster = "", _account = "", _parent = "";
+    private string _reason = "", _dissolveConfirmation = "";
+    private string? _message, _messageKind;
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    private async Task Reload()
+    {
+        _clans = await Db.ListClansAsync();
+        if (_selected is not null)
+        {
+            _selected = _clans.FirstOrDefault(clan => clan.Id == _selected.Id);
+            _members = _selected is null
+                ? [] : await Db.ListClanMembersAsync(_selected.Id);
+        }
+    }
+
+    private async Task SelectClan(ClanRow clan)
+    {
+        _selected = clan;
+        _members = await Db.ListClanMembersAsync(clan.Id);
+        _account = "";
+        _parent = "";
+        _dissolveConfirmation = "";
+    }
+
+    private async Task CreateClan() => await Run(async () =>
+    {
+        int clanId = await Db.CreateClanAsync(_newMaster, _newClanName, _reason);
+        _newClanName = _newMaster = "";
+        await Reload();
+        ClanRow? created = _clans.FirstOrDefault(clan => clan.Id == clanId);
+        if (created is not null) await SelectClan(created);
+    }, "Clã criado.");
+
+    private async Task AddMember() => await Run(
+        () => Db.AddClanMemberAsync(_selected!.Id, _account, _reason), "Membro adicionado.");
+
+    private async Task RemoveMember() => await Run(
+        () => Db.RemoveClanMemberAsync(_selected!.Id, _account, _reason), "Membro removido.");
+
+    private async Task TransferMaster() => await Run(
+        () => Db.TransferClanMasterAsync(_selected!.Id, _account, _reason),
+        "Liderança transferida.");
+
+    private async Task SetParent() => await Run(
+        () => Db.SetClanTreeParentAsync(_selected!.Id, _account, _parent, _reason),
+        "Árvore atualizada.");
+
+    private async Task Dissolve()
+    {
+        if (_selected is null || !string.Equals(
+                _dissolveConfirmation, _selected.Name, StringComparison.Ordinal))
+        {
+            Error("A confirmação não corresponde ao nome do clã.");
+            return;
+        }
+        await Run(() => Db.DissolveClanAsync(_selected.Id, _reason), "Clã dissolvido.");
+        _selected = null;
+        _members = [];
+    }
+
+    private async Task Run(Func<Task> action, string success)
+    {
+        if (string.IsNullOrWhiteSpace(_reason))
+        {
+            Error("Informe o motivo/ticket da alteração.");
+            return;
+        }
+        try
+        {
+            await action();
+            _reason = "";
+            _message = success;
+            _messageKind = "ok";
+            await Reload();
+        }
+        catch (Exception exception) { Error(exception.Message); }
+    }
+
+    private void Error(string message)
+    {
+        _message = message;
+        _messageKind = "err";
+    }
+}

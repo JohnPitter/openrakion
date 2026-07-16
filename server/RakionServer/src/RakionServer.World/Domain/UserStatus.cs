@@ -3,10 +3,9 @@ using System;
 namespace RakionServer.World.Domain
 {
     /// <summary>
-    /// Estado do usuario (byte em user+0x1440 no worldserv.exe). Valores observados
-    /// na RE dos handlers: o evento de conexao marca "conectado"; o login promove;
-    /// entrar no canal (opcode 0x01) seta 4 (normal) ou 5 (GM/PCBang); estados de
-    /// field/sala sao maiores. Mantido como byte para fidelidade ao binario.
+    /// Fase da sessão. No original, user+0x1440 usa 0 livre, 1 conectado/seleção,
+    /// 2 lobby/lista de salas, 3 membro de sala e 4/5 no fluxo do opcode 0x01.
+    /// O servidor atual conserva aliases históricos para os interceptadores.
     /// </summary>
     public static class UserStatus
     {
@@ -22,11 +21,14 @@ namespace RakionServer.World.Domain
         public const byte InField      = 3;   // dentro de uma sala/partida
     }
 
-    /// <summary>Sub-estado dentro do field/sala (user+0x146c).</summary>
+    /// <summary>
+    /// Categoria do usuário em user+0x146c. Não representa ownership da sala;
+    /// o master é exclusivamente field+0x121/Field.MasterSlot.
+    /// </summary>
     public static class UserSubStatus
     {
-        public const byte None    = 0;
-        public const byte Master  = 1;   // dono da sala
-        public const byte Member  = 4;   // membro
+        public const byte Normal = 0;
+        public const byte Special = 1;
+        public const byte Gm = 0x34; // ASCII '4'
     }
 }

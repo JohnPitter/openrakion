@@ -1,31 +1,57 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 using MySqlConnector;
 using RakionServer.Common;
+using RakionServer.LauncherWeb;
 
-// Auth web do launcher (porta fiel do launcher_web.py + fetch.php para .NET). Serve na :80:
-//   launcherlogin -> valida user/senha(hex) e devolve o token sha1(user+"freeclient"+passhex)
-//   fetch?app&ver -> lista de auto-update (fetchapp/fetchfile); vazio = atualizado
-//   qualquer outra coisa (note/file/config) -> 200 vazio (comportamento que funciona no cliente patcheado)
 var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.UseUrls("http://0.0.0.0:80");
+LauncherWebConfig config = LauncherWebConfig.Load(
+    builder.Configuration, builder.Environment.ContentRootPath);
+builder.WebHost.UseUrls(config.Endpoint.ToString());
+builder.Services.AddSingleton(config);
+builder.Services.AddSingleton<UpdateReleaseProvider>();
+builder.Services.AddSingleton<LauncherTicketRepository>();
+builder.Services.AddRateLimiter(options =>
+{
+    AddLoginRateLimit(options, "legacy-login");
+    AddLoginRateLimit(options, "ticket-auth");
+});
 var app = builder.Build();
+if (config.TicketAuthEnabled && config.EnsureTicketSchema)
+    await app.Services.GetRequiredService<LauncherTicketRepository>().EnsureSchemaAsync();
+app.UseRateLimiter();
+app.MapModernAuth();
+app.MapModernUpdates();
 
-// Fonte ÚNICA da config do launcher = appsettings.json (ConnectionStrings:Rakion), sobreponível por
-// env (ConnectionStrings__Rakion) p/ Docker/CI. Sem fallback hardcoded (era credencial duplicada no
-// código): faltando, falha no boot com mensagem clara em vez de apontar p/ um DB errado em silêncio.
-string conn = app.Configuration.GetConnectionString("Rakion")
-    ?? throw new InvalidOperationException(
-        "ConnectionStrings:Rakion ausente — defina em appsettings.json (ou env ConnectionStrings__Rakion).");
+if (config.LegacyEnabled)
+{
+    app.MapMethods("/launcherlogin.php", new[] { "GET", "POST" }, LauncherLogin)
+        .RequireRateLimiting("legacy-login");
+    app.MapMethods("/launcherlogin", new[] { "GET", "POST" }, LauncherLogin)
+        .RequireRateLimiting("legacy-login");
+    app.MapGet("/fetch.php", Fetch);
+    app.MapGet("/fetch", Fetch);
+}
 
-app.MapMethods("/launcherlogin.php", new[] { "GET", "POST" }, LauncherLogin);
-app.MapMethods("/launcherlogin", new[] { "GET", "POST" }, LauncherLogin);
-app.MapGet("/fetch.php", Fetch);
-app.MapGet("/fetch", Fetch);
-app.MapFallback(() => Results.Content("", "text/html"));   // note/file/config: vazio
-
-Log.Ok("web", "Launcher Web (.NET) ouvindo na :80 (DB {0})", DbHostOf(conn));
+Log.Ok("web", "LauncherWeb em {0}; legado={1}; auth ticket={2}; updates assinados={3}",
+    config.Endpoint, config.LegacyEnabled, config.TicketAuthEnabled, config.UpdatesEnabled);
 app.Run();
+
+static void AddLoginRateLimit(RateLimiterOptions options, string policyName)
+{
+    options.AddPolicy(policyName, context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+}
 
 // ---- handlers ----
 
@@ -37,7 +63,7 @@ async Task<IResult> LauncherLogin(HttpRequest req)
     if (pw is null) { Log.Warn("web", "login pass inválido (hex) user={0}", user); return Text("[Error]: 1"); }
     try
     {
-        await using var c = new MySqlConnection(conn);
+        await using var c = new MySqlConnection(config.ConnectionString!);
         await c.OpenAsync();
         await using var cmd = new MySqlCommand("SELECT 1 FROM user WHERE id=@u AND password=@p", c);
         cmd.Parameters.AddWithValue("@u", user);
@@ -48,7 +74,7 @@ async Task<IResult> LauncherLogin(HttpRequest req)
         Log.Ok("web", "login OK user={0}", user);
         return Text(token);
     }
-    catch (Exception ex) { Log.Error("web", "login DB: {0}", ex.Message); return Text("[Error]: " + ex.Message); }
+    catch (Exception ex) { Log.Error("web", "login DB: {0}", ex.Message); return Text("[Error]: 1"); }
 }
 
 // QUERY_STRING = "AppId&Ver" (dois números). Espelha fetch.php: monta a lista de updates a aplicar.
@@ -60,7 +86,7 @@ async Task<IResult> Fetch(HttpRequest req)
         return Text("Error");
     try
     {
-        await using var c = new MySqlConnection(conn);
+        await using var c = new MySqlConnection(config.ConnectionString!);
         await c.OpenAsync();
 
         int verLimit; string noticeUrl, fileUrl;
@@ -101,12 +127,12 @@ async Task<IResult> Fetch(HttpRequest req)
         Log.Ok("web", "fetch app={0} ver={1} -> update p/ v{2}", appId, ver, verLimit);
         return Text(sb.ToString());
     }
-    catch (Exception ex) { Log.Error("web", "fetch DB: {0}", ex.Message); return Text("Error: " + ex.Message); }
+    catch (Exception ex) { Log.Error("web", "fetch DB: {0}", ex.Message); return Text("Error"); }
 }
 
 // ---- helpers ----
 
-static IResult Text(string s) => Results.Content(s, "text/html");   // launcher lê o corpo cru
+static IResult Text(string s) => Results.Text(s, "text/plain", Encoding.Latin1);
 
 static async Task<string> Param(HttpRequest r, string key)
 {
@@ -125,12 +151,4 @@ static string? HexToLatin1(string hex)
 {
     try { return Encoding.Latin1.GetString(Convert.FromHexString(hex)); }
     catch { return null; }
-}
-
-static string DbHostOf(string conn)
-{
-    foreach (var p in conn.Split(';'))
-        if (p.TrimStart().StartsWith("Server=", StringComparison.OrdinalIgnoreCase))
-            return p.Split('=', 2)[1];
-    return "?";
 }

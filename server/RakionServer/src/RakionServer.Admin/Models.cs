@@ -6,6 +6,31 @@ namespace RakionServer.Admin;
 public sealed record AccountRow(string Id, int GiId, int Authority, string CharName,
     long Gold, long Cash, bool PuActive, bool Ban);
 
+public sealed record ClanRow(
+    int Id, string Name, string MasterAccount, string MasterCharacter,
+    int Point, int Members, uint Rank, int Country);
+
+public sealed record ClanMemberRow(
+    int GameInfoId, string AccountName, string CharacterName,
+    int Point, int Rank, string TreeUpperAccount, int TreeRank, bool IsMaster);
+
+public enum CurrencyKind : byte
+{
+    Gold = 0,
+    Cash = 1
+}
+
+public sealed record CurrencyAdjustmentRequest(
+    string AccountId, int GameInfoId, CurrencyKind Currency,
+    long TargetBalance, string Reason, string OperatorId);
+
+public sealed record CurrencyAdjustmentResult(
+    long PreviousBalance, long CurrentBalance, long Delta, bool Changed);
+
+public sealed record CurrencyAdjustmentRow(
+    long Id, CurrencyKind Currency, long Delta, long BalanceBefore,
+    long BalanceAfter, string Reason, string OperatorId, DateTime CreatedAt);
+
 /// <summary>Personagem de uma conta (characterinfo).</summary>
 public sealed record CharRow(int Id, string Name, int Class, int Level, bool Used, int LevelPoint);
 
@@ -67,13 +92,14 @@ public static class ItemKind
 public sealed class PuConfigForm
 {
     [Range(0, int.MaxValue)] public int Price { get; set; } = 8000;
-    [Range(0, 9999)] public int BonusPoints { get; set; } = 51;
+    [Range(0, int.MaxValue)] public int RenewalPrice { get; set; } = 6000;
+    [Range(0, 9999)] public int BonusPoints { get; set; } = 5;
     [Range(0, 3650)] public int DurationDays { get; set; } = 30;
     [Range(1, 99)] public decimal ExpMult { get; set; } = 1.5m;
-    [Range(1, 99)] public decimal GoldMult { get; set; } = 1.5m;
+    [Range(1, 99)] public decimal GoldMult { get; set; } = 1.0m;
     public bool PromoActive { get; set; }
     [Range(1, 99)] public decimal PromoExpMult { get; set; } = 2.0m;
-    [Range(1, 99)] public decimal PromoGoldMult { get; set; } = 2.0m;
+    [Range(1, 99)] public decimal PromoGoldMult { get; set; } = 1.0m;
     public DateTime? PromoStart { get; set; }
     public DateTime? PromoEnd { get; set; }
 }

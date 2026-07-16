@@ -36,6 +36,8 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
 
 > O único ❌ é o **GameGuard** — não é limitação do nosso servidor, e sim de um serviço externo da nProtect offline há anos ([detalhe](#gameguard-veredito-honesto)).
 
+Documentação técnica, mapas de RE e lacunas de validação: [`docs/README.md`](docs/README.md).
+
 ---
 
 ## Estrutura do repositório
@@ -54,7 +56,7 @@ openrakion/
 │   └── README.md
 ├── tools/                xfs_read/repack (XFS2), worldprobe/listprobe (sondas), difftest (teste diferencial)
 ├── database/             Schema do banco (MariaDB)
-├── docs/                 Guias (setup, GameGuard, config.xfs) + protocolo (world/buddy) + auditoria (CODE_AUDIT.md)
+├── docs/                 Índice, protocolos, sistemas, guias, auditorias e histórico
 ├── CREDITS.md
 └── NOTICE.md
 ```
@@ -93,25 +95,28 @@ Tudo abaixo é **dev default**, deixado **à mostra de propósito** para facilit
 | Onde | Valor de amostra | Arquivo |
 |---|---|---|
 | MariaDB | `root` / `123456` | `deploy/worldserver.ini`, `src/*/appsettings.json` |
-| Painel admin | senha `rakion` | `src/RakionServer.Admin/appsettings.json` → `Admin:Password` |
+| Painel admin | variável `Admin__Password` (mín. 16 caracteres) | não há senha versionada |
 | Conta de teste | crie a sua (no painel admin ou direto no DB) | — |
 
-Não exponha as portas **3306** (DB) e **8080** (admin) publicamente sem trocar essas senhas.
+O Admin também exige `ConnectionStrings__Rakion` e escuta apenas `127.0.0.1` por padrão. Não exponha
+as portas **3306** e **8080** publicamente sem TLS, proxy restrito e credenciais próprias.
 
 ### Painel admin
 
-Sobe junto com o stack em **http://localhost:8080** (login com a senha `Admin:Password`). Dali dá pra criar/editar **contas**, ajustar **gold/cash**, **adicionar itens** ao inventário (grade visual estilo jogo, com os nomes dos itens), configurar o **Power User** (preço, bônus, multiplicadores de XP/gold, promoção) e **publicar updates** do cliente pelo auto-update do launcher.
+Com `Admin__Password` e `ConnectionStrings__Rakion` definidos, sobe em **http://127.0.0.1:8080**.
+Dali dá pra criar/editar **contas**, ajustar **gold/cash**, **adicionar itens** ao inventário,
+configurar o **Power User** e **publicar updates** do launcher.
 
 ## O cliente (proprietário)
 
 O OpenRakion **não distribui** o cliente. Você precisa de uma cópia legítima do Rakion v258 e, para conectar a um servidor próprio:
 
-1. Gerar o **`config.xfs`** apontando para a SUA URL web (senão o client trava em *"Config.xfs File not found or changed"*) — veja [docs/config-xfs.md](docs/config-xfs.md).
+1. Gerar o **`config.xfs`** apontando para a SUA URL web (senão o client trava em *"Config.xfs File not found or changed"*) — veja [docs/guides/config-xfs.md](docs/guides/config-xfs.md).
 2. Usar um cliente **no-GG** (o GameGuard original não inicializa mais — veja abaixo).
 
 ## GameGuard (veredito honesto)
 
-O GameGuard (nProtect, 2007) **não inicializa mais**: o GameMon requisita o servidor de update/auth do nProtect, que está **offline** há anos (*"Game guard error : 0"*). **Não** é problema de Windows 11/driver; VM Win7/10 **não resolve**. Saídas: jogar pelo fluxo do launcher (em alguns builds o `rakion.bin` conecta com o GG falhando de forma não-fatal) ou aplicar um patch *no-GG* no client. Detalhes em [docs/gameguard.md](docs/gameguard.md).
+O GameGuard (nProtect, 2007) **não inicializa mais**: o GameMon requisita o servidor de update/auth do nProtect, que está **offline** há anos (*"Game guard error : 0"*). **Não** é problema de Windows 11/driver; VM Win7/10 **não resolve**. Saídas: jogar pelo fluxo do launcher (em alguns builds o `rakion.bin` conecta com o GG falhando de forma não-fatal) ou aplicar um patch *no-GG* no client. Detalhes em [docs/guides/gameguard.md](docs/guides/gameguard.md).
 
 ## Tools
 

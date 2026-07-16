@@ -17,6 +17,9 @@ namespace RakionServer.World.Database
 
         private readonly Dictionary<int, Catalyzer> _catalyzers = new();
 
+        public int Version { get; set; } = 1;
+        public bool UseOriginalOutcomes { get; set; } = true;
+
         // Globais (defaults de fábrica; o boot sobrescreve com a linha enchant_config id=1).
         public double JewelFloor = 0.05;   // piso de sucesso por joia tipo 3 (Charm 0x36b3)
         public double JewelBonus = 0.03;   // bônus de sucesso por joia tipo 1/2 (Abradant/Soul Stone)
@@ -37,18 +40,39 @@ namespace RakionServer.World.Database
         public double SuccessChance(int catalyzerId, int curLevel, int j1, int j2, int j3, bool puActive)
         {
             if (!_catalyzers.TryGetValue(catalyzerId, out var cat)) return 0.0;
-            double floor = j3 * JewelFloor;
-            double keep = 1.0 - floor;
-            double p = keep * cat.BaseSuccess + floor;
+            float floor = j3 * (float)JewelFloor;
+            float keep = 1.0f - floor;
+            float baseSuccess = (float)cat.BaseSuccess;
+            float decay = (float)cat.Decay;
+            double p = (double)keep * baseSuccess + floor;
             for (int lv = 1; lv <= curLevel; lv++)
-                p = (1.0 - lv * cat.Decay) * keep * p + floor;
-            p += (j1 + j2) * JewelBonus;
+                p = (1.0 - (double)lv * decay) * keep * p + floor;
+            if (UseOriginalOutcomes) p = (float)p;
+            if (!UseOriginalOutcomes) p += (j1 + j2) * JewelBonus;
             p *= EventMult;
             if (puActive) p *= PuMult;
-            return Math.Clamp(p, FloorMin, CeilMax);
+            return UseOriginalOutcomes
+                ? (float)Math.Clamp(p, 0.0, 1.0)
+                : Math.Clamp(p, FloorMin, CeilMax);
         }
 
-        /// <summary>Fração das falhas que vira downgrade (-1 nível) no nível dado. Armas baixas não caem.</summary>
+        public float[] OriginalOutcomeProbabilities(
+            int catalyzerId, int curLevel, int jewel1, int jewel2, int jewel3, bool puActive)
+        {
+            float success = (float)SuccessChance(
+                catalyzerId, curLevel, jewel1, jewel2, jewel3, puActive);
+            double failure = 1.0 - success;
+            return
+            [
+                success,
+                (float)(failure * (4.0f + 0.2f * jewel1 + 1.2 * jewel2) / 15.0),
+                (float)(failure * (3.0f + 0.6f * jewel2) * (1.0f / 15.0f)),
+                (float)(failure * (2.0f + 0.4f * jewel2) * (1.0f / 15.0f)),
+                (float)(failure * (1.0f + 0.1f * jewel2) * (1.0f / 15.0f)),
+                (float)(failure * (1.0f - 0.2f * jewel1) * (1.0f / 15.0f))
+            ];
+        }
+
         public double DowngradeFactor(int curLevel) =>
             curLevel >= 6 ? DowngradeHi : curLevel >= 3 ? DowngradeLo : 0.0;
     }

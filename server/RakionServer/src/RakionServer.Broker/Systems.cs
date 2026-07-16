@@ -201,20 +201,20 @@ namespace BrokenServer
 		{
 			Systems.PacketWriter packetWriter = new Systems.PacketWriter();
 			packetWriter.Create(257);
-			int num = Systems.GSList.Count<KeyValuePair<int, Systems.SRX_Serverinfo>>();
-			packetWriter.Byte((byte)num);
-			foreach (KeyValuePair<int, Systems.SRX_Serverinfo> keyValuePair in Systems.GSList)
+			Systems.SRX_Serverinfo[] online = Systems.GSList.Values
+				.Where(server => server.status == 1)
+				.ToArray();
+			packetWriter.Byte(checked((byte)online.Length));
+			foreach (Systems.SRX_Serverinfo server in online)
 			{
-				if (keyValuePair.Value.status == 1)
-				{
 					string[] array;
-					if (!keyValuePair.Value.lan_wan)
+					if (!server.lan_wan)
 					{
-						array = keyValuePair.Value.ip.Split(new char[] { '.' });
+						array = server.ip.Split(new char[] { '.' });
 					}
 					else
 					{
-						array = keyValuePair.Value.wan.Split(new char[] { '.' });
+						array = server.wan.Split(new char[] { '.' });
 					}
 					byte b = Convert.ToByte(int.Parse(array[0]));
 					byte b2 = Convert.ToByte(int.Parse(array[1]));
@@ -231,19 +231,13 @@ namespace BrokenServer
 					// failed" sem nem tentar conectar.
 					// Layout EXATO do broker original (capturado byte-a-byte):
 					//   [IP 4][port swapped 2][usedSala][maxSalas][usedSlots][maxSlots]
-					byte[] pb = Program.GetBytesUInt16(keyValuePair.Value.port);
+					byte[] pb = Program.GetBytesUInt16(server.port);
 					packetWriter.Byte(pb[1]);
 					packetWriter.Byte(pb[0]);
-					packetWriter.Word(keyValuePair.Value.usedSala);
-					packetWriter.Word(keyValuePair.Value.maxSalas);
-					packetWriter.Word(keyValuePair.Value.usedSlots);
-					packetWriter.Word(keyValuePair.Value.maxSlots);
-				}
-				else
-				{
-					packetWriter.Word(0);
-					LogDebug.Show("[SERVER] Server-Offline: {0}", keyValuePair.Value.name);
-				}
+					packetWriter.Word(server.usedSala);
+					packetWriter.Word(server.maxSalas);
+					packetWriter.Word(server.usedSlots);
+					packetWriter.Word(server.maxSlots);
 			}
 			return packetWriter.GetBytes();
 		}

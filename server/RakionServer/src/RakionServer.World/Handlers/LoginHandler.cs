@@ -10,9 +10,8 @@ namespace RakionServer.World.Handlers
     /// (worldserv.exe). E o destino do opcode 0x0C quando a sessao ainda nao
     /// esta autenticada (this+0x5b18 == 0).
     ///
-    /// Pacote (payload): [u8 connType][userID\0][field2\0][field3\0][u16 tail]
-    ///   connType 4 (Normal) pula a checagem de nome de sessao;
-    ///   connType 1 (PK) / outros comparam o userID com o nome da sessao.
+    /// Pacote: [u8 verifyMode][cstr md5][cstr account][cstr password][u16 tail].
+    /// O modo 1 seleciona MD5_2; os demais selecionam MD5_1; modo 4 pula o MD5 no login.
     /// </summary>
     public static class LoginHandler
     {
@@ -44,18 +43,19 @@ namespace RakionServer.World.Handlers
 
             // parse do pacote
             var r = new PacketReader(payload);
-            byte connType = r.Byte();
-            string userId = r.CString(Protocol.LoginLimits.UserIdMax + 1);
-            s.ConnType = connType;
+            byte verifyMode = r.Byte();
+            string clientHash = r.CString(Protocol.LoginLimits.UserIdMax + 1);
+            s.VerifyMode = verifyMode;
 
-            Log.Info("login", "[{0}] login userID='{1}' connType={2}", s.Slot, userId, connType);
+            Log.Info("login", "[{0}] login verifyMode={1}", s.Slot, verifyMode);
 
-            // (4) checagem de nome de sessao (pulada quando connType == Normal/4).
-            // O nome esperado vem da sessao validada pelo broker (RequestLogin).
-            // NOTA: o login original (FUN_0041f6c0) NAO valida userID/sessao aqui — ele
-            // so faz parse (connType, userID, field2, field3, tail) e responde sucesso
-            // (FUN_0041b940). A autenticacao real ocorre no broker/web ANTES. Removida a
-            // checagem de "nome de sessao" que a reconstrucao havia adicionado a mais.
+            if (!Domain.ClientHashPolicy.LoginAccepted(
+                verifyMode, clientHash, server.Config.ClientHashes))
+            {
+                Log.Warn("integrity", "[{0}] MD5 do login recusado (mode={1})", s.Slot, verifyMode);
+                s.SendLoginError(Protocol.LoginError.SubHashMismatch);
+                return;
+            }
 
             // (5)/(6) field2/field3. FUN_0041b810 grava no objeto do usuario. O ORIGINAL NAO
             // desconecta por tamanho — a reconstrucao havia adicionado um DISC 20 a mais (o mesmo
@@ -82,7 +82,7 @@ namespace RakionServer.World.Handlers
             ushort tail = r.CanRead(2) ? r.UInt16() : (ushort)0;
 
             // sucesso — promove a sessao
-            await server.OnLoginSuccessAsync(s, userId, field2, field3, tail);
+            await server.OnLoginSuccessAsync(s, field2, field3, tail);
         }
     }
 }

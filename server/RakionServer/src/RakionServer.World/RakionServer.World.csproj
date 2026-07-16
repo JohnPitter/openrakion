@@ -9,9 +9,6 @@
     <RootNamespace>RakionServer.World</RootNamespace>
     <AssemblyName>RakionWorldServer</AssemblyName>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <!-- CS0219: variaveis que documentam o parse do pacote nos handlers reconstruidos
-         cujo corpo profundo ainda esta sendo desenvolvido (ver WorldHandlers.Generated.cs). -->
-    <NoWarn>$(NoWarn);CS0219</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,6 +17,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\RakionServer.Common\RakionServer.Common.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Data\stage-content-v258.json" />
   </ItemGroup>
 
 </Project>

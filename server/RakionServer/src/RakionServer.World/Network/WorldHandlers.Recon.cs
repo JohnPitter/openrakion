@@ -5,8 +5,8 @@ using RakionServer.World.Domain;
 namespace RakionServer.World.Network
 {
     /// <summary>
-    /// Declaracoes dos handlers de COMBATE/SALA a reconstruir (fase Handlers). Cada metodo
-    /// "Op_0xNN_Recon" e o ponto de entrada apontado pela tabela Build() em WorldHandlers.cs.
+    /// Helpers compartilhados pelos handlers de COMBATE/SALA reconstruídos. Cada método
+    /// "Op_0xNN_Recon" é um ponto de entrada final da tabela em WorldHandlers.cs.
     ///
     /// CONVENCAO (para os agentes de handler):
     ///   internal static void Op_0xNN_Recon(HandlerContext ctx)
@@ -15,7 +15,6 @@ namespace RakionServer.World.Network
     ///   - ctx.Opcode = opcode (0xNN)
     ///   - ctx.P      = PacketReader do payload (apos [opcode][seq])
     ///   - ctx.Raw    = payload cru
-    ///   Substitua o corpo (hoje = ReconStub) pela reconstrucao fiel do FUN_xxxx citado.
     ///   NAO altere a assinatura nem a entrada na tabela. Use os HELPERS abaixo p/ resolver
     ///   o Field/player-record e broadcastar.
     ///
@@ -35,36 +34,12 @@ namespace RakionServer.World.Network
         // Op_0x3D/0x3E/0x3F/0x40/0x41/0x42_Recon implementados em WorldHandlers.ReconCombatB.cs
         // Op_0x43_Recon implementado em WorldHandlers.ReconCombatA.cs (ATTACK / match-start engage)
         // Op_0x45_Recon implementado em WorldHandlers.ReconCombatA.cs (spawn/join-into-field)
-        // Op_0x46_Recon implementado em WorldHandlers.ReconCombatA.cs (HIT / aplicar dano)
+        // Op_0x46_Recon implementado em WorldHandlers.ReconCombatA.cs (saída/morte própria)
         // Op_0x4A/0x4B/0x4C/0x4D_Recon implementados em WorldHandlers.ReconCombatB.cs
         // Op_0x4F_Recon implementado em WorldHandlers.ReconRoomB.cs (DIE / morte)
         // Op_0x50_Recon implementado em WorldHandlers.ReconRoomB.cs (GameResult/scoring)
-        // Op_0x53_Recon implementado em WorldHandlers.ReconRoomB.cs (FieldCreate result)
-        // Op_0x61_Recon implementado em WorldHandlers.ReconRoomB.cs (FieldReady ack)
-
-        // ---- handlers de SALA / lista (Status==2) ----
-        internal static void Op_0x2D_Recon(HandlerContext ctx) => ReconStub(ctx); // RoomMemberList
-        internal static void Op_0x2E_Recon(HandlerContext ctx) => ReconStub(ctx); // RoomShopBuy — handler REAL = Op_RoomMemberQuery (WorldHandlers.Generated.cs)
-        internal static void Op_0x2F_Recon(HandlerContext ctx) => ReconStub(ctx); // RoomShopList
-        internal static void Op_0x34_Recon(HandlerContext ctx) => ReconStub(ctx); // RoomBuyB
-        internal static void Op_0x36_Recon(HandlerContext ctx) => ReconStub(ctx); // RoomList/FieldSearch
-        // Op_0x3A_Recon implementado em WorldHandlers.ReconRoomB.cs (FieldStart/Leave3D)
-        // Op_0x3B_Recon implementado em WorldHandlers.ReconCombatB.cs (FieldCreate sala)
 
         // ===================== HELPERS COMPARTILHADOS =====================
-
-        /// <summary>Placeholder ate o agente de handler reconstruir o corpo (aplica o gate + loga).</summary>
-        private static void ReconStub(HandlerContext ctx)
-        {
-            var e = Table[ctx.Opcode];
-            if (StubGates.TryGetValue(ctx.Opcode, out var g))
-            {
-                bool ok = (!g.InF || ctx.User.InField) && (!g.FSec || ctx.User.FieldSecondary);
-                if (!ok) { if (g.Disc != 0) ctx.User.Disconnect(g.Disc); return; }
-            }
-            Log.Debug("op", "[{0}] {1} (FUN_{2:x}) — RECON pendente ({3} bytes)",
-                ctx.User.Slot, e.Name, e.Addr, ctx.Raw.Length);
-        }
 
         /// <summary>Field atual da sessao (resolve user.FieldId -> World.Fields). Null se fora.</summary>
         internal static Field? ReconField(HandlerContext ctx) => ctx.World.GetField(ctx.User.FieldId);

@@ -102,7 +102,7 @@ namespace BrokenServer
 				Thread.Sleep(100);
 				foreach (KeyValuePair<int, Systems.SRX_Serverinfo> keyValuePair2 in Systems.GSList)
 				{
-					if (keyValuePair2.Value.status != 0 && keyValuePair2.Value.lastPing.AddMinutes(5.0) < DateTime.Now)
+					if (BrokerLeasePolicy.IsExpired(keyValuePair2.Value, DateTime.UtcNow))
 					{
 						keyValuePair2.Value.status = 0;
 						LogConsole.Show("Server: {0}:({1}) has timed out, status changed to check", keyValuePair2.Value.id, keyValuePair2.Value.name);
@@ -114,75 +114,42 @@ namespace BrokenServer
 		// Token: 0x060000F2 RID: 242 RVA: 0x00004E24 File Offset: 0x00003024
 		public void OnIPC(Socket aSocket, EndPoint ep, byte[] data)
 		{
-			try
+			if (ep is not IPEndPoint remote)
 			{
-				if (data.Length >= 6)
-				{
-					UTF8Encoding utf8Encoding = new UTF8Encoding();
-					utf8Encoding.GetString(data);
-					string[] array = ep.ToString().Split(new char[] { ':' });
-					Systems.SRX_Serverinfo serverByEndPoint = Systems.GetServerByEndPoint(array[0], (int)ushort.Parse(array[1]));
-					if (serverByEndPoint != null)
-					{
-						Systems.PacketReader packetReader = new Systems.PacketReader(data);
-						short num = packetReader.Int16();
-						if (data.Length >= 6)
-						{
-							short num2 = num;
-							if (num2 != 257)
-							{
-								if (num2 != 1025)
-								{
-									LogDebug.Show("[IPC] unknown command recevied {0:x}", num);
-								}
-								else
-								{
-									packetReader.Skip(4);
-									int num3 = (int)packetReader.Byte();
-									int num4 = packetReader.Int32();
-									LogDebug.Show("[IPC] Recv Serv-Con SERVER: {0} USER: {1}", num3, num4);
-								}
-							}
-							else
-							{
-								packetReader.Skip(4);
-								int num5 = (int)packetReader.Byte();
-								short num6 = packetReader.Int16();
-								short num7 = packetReader.Int16();
-								short num8 = packetReader.Int16();
-								short num9 = packetReader.Int16();
-								serverByEndPoint.maxSlots = (ushort)num8;
-								serverByEndPoint.usedSlots = (ushort)num9;
-								serverByEndPoint.maxSalas = (ushort)num6;
-								serverByEndPoint.usedSala = (ushort)num7;
-								LogDebug.Show("[IPC] Recv Serv-Info from GameServer {0} MAXUSER={1}, CUR={2}, MAXSALAS={3}, CUR={4}", num5, num8, num9, num6, num7);
-								if (serverByEndPoint.status == 0)
-								{
-									LogConsole.Show("Server: {0} change to online", serverByEndPoint.name);
-								}
-								serverByEndPoint.status = 1;
-								serverByEndPoint.lastPing = DateTime.Now;
-							}
-						}
-						else
-						{
-							LogDebug.Show("[IPC] data to short");
-						}
-					}
-					else
-					{
-						LogDebug.Show("[IPC] can't find the GameServer {0}:{1}", ((IPEndPoint)ep).Address.ToString(), array[1]);
-					}
-				}
-				else
-				{
-					LogDebug.Show("[IPC] packet to short from {0}", ep.ToString());
-				}
+				LogDebug.Show("[IPC] endpoint inválido");
+				return;
 			}
-			catch (Exception ex)
+			Systems.SRX_Serverinfo server = Systems.GetServerByEndPoint(
+				remote.Address.ToString(), remote.Port);
+			if (server == null)
 			{
-				LogDebug.Show("[IPC.OnIPC] {0}", ex);
+				LogDebug.Show("[IPC] origem não configurada {0}", remote);
+				return;
 			}
+			BrokerIpcParseResult parsed = BrokerIpcParser.ReadServerInfo(data, server.code);
+			if (!parsed.Success)
+			{
+				LogDebug.Show("[IPC] pacote recusado de {0}: {1}", remote, parsed.Error);
+				return;
+			}
+			BrokerServerInfo info = parsed.Info;
+			if (info.ServerId != server.id)
+			{
+				LogDebug.Show("[IPC] server id {0} não corresponde a {1}",
+					info.ServerId, server.id);
+				return;
+			}
+
+			server.maxSlots = info.MaxUsers;
+			server.usedSlots = info.UsedUsers;
+			server.maxSalas = info.MaxRooms;
+			server.usedSala = info.UsedRooms;
+			if (server.status == 0)
+				LogConsole.Show("Server: {0} change to online", server.name);
+			server.status = 1;
+			server.lastPing = DateTime.UtcNow;
+			LogDebug.Show("[IPC] ServerInfo id={0} users={1}/{2} salas={3}/{4}",
+				info.ServerId, info.UsedUsers, info.MaxUsers, info.UsedRooms, info.MaxRooms);
 		}
 
 		// Token: 0x060000F3 RID: 243 RVA: 0x00002742 File Offset: 0x00000942
@@ -251,14 +218,6 @@ namespace BrokenServer
 		public static Servers.IPCServer IPCServer;
 
 		// Token: 0x04000058 RID: 88
-		public static Dictionary<ushort, IPCItem> IPCResultList = new Dictionary<ushort, IPCItem>();
-
-		// Token: 0x04000059 RID: 89
-		public static ushort IPCNewId = 0;
-
-		// Token: 0x0400005A RID: 90
-		public static int IPCPort = 40706;
-
 		// Token: 0x0400005B RID: 91
 		public static string debug = "0";
 	}

@@ -8,12 +8,7 @@ namespace RakionServer.World.Network
     /// Grupo "combate-A" dos handlers in-field reconstruidos FIELMENTE do worldserv.exe:
     ///   0x43 ATTACK / match-start engage   (FUN_00424210 -> FUN_004079d0)
     ///   0x45 spawn / join-into-field       (FUN_004242c0 -> FUN_00407c70)
-    ///   0x46 HIT / aplicar dano (kill)     (FUN_00424350 -> FUN_0041b860/00405950/0040b900/00407e00)
-    ///
-    /// Os opcodes 0x12/0x15/0x16/0x19/0x1a deste grupo JA estao reconstruidos
-    /// (Op_FieldAction/Op_FieldText/Op_FieldWhisper/Op_FieldCmd/Op_FieldPing em
-    /// WorldHandlers.FieldMsg.cs / WorldHandlers.FieldChat.cs) e ligados na tabela Build();
-    /// NAO sao reescritos aqui para nao duplicar codigo (golden source).
+    ///   0x46 saída/morte própria           (FUN_00424350 -> FUN_0041b860/00405950/0040b900/00407e00)
     ///
     /// Canais (confirmado pela fundacao):
     ///   FIELD  = ctx.User.SendMessage / field.BroadcastField  (header [serverSeq][msgType])
@@ -45,7 +40,7 @@ namespace RakionServer.World.Network
             if (rec.Slot != field.MasterSlot) { u.Disconnect(0x79); return; }
 
             Log.Info("combat", "[{0}] 0x43 engage (field {1} seat {2} host)", u.Slot, field.Id, rec.Slot);
-            Combat_0x43_Engage(ctx, field);
+            lock (field.SyncRoot) Combat_0x43_Engage(ctx, field);
         }
 
         /// <summary>
@@ -113,20 +108,7 @@ namespace RakionServer.World.Network
 
             if (forcedStart)
             {
-                // LAB_00407ab0: field+8 = 2; todos state 1/2 -> 3; zera contadores de tiro do user.
-                field.ResetMatch(); // zera rounds/wins/placar do match anterior (rematch no field)
-                field.State = 2;
-                foreach (var r in field.Slots)
-                {
-                    if (r.State == 1 || r.State == 2)
-                    {
-                        r.State = 3;
-                        // FUN_004079d0 zera os contadores de tiro do user (user+0x2395/+0x2399);
-                        // no .NET o motor da partida ja zera o estado de combate por-round (StartRound).
-                    }
-                }
-                // FUN_004065e0: inicia o round (deadline/fase) — equivalente ao motor da partida.
-                field.StartRound();
+                field.ArmMatch(Environment.TickCount64);
                 cVar4 = 0; // segue para o broadcast de start (LAB_00407b16, cVar4==0)
             }
             else if (cVar4 != 0)
@@ -139,9 +121,9 @@ namespace RakionServer.World.Network
 
             // LAB_00407b16 cVar4==0: broadcast 0x43 [0] a TODOS (FUN_004061f0); reset de match.
             field.BroadcastField(0x43, new byte[] { 0x00 });
-            field.Phase = MatchPhase.Pre;                          // field+0x2b4 = 0
-            field.DeadlineMs = Environment.TickCount64 + 40000;    // field+0x2b8 = GetTick+40000
-            field.Warned30 = 0;                                    // estado de combate zerado (+0x3ac..+0x3bf)
+            field.Phase = MatchPhase.Pre;
+            field.DeadlineMs = Environment.TickCount64 + 40000;
+            field.Warned30 = 0;
             Log.Ok("combat", "[{0}] 0x43 START broadcast (field {1}, fase=Pre, deadline +40s)", ctx.User.Slot, field.Id);
         }
 
@@ -222,17 +204,33 @@ namespace RakionServer.World.Network
             if (result != 0)
             {
                 // FUN_0041b8a0(self, 0x45, [seat,result]) len 4 — so ao proprio
-                rec.Session?.SendMessage(0x45, new[] { (byte)seat, (byte)result });
+                rec.Session?.SendMessage(0x45,
+                    FieldLifecycleFrames.SpawnRejected((byte)seat, (byte)result));
                 Log.Info("field", "spawn recusado (field {0} seat {1} result {2})", field.Id, seat, result);
                 return;
             }
 
             // OK: zera kills/score do registro e broadcast 0x45 [seat] a TODOS.
             rec.Dead = false;
-            rec.Score = 0;
-            field.BroadcastField(0x45, new[] { (byte)seat });
-            field.RecomputeMvp(); // FUN_004066c0 (housekeeping de placar/host)
+            rec.RoundScore = 0;
+            field.BroadcastField(0x45, FieldLifecycleFrames.Spawn((byte)seat));
+            PublishTunnelingPresenceOnSpawn(field, rec);
             Log.Ok("field", "spawn OK (field {0} seat {1} team {2})", field.Id, seat, rec.Team);
+        }
+
+        private static void PublishTunnelingPresenceOnSpawn(Field field, PlayerRec record)
+        {
+            switch (field.RegisterTunnelingPresence(
+                (byte)record.Slot,
+                record.Session != null && record.Session.UdpObservedEndpoint == null))
+            {
+                case TunnelingPresenceChange.Enabled:
+                    field.BroadcastField(0x54, Array.Empty<byte>());
+                    break;
+                case TunnelingPresenceChange.SyncEnabled:
+                    record.Session?.SendMessage(0x54, Array.Empty<byte>());
+                    break;
+            }
         }
 
         // ===================================================================
@@ -243,7 +241,10 @@ namespace RakionServer.World.Network
         /// FUN_0040b7d0 resolve (fieldSlot, mySlot) — o slot usado em TUDO e' o do PROPRIO
         /// sender; param_3[0] e' so um FLAG (&lt;2). O cliente manda 0x46 ao SAIR do stage /
         /// cair de combate. Se flag&lt;2 e o sender e' valido (FUN_0041b860): ammo (FUN_00405950)
-        /// + consome cash (FUN_0040b900) e responde FIELD 0xc + LOBBY 0x58 AO PROPRIO. Sempre:
+        /// + aplica penalidade de EXP (FUN_0040b900) e responde 0x58 AO PROPRIO. O comando DB 0xc
+        /// entra na fila FUN_0041b940 e FUN_004138b0 persiste CharacterInfo.exp; o callback 0xc
+        /// de confirmacao nao possui consumer em FUN_004295c0.
+        /// Sempre:
         /// FUN_00407e00(mySlot) processa a morte/saida do sender. SEM broadcast de 0x46 (a 1a
         /// leitura inventava um targetSlot, dava dano no golem e broadcastava -> crash na saida).
         /// </summary>
@@ -258,30 +259,28 @@ namespace RakionServer.World.Network
             var rec = ReconRec(ctx, out var field);
             if (field == null || rec == null) return;
 
-            byte flag = ctx.P.CanRead(1) ? ctx.P.Byte() : (byte)0xff; // *param_3 (<2 = com refund)
-            if (flag < 2 && Combat_CanHit(field, rec.Slot))
+            byte flag = ctx.P.CanRead(1) ? ctx.P.Byte() : (byte)0xff;
+            lock (field.SyncRoot)
             {
-                // FUN_00405950 + FUN_0040b900: consome o cash do refund (estado server-side).
-                int ammo = Combat_KillDiff(field, rec.Slot);
-                Combat_ConsumeCash(u, (byte)ammo);
-                // NAO enviar os frames de refund por ora: o buffer original do "0xc" e'
-                // [u16 user+0x1488][u16 0x0c][u32 secondary][i32 ammo] — a 1a word NAO e' o
-                // msgType. Mandar [0c 00] na frente fazia o cliente parsear como RESPOSTA DE
-                // LOGIN zerada -> crash na saida do stage. Wire exato = RE pendente de 0x1488.
-            }
-            // FUN_00407e00(field, mySlot): morte/saida do proprio sender (sem killer/credito).
-            field.OnPlayerDeath(rec.Slot, killerSeat: -1, cause: 0);
-            // FUN_00407e00 broadcasta FIELD 0x46 [deadSlot] a TODOS os ocupados, INCLUINDO o
-            // proprio sender — e' o eco que o cliente espera p/ concluir a morte/saida (sem ele
-            // o cliente trava "aguardando o world" ao sair do stage).
-            field.BroadcastField(0x46, new[] { (byte)rec.Slot });
-            // 0 vivos -> FUN_00407be0(this, 0): fim de match (o 0x44 devolve os clientes a sala).
-            // No wire, reason=2 — o unico valor comprovadamente aceito pelo cliente (captura _r44
-            // e fim natural de partida); o 0 e' o param interno do FUN_00407be0, nao o byte do 0x44.
-            if (field.CountAlive(0) + field.CountAlive(1) == 0)
-            {
-                field.EndMatch(0);
-                field.BroadcastLobby(field.BuildMatchEnd(2));
+                if (flag < 2 && Combat_CanHit(field, rec.Slot))
+                {
+                    int ammo = Combat_KillDiff(field, rec.Slot);
+                    int remainingExperience = Combat_ApplyExitExperiencePenalty(u, (byte)ammo);
+                    _ = ctx.World.Db.UpdateCharacterExperienceAsync(
+                        u.ActiveCharId, unchecked((uint)remainingExperience));
+                    u.SendMessage(0x58, FieldLifecycleFrames.ExitExperience(remainingExperience));
+                }
+                bool roundEnded = field.OnPlayerExit(rec.Slot, cause: 0);
+                if (field.UnregisterTunnelingPresence((byte)rec.Slot) == TunnelingPresenceChange.Disabled)
+                    field.BroadcastField(0x55, Array.Empty<byte>());
+                field.BroadcastField(0x46, FieldLifecycleFrames.Exit((byte)rec.Slot));
+                if (roundEnded) field.BroadcastFieldPlaying(0x4a, field.Build0x4a());
+                if (field.CountAlive(0) + field.CountAlive(1) == 0)
+                {
+                    field.EndMatch(0);
+                    field.BroadcastLobby(field.BuildMatchEnd(0));
+                    _ = ctx.World.SettleEndedMatchAsync(field);
+                }
             }
             Log.Info("combat", "[{0}] 0x46 saida/morte propria (field {1} seat {2} flag {3})", u.Slot, field.Id, rec.Slot, flag);
         }
@@ -300,18 +299,16 @@ namespace RakionServer.World.Network
         {
             var t = field.RecAt(targetSlot);
             if (t == null) return 0;
-            // +0x12d/+0x12e sao os contadores de kills por-half do registro; aproximados via Score
-            // (placar do player no field-record). Mantem o sinal do decompile: 0 se nao positivo.
-            return (int)t.Score;
+            return t.CounterA > t.CounterB ? t.CounterA - t.CounterB : 0;
         }
 
-        /// <summary>FUN_0040b900: consome cash do atacante. cost = (cashCost>>1) + param*5; resto >= 0.</summary>
-        private static int Combat_ConsumeCash(ClientSession u, byte param)
+        /// <summary>FUN_0040B900: desconta da EXP em +0x1534 usando nível +0x1531 e o diferencial.</summary>
+        private static int Combat_ApplyExitExperiencePenalty(ClientSession u, byte differential)
         {
-            uint cost = (uint)(u.FieldCashCost >> 1) + (uint)param * 5u;
-            if (cost < u.FieldCash) { u.FieldCash -= cost; return (int)u.FieldCash; }
-            u.FieldCash = 0;
-            return 0;
+            uint remaining = CharacterProgression.ApplyCombatExitPenalty(
+                u.CharExp, u.CharLevel, differential);
+            u.CharExp = remaining;
+            return unchecked((int)remaining);
         }
 
         /// <summary>Conta jogadores ocupados (state 3/4, vivos) de um time (slots 0..9 / 10..0x13).</summary>

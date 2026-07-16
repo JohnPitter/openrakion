@@ -1,0 +1,2738 @@
+[
+  {
+    "id": 1,
+    "sourceFile": "stage_001.txt",
+    "sourceSha256": "173d8bd8b38c65f31169ac00b58b85d0807f376ef18b0ac477b657e58d0886ee",
+    "mapId": 1,
+    "timeLimitSeconds": 600,
+    "goal": "butchery",
+    "goalArgument": "100",
+    "minPlayers": 1,
+    "maxPlayers": 1,
+    "minLevel": 1,
+    "maxLevel": 10,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 100,
+        "exp": 32,
+        "gold": 100,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 70,
+        "exp": 20,
+        "gold": 63,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 60,
+        "exp": 16,
+        "gold": 50,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 50,
+        "exp": 12,
+        "gold": 38,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 40,
+        "exp": 8,
+        "gold": 25,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 32,
+    "npcCount": 110,
+    "flowNodeCount": 125,
+    "reachableFlowNodeCount": 96,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 2,
+    "sourceFile": "stage_002.txt",
+    "sourceSha256": "0d57ed8b9a8ec5fb6bcea92b875b094836b5db398eb2280624567b14248b92eb",
+    "mapId": 2,
+    "timeLimitSeconds": 432,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 1,
+    "minLevel": 1,
+    "maxLevel": 10,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 144,
+        "exp": 32,
+        "gold": 100,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 192,
+        "exp": 20,
+        "gold": 63,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 240,
+        "exp": 16,
+        "gold": 50,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 336,
+        "exp": 12,
+        "gold": 38,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 432,
+        "exp": 8,
+        "gold": 25,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 8,
+    "npcCount": 19,
+    "flowNodeCount": 59,
+    "reachableFlowNodeCount": 42,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 3,
+    "sourceFile": "stage_003.txt",
+    "sourceSha256": "21543e3f326082c521399982455258ba9390c235f7d0df8d4f65d438ea8a8b35",
+    "mapId": 3,
+    "timeLimitSeconds": 288,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 1,
+    "minLevel": 2,
+    "maxLevel": 13,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 96,
+        "exp": 64,
+        "gold": 132,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 128,
+        "exp": 40,
+        "gold": 83,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 160,
+        "exp": 32,
+        "gold": 66,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 224,
+        "exp": 24,
+        "gold": 50,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 288,
+        "exp": 16,
+        "gold": 33,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 8,
+    "npcCount": 32,
+    "flowNodeCount": 114,
+    "reachableFlowNodeCount": 61,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 4,
+    "sourceFile": "stage_004.txt",
+    "sourceSha256": "9263030d5931345a55d4f7f2cfb3054fb79da796048cf31e6e5213f37c07393a",
+    "mapId": 4,
+    "timeLimitSeconds": 240,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 1,
+    "minLevel": 2,
+    "maxLevel": 13,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 84,
+        "exp": 64,
+        "gold": 132,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 112,
+        "exp": 40,
+        "gold": 83,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 140,
+        "exp": 32,
+        "gold": 66,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 182,
+        "exp": 24,
+        "gold": 50,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 240,
+        "exp": 16,
+        "gold": 33,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 4,
+    "npcCount": 4,
+    "flowNodeCount": 39,
+    "reachableFlowNodeCount": 28,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 5,
+    "sourceFile": "stage_005.txt",
+    "sourceSha256": "086d53187f3578e51dda921cdaf5db0bfc3030e0e04340ada88b60e6a4c79e77",
+    "mapId": 5,
+    "timeLimitSeconds": 400,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 1,
+    "minLevel": 3,
+    "maxLevel": 14,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 180,
+        "exp": 96,
+        "gold": 140,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 200,
+        "exp": 60,
+        "gold": 88,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 240,
+        "exp": 48,
+        "gold": 70,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 300,
+        "exp": 36,
+        "gold": 53,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 400,
+        "exp": 24,
+        "gold": 35,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 31,
+    "npcCount": 41,
+    "flowNodeCount": 92,
+    "reachableFlowNodeCount": 68,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 6,
+    "sourceFile": "stage_006.txt",
+    "sourceSha256": "fa999638209b4072953509a016e1901c1a78cae4830fb735a7f7ecba91c58c85",
+    "mapId": 6,
+    "timeLimitSeconds": 504,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 3,
+    "minLevel": 3,
+    "maxLevel": 14,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 168,
+        "exp": 96,
+        "gold": 140,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 224,
+        "exp": 60,
+        "gold": 88,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 280,
+        "exp": 48,
+        "gold": 70,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 392,
+        "exp": 36,
+        "gold": 53,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 504,
+        "exp": 24,
+        "gold": 35,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 16,
+    "npcCount": 69,
+    "flowNodeCount": 72,
+    "reachableFlowNodeCount": 60,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 7,
+    "sourceFile": "stage_007.txt",
+    "sourceSha256": "c328f03379e6e89b586e926d38dc89fc04d303bdd7c7306137d20d26a9882ab6",
+    "mapId": 7,
+    "timeLimitSeconds": 648,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 2,
+    "minLevel": 4,
+    "maxLevel": 15,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 216,
+        "exp": 128,
+        "gold": 152,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 288,
+        "exp": 80,
+        "gold": 95,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 360,
+        "exp": 64,
+        "gold": 76,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 504,
+        "exp": 48,
+        "gold": 57,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 648,
+        "exp": 32,
+        "gold": 38,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 12,
+    "npcCount": 45,
+    "flowNodeCount": 128,
+    "reachableFlowNodeCount": 78,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": false
+  },
+  {
+    "id": 8,
+    "sourceFile": "stage_008.txt",
+    "sourceSha256": "0356620d99bbf591c7afe506c20bd3b58b0e8d95405cb0528f80530bb481366f",
+    "mapId": 8,
+    "timeLimitSeconds": 340,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 2,
+    "minLevel": 4,
+    "maxLevel": 15,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 180,
+        "exp": 128,
+        "gold": 152,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 200,
+        "exp": 80,
+        "gold": 95,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 220,
+        "exp": 64,
+        "gold": 76,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 280,
+        "exp": 48,
+        "gold": 57,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 340,
+        "exp": 32,
+        "gold": 38,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 15,
+    "npcCount": 51,
+    "flowNodeCount": 97,
+    "reachableFlowNodeCount": 74,
+    "flowReferencesConsistent": false,
+    "flowNamesUnique": false
+  },
+  {
+    "id": 9,
+    "sourceFile": "stage_009.txt",
+    "sourceSha256": "d769485ef528c5beb150fbc82a3b0a2d79a1bb0cd976d25bffc769feff28398d",
+    "mapId": 9,
+    "timeLimitSeconds": 400,
+    "goal": "time attack",
+    "goalArgument": "myboss",
+    "minPlayers": 1,
+    "maxPlayers": 1,
+    "minLevel": 5,
+    "maxLevel": 16,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 200,
+        "exp": 160,
+        "gold": 160,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 240,
+        "exp": 100,
+        "gold": 100,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 280,
+        "exp": 80,
+        "gold": 80,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 340,
+        "exp": 60,
+        "gold": 60,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 400,
+        "exp": 40,
+        "gold": 40,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 25,
+    "npcCount": 63,
+    "flowNodeCount": 78,
+    "reachableFlowNodeCount": 63,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 10,
+    "sourceFile": "stage_010.txt",
+    "sourceSha256": "2c65776876ac6a558e15429f1471b4e324d96b61fe6b8c4f87881e94b37c19fc",
+    "mapId": 10,
+    "timeLimitSeconds": 540,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 3,
+    "minLevel": 5,
+    "maxLevel": 16,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 210,
+        "exp": 160,
+        "gold": 160,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 240,
+        "exp": 100,
+        "gold": 100,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 300,
+        "exp": 80,
+        "gold": 80,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 390,
+        "exp": 60,
+        "gold": 60,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 540,
+        "exp": 40,
+        "gold": 40,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 18,
+    "npcCount": 75,
+    "flowNodeCount": 80,
+    "reachableFlowNodeCount": 70,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 11,
+    "sourceFile": "stage_011.txt",
+    "sourceSha256": "c40d11099c27d71b8ebca81585366a0f45453fb448019e64c92b12e6798ba22f",
+    "mapId": 11,
+    "timeLimitSeconds": 240,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 1,
+    "minLevel": 6,
+    "maxLevel": 17,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 78,
+        "exp": 192,
+        "gold": 172,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 104,
+        "exp": 120,
+        "gold": 108,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 130,
+        "exp": 96,
+        "gold": 86,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 169,
+        "exp": 72,
+        "gold": 65,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 240,
+        "exp": 48,
+        "gold": 43,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 6,
+    "npcCount": 6,
+    "flowNodeCount": 45,
+    "reachableFlowNodeCount": 20,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": false
+  },
+  {
+    "id": 12,
+    "sourceFile": "stage_012.txt",
+    "sourceSha256": "aa71c91d6bd4227ebdcde77e23aaf32dd761d7d9aaa83d334b6f8e3044a80f77",
+    "mapId": 12,
+    "timeLimitSeconds": 540,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 1,
+    "minLevel": 6,
+    "maxLevel": 17,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 180,
+        "exp": 192,
+        "gold": 172,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 240,
+        "exp": 120,
+        "gold": 108,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 300,
+        "exp": 96,
+        "gold": 86,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 420,
+        "exp": 72,
+        "gold": 65,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 540,
+        "exp": 48,
+        "gold": 43,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 16,
+    "npcCount": 36,
+    "flowNodeCount": 57,
+    "reachableFlowNodeCount": 41,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 13,
+    "sourceFile": "stage_013.txt",
+    "sourceSha256": "0de82ea393b229b875852cad472b77fcb12f27eddce3775eaf955bd04a496049",
+    "mapId": 13,
+    "timeLimitSeconds": 648,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 2,
+    "minLevel": 7,
+    "maxLevel": 18,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 216,
+        "exp": 224,
+        "gold": 180,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 288,
+        "exp": 140,
+        "gold": 113,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 360,
+        "exp": 112,
+        "gold": 90,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 504,
+        "exp": 84,
+        "gold": 68,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 648,
+        "exp": 56,
+        "gold": 45,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 16,
+    "npcCount": 64,
+    "flowNodeCount": 137,
+    "reachableFlowNodeCount": 88,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 14,
+    "sourceFile": "stage_014.txt",
+    "sourceSha256": "ed4f09eb9fa7525f00edb257c92d0106798522ec7985abd01e0a1210739c21f8",
+    "mapId": 14,
+    "timeLimitSeconds": 540,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 3,
+    "minLevel": 7,
+    "maxLevel": 18,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 180,
+        "exp": 224,
+        "gold": 180,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 240,
+        "exp": 140,
+        "gold": 113,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 300,
+        "exp": 112,
+        "gold": 90,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 420,
+        "exp": 84,
+        "gold": 68,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 540,
+        "exp": 56,
+        "gold": 45,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 19,
+    "npcCount": 28,
+    "flowNodeCount": 62,
+    "reachableFlowNodeCount": 52,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": false
+  },
+  {
+    "id": 15,
+    "sourceFile": "stage_015.txt",
+    "sourceSha256": "e2de584c6a623de546065c600204d711442b4bd1c1be45f5c711125cb0cc32a9",
+    "mapId": 15,
+    "timeLimitSeconds": 490,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 1,
+    "minLevel": 8,
+    "maxLevel": 19,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 270,
+        "exp": 288,
+        "gold": 200,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 310,
+        "exp": 180,
+        "gold": 125,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 370,
+        "exp": 144,
+        "gold": 100,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 430,
+        "exp": 108,
+        "gold": 75,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 490,
+        "exp": 72,
+        "gold": 50,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 23,
+    "npcCount": 43,
+    "flowNodeCount": 125,
+    "reachableFlowNodeCount": 75,
+    "flowReferencesConsistent": false,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 16,
+    "sourceFile": "stage_016.txt",
+    "sourceSha256": "fa0170cbbbdded145d5246b1538d55929deccbbaf22ac85369d6c3671f58348e",
+    "mapId": 16,
+    "timeLimitSeconds": 540,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 3,
+    "minLevel": 8,
+    "maxLevel": 19,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 180,
+        "exp": 256,
+        "gold": 192,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 220,
+        "exp": 160,
+        "gold": 120,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 260,
+        "exp": 128,
+        "gold": 96,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 300,
+        "exp": 96,
+        "gold": 72,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 540,
+        "exp": 64,
+        "gold": 48,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 19,
+    "npcCount": 26,
+    "flowNodeCount": 63,
+    "reachableFlowNodeCount": 38,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": false
+  },
+  {
+    "id": 17,
+    "sourceFile": "stage_017.txt",
+    "sourceSha256": "757c9bca3d90d4b6be0ae1edd1b9149a4b631020601a2990c231dc3a8fdca289",
+    "mapId": 17,
+    "timeLimitSeconds": 480,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 3,
+    "minLevel": 9,
+    "maxLevel": 20,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 240,
+        "exp": 288,
+        "gold": 200,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 300,
+        "exp": 180,
+        "gold": 125,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 360,
+        "exp": 144,
+        "gold": 100,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 420,
+        "exp": 108,
+        "gold": 75,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 480,
+        "exp": 72,
+        "gold": 50,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 15,
+    "npcCount": 55,
+    "flowNodeCount": 99,
+    "reachableFlowNodeCount": 82,
+    "flowReferencesConsistent": false,
+    "flowNamesUnique": false
+  },
+  {
+    "id": 18,
+    "sourceFile": "stage_018.txt",
+    "sourceSha256": "b9404f2825a7abcf0a7768a52dd2e524e0824598d2e24a0f9c9a6bcb15004897",
+    "mapId": 18,
+    "timeLimitSeconds": 300,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 1,
+    "minLevel": 9,
+    "maxLevel": 20,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 138,
+        "exp": 288,
+        "gold": 200,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 164,
+        "exp": 180,
+        "gold": 125,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 190,
+        "exp": 144,
+        "gold": 100,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 229,
+        "exp": 108,
+        "gold": 75,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 300,
+        "exp": 72,
+        "gold": 50,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 9,
+    "npcCount": 9,
+    "flowNodeCount": 44,
+    "reachableFlowNodeCount": 24,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 19,
+    "sourceFile": "stage_019.txt",
+    "sourceSha256": "9f5a093fdcee4dfbd2fc2e44d631fc5127336e522f75e4eea786cc6ce1db179a",
+    "mapId": 19,
+    "timeLimitSeconds": 240,
+    "goal": "guard",
+    "goalArgument": "myboss",
+    "minPlayers": 1,
+    "maxPlayers": 4,
+    "minLevel": 10,
+    "maxLevel": 21,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 80,
+        "exp": 320,
+        "gold": 212,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 60,
+        "exp": 200,
+        "gold": 133,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 40,
+        "exp": 160,
+        "gold": 106,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 20,
+        "exp": 120,
+        "gold": 80,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 0,
+        "exp": 80,
+        "gold": 53,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 16,
+    "npcCount": 45,
+    "flowNodeCount": 67,
+    "reachableFlowNodeCount": 51,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": false
+  },
+  {
+    "id": 20,
+    "sourceFile": "stage_020.txt",
+    "sourceSha256": "9fce16943e592ea52225740c1e822ba015bb48b8fe783d86fa6c0afee3427166",
+    "mapId": 20,
+    "timeLimitSeconds": 540,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 4,
+    "minLevel": 10,
+    "maxLevel": 21,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 290,
+        "exp": 320,
+        "gold": 212,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 360,
+        "exp": 200,
+        "gold": 133,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 420,
+        "exp": 160,
+        "gold": 106,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 480,
+        "exp": 120,
+        "gold": 80,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 540,
+        "exp": 80,
+        "gold": 53,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 16,
+    "npcCount": 59,
+    "flowNodeCount": 153,
+    "reachableFlowNodeCount": 109,
+    "flowReferencesConsistent": false,
+    "flowNamesUnique": false
+  },
+  {
+    "id": 21,
+    "sourceFile": "stage_021.txt",
+    "sourceSha256": "2fee7d9df3f8a1e424c0e1008d15fc5ae41401b30b8f9079f7fa15919048e6ab",
+    "mapId": 21,
+    "timeLimitSeconds": 450,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 2,
+    "minLevel": 11,
+    "maxLevel": 22,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 240,
+        "exp": 352,
+        "gold": 220,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 270,
+        "exp": 220,
+        "gold": 138,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 330,
+        "exp": 176,
+        "gold": 110,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 390,
+        "exp": 132,
+        "gold": 83,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 450,
+        "exp": 88,
+        "gold": 55,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 16,
+    "npcCount": 36,
+    "flowNodeCount": 75,
+    "reachableFlowNodeCount": 65,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 22,
+    "sourceFile": "stage_022.txt",
+    "sourceSha256": "d272997e67c71a330ee8181151ee99dab1d7585538803753691ec1d39be173db",
+    "mapId": 22,
+    "timeLimitSeconds": 240,
+    "goal": "survival",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 4,
+    "minLevel": 11,
+    "maxLevel": 22,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 80,
+        "exp": 352,
+        "gold": 220,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 60,
+        "exp": 220,
+        "gold": 138,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 40,
+        "exp": 176,
+        "gold": 110,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 20,
+        "exp": 132,
+        "gold": 83,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 0,
+        "exp": 88,
+        "gold": 55,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 20,
+    "npcCount": 53,
+    "flowNodeCount": 74,
+    "reachableFlowNodeCount": 50,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": false
+  },
+  {
+    "id": 23,
+    "sourceFile": "stage_023.txt",
+    "sourceSha256": "f74d16053d9e20cff7eb4290a1ccb28e6852b78a43a6161ccfe9efb865f31aa9",
+    "mapId": 23,
+    "timeLimitSeconds": 360,
+    "goal": "butchery",
+    "goalArgument": "85",
+    "minPlayers": 1,
+    "maxPlayers": 1,
+    "minLevel": 12,
+    "maxLevel": 23,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 85,
+        "exp": 384,
+        "gold": 232,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 80,
+        "exp": 240,
+        "gold": 145,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 70,
+        "exp": 192,
+        "gold": 116,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 50,
+        "exp": 144,
+        "gold": 87,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 30,
+        "exp": 96,
+        "gold": 58,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 15,
+    "npcCount": 87,
+    "flowNodeCount": 75,
+    "reachableFlowNodeCount": 68,
+    "flowReferencesConsistent": false,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 24,
+    "sourceFile": "stage_024.txt",
+    "sourceSha256": "9f3995f26f8b93fd31796d245d1857778835ad39aad869a83d6b900408d05b71",
+    "mapId": 24,
+    "timeLimitSeconds": 240,
+    "goal": "survival",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 2,
+    "minLevel": 12,
+    "maxLevel": 23,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 80,
+        "exp": 384,
+        "gold": 232,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 60,
+        "exp": 240,
+        "gold": 145,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 40,
+        "exp": 192,
+        "gold": 116,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 20,
+        "exp": 144,
+        "gold": 87,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 0,
+        "exp": 96,
+        "gold": 58,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 14,
+    "npcCount": 62,
+    "flowNodeCount": 43,
+    "reachableFlowNodeCount": 35,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 25,
+    "sourceFile": "stage_025.txt",
+    "sourceSha256": "305920f850414db9a87a7c29fb498c57699100463f84837cbb74e0f4f0c7e734",
+    "mapId": 25,
+    "timeLimitSeconds": 580,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 2,
+    "minLevel": 13,
+    "maxLevel": 24,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 360,
+        "exp": 416,
+        "gold": 240,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 400,
+        "exp": 260,
+        "gold": 150,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 460,
+        "exp": 208,
+        "gold": 120,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 520,
+        "exp": 156,
+        "gold": 90,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 580,
+        "exp": 104,
+        "gold": 60,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 25,
+    "npcCount": 72,
+    "flowNodeCount": 118,
+    "reachableFlowNodeCount": 109,
+    "flowReferencesConsistent": false,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 26,
+    "sourceFile": "stage_026.txt",
+    "sourceSha256": "f12a322f2d5fa1f5cabe85a8fc1e8cb73507ae1f2a6914c93c92f1d0c15cd0fc",
+    "mapId": 26,
+    "timeLimitSeconds": 450,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 2,
+    "minLevel": 13,
+    "maxLevel": 24,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 230,
+        "exp": 416,
+        "gold": 240,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 270,
+        "exp": 260,
+        "gold": 150,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 330,
+        "exp": 208,
+        "gold": 120,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 390,
+        "exp": 156,
+        "gold": 90,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 450,
+        "exp": 104,
+        "gold": 60,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 12,
+    "npcCount": 41,
+    "flowNodeCount": 127,
+    "reachableFlowNodeCount": 69,
+    "flowReferencesConsistent": false,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 27,
+    "sourceFile": "stage_027.txt",
+    "sourceSha256": "cf7d7084697c2b992e82528d08035f50207bb069f5a07146a4dbb5ea22391187",
+    "mapId": 27,
+    "timeLimitSeconds": 460,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 2,
+    "minLevel": 14,
+    "maxLevel": 25,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 240,
+        "exp": 448,
+        "gold": 252,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 280,
+        "exp": 280,
+        "gold": 158,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 340,
+        "exp": 224,
+        "gold": 126,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 400,
+        "exp": 168,
+        "gold": 95,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 460,
+        "exp": 112,
+        "gold": 63,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 20,
+    "npcCount": 67,
+    "flowNodeCount": 190,
+    "reachableFlowNodeCount": 93,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 28,
+    "sourceFile": "stage_028.txt",
+    "sourceSha256": "13e205e89431d15280f10ab01515c77af8be3cbd0c670222c889292f2182a406",
+    "mapId": 28,
+    "timeLimitSeconds": 540,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 2,
+    "minLevel": 14,
+    "maxLevel": 25,
+    "rankThresholdsConsistent": false,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 370,
+        "exp": 448,
+        "gold": 252,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 410,
+        "exp": 280,
+        "gold": 158,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 460,
+        "exp": 224,
+        "gold": 126,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 510,
+        "exp": 168,
+        "gold": 95,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 570,
+        "exp": 112,
+        "gold": 63,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 22,
+    "npcCount": 85,
+    "flowNodeCount": 114,
+    "reachableFlowNodeCount": 90,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 29,
+    "sourceFile": "stage_029.txt",
+    "sourceSha256": "ac6a79301fe19f43e2d698bca99c772330214f5c908b9b97645e9f17610a462c",
+    "mapId": 29,
+    "timeLimitSeconds": 420,
+    "goal": "guard",
+    "goalArgument": "our_golem1, our_golem2, our_golem3",
+    "minPlayers": 1,
+    "maxPlayers": 3,
+    "minLevel": 15,
+    "maxLevel": 26,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 80,
+        "exp": 480,
+        "gold": 260,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 60,
+        "exp": 300,
+        "gold": 163,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 50,
+        "exp": 240,
+        "gold": 130,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 40,
+        "exp": 180,
+        "gold": 98,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 0,
+        "exp": 120,
+        "gold": 65,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 101,
+    "npcCount": 214,
+    "flowNodeCount": 176,
+    "reachableFlowNodeCount": 143,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": false
+  },
+  {
+    "id": 30,
+    "sourceFile": "stage_030.txt",
+    "sourceSha256": "b7d02b3b586d0af5df6e75618f2b3d353be4d4d259555292892c6f7e866386d9",
+    "mapId": 30,
+    "timeLimitSeconds": 600,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 2,
+    "minLevel": 15,
+    "maxLevel": 26,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 260,
+        "exp": 480,
+        "gold": 260,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 300,
+        "exp": 300,
+        "gold": 163,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 480,
+        "exp": 240,
+        "gold": 130,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 540,
+        "exp": 180,
+        "gold": 98,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 600,
+        "exp": 120,
+        "gold": 65,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 34,
+    "npcCount": 74,
+    "flowNodeCount": 133,
+    "reachableFlowNodeCount": 115,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 31,
+    "sourceFile": "stage_031.txt",
+    "sourceSha256": "e6071c251fa337aed0c31edfe341b7cb14fde6eb8b8de3982b76c4819282a818",
+    "mapId": 31,
+    "timeLimitSeconds": 1200,
+    "goal": "survival",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 1,
+    "minLevel": 16,
+    "maxLevel": 27,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 80,
+        "exp": 512,
+        "gold": 272,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 70,
+        "exp": 320,
+        "gold": 170,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 50,
+        "exp": 256,
+        "gold": 136,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 30,
+        "exp": 192,
+        "gold": 102,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 10,
+        "exp": 128,
+        "gold": 68,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 15,
+    "npcCount": 51,
+    "flowNodeCount": 74,
+    "reachableFlowNodeCount": 58,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 32,
+    "sourceFile": "stage_032.txt",
+    "sourceSha256": "cd17f71a2d98425ae3b8a1d2eef077d64575a3c0a58ac4527225f30a900f01e7",
+    "mapId": 32,
+    "timeLimitSeconds": 400,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 1,
+    "minLevel": 16,
+    "maxLevel": 27,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 160,
+        "exp": 512,
+        "gold": 272,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 200,
+        "exp": 320,
+        "gold": 170,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 240,
+        "exp": 256,
+        "gold": 136,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 280,
+        "exp": 192,
+        "gold": 102,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 400,
+        "exp": 128,
+        "gold": 68,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 23,
+    "npcCount": 23,
+    "flowNodeCount": 96,
+    "reachableFlowNodeCount": 73,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 33,
+    "sourceFile": "stage_033.txt",
+    "sourceSha256": "5cb79757de0f97e86fd9c490cc75f54f63443b57a872f2e3cf7740b72e5fe777",
+    "mapId": 33,
+    "timeLimitSeconds": 420,
+    "goal": "butchery",
+    "goalArgument": "100",
+    "minPlayers": 1,
+    "maxPlayers": 3,
+    "minLevel": 17,
+    "maxLevel": 28,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 100,
+        "exp": 544,
+        "gold": 280,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 90,
+        "exp": 340,
+        "gold": 175,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 75,
+        "exp": 272,
+        "gold": 140,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 60,
+        "exp": 204,
+        "gold": 105,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 50,
+        "exp": 136,
+        "gold": 70,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 12,
+    "npcCount": 120,
+    "flowNodeCount": 117,
+    "reachableFlowNodeCount": 89,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 34,
+    "sourceFile": "stage_034.txt",
+    "sourceSha256": "a2e7017e94438a4adb78eceeb89d27069c8d04046d6e2d888c288cce0c547980",
+    "mapId": 34,
+    "timeLimitSeconds": 540,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 3,
+    "minLevel": 17,
+    "maxLevel": 28,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 340,
+        "exp": 544,
+        "gold": 280,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 380,
+        "exp": 340,
+        "gold": 175,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 430,
+        "exp": 272,
+        "gold": 140,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 480,
+        "exp": 204,
+        "gold": 105,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 540,
+        "exp": 136,
+        "gold": 70,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 23,
+    "npcCount": 86,
+    "flowNodeCount": 117,
+    "reachableFlowNodeCount": 94,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 35,
+    "sourceFile": "stage_035.txt",
+    "sourceSha256": "bd3d7f1b4098f06442084db8423688b5c21b9b870e0ff10e89dc0ac1ec99edc6",
+    "mapId": 35,
+    "timeLimitSeconds": 450,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 4,
+    "minLevel": 18,
+    "maxLevel": 29,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 200,
+        "exp": 576,
+        "gold": 292,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 240,
+        "exp": 360,
+        "gold": 183,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 310,
+        "exp": 288,
+        "gold": 146,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 380,
+        "exp": 216,
+        "gold": 110,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 450,
+        "exp": 144,
+        "gold": 73,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 61,
+    "npcCount": 133,
+    "flowNodeCount": 303,
+    "reachableFlowNodeCount": 288,
+    "flowReferencesConsistent": false,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 36,
+    "sourceFile": "stage_036.txt",
+    "sourceSha256": "d65eb3b815932f19640fe1dd2677c278d94fec1f1196ef73644911e90deb74d0",
+    "mapId": 36,
+    "timeLimitSeconds": 520,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 1,
+    "minLevel": 18,
+    "maxLevel": 29,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 300,
+        "exp": 576,
+        "gold": 292,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 340,
+        "exp": 360,
+        "gold": 183,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 400,
+        "exp": 288,
+        "gold": 146,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 460,
+        "exp": 216,
+        "gold": 110,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 520,
+        "exp": 144,
+        "gold": 73,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 44,
+    "npcCount": 96,
+    "flowNodeCount": 226,
+    "reachableFlowNodeCount": 188,
+    "flowReferencesConsistent": false,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 37,
+    "sourceFile": "stage_037.txt",
+    "sourceSha256": "89c63d317eeed9f144d1c02391411d8d7bd7a1ea938accd15b57a8817b5bf29a",
+    "mapId": 37,
+    "timeLimitSeconds": 600,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 3,
+    "minLevel": 19,
+    "maxLevel": 30,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 300,
+        "exp": 608,
+        "gold": 300,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 360,
+        "exp": 380,
+        "gold": 188,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 420,
+        "exp": 304,
+        "gold": 150,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 500,
+        "exp": 228,
+        "gold": 113,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 600,
+        "exp": 152,
+        "gold": 75,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 45,
+    "npcCount": 100,
+    "flowNodeCount": 141,
+    "reachableFlowNodeCount": 95,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 38,
+    "sourceFile": "stage_038.txt",
+    "sourceSha256": "7a11a324165cf91e720e1d1c8d7a47892f4804458f73242f629502b93bb1a834",
+    "mapId": 38,
+    "timeLimitSeconds": 600,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 2,
+    "minLevel": 19,
+    "maxLevel": 30,
+    "rankThresholdsConsistent": false,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 280,
+        "exp": 608,
+        "gold": 300,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 320,
+        "exp": 380,
+        "gold": 188,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 640,
+        "exp": 304,
+        "gold": 150,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 400,
+        "exp": 228,
+        "gold": 113,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 600,
+        "exp": 152,
+        "gold": 75,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 50,
+    "npcCount": 101,
+    "flowNodeCount": 181,
+    "reachableFlowNodeCount": 115,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 39,
+    "sourceFile": "stage_039.txt",
+    "sourceSha256": "be79a75094cdce8fd12c15a0d4c1d231184b60e0cd51bb19fa2c1e08856dbcba",
+    "mapId": 39,
+    "timeLimitSeconds": 1200,
+    "goal": "survival",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 2,
+    "minLevel": 20,
+    "maxLevel": 31,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 80,
+        "exp": 640,
+        "gold": 312,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 70,
+        "exp": 400,
+        "gold": 195,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 50,
+        "exp": 320,
+        "gold": 156,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 30,
+        "exp": 240,
+        "gold": 117,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 10,
+        "exp": 160,
+        "gold": 78,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 15,
+    "npcCount": 55,
+    "flowNodeCount": 71,
+    "reachableFlowNodeCount": 61,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 40,
+    "sourceFile": "stage_040.txt",
+    "sourceSha256": "a057957dfc18f7420d7250f90597729641308fee2130bf5c51dd866e9fe87941",
+    "mapId": 40,
+    "timeLimitSeconds": 550,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 4,
+    "minLevel": 20,
+    "maxLevel": 31,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 300,
+        "exp": 640,
+        "gold": 312,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 340,
+        "exp": 400,
+        "gold": 195,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 410,
+        "exp": 320,
+        "gold": 156,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 480,
+        "exp": 240,
+        "gold": 117,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 550,
+        "exp": 160,
+        "gold": 78,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 61,
+    "npcCount": 133,
+    "flowNodeCount": 303,
+    "reachableFlowNodeCount": 288,
+    "flowReferencesConsistent": false,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 41,
+    "sourceFile": "stage_041.txt",
+    "sourceSha256": "e66fcf58821c3790c45812ad7d63e122865596048b54183fed5c50a59a7e0acf",
+    "mapId": 41,
+    "timeLimitSeconds": 520,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 2,
+    "minLevel": 21,
+    "maxLevel": 32,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 300,
+        "exp": 672,
+        "gold": 320,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 340,
+        "exp": 420,
+        "gold": 200,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 400,
+        "exp": 336,
+        "gold": 160,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 460,
+        "exp": 252,
+        "gold": 120,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 520,
+        "exp": 168,
+        "gold": 80,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 46,
+    "npcCount": 101,
+    "flowNodeCount": 230,
+    "reachableFlowNodeCount": 193,
+    "flowReferencesConsistent": false,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 42,
+    "sourceFile": "stage_042.txt",
+    "sourceSha256": "02bd5b8d260925c269ac072abd9ff224308e4e60e4330e83e0ff0dae9f4ec42c",
+    "mapId": 42,
+    "timeLimitSeconds": 360,
+    "goal": "butchery",
+    "goalArgument": "85",
+    "minPlayers": 1,
+    "maxPlayers": 1,
+    "minLevel": 21,
+    "maxLevel": 32,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 85,
+        "exp": 672,
+        "gold": 320,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 80,
+        "exp": 420,
+        "gold": 200,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 70,
+        "exp": 336,
+        "gold": 160,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 50,
+        "exp": 252,
+        "gold": 120,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 30,
+        "exp": 168,
+        "gold": 80,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 15,
+    "npcCount": 87,
+    "flowNodeCount": 75,
+    "reachableFlowNodeCount": 68,
+    "flowReferencesConsistent": false,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 43,
+    "sourceFile": "stage_043.txt",
+    "sourceSha256": "9351e5fd156568022f93d73698ebe80db3ba1a1d70bb3ac090c144a2fe4ac6e0",
+    "mapId": 43,
+    "timeLimitSeconds": 600,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 2,
+    "minLevel": 22,
+    "maxLevel": 33,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 240,
+        "exp": 704,
+        "gold": 332,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 300,
+        "exp": 440,
+        "gold": 208,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 360,
+        "exp": 352,
+        "gold": 166,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 480,
+        "exp": 264,
+        "gold": 125,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 600,
+        "exp": 176,
+        "gold": 83,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 32,
+    "npcCount": 94,
+    "flowNodeCount": 114,
+    "reachableFlowNodeCount": 103,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 44,
+    "sourceFile": "stage_044.txt",
+    "sourceSha256": "0456faaa33a0e4a239c434155b92ec795a5f3852f821b6aceaf80e0cda161c02",
+    "mapId": 44,
+    "timeLimitSeconds": 600,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 2,
+    "minLevel": 22,
+    "maxLevel": 33,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 300,
+        "exp": 704,
+        "gold": 332,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 360,
+        "exp": 440,
+        "gold": 208,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 400,
+        "exp": 352,
+        "gold": 166,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 480,
+        "exp": 264,
+        "gold": 125,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 600,
+        "exp": 176,
+        "gold": 83,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 32,
+    "npcCount": 91,
+    "flowNodeCount": 182,
+    "reachableFlowNodeCount": 142,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 45,
+    "sourceFile": "stage_045.txt",
+    "sourceSha256": "366ec2347c04fafaa39d21449c3004144341c897e03b15ac82fecc1f297edc5f",
+    "mapId": 45,
+    "timeLimitSeconds": 460,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 2,
+    "minLevel": 23,
+    "maxLevel": 34,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 240,
+        "exp": 736,
+        "gold": 340,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 280,
+        "exp": 460,
+        "gold": 213,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 340,
+        "exp": 368,
+        "gold": 170,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 400,
+        "exp": 276,
+        "gold": 128,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 460,
+        "exp": 184,
+        "gold": 85,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 32,
+    "npcCount": 118,
+    "flowNodeCount": 191,
+    "reachableFlowNodeCount": 123,
+    "flowReferencesConsistent": false,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 46,
+    "sourceFile": "stage_046.txt",
+    "sourceSha256": "3f98d8f9bbadbbe4df7e914b220f7b4dacffe5ecb1b1d381ac724e88cdea63a7",
+    "mapId": 46,
+    "timeLimitSeconds": 390,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 2,
+    "minLevel": 23,
+    "maxLevel": 34,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 180,
+        "exp": 736,
+        "gold": 340,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 220,
+        "exp": 460,
+        "gold": 213,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 270,
+        "exp": 368,
+        "gold": 170,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 330,
+        "exp": 276,
+        "gold": 128,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 390,
+        "exp": 184,
+        "gold": 85,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 11,
+    "npcCount": 65,
+    "flowNodeCount": 56,
+    "reachableFlowNodeCount": 48,
+    "flowReferencesConsistent": false,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 47,
+    "sourceFile": "stage_047.txt",
+    "sourceSha256": "197b859ba98865ad3bc4310a9b72ab50f0d36eb3b8b1e74201123108af702a99",
+    "mapId": 47,
+    "timeLimitSeconds": 600,
+    "goal": "time attack",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 2,
+    "minLevel": 24,
+    "maxLevel": 35,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 360,
+        "exp": 768,
+        "gold": 352,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 420,
+        "exp": 480,
+        "gold": 220,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 480,
+        "exp": 384,
+        "gold": 176,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 540,
+        "exp": 288,
+        "gold": 132,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 600,
+        "exp": 192,
+        "gold": 88,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 45,
+    "npcCount": 166,
+    "flowNodeCount": 227,
+    "reachableFlowNodeCount": 187,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  },
+  {
+    "id": 48,
+    "sourceFile": "stage_048.txt",
+    "sourceSha256": "8b6a84f076312e0c5dc77586c9c8c47479af78c3794f38515546cd00e3324212",
+    "mapId": 48,
+    "timeLimitSeconds": 480,
+    "goal": "butchery",
+    "goalArgument": null,
+    "minPlayers": 1,
+    "maxPlayers": 3,
+    "minLevel": 24,
+    "maxLevel": 35,
+    "rankThresholdsConsistent": true,
+    "ranks": [
+      {
+        "rank": 5,
+        "threshold": 110,
+        "exp": 768,
+        "gold": 352,
+        "multiplier": 4.0
+      },
+      {
+        "rank": 4,
+        "threshold": 100,
+        "exp": 480,
+        "gold": 220,
+        "multiplier": 2.5
+      },
+      {
+        "rank": 3,
+        "threshold": 90,
+        "exp": 384,
+        "gold": 176,
+        "multiplier": 2.0
+      },
+      {
+        "rank": 2,
+        "threshold": 80,
+        "exp": 288,
+        "gold": 132,
+        "multiplier": 1.5
+      },
+      {
+        "rank": 1,
+        "threshold": 70,
+        "exp": 192,
+        "gold": 88,
+        "multiplier": 1.0
+      }
+    ],
+    "spawnDefinitionCount": 45,
+    "npcCount": 116,
+    "flowNodeCount": 261,
+    "reachableFlowNodeCount": 212,
+    "flowReferencesConsistent": true,
+    "flowNamesUnique": true
+  }
+]

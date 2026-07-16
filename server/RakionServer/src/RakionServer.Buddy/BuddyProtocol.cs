@@ -27,6 +27,8 @@ namespace RakionServer.Buddy
         public const ushort NTF_NOTICE          = 0x1ffe;
         public const ushort NTF_CLOSE_CONNECTION= 0x1fff;
         public const ushort NTF_SAVE_PACKET     = 0x2010;
+        public const ushort SVC_SAVE_PACKET_ACK = 0x2011;
+        public const ushort SVC_TUNNEL_PACKET   = 0x2020;
         public const ushort NTF_TUNNEL_PACKET   = 0x2021;
         public const ushort RET_SMS_SEND        = 0x2031;
         public const ushort RET_ADD_BUDDY       = 0x3001;
@@ -52,7 +54,9 @@ namespace RakionServer.Buddy
         public const ushort SVC_GROUP_BUDDY     = 0x3004;
         public const ushort SVC_RENAME_GROUP    = 0x3006;
         public const ushort SVC_SET_NICK        = 0x3100;
+        public const ushort SVC_SET_GUILD       = 0x3102;
         public const ushort SVC_SET_EXTUSER     = 0x3104;
+        public const ushort SVC_SET_EXTLIST     = 0x3110;
         public const ushort SVC_GROUP_GETLIST   = 0x3150;
         public const ushort SVC_GROUP_ADD       = 0x3152;
         public const ushort SVC_GROUP_DEL       = 0x3154;
@@ -65,16 +69,22 @@ namespace RakionServer.Buddy
             [RET_LOGIN] = "RET_LOGIN", [SVC_LOGIN] = "SVC_LOGIN",
             [NTF_VIP_IPPORT] = "NTF_VIP_IPPORT", [NTF_NOTICE] = "NTF_NOTICE",
             [NTF_CLOSE_CONNECTION] = "NTF_CLOSE_CONNECTION", [NTF_SAVE_PACKET] = "NTF_SAVE_PACKET",
+            [SVC_SAVE_PACKET_ACK] = "SVC_SAVE_PACKET_ACK",
+            [SVC_TUNNEL_PACKET] = "SVC_TUNNEL_PACKET",
             [NTF_TUNNEL_PACKET] = "NTF_TUNNEL_PACKET", [RET_SMS_SEND] = "RET_SMS_SEND",
             [SVC_SMS_SEND] = "SVC_SMS_SEND",
             [RET_ADD_BUDDY] = "RET_ADD_BUDDY", [SVC_ADD_BUDDY] = "SVC_ADD_BUDDY",
             [RET_REMOVE_BUDDY] = "RET_REMOVE_BUDDY", [SVC_REMOVE_BUDDY] = "SVC_REMOVE_BUDDY",
-            [RET_GROUP_BUDDY] = "RET_GROUP_BUDDY", [RET_RENAME_GROUP] = "RET_RENAME_GROUP",
+            [RET_GROUP_BUDDY] = "RET_GROUP_BUDDY", [SVC_GROUP_BUDDY] = "SVC_GROUP_BUDDY",
+            [RET_RENAME_GROUP] = "RET_RENAME_GROUP", [SVC_RENAME_GROUP] = "SVC_RENAME_GROUP",
             [RET_GROUP_GETLIST] = "RET_GROUP_GETLIST", [RET_GROUP_ADD] = "RET_GROUP_ADD",
             [RET_GROUP_DEL] = "RET_GROUP_DEL", [RET_GROUP_CHG] = "RET_GROUP_CHG",
             [RET_SET_NICK] = "RET_SET_NICK", [RET_SET_GUILD] = "RET_SET_GUILD",
-            [RET_SET_EXTUSER] = "RET_SET_EXTUSER", [SVC_SET_NICK] = "SVC_SET_NICK",
-            [SVC_SET_EXTUSER] = "SVC_SET_EXTUSER", [SVC_GROUP_GETLIST] = "SVC_GROUP_GETLIST",
+            [RET_SET_EXTUSER] = "RET_SET_EXTUSER", [RET_SET_EXTLIST] = "RET_SET_EXTLIST",
+            [SVC_SET_NICK] = "SVC_SET_NICK", [SVC_SET_GUILD] = "SVC_SET_GUILD",
+            [SVC_SET_EXTUSER] = "SVC_SET_EXTUSER", [SVC_SET_EXTLIST] = "SVC_SET_EXTLIST",
+            [SVC_GROUP_GETLIST] = "SVC_GROUP_GETLIST", [SVC_GROUP_ADD] = "SVC_GROUP_ADD",
+            [SVC_GROUP_DEL] = "SVC_GROUP_DEL", [SVC_GROUP_CHG] = "SVC_GROUP_CHG",
             [NTF_USER_STATE] = "NTF_USER_STATE", [NTF_NOTICE2] = "NTF_NOTICE2",
         };
 

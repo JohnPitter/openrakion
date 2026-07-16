@@ -6,10 +6,23 @@ namespace RakionServer.Admin;
 /// Acesso ao DB `rakion` para o painel admin (operações CRUD distintas do runtime do jogo).
 /// Conta = `user` (login) + `usergameinfo` (perfil) + `cash` (saldo cash, id = nome da conta).
 /// </summary>
-public sealed class AdminDb(IConfiguration cfg)
+public sealed partial class AdminDb
 {
-    private readonly string _conn = cfg.GetConnectionString("Rakion")
-        ?? "Server=127.0.0.1;Port=3306;Database=rakion;Uid=root;Pwd=123456;";
+    private readonly string _conn;
+    private readonly AdminIdentity _identity;
+
+    public AdminDb(IConfiguration cfg) : this(
+        cfg.GetConnectionString("Rakion") ?? throw new InvalidOperationException(
+            "ConnectionStrings__Rakion é obrigatória para iniciar o Admin."),
+        AdminIdentity.FromConfiguration(cfg)) { }
+
+    public AdminDb(string connectionString, AdminIdentity? identity = null)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+            throw new ArgumentException("Connection string obrigatória.");
+        _conn = connectionString;
+        _identity = identity ?? new AdminIdentity("test", AdminRole.Owner);
+    }
 
     private async Task<MySqlConnection> OpenAsync()
     {
@@ -44,9 +57,12 @@ public sealed class AdminDb(IConfiguration cfg)
 
     public async Task<bool> CreateAccountAsync(string id, string password, int country = 1)
     {
+        _identity.Demand(AdminPermission.AccountCreate);
         await using var c = await OpenAsync();
+        await using var transaction = await c.BeginTransactionAsync();
         await using (var u = new MySqlCommand("INSERT INTO user (id, password, Authority, country) VALUES (@id,@pw,0,@co)", c))
         {
+            u.Transaction = transaction;
             u.Parameters.AddWithValue("@id", id);
             u.Parameters.AddWithValue("@pw", password);
             u.Parameters.AddWithValue("@co", country);
@@ -55,38 +71,46 @@ public sealed class AdminDb(IConfiguration cfg)
         await using (var g = new MySqlCommand(
             "INSERT INTO usergameinfo (name, createtime, lastconnect, country, tutorial) VALUES (@id, NOW(), NOW(), @co, 1)", c))
         {
+            g.Transaction = transaction;
             g.Parameters.AddWithValue("@id", id);
             g.Parameters.AddWithValue("@co", country);
             await g.ExecuteNonQueryAsync();
         }
+        await AppendAuditAsync(c, transaction, "account.create", id, "Criação de conta",
+            $"country={country}", new string('0', 64), Hash(id + "|0|" + country));
+        await transaction.CommitAsync();
         return true;
     }
 
-    public async Task SetPasswordAsync(string id, string password)
-        => await NonQuery("UPDATE user SET password=@pw WHERE id=@id", ("@pw", password), ("@id", id));
+    public async Task SetPasswordAsync(string id, string password, string reason)
+        => await ExecuteAuditedAsync(AdminPermission.AccountSecurityWrite,
+            "account.password", id, reason, "password=replaced",
+            "SELECT id,Authority,country FROM user WHERE id=@id FOR UPDATE",
+            "UPDATE user SET password=@pw WHERE id=@id", ("@pw", password), ("@id", id));
 
-    public async Task SetBanAsync(string id, bool ban)
-        => await NonQuery("UPDATE usergameinfo SET ban=@b WHERE name=@id", ("@b", ban ? 1 : 0), ("@id", id));
+    public async Task SetBanAsync(string id, bool ban, string reason)
+        => await ExecuteAuditedAsync(AdminPermission.AccountSecurityWrite,
+            ban ? "account.ban" : "account.unban", id, reason, $"ban={(ban ? 1 : 0)}",
+            "SELECT name,ban FROM usergameinfo WHERE name=@id FOR UPDATE",
+            "UPDATE usergameinfo SET ban=@b WHERE name=@id", ("@b", ban ? 1 : 0), ("@id", id));
 
     // ---- gold / cash ----
 
-    public async Task SetGoldAsync(int giId, long value)
-        => await NonQuery("UPDATE usergameinfo SET gold=@v WHERE id=@id", ("@v", value), ("@id", giId));
-
-    public async Task SetCashAsync(string accountName, long value)
-        => await NonQuery("INSERT INTO cash (id, cash) VALUES (@id,@v) ON DUPLICATE KEY UPDATE cash=@v",
-            ("@id", accountName), ("@v", value));
-
     // ---- Power User ----
 
-    public async Task SetPowerUserAsync(int giId, int bonusPoints, int days)
-        => await NonQuery(
+    public async Task SetPowerUserAsync(int giId, int bonusPoints, int days, string reason)
+        => await ExecuteAuditedAsync(AdminPermission.EconomyWrite,
+            "poweruser.grant", giId.ToString(), reason, $"bonus={bonusPoints};days={days}",
+            "SELECT id,powerlevelpoint,powertime,powertimedate FROM usergameinfo WHERE id=@id FOR UPDATE",
             "UPDATE usergameinfo SET powerlevelpoint=@b, powertime=GREATEST(powertime,1), " +
             "powertimedate=DATE_ADD(NOW(), INTERVAL @d DAY) WHERE id=@id",
             ("@b", bonusPoints), ("@d", days), ("@id", giId));
 
-    public async Task ClearPowerUserAsync(int giId)
-        => await NonQuery("UPDATE usergameinfo SET powerlevelpoint=0, powertime=0, powertimedate=NOW() WHERE id=@id",
+    public async Task ClearPowerUserAsync(int giId, string reason)
+        => await ExecuteAuditedAsync(AdminPermission.EconomyWrite,
+            "poweruser.clear", giId.ToString(), reason, "poweruser=cleared",
+            "SELECT id,powerlevelpoint,powertime,powertimedate FROM usergameinfo WHERE id=@id FOR UPDATE",
+            "UPDATE usergameinfo SET powerlevelpoint=0, powertime=0, powertimedate=NOW() WHERE id=@id",
             ("@id", giId));
 
     // ---- personagens / itens ----
@@ -145,12 +169,18 @@ public sealed class AdminDb(IConfiguration cfg)
         return list;
     }
 
-    public async Task AddItemBoxAsync(int giId, int itemId)
-        => await NonQuery("INSERT INTO itembox (userid, itemid, limittime, qslot) VALUES (@u,@i,0,0)",
+    public async Task AddItemBoxAsync(int giId, int itemId, string reason)
+        => await ExecuteAuditedAsync(AdminPermission.InventoryWrite,
+            "inventory.add", giId.ToString(), reason, $"item={itemId}",
+            "SELECT id,itemid,qslot FROM itembox WHERE userid=@u ORDER BY id FOR UPDATE",
+            "INSERT INTO itembox (userid, itemid, limittime, qslot) VALUES (@u,@i,0,0)",
             ("@u", giId), ("@i", itemId));
 
-    public async Task DeleteBoxItemAsync(int itemboxId)
-        => await NonQuery("DELETE FROM itembox WHERE id=@id", ("@id", itemboxId));
+    public async Task DeleteBoxItemAsync(int itemboxId, string reason)
+        => await ExecuteAuditedAsync(AdminPermission.InventoryWrite,
+            "inventory.remove", itemboxId.ToString(), reason, "itembox=removed",
+            "SELECT id,userid,itemid,qslot FROM itembox WHERE id=@id FOR UPDATE",
+            "DELETE FROM itembox WHERE id=@id", ("@id", itemboxId));
 
     // iteminfo NÃO tem nome (os nomes vivem no items.dat do cliente). Busca por nome (ids casados pelo
     // ItemNames, passados em nameIds), por id (substring) e/ou type. nameIds vêm do nosso mapa (ints),
@@ -185,25 +215,29 @@ public sealed class AdminDb(IConfiguration cfg)
         var f = new PuConfigForm();
         await using var c = await OpenAsync();
         await using var cmd = new MySqlCommand(
-            "SELECT price,bonus_points,duration_days,exp_mult,gold_mult,promo_active," +
+            "SELECT price,renewal_price,bonus_points,duration_days,exp_mult,gold_mult,promo_active," +
             "promo_exp_mult,promo_gold_mult,promo_start,promo_end FROM pu_config WHERE id=1", c);
         await using var r = await cmd.ExecuteReaderAsync();
         if (await r.ReadAsync())
         {
-            f.Price = r.GetInt32(0); f.BonusPoints = r.GetInt32(1); f.DurationDays = r.GetInt32(2);
-            f.ExpMult = r.GetDecimal(3); f.GoldMult = r.GetDecimal(4); f.PromoActive = r.GetInt32(5) != 0;
-            f.PromoExpMult = r.GetDecimal(6); f.PromoGoldMult = r.GetDecimal(7);
-            f.PromoStart = r.IsDBNull(8) ? null : r.GetDateTime(8);
-            f.PromoEnd = r.IsDBNull(9) ? null : r.GetDateTime(9);
+            f.Price = r.GetInt32(0); f.RenewalPrice = r.GetInt32(1);
+            f.BonusPoints = r.GetInt32(2); f.DurationDays = r.GetInt32(3);
+            f.ExpMult = r.GetDecimal(4); f.GoldMult = r.GetDecimal(5); f.PromoActive = r.GetInt32(6) != 0;
+            f.PromoExpMult = r.GetDecimal(7); f.PromoGoldMult = r.GetDecimal(8);
+            f.PromoStart = r.IsDBNull(9) ? null : r.GetDateTime(9);
+            f.PromoEnd = r.IsDBNull(10) ? null : r.GetDateTime(10);
         }
         return f;
     }
 
     public async Task SavePuConfigAsync(PuConfigForm f)
-        => await NonQuery(
-            "UPDATE pu_config SET price=@p, bonus_points=@b, duration_days=@d, exp_mult=@e, gold_mult=@g, " +
+        => await ExecuteAuditedAsync(AdminPermission.ConfigurationWrite,
+            "config.poweruser", "pu_config:1", "Atualização da configuração Power User",
+            "configuration=poweruser",
+            "SELECT * FROM pu_config WHERE id=1 FOR UPDATE",
+            "UPDATE pu_config SET price=@p, renewal_price=@r, bonus_points=@b, duration_days=@d, exp_mult=@e, gold_mult=@g, " +
             "promo_active=@pa, promo_exp_mult=@pe, promo_gold_mult=@pg, promo_start=@ps, promo_end=@pen WHERE id=1",
-            ("@p", f.Price), ("@b", f.BonusPoints), ("@d", f.DurationDays), ("@e", f.ExpMult), ("@g", f.GoldMult),
+            ("@p", f.Price), ("@r", f.RenewalPrice), ("@b", f.BonusPoints), ("@d", f.DurationDays), ("@e", f.ExpMult), ("@g", f.GoldMult),
             ("@pa", f.PromoActive ? 1 : 0), ("@pe", f.PromoExpMult), ("@pg", f.PromoGoldMult),
             ("@ps", (object?)f.PromoStart ?? DBNull.Value), ("@pen", (object?)f.PromoEnd ?? DBNull.Value));
 
@@ -242,15 +276,24 @@ public sealed class AdminDb(IConfiguration cfg)
 
     public async Task SaveEnchantConfigAsync(EnchantConfigForm f)
     {
-        await NonQuery(
-            "UPDATE enchant_config SET jewel_floor=@jf, jewel_bonus=@jb, event_mult=@ev, pu_mult=@pu, " +
-            "floor_min=@fm, ceil_max=@cm, downgrade_lo=@dl, downgrade_hi=@dh WHERE id=1",
-            ("@jf", f.JewelFloor), ("@jb", f.JewelBonus), ("@ev", f.EventMult), ("@pu", f.PuMult),
-            ("@fm", f.FloorMin), ("@cm", f.CeilMax), ("@dl", f.DowngradeLo), ("@dh", f.DowngradeHi));
-        foreach (var cat in f.Catalyzers)
-            await NonQuery(
-                "UPDATE enchant_catalyzer SET base_success=@b, decay=@d, level_cap=@lc WHERE catalyzer_id=@id",
-                ("@b", cat.BaseSuccess), ("@d", cat.Decay), ("@lc", cat.LevelCap), ("@id", cat.CatalyzerId));
+        await ExecuteAuditedBatchAsync(AdminPermission.ConfigurationWrite,
+            "config.enchant", "enchant", "Atualização da configuração de refino",
+            $"catalyzers={f.Catalyzers.Count}",
+            "SELECT 'config',id,jewel_floor,jewel_bonus,event_mult,pu_mult,floor_min,ceil_max," +
+            "downgrade_lo,downgrade_hi FROM enchant_config UNION ALL SELECT 'catalyzer'," +
+            "catalyzer_id,base_success,decay,level_cap,0,0,0,0,0 FROM enchant_catalyzer ORDER BY 1,2",
+            async (connection, transaction) =>
+            {
+                await ExecuteAsync(connection, transaction,
+                    "UPDATE enchant_config SET jewel_floor=@jf, jewel_bonus=@jb, event_mult=@ev, pu_mult=@pu, " +
+                    "floor_min=@fm, ceil_max=@cm, downgrade_lo=@dl, downgrade_hi=@dh WHERE id=1",
+                    [("@jf", f.JewelFloor), ("@jb", f.JewelBonus), ("@ev", f.EventMult), ("@pu", f.PuMult),
+                     ("@fm", f.FloorMin), ("@cm", f.CeilMax), ("@dl", f.DowngradeLo), ("@dh", f.DowngradeHi)]);
+                foreach (var cat in f.Catalyzers)
+                    await ExecuteAsync(connection, transaction,
+                        "UPDATE enchant_catalyzer SET base_success=@b, decay=@d, level_cap=@lc WHERE catalyzer_id=@id",
+                        [("@b", cat.BaseSuccess), ("@d", cat.Decay), ("@lc", cat.LevelCap), ("@id", cat.CatalyzerId)]);
+            });
     }
 
     // ---- auto-update (launcher fetch) ----
@@ -266,13 +309,18 @@ public sealed class AdminDb(IConfiguration cfg)
     }
 
     public async Task SaveFetchAppAsync(int appId, string fileUrl, string noticeUrl, int verLimit)
-        => await NonQuery(
+        => await ExecuteAuditedAsync(AdminPermission.UpdateWrite,
+            "update.app.save", appId.ToString(), "Atualização do manifesto do launcher",
+            $"version={verLimit}", "SELECT * FROM fetchapp WHERE AppId=@a FOR UPDATE",
             "INSERT INTO fetchapp (AppId,FileUrl,NoticeUrl,VerLimit) VALUES (@a,@f,@nu,@v) " +
             "ON DUPLICATE KEY UPDATE FileUrl=@f, NoticeUrl=@nu, VerLimit=@v",
             ("@a", appId), ("@f", fileUrl), ("@nu", noticeUrl), ("@v", verLimit));
 
     public async Task DeleteFetchAppAsync(int appId)
-        => await NonQuery("DELETE FROM fetchapp WHERE AppId=@a", ("@a", appId));
+        => await ExecuteAuditedAsync(AdminPermission.UpdateWrite,
+            "update.app.delete", appId.ToString(), "Remoção do manifesto do launcher",
+            "manifest=removed", "SELECT * FROM fetchapp WHERE AppId=@a FOR UPDATE",
+            "DELETE FROM fetchapp WHERE AppId=@a", ("@a", appId));
 
     public async Task<List<FetchFileRow>> ListFetchFilesAsync(int appId)
     {
@@ -287,21 +335,21 @@ public sealed class AdminDb(IConfiguration cfg)
     }
 
     public async Task AddFetchFileAsync(int appId, string command, string fileDir, string fileIns, int fileVer, long fileSize)
-        => await NonQuery(
+        => await ExecuteAuditedAsync(AdminPermission.UpdateWrite,
+            "update.file.add", $"{appId}:{fileIns}:{fileVer}", "Inclusão de arquivo no manifesto",
+            $"command={command};size={fileSize}",
+            "SELECT * FROM fetchfile WHERE AppId=@a AND FileIns=@ins AND FileVer=@v FOR UPDATE",
             "INSERT INTO fetchfile (AppId,Command,FileDir,FileIns,FileVer,FileSize) VALUES (@a,@cmd,@dir,@ins,@v,@sz)",
             ("@a", appId), ("@cmd", command), ("@dir", fileDir), ("@ins", fileIns), ("@v", fileVer), ("@sz", fileSize));
 
     public async Task DeleteFetchFileAsync(int appId, string fileIns, int fileVer)
-        => await NonQuery("DELETE FROM fetchfile WHERE AppId=@a AND FileIns=@ins AND FileVer=@v",
+        => await ExecuteAuditedAsync(AdminPermission.UpdateWrite,
+            "update.file.delete", $"{appId}:{fileIns}:{fileVer}", "Remoção de arquivo do manifesto",
+            "manifest-file=removed",
+            "SELECT * FROM fetchfile WHERE AppId=@a AND FileIns=@ins AND FileVer=@v FOR UPDATE",
+            "DELETE FROM fetchfile WHERE AppId=@a AND FileIns=@ins AND FileVer=@v",
             ("@a", appId), ("@ins", fileIns), ("@v", fileVer));
 
     // ---- helper ----
 
-    private async Task NonQuery(string sql, params (string, object)[] ps)
-    {
-        await using var c = await OpenAsync();
-        await using var cmd = new MySqlCommand(sql, c);
-        foreach (var (k, v) in ps) cmd.Parameters.AddWithValue(k, v);
-        await cmd.ExecuteNonQueryAsync();
-    }
 }

@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @rendermode InteractiveServer
 @inject AdminDb Db
+@inject AdminIdentity Identity
 @inject IWebHostEnvironment Env
 @inject ItemNames Names
 
@@ -14,16 +15,36 @@
 }
 else
 {
+    <div class="card">
+        <label>Motivo/ticket para alterações desta conta</label>
+        <input @bind="_actionReason" placeholder="obrigatório para senha, ban, PU e inventário" style="width:100%;" />
+    </div>
     @if (_msg is not null) { <div class="toast @_msgKind">@_msg</div> }
 
     <div class="card">
         <h2>Saldos</h2>
         <div class="row">
             <div><label>Gold</label><input type="number" @bind="_gold" /></div>
-            <button @onclick="SaveGold">Salvar gold</button>
+            <button @onclick="() => SaveCurrency(CurrencyKind.Gold)">Salvar gold</button>
             <div style="margin-left:20px;"><label>Cash</label><input type="number" @bind="_cash" /></div>
-            <button @onclick="SaveCash">Salvar cash</button>
+            <button @onclick="() => SaveCurrency(CurrencyKind.Cash)">Salvar cash</button>
+            <div style="margin-left:20px;"><label>Motivo obrigatório</label>
+                <input @bind="_currencyReason" maxlength="200" /></div>
         </div>
+        @if (_currencyAdjustments.Count > 0)
+        {
+            <table style="margin-top:16px;">
+                <thead><tr><th>Quando</th><th>Moeda</th><th>Alteração</th><th>Saldo</th><th>Motivo</th><th>Operador</th></tr></thead>
+                <tbody>
+                    @foreach (var entry in _currencyAdjustments)
+                    {
+                        <tr><td>@entry.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td><td>@entry.Currency</td>
+                            <td>@entry.Delta.ToString("+#;-#;0")</td><td>@entry.BalanceBefore → @entry.BalanceAfter</td>
+                            <td>@entry.Reason</td><td>@entry.OperatorId</td></tr>
+                    }
+                </tbody>
+            </table>
+        }
     </div>
 
     <div class="card">
@@ -151,9 +172,10 @@ else
     private List<EquipSlot> _equip = new();
     private List<BoxItemRow> _box = new();
     private List<ItemDef> _itemHits = new();
+    private IReadOnlyList<CurrencyAdjustmentRow> _currencyAdjustments = [];
     private long _gold, _cash;
     private int _puBonus = 51, _puDays = 30;
-    private string _pw = "", _itemTerm = "", _typeFilter = "";
+    private string _pw = "", _itemTerm = "", _typeFilter = "", _currencyReason = "", _actionReason = "";
     private int _addId;
     private string? _msg, _msgKind;
     private HashSet<int> _icons = new();   // ids com ícone capturado em wwwroot/icons/<id>.png
@@ -177,6 +199,7 @@ else
     {
         _acc = await Db.GetAccountAsync(Id);
         if (_acc is null) return;
+        _currencyAdjustments = await Db.ListCurrencyAdjustmentsAsync(Id);
         _gold = _acc.Gold; _cash = _acc.Cash;
         if (_acc.GiId > 0)
         {
@@ -190,12 +213,26 @@ else
     private void Ok(string m) { _msg = m; _msgKind = "ok"; }
     private void Err(string m) { _msg = m; _msgKind = "err"; }
 
-    private async Task SaveGold() { if (_acc!.GiId <= 0) { Err("conta sem perfil de jogo"); return; } await Db.SetGoldAsync(_acc.GiId, _gold); Ok("Gold salvo."); await Reload(); }
-    private async Task SaveCash() { await Db.SetCashAsync(Id, _cash); Ok("Cash salvo."); await Reload(); }
-    private async Task GrantPu() { if (_acc!.GiId <= 0) { Err("conta sem perfil"); return; } await Db.SetPowerUserAsync(_acc.GiId, _puBonus, _puDays); Ok($"PU concedido (+{_puDays}d)."); await Reload(); }
-    private async Task ClearPu() { if (_acc!.GiId > 0) await Db.ClearPowerUserAsync(_acc.GiId); Ok("PU removido."); await Reload(); }
-    private async Task SavePw() { if (string.IsNullOrWhiteSpace(_pw)) { Err("senha vazia"); return; } await Db.SetPasswordAsync(Id, _pw); _pw = ""; Ok("Senha trocada."); }
-    private async Task SetBan(bool b) { await Db.SetBanAsync(Id, b); Ok(b ? "Conta banida." : "Conta desbanida."); await Reload(); }
+    private async Task SaveCurrency(CurrencyKind currency)
+    {
+        try
+        {
+            long target = currency == CurrencyKind.Gold ? _gold : _cash;
+            CurrencyAdjustmentResult result = await Db.AdjustCurrencyAsync(
+                new CurrencyAdjustmentRequest(Id, _acc!.GiId, currency,
+                    target, _currencyReason, Identity.OperatorId));
+            _currencyReason = "";
+            Ok(result.Changed
+                ? $"{currency} ajustado em {result.Delta:+#;-#;0}."
+                : $"{currency} já possuía esse saldo.");
+            await Reload();
+        }
+        catch (Exception ex) { Err(ex.Message); }
+    }
+    private async Task GrantPu() { if (_acc!.GiId <= 0) { Err("conta sem perfil"); return; } await RunAudited(() => Db.SetPowerUserAsync(_acc.GiId, _puBonus, _puDays, _actionReason), $"PU concedido (+{_puDays}d)."); }
+    private async Task ClearPu() { if (_acc!.GiId > 0) await RunAudited(() => Db.ClearPowerUserAsync(_acc.GiId, _actionReason), "PU removido."); }
+    private async Task SavePw() { if (string.IsNullOrWhiteSpace(_pw)) { Err("senha vazia"); return; } await RunAudited(() => Db.SetPasswordAsync(Id, _pw, _actionReason), "Senha trocada."); _pw = ""; }
+    private async Task SetBan(bool b) => await RunAudited(() => Db.SetBanAsync(Id, b, _actionReason), b ? "Conta banida." : "Conta desbanida.");
     private async Task SearchItems()
     {
         int? type = int.TryParse(_typeFilter, out var t) ? t : null;
@@ -204,6 +241,13 @@ else
     }
     private async Task OnItemKey(KeyboardEventArgs e) { if (e.Key == "Enter") await SearchItems(); }
     private async Task AddById() { if (_addId > 0) await AddItem(_addId); }
-    private async Task AddItem(int itemId) { if (_acc!.GiId <= 0) { Err("conta sem perfil"); return; } await Db.AddItemBoxAsync(_acc.GiId, itemId); Ok($"Item {itemId} adicionado."); await Reload(); }
-    private async Task RemoveItem(int boxId) { await Db.DeleteBoxItemAsync(boxId); Ok("Item removido."); await Reload(); }
+    private async Task AddItem(int itemId) { if (_acc!.GiId <= 0) { Err("conta sem perfil"); return; } await RunAudited(() => Db.AddItemBoxAsync(_acc.GiId, itemId, _actionReason), $"Item {itemId} adicionado."); }
+    private async Task RemoveItem(int boxId) => await RunAudited(() => Db.DeleteBoxItemAsync(boxId, _actionReason), "Item removido.");
+
+    private async Task RunAudited(Func<Task> action, string success)
+    {
+        if (string.IsNullOrWhiteSpace(_actionReason)) { Err("Informe o motivo/ticket da alteração."); return; }
+        try { await action(); Ok(success); await Reload(); }
+        catch (Exception ex) { Err(ex.Message); }
+    }
 }

@@ -8,8 +8,8 @@ namespace RakionServer.World.Network
     /// Grupo combate-B: corpos reconstruidos FIELMENTE dos FUN_xxxx do worldserv.exe
     /// (handlers.out.txt / fieldhelpers.out.txt / roomflow.out.txt / combat_callees.out.txt).
     ///
-    /// Opcodes: 0x3b (FieldCreate sala), 0x3d (troca arma A<->B), 0x3e (re-spawn/assento),
-    /// 0x3f (start-vote/kick), 0x40 (destroy/leave-object), 0x41 (config-in-field),
+    /// Opcodes: 0x3d (troca arma A<->B), 0x3e (re-spawn/assento), 0x3f (start-vote/kick),
+    /// 0x40 (destroy/leave-object), 0x41 (config-in-field),
     /// 0x42 (ready/equip-lock), 0x4a (charge/postura-shift), 0x4b (MOVE relay exclui sender),
     /// 0x4c (action direcionada), 0x4d (rotacao/facing 2 eixos).
     ///
@@ -23,76 +23,6 @@ namespace RakionServer.World.Network
     /// </summary>
     public static partial class WorldHandlers
     {
-        // ===================== 0x3b  FUN_00423580  FieldCreate(sala) =====================
-        // Gate: InField (user+0x1460) && FieldSecondary (user+0x14a4) && Status==2.
-        // parse: name(<0x29)\0  senha(<9)\0  desc(<0xc9)\0  b1(map<100) b2(mode 1..4)
-        //        b3 b4(u16 mapSlot) b5 b6 b7 b8. Valida mapa habilitado/modo/ranges, acha
-        //        fieldSlot livre, inicializa e ack LOBBY 0x3b [result/playerSlot].
-        internal static void Op_0x3B_Recon(HandlerContext ctx)
-        {
-            var u = ctx.User;
-            // gate (disc 0x52 = sem field; 0x53 = status != 2). Status de sala = 2 (FieldLobby/LoggedIn)
-            if (!(u.InField && u.FieldSecondary)) { u.Disconnect(0x52); return; }
-            if (u.Status != UserStatus.FieldLobby) { u.Disconnect(0x53); return; }
-
-            // parse das 3 strings nul-terminadas
-            string name = ctx.P.CString(0x29);
-            if (name.Length >= 0x29) { u.Disconnect(0x54); return; }
-            string pass = ctx.P.CString(9);
-            if (pass.Length >= 9) { u.Disconnect(0x55); return; }
-            string desc = ctx.P.CString(0xc9);
-            if (desc.Length >= 0xc9) { u.Disconnect(0x56); return; }
-
-            // bytes de configuracao (bVar1=map, bVar2=mode, byte, u16 mapSlot, b3, b4, b5)
-            if (ctx.P.Remaining < 9) { u.Disconnect(0x5b); return; }
-            byte map = ctx.P.Byte();          // bVar1 (uStack_2124)
-            byte mode = ctx.P.Byte();         // bVar2 (uStack_210c)
-            byte timeFlag = ctx.P.Byte();     // param_3[uVar8+2] (compara <0x16 quando mode!=0)
-            ushort mapSlot = ctx.P.UInt16();  // uVar10 (uStack_2128) — valida 0x122..0x4ba
-            byte b3 = ctx.P.Byte();           // bVar3 (uStack_2120) — sub-time/level p/ mode 2
-            byte b4 = ctx.P.Byte();           // bVar4 (local_212c) — minLevel
-            byte b5 = ctx.P.Byte();           // bVar5 (uStack_2114) — maxLevel
-
-            ushort err = 0;
-            // FUN_00423580: se mode==0 -> mapa simples (map<100 && habilitado)
-            if (mode == 0)
-            {
-                if (map >= 100) { u.Disconnect(0x57); return; }
-                // mapa habilitado? (this+0xe8 tabela). Sem a tabela aqui assumimos habilitado.
-                // ack parcial FIELD 0x25 (confirma criacao) + ack LOBBY 0x3b.
-            }
-            else if (mode > 4) { u.Disconnect(0x5b); return; }
-            else if (timeFlag >= 0x16) { u.Disconnect(0xca); return; }
-            else if (mapSlot < 0x122 || mapSlot > 0x4ba) { err = 0xcb; }
-            else if (mode == 2 && (b3 < 0xd || b3 > 0x1e)) { err = 0xcc; }
-            else if (mode == 3 && b3 > 0x13 && b3 < 0x33) { err = 0xcc; }
-            else if (b4 == 0 || b5 > 99) { err = 0x59; }
-            else if (!(u.FieldCashCost >= b4 && u.FieldCashCost <= b5)) { err = 0x5a; }
-
-            if (err != 0) { u.Disconnect(err); return; }
-
-            // acha fieldSlot livre e inicializa (FUN_00405440) — ponte da fundacao
-            var field = ctx.World.EnsureFieldForSession(u);
-            if (field != null)
-            {
-                field.Name = name;
-                field.Mode = mode;
-                field.MapId = map;
-                field.MaxRounds = 1;
-                if (mapSlot >= 0x122 && mapSlot <= 0x4ba) field.MapId = (byte)(mapSlot & 0xff);
-                field.MinLevel = b4;
-                field.MaxLevel = b5;
-                field.MasterSlot = field.FindRec(u)?.Slot ?? -1;
-                Log.Ok("field", "[{0}] criou sala '{1}' (mode={2} map={3})", u.Slot, name, mode, map);
-            }
-
-            // ack LOBBY 0x3b  (FUN_004038e0 ..., len=5): [0x3b 00][result/playerSlot u16... ]
-            byte playerSlot = (byte)(field?.FindRec(u)?.Slot ?? 0);
-            using var w = new PacketWriter();
-            w.WriteWord(0x3b).WriteByte(0).WriteByte(playerSlot);
-            u.SendEncryptedFrame(w.ToArray());
-        }
-
         // ===================== 0x3d  FUN_00423ad0 -> FUN_00407520  troca de arma A<->B ===========
         // Gate: InField && FieldSecondary (disc 0x60) ; Status==3 (disc 0x61).
         // parse: param_3[0]=dir (0 ou 1). FUN_00407520: state@+0x126 do player:
@@ -129,7 +59,7 @@ namespace RakionServer.World.Network
         // FUN_004075a0(field, playerSlot, 0): tenta mover o jogador do bloco fila p/ o de jogo
         //   (10..0x13 <-> 0..9 conforme team/contagem +0x116/+0x117). Falha => FIELD 0x3e [result=2]
         //   so ao proprio (len=3). OK => move o registro (+0x124..+0x134), atualiza host +0x121 e
-        //   broadcast FUN_004061f0 len=5 msgType 0x3e body=[oldSlot][newSlot].
+        //   broadcast FUN_004061f0 len=5 msgType 0x3e body=[result=0][oldSlot][newSlot].
         internal static void Op_0x3E_Recon(HandlerContext ctx)
         {
             var u = ctx.User;
@@ -177,14 +107,23 @@ namespace RakionServer.World.Network
             dst.State = rec.State;
             dst.WeaponState = rec.WeaponState;
             dst.Dead = rec.Dead;
-            dst.Score = rec.Score;
+            dst.RoundScore = rec.RoundScore;
+            dst.CounterA = rec.CounterA;
+            dst.CounterB = rec.CounterB;
+            dst.ResultPoints = rec.ResultPoints;
             dst.Cause = rec.Cause;
-            rec.Session = null; rec.State = 0; rec.WeaponState = 1; rec.Dead = false; rec.Score = 0; rec.Cause = 0;
+            if (dst.Session != null)
+            {
+                dst.Session.FieldSeat = (byte)target;
+                dst.Session.FieldObjectIndex = (ushort)target;
+            }
+            rec.Session = null; rec.State = 0; rec.WeaponState = 1; rec.Dead = false;
+            rec.RoundScore = 0; rec.CounterA = 0; rec.CounterB = 0; rec.ResultPoints = 0; rec.Cause = 0;
 
             if (field.MasterSlot == oldSlot) field.MasterSlot = target;
 
-            byte[] body = { oldSlot, (byte)target };
-            field.BroadcastField(0x3e, body); // FUN_004061f0 len=5 (2 msgType + 3 body? -> [old][new]+1)
+            byte[] body = { 0, oldSlot, (byte)target };
+            field.BroadcastField(0x3e, body);
             Log.Ok("field", "[{0}] re-spawn slot {1} -> {2}", u.Slot, oldSlot, target);
         }
 
@@ -197,7 +136,7 @@ namespace RakionServer.World.Network
             var u = ctx.User;
             if (!(u.InField && u.FieldSecondary)) { u.Disconnect(0x64); return; }
             if (u.Status != UserStatus.InField) { u.Disconnect(0x65); return; }
-            if (u.SubStatus != '4') { u.Disconnect(0x66); return; }
+            if (u.SubStatus != UserSubStatus.Gm) { u.Disconnect(0x66); return; }
 
             var field = ReconField(ctx);
             if (field == null) return;
@@ -231,26 +170,14 @@ namespace RakionServer.World.Network
             var rec = ReconRec(ctx, out var field);
             if (rec == null || field == null) return;
 
-            // checagem de host (FUN_00423cc0): se nao-host (subStatus != '4' e != 0x01)
-            // exige que o sender seja o host do field (seu seat == field.MasterSlot).
-            if (u.SubStatus != '4' && u.SubStatus != 0x01)
-            {
-                if (rec.Slot != field.MasterSlot) { u.Disconnect(0x69); return; }
-            }
-
             byte targetSlot = ctx.P.Byte();
-            var t = field.RecAt(targetSlot);
-            if (t == null) return;
-
-            // FUN_004097c0: state != 0 e != 5 e nao host-locked
-            if (t.State != 0 && t.State != 5)
-            {
-                var victim = t.Session;
-                // FUN_004091e0(field, targetSlot) = remove o player-record do campo
-                t.State = 0; t.Dead = false; t.Score = 0; t.Session = null;
-                // FUN_0041b8b0(victim) = notificacao de cleanup ao user-alvo (sem payload extra)
-                Log.Ok("field", "[{0}] destroy slot {1} (victim {2})", u.Slot, targetSlot, victim?.Slot ?? 0xffff);
-            }
+            bool removed = ctx.World.TryRemoveFieldMember(
+                u, targetSlot, out var victim, out bool unauthorized);
+            if (unauthorized) { u.Disconnect(0x69); return; }
+            if (!removed || victim == null) return;
+            victim.SendRoomListState();
+            Log.Ok("field", "[{0}] removeu seat {1}; vítima {2} voltou ao lobby",
+                u.Slot, targetSlot, victim.Slot);
         }
 
         // ===================== 0x41  FUN_00423dd0 -> FUN_004077c0  config-in-field (host) =========
@@ -359,7 +286,7 @@ namespace RakionServer.World.Network
         // Gate: InField && FieldSecondary (disc 0x83) ; Status==3 (disc 0x84) ;
         //   playerSlot==field+0x121 host (disc 0x85). parse param_3[0]=dir (2 ou 3).
         // FUN_00405a90(field, dir): requer field+8==2 && field+0x119==0. dir==2 -> +0x2c0++ (Wins0),
-        //   +0x2bf=1 (WinnerSide), incrementa kills time0 dos playing. dir==3 -> +0x2c1++ (Wins1),
+        //   +0x2bf=1 (lado perdedor no fio), incrementa kills time0 dos playing. dir==3 -> +0x2c1++ (Wins1),
         //   +0x2bf=0, kills time1. seta +0x2bd=dir, +0x2b4=2 (RoundEnd), +0x2b8=now+15000.
         //   Broadcast FUN_0041b8a0 a cada state==4 len=6 msgType 0x4a body=[cause/2bd][2bf][2c0][2c1].
         internal static void Op_0x4A_Recon(HandlerContext ctx)
@@ -380,22 +307,22 @@ namespace RakionServer.World.Network
             if (dir == 2)
             {
                 field.Wins0++;
-                field.WinnerSide = 1;
-                foreach (var r in field.Slots) if (r.Playing && r.Team == 0) r.Score++;
+                field.LosingSideWire = 1;
+                foreach (var r in field.Slots) if (r.Playing && r.Team == 0) r.CounterA++;
             }
             else if (dir == 3)
             {
                 field.Wins1++;
-                field.WinnerSide = 0;
-                foreach (var r in field.Slots) if (r.Playing && r.Team == 1) r.Score++;
+                field.LosingSideWire = 0;
+                foreach (var r in field.Slots) if (r.Playing && r.Team == 1) r.CounterB++;
             }
             else return;
 
-            field.LastRoundWinner = dir;   // +0x2bd
+            field.RoundEndReason = dir;   // +0x2bd
             field.Phase = MatchPhase.RoundEnd; // +0x2b4 = 2
             field.DeadlineMs = Environment.TickCount64 + 15000;
 
-            // corpo [lastWinner/2bd][winnerSide/2bf][wins0/2c0][wins1/2c1] — golden source em Field.Build0x4a()
+            // corpo [reason/2bd][losingSide/2bf][wins0/2c0][wins1/2c1] — golden source em Field.Build0x4a()
             field.BroadcastFieldPlaying(0x4a, field.Build0x4a());
             Log.Ok("field", "[{0}] charge dir={1} (w0={2} w1={3})", u.Slot, dir, field.Wins0, field.Wins1);
         }
@@ -480,36 +407,14 @@ namespace RakionServer.World.Network
             var rec = ReconRec(ctx, out var field);
             if (rec == null || field == null) return;
 
-            // FUN_00405d70: field+8==2 && field+0x2b4==1
-            if (field.State != 2 || field.Phase != MatchPhase.Playing) return;
-
-            // +0x2c4/+0x2c6 sao do FIELD-record (alvo/objetivo do round); guardados na sessao do host.
-            u.FieldPairA = x; // field+0x2c4
-            u.FieldPairB = y; // field+0x2c6
-            if (x == 0)
+            lock (field.SyncRoot)
             {
-                field.WinnerSide = 0;       // +0x2bf
-                field.Wins1++;              // +0x2c1
-                foreach (var r in field.Slots) if (r.Playing && r.Team == 1) r.Score++;
+                if (field.State != 2 || field.Phase != MatchPhase.Playing) return;
+                if (!field.ApplyObjectivePair(x, y)) return;
+                field.BroadcastFieldPlaying(0x4a, field.Build0x4a());
+                Log.Ok("field", "[{0}] objetivo x={1} y={2} (w0={3} w1={4})",
+                    u.Slot, x, y, field.Wins0, field.Wins1);
             }
-            else if (y == 0)
-            {
-                field.Wins0++;              // +0x2c0
-                field.WinnerSide = 1;       // +0x2bf
-                foreach (var r in field.Slots) if (r.Playing && r.Team == 0) r.Score++;
-            }
-            else
-            {
-                return; // x!=0 && y!=0 -> LAB_00405ed6 (nada)
-            }
-
-            field.LastRoundWinner = 2;          // +0x2bd = 2 (cause)
-            field.Phase = MatchPhase.RoundEnd;  // +0x2b4 = 2
-            field.DeadlineMs = Environment.TickCount64 + 15000;
-
-            byte[] body = { 2, field.WinnerSide, field.Wins0, field.Wins1 };
-            field.BroadcastFieldPlaying(0x4a, body);
-            Log.Ok("field", "[{0}] facing x={1} y={2} (w0={3} w1={4})", u.Slot, x, y, field.Wins0, field.Wins1);
         }
     }
 }

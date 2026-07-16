@@ -1,5 +1,4 @@
 using System;
-using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -12,33 +11,35 @@ namespace RakionServer.World.Network
     /// Camada UDP de gameplay do world (portas [UDP] Port1/Port2). Reconstruida do
     /// worldserv.exe: o recv (FUN_004040d0) faz recvfrom de ate 0x4b0 (1200) bytes e
     /// enfileira (FUN_0042e9c0); o send (FUN_00404010) faz sendto ao endpoint do peer.
-    /// O gameplay em tempo real (movimento/combate) e RELAYADO: um pacote recebido de
-    /// um jogador e reenviado aos demais membros do mesmo field, nos endpoints UDP deles.
+    /// O original usa esta porta para handshake/controle e deixa movimento/combate no
+    /// canal P2P direto. O relay por field é uma extensão de compatibilidade configurável.
     ///
-    /// O endpoint UDP de cada jogador e aprendido do primeiro pacote (a sessao e casada
-    /// pelo IP de origem). O formato/opcode interno do pacote (parse no consumidor da
-    /// fila) e a proxima camada de RE; aqui o relay preserva o pacote intacto, que e o
-    /// comportamento essencial do servidor (repassar o estado entre os peers do field).
+    /// O endpoint é autenticado pelo slot, IP TCP e chave de sessão enviada no 0x0c.
+    /// Depois do handshake, apenas o endpoint exato pode enviar input e ações ao field.
     /// </summary>
     public sealed class UdpGameplay
     {
         public const int MaxPacket = 0x4b0; // 1200, igual ao recvfrom do binario
-        private const byte ClientInputOp0 = 0x00;
-        private const byte ClientInputOp1 = 0x40;
         private const byte GameplayFeedbackOp0 = 0x15;
         private const byte GameplayFeedbackOp1 = 0x83;
         private const byte DefaultGameplayState = 0x0a;
 
         private readonly WorldServer _world;
         private readonly int _port;
+        private readonly bool _relayCompatibilityEnabled;
+        private readonly UdpRelayLimiterRegistry _relayLimits;
         private Socket? _sock;
         private CancellationTokenSource? _cts;
         private readonly byte[] _rx = new byte[2048];
 
-        public UdpGameplay(WorldServer world, int port)
+        public UdpGameplay(
+            WorldServer world, int port, bool relayCompatibilityEnabled,
+            int relayPacketsPerSecond, int relayBurst)
         {
             _world = world;
             _port = port;
+            _relayCompatibilityEnabled = relayCompatibilityEnabled;
+            _relayLimits = new UdpRelayLimiterRegistry(relayPacketsPerSecond, relayBurst);
         }
 
         public void Start()
@@ -47,7 +48,8 @@ namespace RakionServer.World.Network
             _sock = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
             _sock.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
             _sock.Bind(new IPEndPoint(IPAddress.Any, _port));
-            Log.Ok("udp", "gameplay UDP ouvindo na porta {0}", _port);
+            Log.Ok("udp", "gameplay UDP ouvindo na porta {0}; relay compatível={1}",
+                _port, _relayCompatibilityEnabled);
             _ = Task.Run(() => RecvLoopAsync(_cts.Token));
         }
 
@@ -98,40 +100,27 @@ namespace RakionServer.World.Network
             catch (Exception ex) { Log.Debug("udp", "tick {0}: {1}", to, ex.Message); }
         }
 
-        /// <summary>Resolve a sessao remetente de um pacote UDP (por endpoint exato, senao por IP).</summary>
-        private ClientSession? ResolveSender(IPEndPoint from)
-        {
-            foreach (var s in _world.Sessions)
-                if (s.UdpEndpoint != null && s.UdpEndpoint.Equals(from)) return s;
-            return _world.GetSessionByIp(from.Address.ToString());
-        }
+        private ClientSession? ResolveSender(IPEndPoint from) => _world.GetSessionByUdpEndpoint(from);
 
         private void Process(IPEndPoint from, byte[] pkt)
         {
-            Log.Debug("udp", "RX {0}B de {1}: {2}", pkt.Length, from, Convert.ToHexString(pkt));
+            Log.Debug("udp", "RX {0}B de {1}", pkt.Length, from);
 
-            // GAMEPLAY: input do cliente (marker 0x4000, 11B: [0040][cc][00000000][val u32]).
-            // ECHO IMEDIATO 1:1 (fiel a captura original): CADA 0040 do cliente -> UM tick 1583 com o
-            // MESMO val (pkt[7]), respondido NA HORA. O timer global de 150ms desacoplava o echo do
-            // input -> em combos/cargas/troca-de-arma (vals mudando rapido) perdia vals intermediarios
-            // e a acao nao COMPLETAVA (combo nao encadeia, carga "comeca e termina rapido", troca de
-            // arma so 1x). Movimento ja funcionava; este 1:1 destrava a sequencia das acoes.
-            if (pkt.Length >= 2 && pkt[0] == ClientInputOp0 && pkt[1] == ClientInputOp1)
+            byte[]? echo = _world.AcceptUdpPort2Handshake(from, pkt);
+            if (echo != null)
             {
-                // DESCOBERTA (frida, world real): o combate solo PvE e' CLIENT-SIDE; o world real NAO ecoa
-                // 1583 no stage — so CONSUMIMOS o input. Nas salas BATTLE/PvP (Mode != 0) o relogio 1583 e'
-                // DIRIGIDO PELO TIMER do motor (WorldServer, ~150ms, GameSeq INCREMENTANDO — seq fixo congela
-                // o personagem). NAO ecoar 1:1 aqui: eco devolve seq fixo (=val) e vira tempestade de 2ms.
-                if (pkt.Length >= 8)
-                {
-                    var gs = _world.GetSessionByIp(from.Address.ToString());
-                    if (gs != null) gs.LastInput = pkt[7];
-                }
+                try { _sock!.SendTo(echo, from); }
+                catch (Exception ex) { Log.Debug("udp", "echo {0}: {1}", from, ex.Message); }
                 return;
             }
-            // FEEDBACK 1583 do cliente (8B): o client ecoa seq/state de gameplay. Antes caia em
-            // "pkt curto" e escondia o lockstep de combate/carga. Ainda nao aplicamos regra de
-            // negocio aqui; esta trilha e a fonte unica para a futura maquina de estado de acoes.
+
+            // O World v258 ignora os tipos 0x03xx/0x83xx nesta porta: eles pertencem ao
+            // socket P2P direto do engine. O relay abaixo é uma extensão de compatibilidade
+            // para ambientes onde os peers não conseguem abrir o canal direto.
+            if (!_relayCompatibilityEnabled) return;
+
+            // 0x4000 confirma a sequência reliable. No fallback central, segue intacto ao peer.
+            // 0x8315 tem semantica dupla: atualiza o feedback local e continua para o relay P2P.
             if (pkt.Length == 8 && pkt[0] == GameplayFeedbackOp0 && pkt[1] == GameplayFeedbackOp1)
             {
                 var gs = ResolveSender(from);
@@ -145,70 +134,68 @@ namespace RakionServer.World.Network
                 {
                     Log.Debug("udp", "feedback 1583 sem sessao ({0}) seq={1:X2} state={2:X2}", from, pkt[2], pkt[7]);
                 }
-                return;
             }
             // ACK 0x030d do cliente (7B): consome.
             if (pkt.Length >= 2 && pkt[0] == 0x0d && pkt[1] == 0x03) return;
 
-            // ACAO DE CAMPO (combate/objetos): markers 0x0401(0104 destroy/ataque), 0x0203, 0x0305,
-            // 0x0304. O world original (FUN_00411760) PROCESSA + BROADCASTA aos OUTROS membros do field
+            // ACAO DE CAMPO (combate/objetos): markers legados 0x0401/0x0201/0x0301 e streams
+            // do engine 0x030A/0x030F/0x0311. O world original PROCESSA + BROADCASTA aos OUTROS membros do field
             // via SendData_Unreliable. FUN_00426b30 confirma: o broadcast EXCLUI o proprio sender
             // ("if slot != sender"). O jogador LOCAL preve a acao no cliente; reenviar de volta a ele
             // causa DUPLA-PROCESSACAO -> hit fantasma no inicio + ataques que nao completam + troca de
             // arma bugada numa direcao. Relay so aos OUTROS in-field; em solo (sem peers) nada e' enviado
             // e o cliente preve sozinho (fiel ao original).
-            if (pkt.Length >= 2 && pkt[0] == 0x01 && (pkt[1] == 0x04 || pkt[1] == 0x02 || pkt[1] == 0x03))
+            bool legacyAction = pkt.Length >= 2 && pkt[0] == 0x01 &&
+                (pkt[1] == 0x04 || pkt[1] == 0x02 || pkt[1] == 0x03);
+            bool engineAction = GameplayActionDatagram.TryParseHeader(pkt, out var actionHeader);
+            bool peerControl = GameplayPeerDatagramCodec.TryParse(pkt, out var peerDatagram);
+            if (legacyAction || engineAction || peerControl)
             {
-                // Resolve o SENDER (por endpoint UDP, senao por IP) p/ excluir e escopar ao field dele.
-                // (Nao ecoamos a acao de volta ao proprio sender: o cliente PREVE a acao localmente;
-                //  reenviar causa DUPLA-PROCESSACAO = hit fantasma. Confirmado: o contador de hits do
-                //  HUD nao depende de eco do servidor — o card de Rank do world original nem tem campo
-                //  de hits; a nota e' 100% por tempo.)
-                var sender = ResolveSender(from);
-                int senderField = sender?.FieldId ?? -1;
-                int n = 0;
-                foreach (var sess in _world.Sessions)
-                {
-                    if (!sess.InField || sess.UdpEndpoint == null) continue;
-                    if (sess == sender) continue;                       // FUN_00426b30: exclui o proprio sender
-                    if (sess.UdpEndpoint.Equals(from)) continue;        // fallback de exclusao por endpoint
-                    if (senderField >= 0 && sess.FieldId != senderField) continue; // so peers do mesmo field
-                    try { _sock!.SendTo(pkt, sess.UdpEndpoint); n++; } catch { }
-                }
-                Log.Debug("udp", "acao de campo 0x{0:X2}{1:X2} relay p/ {2} outro(s) do field {3} (exclui sender)",
-                    pkt[1], pkt[0], n, senderField);
+                ushort type = engineAction ? actionHeader.Type :
+                    peerControl ? peerDatagram.Type : (ushort)(pkt[0] | pkt[1] << 8);
+                byte? sourceSeat = engineAction ? actionHeader.SourceSlot :
+                    peerControl ? peerDatagram.SourceSeat : null;
+                RelayToField(from, pkt, type, sourceSeat, peerDatagram);
+            }
+
+            Log.Debug("udp", "pacote não reconhecido ({0}B de {1})", pkt.Length, from);
+        }
+
+        private void RelayToField(
+            IPEndPoint from, byte[] packet, ushort type, byte? sourceSeat,
+            GameplayPeerDatagram peerDatagram)
+        {
+            var sender = ResolveSender(from);
+            if (sender == null || !sender.InField)
+            {
+                Log.Warn("udp", "datagrama 0x{0:X4} descartado de endpoint não autenticado {1}", type, from);
+                return;
+            }
+            bool sourceMatches = peerDatagram.Type != 0
+                ? GameplayPeerDatagramCodec.SourceMatches(
+                    peerDatagram, sender.FieldSeat, packet)
+                : sourceSeat is null || sourceSeat == sender.FieldSeat;
+            if (!sourceMatches)
+            {
+                Log.Warn("udp", "datagrama 0x{0:X4} descartado: seat declarado {1} != autenticado {2}",
+                    type, sourceSeat?.ToString() ?? "-", sender.FieldSeat);
+                return;
+            }
+            if (!_relayLimits.TryConsume(sender.Slot, sender.UdpKey, Environment.TickCount64))
+            {
+                Log.Debug("udp", "datagrama 0x{0:X4} limitado para slot {1}", type, sender.Slot);
                 return;
             }
 
-            // Formato REAL (capturado): [u16 type=0x0202][u8 counter][u16 pad][BODY...].
-            // BODY (offset 5): [u16 slot][u32 key][...][u32 echoData @ body+0xc = pkt+17].
-            // (FUN_00425d80: *body=slot, *(body+1)=key==user+0x1464; echo data = body[0xc].)
-            if (pkt.Length < 21) { Log.Debug("udp", "pkt curto {0}B", pkt.Length); return; }
-            ushort slot = BinaryPrimitives.ReadUInt16LittleEndian(pkt.AsSpan(5));
-            // O 0x0C replayado fixa slot 0 -> o cliente manda slot 0 sempre. Resolve pelo slot;
-            // se nao casar com a sessao TCP real (slot incremental), cai pro IP do remetente.
-            var s = _world.GetSession(slot) ?? _world.GetSessionByIp(from.Address.ToString());
-            if (s == null) { Log.Debug("udp", "[{0}] UDP sem sessao (slot off5 nem IP {1})", slot, from.Address); return; } // UDP 0
-            if (!s.Connected || !s.SlotActive) return;                                       // UDP 1/2 (status+slot ativo; NAO exige InField)
-            uint key = BinaryPrimitives.ReadUInt32LittleEndian(pkt.AsSpan(7));
-            if (s.UdpKey != 0 && key != s.UdpKey) { Log.Debug("udp", "[{0}] UDP key mismatch (got {1:X8} exp {2:X8})", slot, key, s.UdpKey); return; } // UDP 4
-
-            // Registra o endpoint UDP e dispara (1x) a msg TCP 0x10 que destrava a entrada no
-            // campo (capturada do world ORIGINAL via MITM). Substitui o "msg5" que era errado.
-            s.NotifyUdpReady(from);  // registra endpoint UDP (FUN_0040ab90)
-            // echoData = ULTIMOS 4 bytes do ping (offset 19-22), nao offset 17. O world ecoa esse
-            // valor de volta (confirmado na captura: echo data == ping[19:23]).
-            uint echoData = BinaryPrimitives.ReadUInt32LittleEndian(pkt.AsSpan(19));
-
-            // eco 0x0201 (FUN_00425fa0 = PORT2): [u16 0x0201][u32 echoData][u8 1][u8 1][u32 echoData]
-            // result byte = 1 (port2/40709) -> OnRecvSuccessUDP registra o 2o endpoint.
-            byte[] echo = new byte[12];
-            BinaryPrimitives.WriteUInt16LittleEndian(echo.AsSpan(0), 0x201);
-            BinaryPrimitives.WriteUInt32LittleEndian(echo.AsSpan(2), echoData);
-            echo[6] = 1; echo[7] = 1;
-            BinaryPrimitives.WriteUInt32LittleEndian(echo.AsSpan(8), echoData);
-            try { _sock!.SendTo(echo, from); Log.Info("udp", "[{0}] echo 0x0201 R=1 (port2) -> {1}", slot, from); }
-            catch (Exception ex) { Log.Debug("udp", "echo {0}: {1}", from, ex.Message); }
+            int relayed = 0;
+            foreach (var session in _world.Sessions)
+            {
+                if (!session.InField || session.UdpEndpoint == null) continue;
+                if (session == sender || session.FieldId != sender.FieldId) continue;
+                try { _sock!.SendTo(packet, session.UdpEndpoint); relayed++; }
+                catch (SocketException ex) { Log.Debug("udp", "relay 0x{0:X4} para {1}: {2}", type, session.UdpEndpoint, ex.Message); }
+            }
+            Log.Debug("udp", "datagrama 0x{0:X4} relay p/ {1} peer(s) do field {2}", type, relayed, sender.FieldId);
         }
     }
 }

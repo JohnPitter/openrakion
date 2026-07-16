@@ -12,12 +12,13 @@ namespace RakionServer.World.Network
     /// </summary>
     public static partial class WorldHandlers
     {
-        /// <summary>FUN_0041bca0: chat de room + comando "/roominfo &lt;id&gt;". Requer status 2 (em room).</summary>
-        private static void Op_RoomChat(HandlerContext ctx)
+        /// <summary>FUN_0041bca0: chat do canal + comando "/roominfo &lt;id&gt;". Requer status 2.</summary>
+        private static void Op_ChannelChat(HandlerContext ctx)
         {
             var u = ctx.User;
-            if (u.Status != 0x02) return; // so age dentro de um room de chat
+            if (u.Status != UserStatus.FieldLobby) return;
             string text = ctx.P.CString(0x1000);
+            if (!ctx.World.ModerateChat(u, null, ChatScope.Channel, text, out text)) return;
 
             int colon = text.IndexOf(':');
             if (colon >= 0 && text.Length >= colon + 2 + 9 &&
@@ -29,16 +30,11 @@ namespace RakionServer.World.Network
                 return;
             }
 
-            // broadcast do chat aos membros do room
-            var room = ctx.World.GetRoom(u.RoomId) ?? ctx.World.GetRoom(0);
-            if (room == null) return;
-            using var w = new PacketWriter();
-            w.WriteWord(0x22).WriteByte(0).WriteFixed(text, Math.Min(text.Length + 1, 0x81));
-            room.Broadcast(w.ToArray());
+            ctx.World.BroadcastChannelChat(u, text);
         }
 
-        /// <summary>FUN_004244f0: mensagem "field list" — broadcast no field (requer in-field, status 3).</summary>
-        private static void Op_FieldList(HandlerContext ctx)
+        /// <summary>FUN_004244f0: chat no field; publica seat do remetente e texto.</summary>
+        private static void Op_FieldChat(HandlerContext ctx)
         {
             var u = ctx.User;
             if (!(u.InField && u.FieldSecondary)) { u.Disconnect(0x7e); return; }
@@ -47,24 +43,12 @@ namespace RakionServer.World.Network
             if (text.Length >= 0x81) { u.Disconnect(0x80); return; }
             var field = ctx.World.GetField(u.FieldId);
             if (field == null) return;
-            using var w = new PacketWriter();
-            w.WriteWord(0x47).WriteByte(0).WriteCString(text);
-            field.Broadcast(w.ToArray());
-        }
+            var sender = field.FindRec(u);
+            if (sender == null) return;
+            if (!ctx.World.ModerateChat(u, null, ChatScope.Field, text, out text)) return;
 
-        /// <summary>FUN_00424640: status no field (requer in-field, status 3).</summary>
-        private static void Op_FieldStatus(HandlerContext ctx)
-        {
-            var u = ctx.User;
-            if (!(u.InField && u.FieldSecondary)) { u.Disconnect(0x81); return; }
-            if (u.Status != 0x03) { u.Disconnect(0x82); return; }
-            var field = ctx.World.GetField(u.FieldId);
-            if (field == null) return;
-            // FUN_00408440(field, status) — atualiza/broadcast o status do jogador no field
-            using var w = new PacketWriter();
-            w.WriteWord(0x48).WriteByte((byte)u.Slot);
-            field.Broadcast(w.ToArray());
-            Log.Debug("field", "[{0}] field status", u.Slot);
+            field.BroadcastField(0x47, FieldChatFrames.Message((byte)sender.Slot, text));
+            Log.Debug("chat", "[{0}] field {1} seat {2}: {3}", u.Slot, field.Id, sender.Slot, text);
         }
 
         private static int ParseIntAt(string s, int start)

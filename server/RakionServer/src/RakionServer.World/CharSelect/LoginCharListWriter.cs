@@ -1,105 +1,146 @@
 using System;
 using System.Buffers.Binary;
 using System.Text;
+using RakionServer.World.Domain;
 
-namespace RakionServer.World.CharSelect
+namespace RakionServer.World.CharSelect;
+
+public static class LoginCharListWriter
 {
-    /// <summary>
-    /// Serializa o frame <b>0x0C</b> (lista de chars do char-select) a partir do domínio (<see cref="CharList"/>).
-    /// Formato decodificado via captura-diff (memória 0c-login-frame-format): header fixo de 65B, N char-records
-    /// de NOME VARIÁVEL — os campos pós-nome começam em <c>fieldsStart = record + 5 + len(nome) + 1</c> — e um
-    /// trailer iniciado por <c>[03 00]</c> (o cliente lê records até <c>marker[1] == 0</c>).
-    /// Síntese de raiz: substitui o replay do <c>oracle_0c.bin</c>.
-    /// </summary>
-    public static class LoginCharListWriter
+    private const int FixedPrefixSize = 21;
+    private const int TrailerSize = 20;
+    private const int NamePrefix = 5;
+    private const int FieldsSize = 359;
+    private const int Win = 0, Lose = 4, Draw = 8, Class = 22, Level = 23;
+    private const int Exp = 24, LevelPoint = 28, Stats = 30, Equip = 50;
+    private const int Quickslot = 76, Enhance = 88, Ranks = 260;
+
+    public static byte[] Build(CharList list)
     {
-        private const int HeaderSize = 65;
-        private const int NamePrefix = 5;     // marker(2) + pad(3) antes do nome
-        private const int FieldsSize = 359;   // bloco de campos pós-nome (+ \0 do nome)
-        private const int TrailerSize = 20;   // [03 00] + padding (ignorado pelo cliente após marker[1]=0)
-        private const int AccountNameMax = 2; // @41 EXATAMENTE 2 chars: o cliente lê o resto do frame relativo a este campo (calibração)
+        int headerSize = HeaderSize(list);
+        int total = headerSize + TrailerSize;
+        foreach (CharSummary character in list.Chars) total += RecordSize(character.Name);
+        var buffer = new byte[total];
 
-        // offsets dos campos relativos a fieldsStart
-        private const int Win = 0, Lose = 4, Draw = 8, Class = 22, Level = 23, Exp = 24, LevelPoint = 28;
-        private const int Stats = 30, Equip = 50, Quickslot = 76, Enhance = 88, Ranks = 260;
+        WriteHeader(buffer, list);
+        int offset = headerSize;
+        foreach (CharSummary character in list.Chars)
+            offset = WriteRecord(buffer, offset, character);
+        buffer[offset] = 0x03;
+        return buffer;
+    }
 
-        public static byte[] Build(CharList list)
+    private static int HeaderSize(CharList list)
+    {
+        ClanLoginSnapshot clan = list.Clan;
+        if (clan.Children.Count > 7)
+            throw new ArgumentException("A árvore de clã excede sete filhos.", nameof(list));
+        int size = FixedPrefixSize + Length(clan.Name, 12, nameof(clan.Name)) + 1 + 18;
+        size += Length(clan.MasterCharacterName, 12, nameof(clan.MasterCharacterName)) + 1;
+        size += Length(list.DisplayName, 12, nameof(list.DisplayName)) + 1 + 8;
+        size += Length(clan.TreeUpperAccount, 16, nameof(clan.TreeUpperAccount)) + 1;
+        size += Length(clan.TreeUpperCharacter, 12, nameof(clan.TreeUpperCharacter)) + 3;
+        foreach (ClanTreeChild child in clan.Children)
+            size += Length(child.AccountName, 16, nameof(child.AccountName)) +
+                Length(child.CharacterName, 12, nameof(child.CharacterName)) + 2;
+        return size + 9;
+    }
+
+    private static void WriteHeader(byte[] buffer, CharList list)
+    {
+        buffer[0] = 0x0C;
+        buffer[3] = 0x01;
+        BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(7), list.NetworkSlot);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(9), list.UdpSessionKey);
+        if (list.SessionHandle.Length >= 4)
+            list.SessionHandle.AsSpan(0, 4).CopyTo(buffer.AsSpan(13));
+        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(17), list.Clan.Id);
+
+        int offset = FixedPrefixSize;
+        offset = WriteClan(buffer, offset, list.Clan);
+        offset = WriteCString(buffer, offset, list.DisplayName);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(offset), list.PowerTimeMarker);
+        BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(offset + 4), list.PowerLevelPoint);
+        BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(offset + 6), list.Country);
+        offset = WriteTree(buffer, offset + 8, list.Clan);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(offset), list.Gold);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(offset + 4), list.Cash);
+        buffer[offset + 8] = list.SlotCount;
+    }
+
+    private static int WriteClan(byte[] buffer, int offset, ClanLoginSnapshot clan)
+    {
+        offset = WriteCString(buffer, offset, clan.Name);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(offset), clan.Rank);
+        BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(offset + 4), clan.Members);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(offset + 6), clan.Point);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(offset + 10), clan.MemberPoint);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(offset + 14), clan.MemberRank);
+        return WriteCString(buffer, offset + 18, clan.MasterCharacterName);
+    }
+
+    private static int WriteTree(byte[] buffer, int offset, ClanLoginSnapshot clan)
+    {
+        offset = WriteCString(buffer, offset, clan.TreeUpperAccount);
+        offset = WriteCString(buffer, offset, clan.TreeUpperCharacter);
+        buffer[offset++] = clan.TreeRank;
+        buffer[offset++] = checked((byte)clan.Children.Count);
+        foreach (ClanTreeChild child in clan.Children)
         {
-            int total = HeaderSize + TrailerSize;
-            foreach (var c in list.Chars) total += RecordSize(c.Name);
-            var buf = new byte[total];
-
-            WriteHeader(buf, list);
-            int off = HeaderSize;
-            foreach (var c in list.Chars) off = WriteRecord(buf, off, c);
-            buf[off] = 0x03;   // trailer: [03 00] — marker[1]=0 sinaliza fim da lista
-            return buf;
+            offset = WriteCString(buffer, offset, child.AccountName);
+            offset = WriteCString(buffer, offset, child.CharacterName);
         }
+        return offset;
+    }
 
-        private static int RecordSize(string name) => NamePrefix + NameLen(name) + 1 + FieldsSize;
+    private static int RecordSize(string name) => NamePrefix + Length(name, 12, nameof(name)) + 1 + FieldsSize;
 
-        private static int NameLen(string name) => Encoding.ASCII.GetByteCount(name ?? "");
+    private static int WriteRecord(byte[] buffer, int record, CharSummary character)
+    {
+        int nameLength = WriteCString(buffer, record + NamePrefix, character.Name) - record - NamePrefix - 1;
+        buffer[record] = (byte)(2 * character.Slot + 1);
+        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(record + 1), character.CharacterId);
+        int fields = record + NamePrefix + nameLength + 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(fields + Win), character.Win);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(fields + Lose), character.Lose);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(fields + Draw), character.Draw);
+        buffer[fields + Class] = character.Class;
+        buffer[fields + Level] = character.Level;
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(fields + Exp), character.Exp);
+        BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(fields + LevelPoint), character.LevelPoint);
+        WriteU16(buffer, fields + Stats, character.Stats, 10);
+        WriteU16(buffer, fields + Equip, character.Equip, 7);
+        WriteU16(buffer, fields + Quickslot, character.Quickslot, 6);
+        WriteU8(buffer, fields + Enhance, character.Enhance, 7);
+        if (character.StageRanks.Length > 1)
+            Array.Copy(character.StageRanks, 1, buffer, fields + Ranks,
+                Math.Min(character.StageRanks.Length - 1, FieldsSize - Ranks));
+        return record + RecordSize(character.Name);
+    }
 
-        private static void WriteHeader(byte[] buf, CharList list)
-        {
-            buf[0] = 0x0c;
-            buf[3] = 0x01;                                                  // result = sucesso
-            // @7-8 = userid (u16); @9-10 = valor de sessão (1-char, do original). Zerar isto trava o char-select.
-            BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(7), (ushort)list.UserId);
-            buf[9] = 0x2e; buf[10] = 0x04;
-            if (list.SessionHandle is { Length: >= 4 })
-                Array.Copy(list.SessionHandle, 0, buf, 13, 4);             // @13 session handle
-            WriteString(buf, 41, list.AccountName, AccountNameMax);        // @41 account name (campo fixo)
-            BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(48), list.PowerLevelPoint);
-            BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(56), list.Gold);
-            BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(60), list.Cash);   // @60 cash (EX points)
-            buf[64] = list.SlotCount;                                     // @64 = nº de slots da conta (cria slots criáveis)
-        }
+    private static void WriteU16(byte[] buffer, int offset, ushort[] source, int count)
+    {
+        for (int i = 0; i < count && i < source.Length; i++)
+            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(offset + i * 2), source[i]);
+    }
 
-        private static int WriteRecord(byte[] buf, int rec, CharSummary c)
-        {
-            int nameLen = WriteString(buf, rec + NamePrefix, c.Name, int.MaxValue);
-            buf[rec] = (byte)(2 * c.Slot + 1);                            // marker[0]
-            buf[rec + 1] = (byte)(c.Slot + 1);                            // marker[1] (>=1 => char; 0 => trailer)
+    private static void WriteU8(byte[] buffer, int offset, byte[] source, int count)
+    {
+        for (int i = 0; i < count && i < source.Length; i++)
+            buffer[offset + i] = source[i];
+    }
 
-            int f = rec + NamePrefix + nameLen + 1;                       // fieldsStart (após o nome\0)
-            BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(f + Win), c.Win);
-            BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(f + Lose), c.Lose);
-            BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(f + Draw), c.Draw);
-            buf[f + Class] = c.Class;
-            buf[f + Level] = c.Level;
-            BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(f + Exp), c.Exp);
-            BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(f + LevelPoint), c.LevelPoint);
-            WriteU16(buf, f + Stats, c.Stats, 10);
-            WriteU16(buf, f + Equip, c.Equip, 7);
-            WriteU16(buf, f + Quickslot, c.Quickslot, 6);
-            WriteU8(buf, f + Enhance, c.Enhance, 7);
-            // StageRanks é indexado por stage (arr[N]=rank do stage N); o cliente lê @333 como stage 1,
-            // então PULA o índice 0 (stage 0 inexistente) — senão todo rank aparece 1 stage à frente.
-            if (c.StageRanks.Length > 1)
-                Array.Copy(c.StageRanks, 1, buf, f + Ranks, Math.Min(c.StageRanks.Length - 1, FieldsSize - Ranks));
-            return rec + RecordSize(c.Name);
-        }
+    private static int WriteCString(byte[] buffer, int offset, string value)
+    {
+        int length = Encoding.ASCII.GetBytes(value, buffer.AsSpan(offset));
+        return offset + length + 1;
+    }
 
-        private static void WriteU16(byte[] buf, int at, ushort[] src, int count)
-        {
-            for (int i = 0; i < count && i < src.Length; i++)
-                BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(at + i * 2), src[i]);
-        }
-
-        private static void WriteU8(byte[] buf, int at, byte[] src, int count)
-        {
-            for (int i = 0; i < count && i < src.Length; i++)
-                buf[at + i] = src[i];
-        }
-
-        /// <summary>Escreve um nome ASCII null-terminado (o \0 e o padding já são zero no buffer). Retorna os bytes do nome.</summary>
-        private static int WriteString(byte[] buf, int at, string name, int maxChars)
-        {
-            byte[] b = Encoding.ASCII.GetBytes(name ?? "");
-            int n = Math.Min(b.Length, maxChars);
-            Array.Copy(b, 0, buf, at, n);
-            return n;
-        }
+    private static int Length(string value, int maximum, string parameter)
+    {
+        int length = Encoding.ASCII.GetByteCount(value);
+        if (length > maximum)
+            throw new ArgumentException($"{parameter} excede {maximum} bytes ASCII.", parameter);
+        return length;
     }
 }

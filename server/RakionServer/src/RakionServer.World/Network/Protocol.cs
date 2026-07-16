@@ -23,18 +23,16 @@ namespace RakionServer.World.Network
             public const ushort DisconnectNotify = 0x0E; // FUN_0041eb20 envia subtype 4 via FUN_0041b940(...,0xe,...)
 
             // Campos de jogo (nomes vindos das strings "(NN) NetworkMessage..." do exe)
-            public const ushort FieldList = 0x47;        // 71  NetworkMessageFieldList
-            public const ushort FieldQuickEnter = 0x4F;  // 79  NetworkMessageFieldQuickEnter
-            public const ushort FieldExit = 0x51;        // 81  NetworkMessageFieldExit
-            public const ushort FieldCreate = 0x53;      // 83  NetworkMessageFieldCreate
-            public const ushort FieldReady = 0x61;       // 97  NetworkMessageFieldReady
-            public const ushort FieldChat = 0x7F;        // 127 NetworkMessageFieldChat
+            public const ushort FieldQuickEnter = 0x39;
+            public const ushort FieldExit = 0x3A;
+            public const ushort FieldChat = 0x47;
+            public const ushort FieldGameStagePoint = 0x53;
+            public const ushort WorldEchoReply = 0x61;   // eco automatico do challenge S->C 0x61
         }
 
         /// <summary>
-        /// Conjunto completo de opcodes tratados pelo dispatcher FUN_0042ab40
-        /// (cases 1..0x79). Os ainda nao implementados sao logados e respondidos
-        /// como "nao tratado" — servem de mapa para RE incremental por handler.
+        /// Catálogo legado dos cases tratados pelo dispatcher FUN_0042ab40. A fonte canônica
+        /// de nomes e delegates executáveis é WorldHandlers.cs.
         /// </summary>
         public static readonly IReadOnlyDictionary<int, string> KnownOpcodes = new Dictionary<int, string>
         {
@@ -49,24 +47,25 @@ namespace RakionServer.World.Network
             [0x35] = "h35", [0x36] = "h36", [0x38] = "h38", [0x39] = "h39", [0x3A] = "h3a",
             [0x3B] = "h3b", [0x3D] = "h3d", [0x3E] = "h3e", [0x3F] = "h3f",
             [0x40] = "h40", [0x41] = "h41", [0x42] = "h42", [0x43] = "h43", [0x45] = "h45",
-            [0x46] = "h46", [0x47] = "FieldList", [0x48] = "h48", [0x4A] = "h4a", [0x4B] = "h4b",
+            [0x46] = "FieldGameExit", [0x47] = "FieldChat", [0x48] = "FieldGameRoundStart", [0x4A] = "h4a", [0x4B] = "h4b",
             [0x4C] = "h4c", [0x4D] = "h4d", [0x4F] = "FieldQuickEnter", [0x50] = "h50",
-            [0x53] = "FieldCreate", [0x56] = "h56", [0x57] = "h57", [0x59] = "h59", [0x5A] = "h5a",
-            [0x5B] = "h5b", [0x5D] = "h5d", [0x5E] = "h5e", [0x60] = "h60", [0x61] = "FieldReady",
+            [0x53] = "FieldGameStagePoint", [0x56] = "h56", [0x57] = "h57", [0x59] = "h59", [0x5A] = "h5a",
+            [0x5B] = "h5b", [0x5D] = "h5d", [0x5E] = "h5e", [0x60] = "h60", [0x61] = "WorldEchoReply",
             [0x62] = "h62", [0x64] = "h64", [0x65] = "h65", [0x6B] = "h6b", [0x6C] = "h6c",
             [0x6D] = "h6d", [0x6E] = "h6e", [0x6F] = "h6f", [0x70] = "h70", [0x71] = "h71",
             [0x72] = "h72", [0x73] = "h73", [0x74] = "h74", [0x75] = "h75", [0x76] = "h76",
-            [0x77] = "h77", [0x78] = "h78", [0x79] = "h79", [0x51] = "FieldExit", [0x7F] = "FieldChat",
+            [0x77] = "ServerInfoDump", [0x78] = "ClanMembersQuery", [0x79] = "DisconnectNotText",
         };
 
         public static string OpName(int op) =>
             KnownOpcodes.TryGetValue(op, out var n) ? n : $"op0x{op:x2}";
 
-        /// <summary>Tipo de conexao (1o byte do pacote de login, FUN_0041f6c0).</summary>
-        public static class ConnType
+        /// <summary>Modo de verificação MD5 (1o byte do login, FUN_0041f6c0/0x65).</summary>
+        public static class ClientVerifyMode
         {
-            public const byte Pk = 0x01;     // compara nome com this+0x14d
-            public const byte Normal = 0x04; // pula a checagem de nome de sessao
+            public const byte Md5_2 = 0x01;
+            public const byte LoginBypass = 0x04;
+            public const byte FieldBypass = 0x05;
         }
 
         /// <summary>Razoes de desconexao (FUN_0041eb20(this, slot, reason, 1, 1)).</summary>
@@ -84,7 +83,8 @@ namespace RakionServer.World.Network
         {
             public const byte Category = 3;
             public const byte Main = 0x0C;       // 12 (opcode Login ecoado)
-            public const byte SubIdMismatch = 8; // nome != sessao -> "ID doesn't exist"
+            public const byte SubInvalidCredential = 1; // política OpenRakion; valor histórico não confirmado
+            public const byte SubHashMismatch = 8;
             public const byte SubServerFull = 10;// capacidade (this+0x536c) atingida
         }
 
@@ -103,13 +103,11 @@ namespace RakionServer.World.Network
             public const ushort Disconnect = 4;     // notify de disconnect (FUN_0041eb20)
         }
 
-        /// <summary>Sub-comandos do canal IPC broker &lt;-&gt; world (BrokenServer/Network/IPCCommand.cs).</summary>
+        /// <summary>Comandos ativos do canal IPC broker &lt;-&gt; world nesta build.</summary>
         public static class Ipc
         {
             public const byte RequestServerInfo = 0;
-            public const byte RequestLogin = 1;
             public const byte ResponseServerInfo = 2;
-            public const byte ResponseLogin = 3;
 
             public const ushort OpServerInfo = 257;   // 0x0101 — broker le como "info de servidor"
             public const ushort OpServerConn = 1025;  // 0x0401 — broker le como "serv-con"

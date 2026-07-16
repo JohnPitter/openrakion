@@ -31,7 +31,7 @@ namespace RakionServer.World
             else
                 Log.Error("crypto", "AES self-test FALHOU — cifra inconsistente");
 
-            var db = new Database.WorldDatabase(cfg.Db);
+            var db = new Database.WorldDatabase(cfg.Db, cfg.UserDb);
             var server = new WorldServer(cfg, db);
 
             var stop = new CancellationTokenSource();

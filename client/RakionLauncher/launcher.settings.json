@@ -1,0 +1,8 @@
+{
+  "updatesEnabled": false,
+  "ticketAuthEnabled": false,
+  "updateBaseUrl": "http://127.0.0.1/",
+  "appId": 11001,
+  "baseVersion": 258,
+  "publicKeyPemPath": "update-public.pem"
+}

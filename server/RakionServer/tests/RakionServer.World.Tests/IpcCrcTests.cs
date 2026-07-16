@@ -28,7 +28,7 @@ namespace RakionServer.World.Tests
 
         [Theory]
         [InlineData(new byte[] { 0x0d, 0x03, 0x03, 0x00, 0x00, 0x00, 0x00 })]                          // ACK UDP do cliente (7B) que vazava p/ o IPC
-        [InlineData(new byte[] { 0x00, 0x40, 0x6e, 0x01, 0x00, 0x00, 0x00, 0x4d, 0x00, 0x00, 0x00 })]  // input de gameplay (11B), byte[3]=1 (causava o over-read)
+        [InlineData(new byte[] { 0x00, 0x40, 0x6e, 0x01, 0x00, 0x00, 0x00, 0x4d, 0x00, 0x00, 0x00 })]  // ACK reliable (11B), byte[3]=1 (causava o over-read)
         public void GameplayUdp_FailsCrc(byte[] pkt) =>
             Assert.False(IpcCodec.VerifyCrc(pkt));   // sem BCRC -> XOR != 0 -> descartado pelo guard
 

@@ -11,10 +11,11 @@ originais. Objetivo: réplica fiel em comportamento, *como se fosse o original*.
 | `RakionServer.Broker` (`BrokenServer`) | `BrokenServer.exe` (.NET) | decompile (dnSpy) portado p/ net9.0 |
 | `RakionServer.World` (`RakionWorldServer`) | `RakionWorldServ.exe` / `worldserv.exe` (C++ nativo) | RE com Ghidra → reimplementação fiel |
 | `RakionServer.Buddy` (`BuddyServer`) | `Buddy2.dll` (C++ nativo, client-side) | RE com Ghidra → 1ª impl. do lado servidor |
+| `RakionServer.Ranking` (`RakionRankUpdate`) | `RankUpdate.exe` (C++ nativo) | RE com Ghidra → job one-shot fiel |
 | `RakionServer.Common` | — | núcleo compartilhado (pacotes, cifra IPC, INI, log) |
 
-Protocolo documentado em [`docs/protocol-world.md`](../../docs/protocol-world.md) (world) e
-[`docs/protocol-buddy.md`](../../docs/protocol-buddy.md), ancorado nos endereços dos binários.
+Protocolo documentado em [`docs/protocol/world.md`](../../docs/protocol/world.md) (World) e
+[`docs/protocol/buddy.md`](../../docs/protocol/buddy.md), ancorado nos endereços dos binários.
 
 > **Quer subir o servidor?** Passo a passo completo (build, MariaDB, configs, rodar os 3
 > servidores, Docker, cliente/GameGuard) em **[`TUTORIAL.md`](TUTORIAL.md)**.
@@ -25,10 +26,11 @@ RakionServer.sln
 src/
   RakionServer.Common/   PacketReader/Writer, IpcCodec (BCRC+cifra), IniFile, Log
   RakionServer.World/    WorldServer, ClientSession (framing+seq), LoginHandler (FUN_0041f6c0),
-                         BrokerLink (IPC), WorldDatabase (MySQL), Protocol (dispatcher/opcodes)
+                         BrokerLink (IPC), WorldDatabase (MySQL), loja e loteria 0x75/0x76
   RakionServer.Broker/   BrokenServer portado (broker IPC UDP + lista de mundos)
   RakionServer.Buddy/    BuddyServer (:8500/:8504), BuddyProtocol (tabela CD)
-  RakionServer.LauncherWeb/  Auth web do launcher (ASP.NET, :80) — porta fiel do antigo launcher_web.py + fetch
+  RakionServer.Ranking/  Job diário one-shot de total/class/clan rank e snapshots *rankp
+  RakionServer.LauncherWeb/  Ticket de launch + update assinado + adaptadores legados
   RakionServer.Admin/        Painel admin (Blazor, :8080) — contas/gold/cash/itens/Power User/updates
 ```
 

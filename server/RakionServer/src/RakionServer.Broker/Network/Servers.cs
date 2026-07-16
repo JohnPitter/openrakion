@@ -65,9 +65,6 @@ namespace BrokenServer.Network
 			Servers.IPCenCode(ref data, code, data.Length);
 		}
 
-		// Token: 0x04000008 RID: 8
-		public static int IPCPort;
-
 		// Token: 0x02000005 RID: 5
 		public class IPCServer
 		{
@@ -79,7 +76,6 @@ namespace BrokenServer.Network
 			// Token: 0x06000014 RID: 20 RVA: 0x00002984 File Offset: 0x00000B84
 			public void Start(string listenIP, int PORT)
 			{
-				Servers.IPCPort = PORT;
 				IPAddress ipaddress = IPAddress.Any;
 				if (listenIP != "")
 				{
@@ -198,71 +194,7 @@ namespace BrokenServer.Network
 			}
 
 			// Token: 0x06000018 RID: 24 RVA: 0x00002C54 File Offset: 0x00000E54
-			public byte[] PacketResponseServerInfo(int iPort, byte bStatus, ushort iMaxSlots, ushort iUsedSlots, ushort iVersion)
-			{
-				byte[] bytes;
-				using (IPCPacket ipcpacket = new IPCPacket())
-				{
-					ipcpacket.WriteWord(iPort);
-					ipcpacket.WriteByte(this.rnd.Next(1, 250));
-					ipcpacket.WriteByte(2);
-					ipcpacket.WriteWord(5);
-					ipcpacket.WriteByte((int)bStatus);
-					ipcpacket.WriteWord((int)iMaxSlots);
-					ipcpacket.WriteWord((int)iUsedSlots);
-					ipcpacket.WriteWord((int)iVersion);
-					ipcpacket.AddCRC();
-					bytes = ipcpacket.GetBytes();
-				}
-				return bytes;
-			}
-
 			// Token: 0x06000019 RID: 25 RVA: 0x00002CDC File Offset: 0x00000EDC
-			public byte[] PacketRequestLogin(int iPort, string sUserID, string sPassword, ushort IPCid)
-			{
-				int num = sUserID.Length + sPassword.Length + 4;
-				byte[] bytes;
-				using (IPCPacket ipcpacket = new IPCPacket())
-				{
-					ipcpacket.WriteWord(iPort);
-					ipcpacket.WriteByte(this.rnd.Next(1, 250));
-					ipcpacket.WriteByte(1);
-					ipcpacket.WriteWord(num);
-					ipcpacket.WriteString(sUserID);
-					ipcpacket.WriteString(sPassword);
-					ipcpacket.WriteWord((int)IPCid);
-					ipcpacket.AddCRC();
-					bytes = ipcpacket.GetBytes();
-				}
-				return bytes;
-			}
-
-			// Token: 0x0600001A RID: 26 RVA: 0x00002199 File Offset: 0x00000399
-			public byte[] PacketResponseLogin(int iPort, ushort wResult, ushort wID)
-			{
-				return this.PacketResponseLogin(iPort, wResult, wID, "");
-			}
-
-			// Token: 0x0600001B RID: 27 RVA: 0x00002D6C File Offset: 0x00000F6C
-			public byte[] PacketResponseLogin(int iPort, ushort wResult, ushort wID, string sBanReason)
-			{
-				int num = sBanReason.Length + 5;
-				byte[] bytes;
-				using (IPCPacket ipcpacket = new IPCPacket())
-				{
-					ipcpacket.WriteWord(iPort);
-					ipcpacket.WriteByte(this.rnd.Next(1, 250));
-					ipcpacket.WriteByte(3);
-					ipcpacket.WriteWord(num);
-					ipcpacket.WriteWord((int)wID);
-					ipcpacket.WriteWord((int)wResult);
-					ipcpacket.WriteString(sBanReason);
-					ipcpacket.AddCRC();
-					bytes = ipcpacket.GetBytes();
-				}
-				return bytes;
-			}
-
 			// Token: 0x04000009 RID: 9
 			public static int MAX_BUFFER = 8192;
 

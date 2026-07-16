@@ -13,9 +13,26 @@ namespace RakionServer.World.Tests
         private static EnchantConfig Seed()
         {
             var c = new EnchantConfig();
+            c.UseOriginalOutcomes = false;
             c.SetCatalyzer(0x32c9, new EnchantConfig.Catalyzer(0.95, 0.10, 4));   // Mithril
             c.SetCatalyzer(0x32cb, new EnchantConfig.Catalyzer(0.90, 0.07, 14));  // Orehalcon
             return c;
+        }
+
+        [Fact]
+        public void OriginalBuild_MithrilLevelFourMatchesExtractedCoefficients()
+        {
+            var config = new EnchantConfig { UseOriginalOutcomes = true };
+            config.SetCatalyzer(13001, new EnchantConfig.Catalyzer(0.70, 0.06, 4));
+            Assert.Equal(0.36085773f,
+                (float)config.SuccessChance(13001, 4, 0, 0, 0, false));
+            float[] outcomes = config.OriginalOutcomeProbabilities(
+                13001, 0, 0, 0, 0, false);
+            Assert.Equal(new[]
+            {
+                0.70f, 0.080000006f, 0.060000006f,
+                0.040000003f, 0.020000001f, 0.020000001f
+            }, outcomes);
         }
 
         [Fact]

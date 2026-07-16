@@ -1,5 +1,10 @@
+using System;
+using System.Collections.Generic;
+using System.Net;
 using System.Text;
 using RakionServer.Common;
+using RakionServer.World.Domain;
+using RakionServer.World.Database;
 
 namespace RakionServer.World.Network
 {
@@ -18,7 +23,7 @@ namespace RakionServer.World.Network
     ///
     /// Builders cravados da decompilação (FUN @ endereço, LEN real):
     ///   0x10 GameGuard  : nonce de handshake estático (16B); GG neutralizado não valida.
-    ///   0x14 SpawnAck   : FUN_0041fef0  LEN=3  [14 00][status].
+    ///   0x14 CharacterSelectAck: FUN_0041fef0 LEN=3 [14 00][status].
     ///   0x1e ChannelList: FUN_00404da0  LEN var [1e 00][type][count][nome1\0][nome2\0][N registros]; solo=28.
     ///   0x1f SessionInfo: FUN_00404fc0  erro LEN=3 [1f 00][status]; ok LEN=15 [1f 00][00][00][uid:u16][registro].
     ///   0x36 GameList   : FUN_00422c90 e FUN @0x41c0b7 (FieldPlayerList); LEN começa em 3 e cresce com a lista.
@@ -29,43 +34,20 @@ namespace RakionServer.World.Network
     ///   0x4a StageEnd   : clear=FUN_00405a90 (2bd=2) / morte=FUN_004087d0 (2bd=1)  LEN=6  [4a 00][2bd][2bf][2c0][2c1].
     /// Registro por-player de 0x1e/0x1f (FUN_0040afb0): [nome\0][class@1531][team@146c][dword@14d0].
     ///
-    /// DADO DE SESSÃO: userid e nome (do domínio); tempo restante do stage (duração da sala, dur+3).
+    /// DADO DE SESSÃO: slot global, nome e presença do domínio; tempo restante do stage (duração da sala, dur+3).
     /// VOLTA-À-LISTA (pós-0x44/pós-clear): o original RE-MANDA os MESMOS 0x1f/0x1e/0x36 da entrada — confirmado
     /// em capture_field_entry/mitm_move_133859.log (l.460/461 == entrada l.19/20, só os bytes de lixo diferem).
     /// Não há frame "clear" distinto nem handle de sessão na cauda: tudo é o frame de entrada sintetizado.
     /// </summary>
     public static class LobbyFrames
     {
-        /// <summary>Canal único do mundo offline (0x1e). Texto C terminado em nul.</summary>
-        public const string ChannelName = "dchannel01";
+        /// <summary>Nome wire do canal padrão criado pelo World.</summary>
+        public const string ChannelName = "channel01";
 
         /// <summary>0x10 GameGuard challenge (16B). IDÊNTICO em A=B=C -> constante (cliente GG-neutralizado
         /// não valida o conteúdo; é um nonce de handshake de forma fixa).</summary>
         private static readonly byte[] GameGuardChallenge =
             { 0x4e, 0x95, 0xdd, 0x29, 0xce, 0x3a, 0x55, 0xdb, 0x20, 0xb6, 0xad, 0x97, 0xa6, 0x5c, 0xc0, 0x1c };
-
-        /// <summary>Registro do player no 0x1f/0x1e (FUN_0040afb0), na ordem [nome-NUL][class@1531][team@146c]
-        /// [dword@14d0]. O nome (2B) é escrito antes; aqui vêm o NUL terminador + os campos do char solo
-        /// (class=1, team/stats=0).</summary>
-        private static readonly byte[] PlayerRecordTail = { 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 };
-
-        /// <summary>Resposta do 0x19 CharacterGetUserName (messenger "add buddy"): o WORLD informa o account-id
-        /// do dono de um nick, que o cliente exige antes de adicionar amigo — sem isso ele trava em "Waiting for
-        /// ID Information on account from server" (lang 599). O pedido carrega só o nick; o cliente NÃO valida o
-        /// accountId, só o status byte.
-        /// Layout: [u16 0x19 opcode][u16 0x0D subtype][byte status][accountId\0][buddyName\0]. status 0=ok, 1=erro, 2=nao existe.
-        /// O opcode do frame ecoa o do pedido (no world, request==response: 0x14->0x14, 0x36->0x36; 0x0D sozinho
-        /// colidiria com o char-data 0x0D do login). RE: DBCommandCharacterGetUserName @worldserv 0x413980.</summary>
-        public static byte[] GetUserNameResult(byte status, string accountId, string buddyName)
-        {
-            using var w = new PacketWriter();
-            w.WriteWord(0x0019);   // opcode do frame (ecoa o pedido)
-            w.WriteWord(0x000D);   // subtype interno (do worldserv 0x413980, +2 do buffer)
-            w.WriteByte(status);
-            w.WriteCString(accountId);
-            w.WriteCString(buddyName);
-            return w.ToArray();
-        }
 
         // ---- BUILDERS ----------------------------------------------------------------------------------
 
@@ -79,16 +61,238 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
-        /// <summary>0x14 spawn/start-ack. RE FUN_0041fef0 (@0x41fef0, linha 755): a resposta REAL tem LEN=3
-        /// = [14 00][status=0]. O scoring é armado no HANDLER (FUN_0040ac30), NÃO neste frame; o
-        /// [20000000][handle] do blob antigo era LIXO DE STACK (padding do bloco de 12B). 3 reais + zero-pad.</summary>
-        public static byte[] SpawnAck()
+        /// <summary>Resposta lógica 0x14: [u16 opcode][u8 status]. O padding pertence à cifra.</summary>
+        public static byte[] CharacterSelectAck(
+            Database.CharacterSelectStatus status = Database.CharacterSelectStatus.Success)
         {
             using var w = new PacketWriter();
             w.WriteWord(0x14);
-            w.WriteByte(0);                 // status (0 = sucesso)
-            w.WriteBytes(new byte[9]);      // padding do bloco de 12B (era lixo de stack)
+            w.WriteByte((byte)status);
             return w.ToArray();
+        }
+
+        public static byte[] CharacterCreateAck(Database.CharacterCreateStatus status, int characterId)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x12);
+            w.WriteByte((byte)status);
+            if (status == Database.CharacterCreateStatus.Success)
+                w.WriteInt32(characterId);
+            return w.ToArray();
+        }
+
+        public static byte[] CharacterStateClearAck(Database.CharacterStateClearResult result)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x1b);
+            w.WriteByte((byte)result.Status);
+            if (result.Status == Database.CharacterStateClearStatus.Success)
+            {
+                w.WriteInt32(result.Cash);
+                w.WriteWord(result.LevelPoint);
+                w.WriteWord(result.PowerLevelPoint);
+                WritePresents(w, result.Presents);
+            }
+            return w.ToArray();
+        }
+
+        public static byte[] CharacterRenameAck(Database.CharacterRenameResult result)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x1c);
+            w.WriteByte((byte)result.Status);
+            if (result.Status == Database.CharacterRenameStatus.Success)
+            {
+                w.WriteInt32(result.Cash);
+                w.WriteCString(result.Name);
+                WritePresents(w, result.Presents);
+            }
+            return w.ToArray();
+        }
+
+        public static byte[] InventoryEntitlementAck(
+            Database.InventoryEntitlement entitlement, Database.EntitlementPurchaseResult result)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(entitlement == Database.InventoryEntitlement.Bag ? 0x32 : 0x35);
+            w.WriteByte((byte)result.Status);
+            if (result.Status == Database.EntitlementPurchaseStatus.Success)
+            {
+                w.WriteInt32(result.Gold);
+                w.WriteInt32(result.Cash);
+                w.WriteByte(result.Value);
+                w.WriteByte(result.CouponItemId != 0 ? 1 : 0);
+                w.WriteWord(result.CouponItemId);
+                WritePresents(w, result.Presents);
+            }
+            w.WriteBytes(new byte[(12 - w.Length % 12) % 12]);
+            return w.ToArray();
+        }
+
+        public static byte[] PotionSlotPurchaseAck(Database.PotionSlotPurchaseResult result)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x6f);
+            w.WriteByte((byte)result.Status);
+            if (result.Status == Database.EntitlementPurchaseStatus.Success)
+            {
+                w.WriteInt32(result.Gold);
+                w.WriteInt32(result.Cash);
+                w.WriteByte(result.PotionSlots);
+                WritePresents(w, result.Presents);
+            }
+            w.WriteBytes(new byte[(12 - w.Length % 12) % 12]);
+            return w.ToArray();
+        }
+
+        public static byte[] StageRankClearAck(Database.StageRankClearResult result)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x70);
+            w.WriteByte((byte)result.Status);
+            if (result.Status == Database.StageEntitlementStatus.Success)
+            {
+                w.WriteInt32(result.Gold);
+                w.WriteInt32(result.Cash);
+                WritePresents(w, result.Presents);
+            }
+            w.WriteBytes(new byte[(12 - w.Length % 12) % 12]);
+            return w.ToArray();
+        }
+
+        public static byte[] StageLevelFreeAck(Database.StageLevelFreeResult result)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x71);
+            w.WriteByte((byte)result.Status);
+            if (result.Status == Database.StageEntitlementStatus.Success)
+            {
+                w.WriteInt32(result.Gold);
+                w.WriteInt32(result.Cash);
+                w.WriteUInt32(result.MinuteMarker);
+                WritePresents(w, result.Presents);
+            }
+            w.WriteBytes(new byte[(12 - w.Length % 12) % 12]);
+            return w.ToArray();
+        }
+
+        public static byte[] PowerUserPurchaseAck(Database.PowerUserPurchaseResult result)
+        {
+            using var writer = new PacketWriter();
+            writer.WriteWord(0x34).WriteByte((byte)result.Status);
+            if (result.Status == Database.PowerUserPurchaseStatus.Success)
+            {
+                writer.WriteInt32(result.Gold);
+                writer.WriteInt32(result.Cash);
+                writer.WriteUInt32(result.PowerTimeMarker);
+                writer.WriteWord(result.PowerLevelPoints);
+                WritePresents(writer, result.Presents);
+            }
+            return writer.ToArray();
+        }
+
+        private static void WritePresents(PacketWriter writer, int[]? presents)
+        {
+            int count = System.Math.Min(4, presents?.Length ?? 0);
+            writer.WriteByte(count);
+            for (int i = 0; i < count; i++) writer.WriteInt32(presents![i]);
+        }
+
+        public static byte[] PresentNotification(int[] itemIds, string accountName)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x6a);
+            int count = System.Math.Min(byte.MaxValue, itemIds.Length);
+            w.WriteByte(count);
+            for (int i = 0; i < count; i++) w.WriteInt32(itemIds[i]);
+            w.WriteCString(accountName);
+            w.WriteBytes(new byte[(12 - w.Length % 12) % 12]);
+            return w.ToArray();
+        }
+
+        public static byte[] PresentPeekAck(Database.PresentPeekResult result)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x6b);
+            w.WriteByte((byte)result.Status);
+            w.WriteInt32(result.PendingId);
+            w.WriteInt32(result.ItemId);
+            w.WriteWord(result.ItemOption);
+            w.WriteBytes(new byte[(12 - w.Length % 12) % 12]);
+            return w.ToArray();
+        }
+
+        public static byte[] PresentAcceptAck(Database.PresentAcceptResult result)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x6c);
+            w.WriteByte((byte)result.Status);
+            w.WriteInt32(result.ResponseValue);
+            w.WriteBytes(new byte[(12 - w.Length % 12) % 12]);
+            return w.ToArray();
+        }
+
+        public static byte[] PresentDisposeAck(Database.PresentDisposeResult result)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x6d);
+            w.WriteByte((byte)result.Status);
+            w.WriteBytes(new byte[(12 - w.Length % 12) % 12]);
+            return w.ToArray();
+        }
+
+        public static byte[] CharacterDeleteAck(byte status, ClanLoginSnapshot? clan = null)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x13);
+            w.WriteByte(status);
+            if (status == 0)
+            {
+                ClanLoginSnapshot snapshot = clan ?? ClanLoginSnapshot.Empty;
+                w.WriteInt32(snapshot.Id);
+                w.WriteByte(snapshot.Grade);
+                w.WriteCString(snapshot.Name);
+                w.WriteUInt32(snapshot.Rank);
+                w.WriteWord(snapshot.Members);
+                w.WriteUInt32(snapshot.Point);
+                w.WriteUInt32(snapshot.MemberPoint);
+                w.WriteUInt32(snapshot.MemberRank);
+                w.WriteCString(snapshot.MasterCharacterName);
+            }
+            return w.ToArray();
+        }
+
+        public static byte[] BuddyNameAck(byte status, string buddyName)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x15);
+            w.WriteByte(status);
+            w.WriteCString(buddyName);
+            return w.ToArray();
+        }
+
+        public static byte[] ClanMembers(IReadOnlyList<ClanMemberIdentity> members)
+        {
+            if (members.Count > 99)
+                throw new ArgumentOutOfRangeException(nameof(members));
+            using var writer = new PacketWriter();
+            writer.WriteWord(0x78).WriteByte(0).WriteWord(members.Count);
+            foreach (ClanMemberIdentity member in members)
+            {
+                if (Encoding.ASCII.GetByteCount(member.AccountName) > 16 ||
+                    Encoding.ASCII.GetByteCount(member.BuddyName) > 12)
+                    throw new ArgumentException("Identidade de clã excede o layout legado.", nameof(members));
+                writer.WriteCString(member.AccountName).WriteCString(member.BuddyName);
+            }
+            return writer.ToArray();
+        }
+
+        public static byte[] ClanMembersStatus(byte status)
+        {
+            if (status is not (1 or 2))
+                throw new ArgumentOutOfRangeException(nameof(status));
+            using var writer = new PacketWriter();
+            return writer.WriteWord(0x78).WriteByte(status).ToArray();
         }
 
         /// <summary>0x36 game-list (FieldPlayerList: FUN_00422c90 e o 2º builder @0x41c0b7). No original é a
@@ -105,51 +309,112 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
-        /// <summary>0x1f info de sessão/char. RE FUN_00404fc0: a ENTRADA (sucesso) tem LEN=15 =
-        /// [1f 00][00][00][userid:u16][registro do player]. O registro (FUN_0040afb0) = [nome\0][class][team]
-        /// [dword]. O byte 15+ do bloco era LIXO DE STACK — VARIOU entre sessões (06/64/08 no diff golden×log),
-        /// logo zero-pad (LEN real=15). Userid e nome vêm do domínio. A volta-à-lista pós-clear re-manda ESTE
-        /// MESMO frame (mitm_move_133859 l.460 == entrada l.19; só o byte de lixo difere — sem handle/marker).</summary>
-        public static byte[] SessionInfo(ushort userId, string name)
+        public static byte[] GameList(
+            System.Collections.Generic.IReadOnlyList<Domain.RoomListSnapshot> fields)
         {
             using var w = new PacketWriter();
-            w.WriteWord(0x1f);
-            w.WriteWord(0);
-            w.WriteWord(userId);
-            WriteName(w, name);
-            w.WriteBytes(PlayerRecordTail);
-            w.WriteBytes(new byte[9]);              // bloco de 24B: byte 15+ era lixo de stack (LEN real=15)
+            w.WriteWord(0x36);
+            w.WriteByte((byte)System.Math.Min(fields.Count, 10));
+            for (int i = 0; i < fields.Count && i < 10; i++)
+                RoomListFrames.WriteEntry(w, fields[i]);
+            int padding = (12 - (int)(w.Length % 12)) % 12;
+            w.WriteBytes(new byte[padding]);
             return w.ToArray();
         }
 
-        /// <summary>0x1e lista de canais ("dchannel01"). RE FUN_00404da0: [1e 00][type][count][nome1\0][nome2\0]
-        /// [N registros de player]. No solo: type=0, count=1, 1 registro (userid + nome + stats) -> LEN real=28.
+        /// <summary>0x1f info de sessão/char. RE FUN_00404fc0: a ENTRADA (sucesso) tem LEN=15 =
+        /// [1f 00][status][channelSlot][sessionSlot:u16][registro]. O registro (FUN_0040afb0) = [nome\0][class][team]
+        /// [dword]. O byte 15+ do bloco era LIXO DE STACK — VARIOU entre sessões (06/64/08 no diff golden×log),
+        /// logo zero-pad (LEN real=15). Userid e nome vêm do domínio. A volta-à-lista pós-clear re-manda ESTE
+        /// MESMO frame (mitm_move_133859 l.460 == entrada l.19; só o byte de lixo difere — sem handle/marker).</summary>
+        public static byte[] SessionInfo(
+            byte channelSlot, ushort sessionSlot, ChannelPresenceRecord player)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x1f);
+            w.WriteByte(0);
+            w.WriteByte(channelSlot);
+            w.WriteWord(sessionSlot);
+            WritePresence(w, player);
+            PadLobbyBlock(w);
+            return w.ToArray();
+        }
+
+        public static byte[] SessionInfo(ushort sessionSlot, string name) =>
+            SessionInfo(0, sessionSlot, new ChannelPresenceRecord(name, 1, 0, 0));
+
+        /// <summary>0x1e lista de canais. RE FUN_00404da0 e consumidor 0x361932a0:
+        /// [1e 00][type][count][ownerSlot][nome1\0][nome2\0]
+        /// [N registros de player]. No solo: type=0, count=1, 1 registro (slot global + nome + stats) -> LEN real=28.
         /// A cauda (bytes 28+) era LIXO DE STACK — VARIOU entre sessões (5e735fb8.../648c0509...), logo zero-pad.
-        /// userid e nome vêm do domínio. A volta-à-lista pós-clear re-manda ESTE MESMO frame (mitm_move l.461 ==
+        /// slot global e presença vêm do domínio. A volta-à-lista pós-clear re-manda ESTE MESMO frame (mitm_move l.461 ==
         /// entrada l.20, byte-a-byte).</summary>
-        public static byte[] ChannelList(ushort userId, string name)
+        public static byte[] ChannelList(
+            byte type, byte ownerSlot, string channelName, string password,
+            IReadOnlyList<ChannelMemberRecord> members)
         {
             using var w = new PacketWriter();
             w.WriteWord(0x1e);
-            w.WriteWord(0x0100);
-            w.WriteCString(ChannelName);
-            w.WriteWord(0);
-            w.WriteWord(userId);
-            WriteName(w, name);
-            w.WriteBytes(PlayerRecordTail);
-            w.WriteBytes(new byte[8]);   // bloco de 36B: bytes 28+ eram lixo de stack (LEN real=28)
+            w.WriteByte(type);
+            w.WriteByte((byte)Math.Min(byte.MaxValue, members.Count));
+            w.WriteByte(ownerSlot);
+            w.WriteCString(channelName);
+            w.WriteCString(password);
+            for (int index = 0; index < members.Count && index < byte.MaxValue; index++)
+            {
+                ChannelMemberRecord member = members[index];
+                w.WriteByte(member.ChannelSlot);
+                w.WriteWord(member.SessionSlot);
+                WritePresence(w, member.Player);
+            }
+            PadLobbyBlock(w);
             return w.ToArray();
+        }
+
+        public static byte[] ChannelList(ushort sessionSlot, string name) =>
+            ChannelList(0, Channel.NoOwnerSlot, ChannelName, "", new[]
+            {
+                new ChannelMemberRecord(0, sessionSlot, new ChannelPresenceRecord(name, 1, 0, 0))
+            });
+
+        public static byte[] ChannelExit(byte channelSlot)
+        {
+            using var writer = new PacketWriter();
+            writer.WriteWord(0x20).WriteByte(channelSlot);
+            PadLobbyBlock(writer);
+            return writer.ToArray();
+        }
+
+        public static byte[] ChannelChat(byte channelSlot, string text)
+        {
+            using var writer = new PacketWriter();
+            writer.WriteWord(0x22).WriteByte(channelSlot);
+            byte[] bytes = Encoding.ASCII.GetBytes(text ?? "");
+            writer.WriteBytes(bytes.AsSpan(0, Math.Min(bytes.Length, 128)).ToArray());
+            writer.WriteByte(0);
+            PadLobbyBlock(writer);
+            return writer.ToArray();
+        }
+
+        public static byte[] ChannelOwner(byte channelSlot)
+        {
+            using var writer = new PacketWriter();
+            writer.WriteWord(0x28).WriteByte(channelSlot);
+            PadLobbyBlock(writer);
+            return writer.ToArray();
         }
 
         /// <summary>0x3b ack de criação de sala. RE FUN_00423580 (@0x423580, linha 264): LEN=5 =
         /// [3b 00][status=0][seat:u16] (seat = slot do field-objeto, 0 no solo). O [538b003600007f] do blob
         /// antigo era LIXO DE STACK. 5 reais + zero-pad.</summary>
-        public static byte[] RoomCreateAck()
+        public static byte[] RoomCreateAck() => RoomCreateAck(0, 0);
+
+        public static byte[] RoomCreateAck(ushort fieldId, byte status)
         {
             using var w = new PacketWriter();
             w.WriteWord(0x3b);
-            w.WriteByte(0);                 // status (0 = sucesso)
-            w.WriteWord(0);                 // seat:u16 (slot do field-objeto; 0 no solo)
+            w.WriteByte(status);
+            w.WriteWord(fieldId);
             w.WriteBytes(new byte[7]);      // padding do bloco de 12B (era lixo de stack)
             return w.ToArray();
         }
@@ -159,11 +424,13 @@ namespace RakionServer.World.Network
         /// this+0x2b8 = tick+40000ms); 1/2/3 = não pôde iniciar (faltam players/prontidão). O [handle 5B]
         /// [3b 00 00 00] do blob antigo (e o [0003000000 3b000000] da captura) era LIXO DE STACK — varia
         /// entre sessões, não é handle nem opcode ecoado. 3 reais + zero-pad.</summary>
-        public static byte[] MatchStartAck()
+        public static byte[] MatchStartAck() => MatchStartAck(0);
+
+        public static byte[] MatchStartAck(byte status)
         {
             using var w = new PacketWriter();
             w.WriteWord(0x43);
-            w.WriteByte(0);                 // status (0 = partida inicia)
+            w.WriteByte(status);            // 0 inicia; 1/2/3 rejeitam conforme o gate do servidor
             w.WriteBytes(new byte[9]);      // padding do bloco de 12B (era lixo de stack)
             return w.ToArray();
         }
@@ -200,6 +467,86 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
+        public static byte[] RoomJoinResult(byte status)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x38).WriteByte(status).WriteBytes(new byte[9]);
+            return w.ToArray();
+        }
+
+        public static byte[] QuickJoinEmpty()
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x39).WriteBytes(new byte[10]);
+            return w.ToArray();
+        }
+
+        /// <summary>Resultado lógico 0x2C: status e referência de sessão.</summary>
+        public static byte[] InventoryEnterAck(byte[] sessionHandle)
+        {
+            if (sessionHandle == null || sessionHandle.Length != 4)
+                throw new ArgumentException("O handle de inventário deve ter 4 bytes.", nameof(sessionHandle));
+
+            using var w = new PacketWriter();
+            w.WriteWord(0x2c);
+            w.WriteByte(0);
+            w.WriteBytes(sessionHandle);
+            return w.ToArray();
+        }
+
+        public static byte[] InventoryEnterResult(byte status)
+        {
+            using var writer = new PacketWriter();
+            writer.WriteWord(0x2c).WriteByte(status).WriteUInt32(0);
+            return writer.ToArray();
+        }
+
+        /// <summary>Resultado lógico do 0x2D: opcode e status 0/1/2.</summary>
+        public static byte[] InventoryLeaveResult(byte status)
+        {
+            using var writer = new PacketWriter();
+            writer.WriteWord(0x2d).WriteByte(status);
+            return writer.ToArray();
+        }
+
+        /// <summary>Erro curto de compra/venda: [u16 opcode][u8 status].</summary>
+        public static byte[] StorageMutationError(bool sale, byte status)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(sale ? 0x2f : 0x2e).WriteByte(status);
+            return w.ToArray();
+        }
+
+        /// <summary>Snapshot mínimo de sucesso da venda reconstruído de FUN_004215A0.</summary>
+        public static byte[] StorageSaleAck(
+            uint fieldId, uint fieldSecondary, ushort itemId, uint credit,
+            byte slot, uint itemHandle, byte level, uint experience)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x15).WriteWord(0);
+            w.WriteUInt32(fieldId).WriteUInt32(fieldSecondary);
+            w.WriteWord(itemId).WriteUInt32(credit).WriteByte(slot);
+            w.WriteUInt32(itemHandle).WriteByte(level).WriteUInt32(experience);
+            w.WriteByte(0).WriteByte(0);
+            return w.ToArray();
+        }
+
+        /// <summary>0x53 confirmação do resultado: status, stage, rank e slots reportados.</summary>
+        public static byte[] StageResultAck(byte stage, byte rank, IReadOnlyList<ushort> mapSlots)
+        {
+            if (mapSlots == null || mapSlots.Count > byte.MaxValue)
+                throw new ArgumentException("A lista de slots do resultado é inválida.", nameof(mapSlots));
+
+            using var w = new PacketWriter();
+            w.WriteWord(0x53);
+            w.WriteByte(0);
+            w.WriteByte(stage);
+            w.WriteByte(rank);
+            w.WriteByte(mapSlots.Count);
+            foreach (ushort slot in mapSlots) w.WriteWord(slot);
+            return w.ToArray();
+        }
+
         /// <summary>0x44 fim de partida (volta ao game room): [44 00][reason][00][01 00 00 00][nome da sala].
         /// O nome vem do domínio (último campo, tamanho variável seguro).</summary>
         public static byte[] MatchEnd(byte reason, string roomName)
@@ -213,28 +560,36 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
-        /// <summary>0x0e OnRecvSuccessUDP: ecoa o ENDPOINT DO CLIENTE (ip+porta big-endian) nos dois slots
-        /// + trailer zeros. Modo local-scored (suprime o combo se mandarmos as portas do server).</summary>
-        public static byte[] Endpoints(byte[] ip, ushort port)
+        /// <summary>0x0e OnRecvSuccessUDP: devolve os dois endpoints do cliente observados pelo World.
+        /// Cada porta é big-endian. Captura dourada: MITM 51708/51709.</summary>
+        public static byte[] Endpoints(IPEndPoint endpoint1, IPEndPoint endpoint2)
         {
             using var w = new PacketWriter();
             w.WriteWord(0x0e);
             w.WriteByte(0);
-            for (int slot = 0; slot < 2; slot++)
-            {
-                w.WriteBytes(ip);
-                w.WriteByte((byte)(port >> 8));     // big-endian
-                w.WriteByte((byte)(port & 0xff));
-            }
-            w.WriteBytes(new byte[9]);              // trailer zeros
+            NetworkEndpointCodec.Write(w, endpoint1);
+            NetworkEndpointCodec.Write(w, endpoint2);
             return w.ToArray();
         }
 
-        private static void WriteName(PacketWriter w, string name)
+        private static void WritePresence(PacketWriter writer, ChannelPresenceRecord player)
         {
-            byte[] nb = Encoding.ASCII.GetBytes(name ?? "");
-            w.WriteByte(nb.Length > 0 ? nb[0] : 0);
-            w.WriteByte(nb.Length > 1 ? nb[1] : 0);
+            writer.WriteCString(player.Name);
+            writer.WriteByte(player.Class);
+            writer.WriteByte(player.SubStatus);
+            writer.WriteInt32(player.ClanId);
+        }
+
+        private static void PadLobbyBlock(PacketWriter writer)
+        {
+            int padding = (12 - (int)(writer.Length % 12)) % 12;
+            writer.WriteBytes(new byte[padding]);
         }
     }
+
+    public readonly record struct ChannelPresenceRecord(
+        string Name, byte Class, byte SubStatus, int ClanId);
+
+    public readonly record struct ChannelMemberRecord(
+        byte ChannelSlot, ushort SessionSlot, ChannelPresenceRecord Player);
 }

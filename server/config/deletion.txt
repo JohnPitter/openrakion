@@ -1,0 +1,1 @@
+Your delete key for Rakion character {1} is: {0}

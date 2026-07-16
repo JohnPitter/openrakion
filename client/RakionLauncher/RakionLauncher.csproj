@@ -30,4 +30,12 @@
     <EmbeddedResource Include="Assets\*.ico;Assets\*.png;Assets\*.bmp" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\server\RakionServer\src\RakionServer.Common\RakionServer.Common.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="launcher.settings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

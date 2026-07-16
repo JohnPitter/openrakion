@@ -34,7 +34,7 @@ serviço vivo.
 ## Code Quality Gates
 Gates **medíveis**, não só alvos. Acima do limite = sinalize e proponha divisão/extração
 ANTES de adicionar mais código. Auditoria viva e dívida priorizada em
-[`docs/CODE_AUDIT.md`](docs/CODE_AUDIT.md).
+[`docs/audits/code-quality.md`](docs/audits/code-quality.md).
 
 **Tamanho**
 - Função: alvo ~40 linhas; **sinalize >60** e extraia antes de crescer mais.

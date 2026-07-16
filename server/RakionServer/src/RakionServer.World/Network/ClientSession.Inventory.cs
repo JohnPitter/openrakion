@@ -1,54 +1,39 @@
 using System;
 using RakionServer.Common;
+using RakionServer.World.Domain;
 
 namespace RakionServer.World.Network
 {
     public sealed partial class ClientSession
     {
-        /// <summary>
-        /// 0x12 InventoryEnter ack (FUN_00420de0). Apos o cabecalho [u16 seq][u16 0x12] (SendMessage):
-        /// [u32 user+0x1460][u32 user+0x14a4]. E' o que faz o cliente TRANSICIONAR p/ a tela de inventario
-        /// (menu state 0x19/0x1a/0x1b); sem ele o cliente volta pro char-select e fecha.
-        /// </summary>
-        public void SendInventoryEnterAck(byte[] reqBody)
+        /// <summary>Abre a UI e responde o resultado WorldNet 0x2C.</summary>
+        internal void HandleInventoryEnter()
         {
-            // FORMATO REAL (captura do worldserv ORIGINAL, mitm inventario→Previous 2026-06-11):
-            //   W->C 0x2c = [2c 00][00][handle:4][00 01][00 12][00]  (12B)
-            // O original NAO ecoa o body do cliente — reflete o HANDLE de sessao (bytes 13..16 do 0x0C).
-            // Ecoar o body (FFFFFFFF8F21347C) deixava o cliente sem reconhecer o estado do inventario ->
-            // ficava em polling de 0x2d/0x36 (telas sobrepostas) e o Previous caia no char-select.
-            using var w = new PacketWriter();
-            w.WriteWord(0x2c);                 // 2c 00
-            w.WriteByte(0);                    // 00
-            w.WriteBytes(_invHandle);          // handle de sessao (4B)
-            w.WriteByte(0); w.WriteByte(1);    // 00 01
-            w.WriteByte(0); w.WriteByte(0x12); // 00 12
-            w.WriteByte(0);                    // 00
-            SendEncryptedFrame(w.ToArray());
-            Log.Ok("shop", "[{0}] 0x2c enter-ack (handle {1})", Slot, System.Convert.ToHexString(_invHandle));
+            byte status = _inventoryUiState.Open(InventoryMutationInProgress);
+            if (status != 0)
+            {
+                SendEncryptedFrame(LobbyFrames.InventoryEnterResult(status));
+                return;
+            }
+
+            SendEncryptedFrame(LobbyFrames.InventoryEnterAck(_invHandle));
+            Log.Ok("shop", "[{0}] 0x2c InventoryEnter (handle {1})", Slot, System.Convert.ToHexString(_invHandle));
+            PaintInventoryOnFirstOpen();
         }
 
-        /// <summary>
-        /// 0x2d ACK curto (FUN_00420f10, path "else": FUN_004038e0 subtype 3 = [0x2d][status]). O
-        /// worldserv original responde ISTO em todo 0x2d que NÃO seja a 1a list (FUN_0040c960 devolve
-        /// 1 quando user+0x144c==0, ou 2 quando ==loja — sem remontar a lista). É o "nada mudou" que o
-        /// cliente espera p/ concluir a saída do inventário e VOLTAR AO LOBBY. Remandar a lista 0x13 aqui
-        /// fazia o cliente reprocessar o grid de widgets e cair no char-select no Previous.
-        /// </summary>
-        public void SendInventoryAck(byte status)
+        internal void HandleInventoryLeave()
         {
-            // FORMATO REAL (captura do original): W->C 0x2d = [2d 00][00 00][2c 00 00][handle:4][00] (12B).
-            // Ecoa o handle de sessao (igual ao 0x2c). Antes mandavamos [2d 00][00 00][status] (5B) — o
-            // cliente nao reconhecia, ficava em polling e o Previous nao concluia a saida p/ a lista de salas.
-            using var w = new PacketWriter();
-            w.WriteWord(0x2d);            // 2d 00
-            w.WriteWord(0);              // 00 00
-            w.WriteWord(0x2c);           // 2c 00
-            w.WriteByte(0);              // 00
-            w.WriteBytes(_invHandle);    // handle de sessao (4B)
-            w.WriteByte(0);              // 00
-            SendEncryptedFrame(w.ToArray());
-            Log.Ok("shop", "[{0}] 0x2d ack (handle {1}) — fiel ao original", Slot, System.Convert.ToHexString(_invHandle));
+            byte status = _inventoryUiState.Close(InventoryMutationInProgress);
+            SendEncryptedFrame(LobbyFrames.InventoryLeaveResult(status));
+            Log.Info("shop", "[{0}] 0x2d InventoryLeave status={1}", Slot, status);
+        }
+
+        private void PaintInventoryOnFirstOpen()
+        {
+            for (int i = 0; i < BoxItems.Count && i < 0x78; i++)
+                if (BoxItems[i] != 0)
+                    SendBoxAdd(BoxItems[i], (byte)i, (byte)(1 + BoxLevel[i]), BoxCount[i]);
+            if (!_potionPainted) { _potionPainted = true; PaintQuickslot(); }
         }
 
         /// <summary>
@@ -76,15 +61,35 @@ namespace RakionServer.World.Network
         }
 
         /// <summary>Popula o box consolidando poções por id (1 célula + contador); gear vai 1 por célula,
-        /// carregando o nível de refino (+N) e o id da linha itembox (p/ persistência precisa).</summary>
-        public void SetBoxItems(System.Collections.Generic.List<(int Id, int ItemId, int Level)> boxGear)
+        /// carregando o nível de refino (+N) e o id canônico de useriteminfo.</summary>
+        public void SetBoxItems(System.Collections.Generic.IReadOnlyList<Database.StorageItem> boxGear)
         {
             BoxItems = new System.Collections.Generic.List<int>(new int[0x78]);
             BoxCount = new System.Collections.Generic.List<int>(new int[0x78]);
             BoxLevel = new System.Collections.Generic.List<int>(new int[0x78]);
             BoxRowId = new System.Collections.Generic.List<int>(new int[0x78]);
-            foreach (var it in boxGear) AddBoxItemStacked(it.ItemId, it.Level, it.Id);
+            foreach (var it in boxGear)
+            {
+                int cell = IsPotion(it.ItemId) ? BoxItems.IndexOf(it.ItemId) : -1;
+                if (cell < 0 && it.Cell >= 0 && it.Cell < BoxItems.Count && BoxItems[it.Cell] == 0)
+                    cell = it.Cell;
+                if (cell < 0) cell = BoxItems.IndexOf(0);
+                if (cell < 0) continue;
+                if (BoxItems[cell] == it.ItemId && IsPotion(it.ItemId))
+                {
+                    BoxCount[cell]++;
+                    continue;
+                }
+                BoxItems[cell] = it.ItemId;
+                BoxCount[cell] = 1;
+                BoxLevel[cell] = it.Level;
+                BoxRowId[cell] = it.Id;
+            }
         }
+
+        public System.Threading.Tasks.Task<bool> PersistStorageLayoutAsync() =>
+            _server.Db.SaveInventoryLayoutAsync(
+                GameInfoId, ActiveCharId, _potionSlot, _potionRowId, BoxItems, BoxRowId);
 
         /// <summary>Adiciona um item ao box: poção empilha na célula existente do mesmo id; senão (e gear) ocupa
         /// a 1a célula vazia (contador 1, com nível de refino e id da linha). Retorna a célula ocupada.</summary>
@@ -99,6 +104,28 @@ namespace RakionServer.World.Network
             if (free < 0) return 0;                                       // box cheio
             BoxItems[free] = itemId; BoxCount[free] = 1; BoxLevel[free] = level; BoxRowId[free] = rowId;
             return (byte)free;
+        }
+
+        public void SetBoxCell(ushort slot, int itemId, int level, int rowId)
+        {
+            if (slot >= BoxItems.Count || BoxItems[slot] != 0)
+                throw new InvalidOperationException("Celula do box indisponivel.");
+            BoxItems[slot] = itemId;
+            BoxCount[slot] = 1;
+            BoxLevel[slot] = level;
+            BoxRowId[slot] = rowId;
+        }
+
+        public void ApplyStorageGrant(int itemId, int slot, int level, int rowId)
+        {
+            if (slot < 0 || slot >= BoxItems.Count)
+                throw new ArgumentOutOfRangeException(nameof(slot));
+            if (BoxItems[slot] == itemId && IsPotion(itemId))
+            {
+                BoxCount[slot]++;
+                return;
+            }
+            SetBoxCell((ushort)slot, itemId, level, rowId);
         }
 
         /// <summary>Esvazia UMA célula do box (consumo do refino). Devolve (itemId, rowId itembox) p/ o domínio
@@ -117,24 +144,40 @@ namespace RakionServer.World.Network
         }
 
         /// <summary>
-        /// 0x31 client->server: mover/trocar item entre o BOX (armazem, user+0x1e2c) e o POTION SLOT
-        /// (quickslot de pocao, user+0x1da4). Handler original FUN_00421870 -> FUN_0040cf10 (swap) e
+        /// 0x31 client->server: trocar item entre o box (user+0x1e2c) e a zona ativa de 19 slots
+        /// (user+0x1da4). Handler original FUN_00421870 -> FUN_0040cf10 (swap) e
         /// responde um 0x31 com os descritores de origem e destino. SEM resposta o cliente trava em
         /// "Changing slot for item". Faz o swap no modelo da sessao e responde reaproveitando o framing
         /// do 0x31 box-render (FUN_0047d1d0): descritor = [type:lo][slot:hi], item no campo seguinte.
         /// </summary>
-        private void HandlePotionSlot(byte[] data)
+        private async System.Threading.Tasks.Task HandleInventoryMoveAsync(byte[] data)
         {
-            if (data.Length < 4) return;
-            byte srcType = data[0], srcSlot = data[1], destType = data[2], destSlot = data[3];
-            // O 0x31 é o MOVE genérico de item; só sabemos reconciliar box(0) <-> quickslot(1).
-            // Qualquer outro descritor (ex.: arrastar um item do box para a LOJA = venda) NÃO pode
-            // tocar o modelo do box/quickslot nem persistir — antes corrompia itembox.qslot e
-            // "sumia" o item sem creditar gold. Loga o frame cru (p/ RE do destino real) e ignora.
-            if (srcType > 1 || destType > 1)
+            if (!InventoryMoveRequest.TryParse(data, out var request))
             {
-                Log.Warn("shop", "[{0}] 0x31 move fora de box/quickslot (src {1}:{2} dest {3}:{4}) — ignorado. raw={5}",
-                    Slot, srcType, srcSlot, destType, destSlot, System.Convert.ToHexString(data));
+                Disconnect(0x3e);
+                return;
+            }
+            byte srcType = request.SourceType, srcSlot = request.SourceSlot;
+            byte destType = request.DestinationType, destSlot = request.DestinationSlot;
+            byte mutationStatus = _inventoryUiState.MutationStatus(ShopBuyInProgress);
+            if (mutationStatus != 0)
+            {
+                SendPotionSlotMove(srcType, srcSlot, 0, destType, destSlot, 0,
+                    0, 0, 0, 0, mutationStatus);
+                return;
+            }
+            if (!TryStartInventoryMutation())
+            {
+                SendPotionSlotMove(srcType, srcSlot, 0, destType, destSlot, 0,
+                    0, 0, 0, 0, 2);
+                return;
+            }
+            try
+            {
+            if (!InventoryMoveRules.IsCoordinateValid(srcType, srcSlot) ||
+                !InventoryMoveRules.IsCoordinateValid(destType, destSlot))
+            {
+                Disconnect(0x3e);
                 return;
             }
             int srcItem = ReadCell(srcType, srcSlot);
@@ -143,33 +186,79 @@ namespace RakionServer.World.Network
             int destCnt = ReadCount(destType, destSlot);
             int srcLvl = ReadLevel(srcType, srcSlot), destLvl = ReadLevel(destType, destSlot);   // nível de refino (+N) e
             int srcRow = ReadRowId(srcType, srcSlot), destRow = ReadRowId(destType, destSlot);   // rowId do itembox SEGUEM o item
-            // Eco do move no FORMATO FIEL (21B, = FUN_00421870). O srcType cai no offset certo (param_3 do
-            // FUN_0047d1d0): srcType=1 ativa o caminho do QUICKSLOT no cliente (-> FUN_004264a0), que limpa
-            // /pinta o widget de pocao correto (array +0xa74). v1/v2 = CONTADOR (widget+0x194) -> tem que ser a
-            // quantidade real do stack, senao a pocao "vira 1" ao mover.
-            if (srcItem != 0 && srcItem == destItem && IsPotion(srcItem))
+            if (srcItem == 0)
             {
-                // MESMA pocao nos dois lados -> FUNDE os stacks (destino soma, origem esvazia)
-                int merged = srcCnt + destCnt;
-                WriteCell(srcType, srcSlot, 0);       WriteCount(srcType, srcSlot, 0);
-                WriteLevel(srcType, srcSlot, 0);      WriteRowId(srcType, srcSlot, 0);
-                WriteCell(destType, destSlot, destItem); WriteCount(destType, destSlot, merged);
-                SendPotionSlotMove(srcType, srcSlot, 0, destType, destSlot, destItem, destCnt: merged, srcCnt: 0);
+                SendPotionSlotMove(srcType, srcSlot, 0, destType, destSlot, 0,
+                    0, 0, 0, 0, 3);
+                return;
             }
-            else
+            if (srcType == destType && srcSlot == destSlot)
             {
-                // SWAP: origem recebe (destItem, destCnt, destLvl, destRow), destino recebe os da origem — tudo junto,
-                // p/ o nível de refino (+N) NÃO ficar órfão na célula antiga ao mover/equipar o item.
-                WriteCell(srcType, srcSlot, destItem); WriteCount(srcType, srcSlot, destCnt); WriteLevel(srcType, srcSlot, destLvl); WriteRowId(srcType, srcSlot, destRow);
-                WriteCell(destType, destSlot, srcItem); WriteCount(destType, destSlot, srcCnt); WriteLevel(destType, destSlot, srcLvl); WriteRowId(destType, destSlot, srcRow);
-                SendPotionSlotMove(srcType, srcSlot, destItem, destType, destSlot, srcItem, destCnt: srcCnt, srcCnt: destCnt, newSrcLvl: destLvl, newDestLvl: srcLvl);
+                SendPotionSlotMove(srcType, srcSlot, srcItem, destType, destSlot, destItem,
+                    destCnt, srcCnt, srcLvl, destLvl);
+                return;
             }
-            // Persiste no quickslot (itembox.qslot) SÓ poções. Gear/arma na zona ativa NÃO é deslocado p/ qslot —
-            // ele pertence ao box (qslot=0) com seu nível de refino. Antes, equipar uma arma a marcava como quickslot
-            // e, ao relogar, ela caía no LoadQuickslot (consolida por itemId, SEM nível) → o +N sumia.
-            if (GameInfoId > 0) _ = _server.Db.SaveQuickslotAsync(GameInfoId, QuickslotPotionsSnapshot());
-            Log.Ok("shop", "[{0}] 0x31 move: ({1}:{2} item={5} +{7}) <-> ({3}:{4} item={6} +{8})",
-                Slot, srcType, srcSlot, destType, destSlot, srcItem, destItem, srcLvl, destLvl);
+            if (!CanPlaceInActiveZone(destItem, srcType, srcSlot) ||
+                !CanPlaceInActiveZone(srcItem, destType, destSlot))
+            {
+                SendPotionSlotMove(srcType, srcSlot, 0, destType, destSlot, 0,
+                    0, 0, 0, 0, 4);
+                Log.Warn("shop", "[{0}] 0x31 item incompatível com slot ativo", Slot);
+                return;
+            }
+            await _storageMutationLock.WaitAsync();
+            try
+            {
+                // Eco do move no FORMATO FIEL (21B, = FUN_00421870). O srcType cai no offset certo (param_3 do
+                // FUN_0047d1d0): srcType=1 ativa o caminho do QUICKSLOT no cliente (-> FUN_004264a0), que limpa
+                // /pinta o widget de pocao correto (array +0xa74). v1/v2 = CONTADOR (widget+0x194) -> tem que ser a
+                // quantidade real do stack, senao a pocao "vira 1" ao mover.
+                WriteCell(srcType, srcSlot, destItem); WriteCount(srcType, srcSlot, destCnt);
+                WriteLevel(srcType, srcSlot, destLvl); WriteRowId(srcType, srcSlot, destRow);
+                WriteCell(destType, destSlot, srcItem); WriteCount(destType, destSlot, srcCnt);
+                WriteLevel(destType, destSlot, srcLvl); WriteRowId(destType, destSlot, srcRow);
+                // Persiste no quickslot (itembox.qslot) SÓ poções. Gear/arma na zona ativa NÃO é deslocado p/ qslot —
+                // ele pertence ao box (qslot=0) com seu nível de refino. Antes, equipar uma arma a marcava como quickslot
+                // e, ao relogar, ela caía no LoadQuickslot (consolida por itemId, SEM nível) → o +N sumia.
+                bool committed = GameInfoId > 0 && ActiveCharId > 0 &&
+                    await _server.Db.SaveInventoryLayoutAsync(
+                        GameInfoId, ActiveCharId, _potionSlot, _potionRowId, BoxItems, BoxRowId);
+                if (!committed)
+                {
+                    WriteCell(srcType, srcSlot, srcItem); WriteCount(srcType, srcSlot, srcCnt);
+                    WriteLevel(srcType, srcSlot, srcLvl); WriteRowId(srcType, srcSlot, srcRow);
+                    WriteCell(destType, destSlot, destItem); WriteCount(destType, destSlot, destCnt);
+                    WriteLevel(destType, destSlot, destLvl); WriteRowId(destType, destSlot, destRow);
+                    SendPotionSlotMove(srcType, srcSlot, srcItem, destType, destSlot, destItem,
+                        destCnt, srcCnt, srcLvl, destLvl);
+                    Log.Warn("shop", "[{0}] 0x31 move não persistiu; estado restaurado", Slot);
+                    return;
+                }
+
+                int newSrcItem = ReadCell(srcType, srcSlot), newDestItem = ReadCell(destType, destSlot);
+                SendPotionSlotMove(srcType, srcSlot, newSrcItem, destType, destSlot, newDestItem,
+                    ReadCount(destType, destSlot), ReadCount(srcType, srcSlot),
+                    ReadLevel(srcType, srcSlot), ReadLevel(destType, destSlot));
+                Log.Ok("shop", "[{0}] 0x31 move: ({1}:{2} item={5} +{7}) <-> ({3}:{4} item={6} +{8})",
+                    Slot, srcType, srcSlot, destType, destSlot, srcItem, destItem, srcLvl, destLvl);
+            }
+            finally
+            {
+                _storageMutationLock.Release();
+            }
+            }
+            finally
+            {
+                FinishInventoryMutation();
+            }
+        }
+
+        private bool CanPlaceInActiveZone(int itemId, byte type, byte slot)
+        {
+            if (type == 0 || itemId == 0) return true;
+            Database.ItemDef? definition = _server.FindItemDef(itemId);
+            return definition != null &&
+                   EquipmentRules.CanPlace(definition, slot, CharClass, CharLevel);
         }
 
         private int ReadCell(byte type, byte slot) =>
@@ -212,28 +301,50 @@ namespace RakionServer.World.Network
             else if (slot < _potionRowId.Length) _potionRowId[slot] = rowId;
         }
 
-        /// <summary>Snapshot da zona ativa SÓ com as células de poção (gear/arma → 0). O quickslot persistido
-        /// (itembox.qslot, fungível por itemId) é exclusivo de poção; gear não-fungível mora no box com seu nível
-        /// de refino. Sem isto, equipar uma arma a deslocava p/ qslot e ela perdia o +N ao recarregar.</summary>
-        private int[] QuickslotPotionsSnapshot()
-        {
-            var snap = new int[_potionSlot.Length];
-            for (int i = 0; i < _potionSlot.Length; i++)
-                if (IsPotion(_potionSlot[i])) snap[i] = _potionSlot[i];
-            return snap;
-        }
-
         /// <summary>Poção empilhável/contável (faixa de item-id 12000–12999, fiel ao FUN_0040c140/FUN_0040cd70).
         /// Único ponto de verdade da faixa de poção neste domínio.</summary>
-        private static bool IsPotion(int itemId) => itemId >= 12000 && itemId <= 12999;
+        private static bool IsPotion(int itemId) => StorageEconomyRules.IsPotion(itemId);
 
         /// <summary>Popula o quickslot de pocao com o que foi persistido (itembox.qslot) no login.</summary>
         public void LoadPotionSlot(System.Collections.Generic.IReadOnlyList<(int Cell, int ItemId, int Count)> entries)
         {
-            System.Array.Clear(_potionSlot);
-            System.Array.Clear(_potionCount);
+            for (int cell = 13; cell < _potionSlot.Length; cell++)
+            {
+                _potionSlot[cell] = 0;
+                _potionCount[cell] = 0;
+                _potionLevel[cell] = 0;
+                _potionRowId[cell] = 0;
+                _fieldPotionPending[cell] = 0;
+            }
             foreach (var (cell, itemId, count) in entries)
-                if (cell >= 0 && cell < _potionSlot.Length) { _potionSlot[cell] = itemId; _potionCount[cell] = count; }
+                if (cell >= 0 && cell < _potionSlot.Length &&
+                    (cell < 13 || InventoryEntitlementRules.IsPotionCellUnlocked(cell, PotionSlotCount)))
+                {
+                    _potionSlot[cell] = itemId;
+                    _potionCount[cell] = count;
+                }
+        }
+
+        public void LoadActiveItems(System.Collections.Generic.IReadOnlyList<Database.UserItem> items)
+        {
+            for (int slot = 0; slot < 13; slot++)
+            {
+                _potionSlot[slot] = 0;
+                _potionCount[slot] = 0;
+                _potionLevel[slot] = 0;
+                _potionRowId[slot] = 0;
+            }
+            foreach (Database.UserItem item in items)
+            {
+                if (item.Slot >= 13) continue;
+                Database.ItemDef? definition = _server.FindItemDef(item.ItemId);
+                if (definition == null ||
+                    !EquipmentRules.CanPlace(definition, item.Slot, CharClass, CharLevel)) continue;
+                _potionSlot[item.Slot] = item.ItemId;
+                _potionCount[item.Slot] = 1;
+                _potionLevel[item.Slot] = item.Level;
+                _potionRowId[item.Slot] = item.Id;
+            }
         }
 
         /// <summary>Pinta uma celula do quickslot de pocao na abertura do inventario. A forma do frame
@@ -255,8 +366,72 @@ namespace RakionServer.World.Network
         /// mesmo paint como fallback (guard _potionPainted próprio) caso o widget ainda não exista na hora do 0x14.</summary>
         public void PaintQuickslot()
         {
-            for (byte cell = 0; cell < _potionSlot.Length; cell++)
-                if (_potionSlot[cell] != 0) SendPotionSlotAdd(_potionSlot[cell], cell, _potionCount[cell]);
+            for (byte cell = 13; cell < _potionSlot.Length; cell++)
+                if (InventoryEntitlementRules.IsPotionCellUnlocked(cell, PotionSlotCount) &&
+                    _potionSlot[cell] != 0) SendPotionSlotAdd(_potionSlot[cell], cell, _potionCount[cell]);
+        }
+
+        public void ResetFieldPotionUsage()
+        {
+            lock (_fieldPotionSync)
+                System.Array.Clear(_fieldPotionUsed, 0, _fieldPotionUsed.Length);
+        }
+
+        public bool AuthorizeFieldPotionUse(byte cell, short requestedItemId, byte fieldMode)
+        {
+            lock (_fieldPotionSync)
+            {
+                int equippedItemId = cell < _potionSlot.Length ? _potionSlot[cell] : 0;
+                int count = cell < _potionCount.Length ? _potionCount[cell] : 0;
+                bool used = cell < _fieldPotionUsed.Length && _fieldPotionUsed[cell];
+                var context = new FieldPotionUseContext(
+                    cell, requestedItemId, fieldMode, PotionSlotCount, equippedItemId, count, used);
+                if (!FieldPotionRules.CanUse(context)) return false;
+
+                var reservation = new FieldPotionReservationState(count, _fieldPotionPending[cell]);
+                if (!FieldPotionRules.TryReserve(reservation, out reservation)) return false;
+                _potionCount[cell] = reservation.AvailableCount;
+                _fieldPotionPending[cell] = reservation.PendingCount;
+                _fieldPotionUsed[cell] = true;
+                return true;
+            }
+        }
+
+        public async System.Threading.Tasks.Task PersistFieldPotionUseAsync(byte cell, int itemId)
+        {
+            await _storageMutationLock.WaitAsync();
+            try
+            {
+                var request = new Database.FieldPotionConsumeRequest(
+                    GameInfoId, ActiveCharId, cell, itemId);
+                Database.FieldPotionConsumeResult result =
+                    await _server.Db.ConsumeFieldPotionAsync(request);
+                if (!result.Success)
+                {
+                    lock (_fieldPotionSync)
+                    {
+                        var reservation = FieldPotionRules.Fail(new FieldPotionReservationState(
+                            _potionCount[cell], _fieldPotionPending[cell]));
+                        _fieldPotionPending[cell] = reservation.PendingCount;
+                    }
+                    Log.Error("potion", "[{0}] consumo não persistido: char={1} slot={2} item={3}",
+                        Slot, ActiveCharId, cell, itemId);
+                    Disconnect(0xd2);
+                    return;
+                }
+
+                lock (_fieldPotionSync)
+                {
+                    var reservation = FieldPotionRules.Commit(new FieldPotionReservationState(
+                        _potionCount[cell], _fieldPotionPending[cell]), result.RemainingCount);
+                    _potionCount[cell] = reservation.AvailableCount;
+                    _fieldPotionPending[cell] = reservation.PendingCount;
+                }
+            }
+            finally
+            {
+                _storageMutationLock.Release();
+            }
         }
 
         /// <summary>
@@ -271,198 +446,35 @@ namespace RakionServer.World.Network
         /// poção** (widget+0x194, lido cifrado pelo FUN_00440430) — o cliente EXIGE > 0 p/ deixar usar a poção
         /// no jogo; cada célula = 1 poção no nosso modelo -> poção manda 1, não-poção 0 (campo vira exp/limit).
         /// </summary>
-        private void SendPotionSlotMove(byte srcType, byte srcSlot, int newSrcItem, byte destType, byte destSlot, int newDestItem, int destCnt = 1, int srcCnt = 1, int newSrcLvl = 0, int newDestLvl = 0)
+        private void SendPotionSlotMove(byte srcType, byte srcSlot, int newSrcItem, byte destType,
+            byte destSlot, int newDestItem, int destCnt = 1, int srcCnt = 1,
+            int newSrcLvl = 0, int newDestLvl = 0, byte status = 0)
         {
             // CONTADOR (v) = widget+0x194: > 0 deixa a poção visível/utilizável; 0 a deixa "zerada"/inerte.
-            // É a QUANTIDADE REAL do stack (não mais 1 fixo) -> mover/fundir preserva o total no widget.
+            // É a quantidade real da célula e acompanha o item durante o swap.
             // Não-poção = 0 (lá o campo é exp/limit). O contador NÃO causa o freeze do stage (independe
             // dele; cliente NOVO + contador 0 ainda travava, teste 15/06 -> RE pendente).
-            uint srcCount  = IsPotion(newSrcItem)  ? (uint)System.Math.Max(1, srcCnt)  : 0u;
+            uint srcCount = IsPotion(newSrcItem) ? (uint)System.Math.Max(1, srcCnt) : 0u;
             uint destCount = IsPotion(newDestItem) ? (uint)System.Math.Max(1, destCnt) : 0u;
-            using var w = new PacketWriter();
-            w.WriteWord(0x31);                  // off0  msgType (dispatch do cliente)
-            w.WriteByte(0);                     // off2  status = 0 (sucesso; != 0 mostraria erro)
-            w.WriteByte(srcType);               // off3  srcType (0=box, 1=quickslot) — DECIDE o ramo
-            w.WriteByte(srcSlot);               // off4  srcSlot
-            w.WriteWord((ushort)newSrcItem);    // off5  novo item na origem (0 = celula esvaziada)
-            // off7/off16 b1/b2 = nível de refino. O handler do cliente FUN_0047d1d0 grava esse byte CRU no widget,
-            // e o nível é IDÊNTICO nas 2 zonas — o swap FUN_0040cf10 só faz memcpy box(+0x1f1c)↔equip(+0x1dca), sem
-            // conversão por zona. Espelhamos EXATAMENTE o box-render (SendBoxAdd, level==0?1:level), confirmado
-            // in-game — SEM 1+N e SEM distinção box/equip. Antes o move→box mandava 1+N, estourava a faixa de refino
-            // e o cliente perdia o "+N" ao desequipar (item "parecia nunca ter sido refinado").
-            w.WriteByte((byte)(IsPotion(newSrcItem) ? 0 : (newSrcLvl <= 0 ? 1 : newSrcLvl)));   // off7 b1 = nível origem
-            w.WriteUInt32(srcCount);            // off8  v1 = CONTADOR da poção na origem (widget+0x194)
-            w.WriteByte(destType);              // off12 destType
-            w.WriteByte(destSlot);              // off13 destSlot
-            w.WriteWord((ushort)newDestItem);   // off14 novo item no destino
-            w.WriteByte((byte)(IsPotion(newDestItem) ? 0 : (newDestLvl <= 0 ? 1 : newDestLvl))); // off16 b2 = nível destino
-            w.WriteUInt32(destCount);           // off17 v2 = CONTADOR da poção no destino (widget+0x194)
-            SendEncryptedFrame(w.ToArray());
+            var source = new InventoryMoveCell(srcType, srcSlot, (ushort)newSrcItem,
+                InventoryMoveMetadata(newSrcItem, newSrcLvl), srcCount);
+            var destination = new InventoryMoveCell(destType, destSlot, (ushort)newDestItem,
+                InventoryMoveMetadata(newDestItem, newDestLvl), destCount);
+            SendEncryptedFrame(InventoryMoveFrames.Response(status, source, destination));
         }
 
-        /// <summary>
-        /// 0x73 = mudar slot de item no BOX (worldserv FUN_00421a50 -> FUN_0040c140): EMPILHAR pocoes
-        /// iguais. Valida que origem e destino sao pocoes (12000-12999) e responde a lista do box
-        /// (subtype 0x27); senao responde o erro curto [0x73][status]. FUN_0040c140 NAO muta o box (so'
-        /// le + computa campos que p/ pocao sao 0: deltas e soma de exp@0x1f94) — entao tambem nao
-        /// mexemos no modelo: o cliente no-GG ja fez a juncao local e so' espera o ack p/ tirar o aviso
-        /// "Changing item slot". Sem resposta o 0x73 caia no catch-all 'em campo (sem resp)' e travava.
-        /// payload: [u8 srcSlot][u8 destSlot] (o resto e' widget do cliente, ignorado como no original).
-        /// </summary>
-        private void HandleItemSlotChange(byte[] data)
-        {
-            if (data.Length < 2) { SendItemSlotError(3); return; }            // frame curto -> destrava com erro
-            byte srcSlot = data[0], destSlot = data[1];
-            if (srcSlot >= 0x78 || destSlot >= 0x78) { SendItemSlotError(3); return; } // bounds (orig DISC 0xe0/0xe1)
-
-            int srcItem  = srcSlot  < BoxItems.Count ? BoxItems[srcSlot]  : 0;
-            int destItem = destSlot < BoxItems.Count ? BoxItems[destSlot] : 0;
-            // FUN_0040c140: sucesso so' quando origem e destino sao pocoes (12000-12999) da mesma categoria.
-            bool stackablePotions = IsPotion(srcItem) && IsPotion(destItem);
-            if (!stackablePotions)
-            {
-                SendItemSlotError(3);   // nao-empilhavel -> aviso some com "erro" (fiel ao retorno 3/4 do original)
-                Log.Ok("shop", "[{0}] 0x73 item-slot {1}<-{2} nao-empilhavel (src={3} dest={4}) -> erro 3",
-                    Slot, destSlot, srcSlot, srcItem, destItem);
-                return;
-            }
-            // NAO mutamos o box: FUN_0040c140 tambem nao muta (so' valida + computa) e ESTE cliente NAO junta
-            // as pocoes ao receber o ack — mantem as DUAS celulas. Esvaziar a origem aqui descasava do cliente
-            // (ele seguia mostrando a pocao na origem) -> a pocao "sumia" no nosso modelo. So' valida e confirma.
-            SendItemSlotStackAck(srcSlot, destSlot);
-            Log.Ok("shop", "[{0}] 0x73 slot {1}<->{2} (pocao {3}) -> ack 0x27 (sem merge, mantem as 2)", Slot, destSlot, srcSlot, srcItem);
-        }
-
-        /// <summary>Erro curto do 0x73 (FUN_004038e0, len 3): [u16 0x73][u8 status]. Destrava o aviso do cliente.</summary>
-        private void SendItemSlotError(byte status)
-        {
-            using var w = new PacketWriter();
-            w.WriteWord(0x73);
-            w.WriteByte(status);
-            SendLobby(w.ToArray());
-        }
-
-        /// <summary>
-        /// Ack de sucesso do 0x73 (FUN_00421a50 -> subtype 0x27): cabecalho do move + a lista atual do box
-        /// (mesma forma do 0x15: count1=0 + count2 = itens do box). P/ pocao os campos delta/soma sao 0.
-        /// Forma de lista que o cliente ja conhece -> tira o aviso e mantem a juncao local que ele fez.
-        /// </summary>
-        private void SendItemSlotStackAck(byte srcSlot, byte destSlot)
-        {
-            using var w = new PacketWriter();
-            w.WriteWord(0x27);              // subtype (dispatch do cliente)
-            w.WriteWord(0);                 // seq
-            w.WriteUInt32((uint)FieldId);   // off4  fieldId (*(0x1460))
-            w.WriteByte(srcSlot);           // off8
-            w.WriteByte(destSlot);          // off9
-            w.WriteUInt32(0);               // off10 srcDelta  (user+0x1bc4; 0 p/ pocao)
-            w.WriteUInt32(0);               // off14 destDelta (0x1bc4)
-            w.WriteUInt32(0);               // off18 mergedExp (soma de 0x1f94; 0 p/ pocao)
-            w.WriteUInt32(0);               // off22 fsecHandle (0x14a4; 0 como na lista 0x15)
-            w.WriteByte(0);                 // off26 count1 (delta de loadout) = 0
-            // count2 = itens atuais do box (ids u32 + slots u8), igual ao bloco2 do 0x15
-            byte n = 0;
-            using var ids = new PacketWriter();
-            using var slots = new PacketWriter();
-            for (int i = 0; i < BoxItems.Count && i < 0x78; i++)
-                if (BoxItems[i] != 0) { ids.WriteUInt32((uint)BoxItems[i]); slots.WriteByte((byte)i); n++; }
-            w.WriteByte(n);                 // count2
-            w.WriteBytes(ids.ToArray());    // count2 x u32 (itemIds)
-            w.WriteBytes(slots.ToArray());  // count2 x u8  (slots)
-            w.WriteByte(0);                 // tail
-            SendLobby(w.ToArray());
-        }
-
-        /// <summary>
-        /// 0x34 Buy Power User: CONCEDE o PU (o original validava no cash-shop online, offline) e responde o
-        /// frame que DESTRAVA o popup "Buying Power User". O frame de sucesso real e' 0x17 no canal field
-        /// (irreplicavel sem o serverSeq do cash-server). Usamos o frame [34 00][04][handle][00][status][00][17 00]
-        /// — a estrutura destrava; a MENSAGEM depende do status (2 = "6 meses"). status=0 -> tenta fechar sem erro.
-        /// </summary>
-        private void HandleBuyPowerUser()
-        {
-            var cfg = _server.PuConfig;
-            uint price = (uint)cfg.Price;
-            int bonus = cfg.BonusPoints;
-            bool granted = false;
-            if (Cash >= price && GameInfoId > 0 && Game != null)
-            {
-                // estado anterior p/ rollback se a persistencia falhar (espelha a compra em Op_RoomMemberQuery)
-                uint prevCash = Cash; uint prevPoints = PowerLevelPoint;
-                bool prevPu = PuActive; bool prevExpBonus = ExpBonusActive;
-                Cash -= price;
-                PowerLevelPoint += (uint)bonus;
-                PuActive = true; ExpBonusActive = true;   // PU passa a valer já nesta sessão (sem relog)
-                granted = true;
-                Log.Ok("shop", "[{0}] Buy Power User: -{1} cash, +{2} PU bonus (total {3}), +{4}d", Slot, price, bonus, PowerLevelPoint, cfg.DurationDays);
-
-                // PERSISTE em background com rollback: se cash OU power-user falharem, reverte o estado em memoria.
-                string acct = Game.Name; int gi = GameInfoId; int dur = cfg.DurationDays; int b = bonus;
-                var db = _server.Db;
-                System.Threading.Tasks.Task.Run(async () =>
-                {
-                    bool ok = true;
-                    try { await db.AddCashAsync(acct, -(int)price); await db.GrantPowerUserAsync(gi, b, dur); }
-                    catch (Exception ex) { ok = false; Log.Error("shop", "[{0}] persist Buy Power User: {1}", Slot, ex.Message); }
-                    if (!ok)
-                    {
-                        Cash = prevCash; PowerLevelPoint = prevPoints; PuActive = prevPu; ExpBonusActive = prevExpBonus;
-                        Log.Warn("shop", "[{0}] persist Buy Power User FALHOU -> estado revertido (cash/pontos/PU)", Slot);
-                    }
-                });
-            }
-            // status 2 -> o cliente exibe a mensagem 641 do language.txt, que PATCHAMOS no DataSetup.xfs
-            // de "...6 months in advance" p/ "Power User purchased! Relog to see your bonus points."
-            SendPowerUserResponse(0x02);
-            if (granted) SendPowerUserBonusLive();   // sobe o contador de PU Bonus Points SEM relog
-        }
-
-        /// <summary>
-        /// Empurra ao cliente o novo total de PU Bonus Points logo apos a compra, SEM relog. Reaproveita a
-        /// resposta 0x33 de alocacao (OnRecvInventoryAllocationPoint, FUN_0047dbb0): no status 0 ela grava
-        /// account_info+0x58 = PU bonus (e o levelpoint) INCONDICIONALMENTE, e so' atualiza o widget se a UI
-        /// de inventario estiver aberta (guard menu 0x19/0x1a/0x1b) — mesmo padrao seguro do BuyPowerUser.
-        /// stat=0x0a (fora de 0..9): o switch do handler cai no default e PULA a escrita de stat -> no-op de
-        /// stat; so' o contador de PU/levelpoint sobe. Forma de frame ja validada (a alocacao real a usa).
-        /// </summary>
-        private void SendPowerUserBonusLive()
-        {
-            using var w = new PacketWriter();
-            w.WriteWord(0x33);
-            w.WriteByte(0);                          // status sucesso
-            w.WriteWord((ushort)CharLevelPoint);     // levelpoint (valor atual = no-op)
-            w.WriteWord((ushort)PowerLevelPoint);    // PU Bonus Points NOVO -> account_info+0x58
-            w.WriteByte(0x0a);                        // stat fora de 0..9 -> default: NAO escreve stat
-            w.WriteWord(0);                          // newStat ignorado no caminho default
-            SendLobby(w.ToArray());
-            Log.Ok("shop", "[{0}] 0x33 push PU bonus live -> {1} (sem relog)", Slot, PowerLevelPoint);
-        }
-
-        private void SendPowerUserResponse(byte status)
-        {
-            using var w = new PacketWriter();
-            w.WriteWord(0x34);
-            w.WriteByte(0x04);
-            w.WriteByte(_invHandle[0]);
-            w.WriteByte(0x00);
-            w.WriteByte(_invHandle[2]);
-            w.WriteByte(_invHandle[3]);
-            w.WriteByte(0x00);
-            w.WriteByte(status);  // 2 = "6 meses"; 0 = tentativa de fechar sem erro
-            w.WriteByte(0x00);
-            w.WriteWord(0x17);
-            SendEncryptedFrame(w.ToArray());
-            Log.Ok("shop", "[{0}] 0x34 power-user resposta (status={1})", Slot, status);
-        }
+        private static byte InventoryMoveMetadata(int itemId, int level) =>
+            itemId == 0 || IsPotion(itemId) ? (byte)0 : (byte)(level <= 0 ? 1 : level);
 
         /// <summary>LOBBY 0x51 (level-up) ao proprio: [51 00][level][u16 levelPoint]. MESMO frame que o
         /// caminho PvP (Op_0x50_Recon) manda apos o GrantExp; sem ele o solo sobe o nivel server-side mas o
         /// cliente fica preso no nivel antigo (barra travada, ex.: 188/133) ate um relog.</summary>
         private void SendLevelUp()
         {
-            byte[] f = { 0x51, 0x00, CharLevel,
-                         (byte)(CharLevelPoint & 0xff), (byte)(CharLevelPoint >> 8 & 0xff) };
-            SendEncryptedFrame(f);
+            using var writer = new PacketWriter();
+            writer.WriteWord(0x51).WriteBytes(ProgressionResponseBodies.LevelUp(
+                CharLevel, checked((ushort)CharLevelPoint)));
+            SendEncryptedFrame(writer.ToArray());
             Log.Ok("level", "[{0}] 0x51 level-up -> nivel {1} (levelPoint {2}) ao cliente", Slot, CharLevel, CharLevelPoint);
         }
     }

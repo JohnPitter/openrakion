@@ -4,19 +4,20 @@ namespace RakionServer.World.Database
 {
     /// <summary>
     /// Configuração do Power User (tabela `pu_config`, linha única id=1). Editável pelo painel admin,
-    /// lida pelo World no boot. Define o preço/bônus da compra e os multiplicadores de XP/gold aplicados
-    /// enquanto o PU está ativo. Promoção = multiplicadores alternativos dentro de uma janela de datas.
+    /// lida pelo World no boot. Define o preço/bônus da compra e o multiplicador original de XP.
+    /// Multiplicadores de gold e promoção são extensões operacionais, neutras por padrão.
     /// </summary>
     public sealed class PuConfig
     {
         public int Price = 8000;          // custo da compra (cash)
-        public int BonusPoints = 51;      // pontos de bônus concedidos por compra
+        public int RenewalPrice = 6000;   // custo do modo extend do protocolo original
+        public int BonusPoints = 5;       // pontos concedidos pelo fluxo original 0x17
         public int DurationDays = 30;     // validade do PU somada por compra
         public double ExpMult = 1.5;      // multiplicador de XP com PU ativo (fora de promo)
-        public double GoldMult = 1.5;     // multiplicador de gold com PU ativo (fora de promo)
+        public double GoldMult = 1.0;     // extensão: o cliente v258 original não bonifica gold
         public bool PromoActive;          // liga a promoção (multiplicadores alternativos)
         public double PromoExpMult = 2.0;
-        public double PromoGoldMult = 2.0;
+        public double PromoGoldMult = 1.0;
         public DateTime? PromoStart;      // null = sem limite inferior
         public DateTime? PromoEnd;        // null = sem limite superior
 

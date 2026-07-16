@@ -16,8 +16,14 @@ namespace RakionServer.World.Domain
         public byte State;               // +2 (=field+slot*0x14+0x126)
         public byte WeaponState = 1;     // arma atual do jogador: 1=armaA, 2=armaB
         public bool Dead;                // +4 (0x128) flag morto
-        public uint Score;               // pontuacao/kills do player no field-record
+        public byte RoundScore;          // +8 (+0x12c): kills/pontos do round individual
+        public byte CounterA;            // +9 (+0x12d): contador acumulado do lado A
+        public byte CounterB;            // +10 (+0x12e): contador acumulado do lado B
+        public uint ResultPoints;         // +12 (+0x130): pontos/EXP acumulados no resultado
+        public byte VoteState;            // +16 (+0x134): 0=nao votou, 1=sim, 2=nao, 3=abstencao
         public byte Cause;               // ultima causa de morte
+        public bool LobbyReady;           // prontidão no lobby, separada do spawn
+        public bool UsesTunneling;         // user+0x1478: sem rota UDP direta confirmada
         public byte Team => (byte)(Slot < 10 ? 0 : 1); // slots 0..9 = time0, 10..0x13 = time1
         public int Slot;                 // indice no array (0..0x13)
 
@@ -30,11 +36,13 @@ namespace RakionServer.World.Domain
     public enum MatchPhase : byte { Pre = 0, Playing = 1, RoundEnd = 2 }
 
     /// <summary>
-    /// Modos de jogo do field (field+0x119). Valores deduzidos da validacao de Op_RoomCreate
+    /// Modos de jogo do field (field+0x119). Valores deduzidos da validacao de FieldCreate
     /// (mode != 0 && mode &lt; 5; mode 2/3 com restricao de nivel) + a ordem do usablemode no
     /// stage-DB do cliente decifrado (GOLEM,DEATHMATCH,TEAMDEATH,BOSS). Mapas Battle 200-213.
     /// </summary>
     public enum GameMode : byte { Golem = 1, Deathmatch = 2, TeamDeath = 3, Boss = 4 }
+
+    public readonly record struct LifetimeMatchRecord(uint Win, uint Lose, uint Draw);
 
     /// <summary>
     /// Field = partida/sala de jogo (array this+0xe4 do worldserv.exe, entradas de
@@ -43,13 +51,17 @@ namespace RakionServer.World.Domain
     /// FUN_00407e00 = morte/scoring). O motor roda por-field (WorldServer tick global),
     /// NAO por-sessao.
     /// </summary>
-    public sealed class Field
+    public sealed partial class Field
     {
+        public const byte NoSeat = 0x14;
         private const ushort DefaultRoundDurationSec = 432; // +3s de countdown => 0x01B3, captura original que destrava o stage
 
         public int Id;
         public string Name = "";
-        public byte Mode;            // +0x119 modo de jogo (0/1=deathmatch, 2=survival, 3=score-cap, 4=MVP)
+        public string Password = "";
+        public string Description = "";
+        public bool Searchable = true;
+        public byte Mode;            // +0x119: 0=stage, 1=Golem, 2=Deathmatch, 3=Team Death, 4=Boss
         public byte MaxPlayers = 8;
         public bool InGame;          // partida em andamento (legado)
         public ClientSession? Master;
@@ -57,10 +69,11 @@ namespace RakionServer.World.Domain
         public byte State;           // field+8: 0=livre, 1=fim-match, 2=em jogo
         public int SlotEnabled;      // mascara/contagem de slots habilitados
         public byte MapId;           // field+0x118
-        public byte MinLevel;        // field+0x114
-        public byte MaxLevel;        // field+0x115
-        public byte LeaderSlotA = 0xff; // field+0x122 (MVP/lider time A; 0xff = nenhum)
-        public byte LeaderSlotB = 0xff; // field+0x123 (MVP/lider time B; 0xff = nenhum)
+        public byte MinLevel;        // field+0x111
+        public byte MaxLevel;        // field+0x112
+        public byte LevelRangeCode;  // field+0x113: classificação da faixa de level da sala
+        public byte LeaderSlotA = NoSeat; // field+0x122 (líder Boss do time A; 0x14 = nenhum)
+        public byte LeaderSlotB = NoSeat; // field+0x123 (líder Boss do time B; 0x14 = nenhum)
         public byte StateB;             // field-object +8  (estado: deve ser 2 para liquidar pontos/resultado)
         public byte StateMode;          // field-object +0x2b4 (modo: deve ser 2 para liquidar pontos/resultado)
         public byte FieldFlag119;       // field-object +0x119 (flag de estado; deve ser 0 para aceitar settle/result)
@@ -73,21 +86,26 @@ namespace RakionServer.World.Domain
         public ushort RoundDurationSec = DefaultRoundDurationSec; // +0x11c (432 -> RemainingSec ~435, ground truth do original)
         public byte FragLimit;          // +0x11e (kills/score p/ vencer o round; 0 = sem limite)
         public byte Warned30;           // +0x2be (flag aviso de 30s)
-        public byte LastRoundWinner;    // +0x2bd
-        public byte WinnerSide;         // +0x2bf (0/1/2=empate)
+        public byte RoundEndReason;     // +0x2bd: 1=normal/score, 2=objetivo, 2/3 no fluxo stage
+        public byte LosingSideWire;     // +0x2bf: 0=time1 venceu, 1=time0 venceu, 2=empate
         public byte Wins0;              // +0x2c0 (rounds ganhos time0)
         public byte Wins1;              // +0x2c1 (rounds ganhos time1)
         public byte Score0;             // +0x11f (placar/kills time0 do round)
         public byte Score1;             // +0x120 (placar/kills time1 do round)
-        public byte Mvp0 => LeaderSlotA == 0xff ? (byte)0 : LeaderSlotA;
-        public byte Mvp1 => LeaderSlotB == 0xff ? (byte)0 : LeaderSlotB;
+        public byte Mvp0 => LeaderSlotA;
+        public byte Mvp1 => LeaderSlotB;
 
-        // ---- modo GOLEM/BOSS (objetivo): cada time tem um Master Golem com energia ----
-        public ushort Golem0Hp = 100;   // energia do Master Golem do time 0 (stage-DB: "Master Golem has <%d%%> energy")
-        public ushort Golem1Hp = 100;   // energia do Master Golem do time 1
-        public bool ObjectiveDecided;   // ja houve vencedor por objetivo (Golem destruido)
+        // ---- estado client/P2P-authoritative reportado ao World ----
+        public short ObjectivePairA;    // +0x2c4 (0x4D primeiro s16)
+        public short ObjectivePairB;    // +0x2c6 (0x4D segundo s16)
+        public ushort BossTargetA;      // +0x2c8 (0x60 arg0 < 10)
+        public ushort BossTargetB;      // +0x2ca (0x60 arg0 >= 10)
+        public bool ObjectiveDecided;
+        public bool HasTunnelingClient; // +0x2cc: agregado publicado por 0x54/0x55
 
         public bool Settled;            // resultado do match ja liquidado no DB (WorldServer.SettleMatch)
+        public Guid MatchId { get; private set; }
+        public readonly object SyncRoot = new();
 
         /// <summary>Array de 0x14 player-records (field+0x124, stride 0x14).</summary>
         public readonly PlayerRec[] Slots = NewSlots();
@@ -105,6 +123,32 @@ namespace RakionServer.World.Domain
 
         public int Count { get { lock (Players) return Players.Count; } }
 
+        /// <summary>Gate exato de FUN_00424B60 para o reporte competitivo de pontos.</summary>
+        public bool CanAcceptGamePoint() =>
+            Mode != 0 && State == 2 && Phase == MatchPhase.RoundEnd;
+
+        /// <summary>Replica FUN_00405980: 1=win, 2=lose, 3=draw no snapshot do 0x50.</summary>
+        public byte GamePointOutcome(byte seat, ushort resultMarker)
+        {
+            if (resultMarker == 0) return 3;
+            if (Mode != 1 && Mode != 3 && Mode != 4) return 3;
+            return LosingSideWire switch
+            {
+                0 => seat < 10 ? (byte)2 : (byte)1,
+                1 => seat < 10 ? (byte)1 : (byte)2,
+                _ => 3
+            };
+        }
+
+        public LifetimeMatchRecord ProjectGamePointRecord(
+            byte seat, ushort resultMarker, LifetimeMatchRecord current) =>
+            GamePointOutcome(seat, resultMarker) switch
+            {
+                1 => current with { Win = current.Win + 1 },
+                2 => current with { Lose = current.Lose + 1 },
+                _ => current with { Draw = current.Draw + 1 }
+            };
+
         public void Add(ClientSession s)
         {
             lock (Players) { if (!Players.Contains(s)) Players.Add(s); }
@@ -114,7 +158,49 @@ namespace RakionServer.World.Domain
         {
             lock (Players) Players.Remove(s);
             var rec = FindRec(s);
-            if (rec != null) { rec.Session = null; rec.State = 0; rec.WeaponState = 1; rec.Dead = false; rec.Score = 0; }
+            if (rec != null)
+            {
+                rec.Session = null;
+                rec.State = 0;
+                rec.WeaponState = 1;
+                rec.Dead = false;
+                rec.RoundScore = 0;
+                rec.CounterA = 0;
+                rec.CounterB = 0;
+                rec.ResultPoints = 0;
+                rec.VoteState = 0;
+                rec.LobbyReady = false;
+                rec.UsesTunneling = false;
+            }
+        }
+
+        public TunnelingPresenceChange RegisterTunnelingPresence(byte seat, bool usesTunneling)
+        {
+            PlayerRec? record = RecAt(seat);
+            if (record == null) return TunnelingPresenceChange.None;
+
+            record.UsesTunneling = usesTunneling;
+            if (!record.UsesTunneling) return TunnelingPresenceChange.None;
+            if (HasTunnelingClient) return TunnelingPresenceChange.SyncEnabled;
+
+            HasTunnelingClient = true;
+            return TunnelingPresenceChange.Enabled;
+        }
+
+        public TunnelingPresenceChange UnregisterTunnelingPresence(byte seat)
+        {
+            PlayerRec? departing = RecAt(seat);
+            if (departing == null || !departing.UsesTunneling)
+                return TunnelingPresenceChange.None;
+
+            departing.UsesTunneling = false;
+            foreach (PlayerRec record in Slots)
+                if (record.State is 3 or 4 && record.UsesTunneling)
+                    return TunnelingPresenceChange.None;
+
+            if (!HasTunnelingClient) return TunnelingPresenceChange.None;
+            HasTunnelingClient = false;
+            return TunnelingPresenceChange.Disabled;
         }
 
         // ---- helpers de player-record (resolvem field+0x124 + slot*0x14) ----
@@ -129,12 +215,28 @@ namespace RakionServer.World.Domain
         /// <summary>Player-record por slot/seat (0..0x13).</summary>
         public PlayerRec? RecAt(int seat) => (seat >= 0 && seat < Slots.Length) ? Slots[seat] : null;
 
+        /// <summary>Resolve o relay direcionado de 0x62: alvo pelo seat pedido e origem pelo seat real.</summary>
+        public bool TryResolveSlotUdpRelay(
+            ClientSession sender, byte targetSeat, out ClientSession? target, out byte senderSeat)
+        {
+            target = null;
+            senderSeat = NoSeat;
+            PlayerRec? source = FindRec(sender);
+            PlayerRec? destination = RecAt(targetSeat);
+            if (source == null || destination?.Session == null || !destination.Occupied) return false;
+
+            target = destination.Session;
+            senderSeat = (byte)source.Slot;
+            return true;
+        }
+
         /// <summary>Aloca um seat livre para a sessao (FUN_0040b7b0). Devolve o seat ou -1.</summary>
         public int AssignSeat(ClientSession s)
         {
             var existing = FindRec(s);
             if (existing != null) return existing.Slot;
-            for (int i = 0; i < Slots.Length; i++)
+            int seatLimit = Math.Min(Slots.Length, Math.Max(1, (int)MaxPlayers));
+            for (int i = 0; i < seatLimit; i++)
             {
                 if (Slots[i].State == 0 && Slots[i].Session == null)
                 {
@@ -142,7 +244,12 @@ namespace RakionServer.World.Domain
                     Slots[i].State = 3; // ready
                     Slots[i].WeaponState = 1;
                     Slots[i].Dead = false;
-                    Slots[i].Score = 0;
+                    Slots[i].RoundScore = 0;
+                    Slots[i].CounterA = 0;
+                    Slots[i].CounterB = 0;
+                    Slots[i].ResultPoints = 0;
+                    Slots[i].VoteState = 0;
+                    Slots[i].LobbyReady = false;
                     return i;
                 }
             }
@@ -168,31 +275,6 @@ namespace RakionServer.World.Domain
             int n = 0;
             foreach (var r in Slots) if (r.Playing && !r.Dead && r.Team == team) n++;
             return n;
-        }
-
-        /// <summary>
-        /// Serializa a entrada deste field para a lista de salas (FUN_00405790): registro
-        /// de tamanho variavel — campos fixos + nome (nul-term) + u16.
-        /// </summary>
-        public byte[] SerializeListEntry()
-        {
-            using var w = new PacketWriter();
-            w.WriteByte(0);                          // +0 field+0x3f (flag, ex. senha)
-            w.WriteByte(State == 2 ? 1 : 0);         // +1 field+8 == 2 (em jogo)
-            w.WriteByte(MapId);                      // +2 field+0x118
-            w.WriteByte(Mode);                       // +3 field+0x119
-            w.WriteByte(0).WriteByte(0).WriteByte(0);// +4..6 field+0x111/0x112/0x113
-            w.WriteByte((byte)Count);                // +7 field+0x2bc (jogadores atuais)
-            w.WriteByte(MaxPlayers);                 // +8 field+0x11a (capacidade)
-            w.WriteByte(MinLevel);                   // +9 field+0x117+0x116
-            w.WriteByte(MaxLevel);                   // +10 field+0x115+0x114
-            w.WriteInt32(Master?.Game?.UserId ?? 0); // +0xb master id (FUN_0040abe0 local_14)
-            w.WriteWord(MasterSlot < 0 ? 0 : MasterSlot); // +0xf local_c
-            w.WriteInt32(0);                         // +0x11 local_10
-            w.WriteWord(0);                          // +0x15 local_a
-            w.WriteCString(Name);                    // +0x17 field+0x16 (nome)
-            w.WriteWord(0);                          // field+0x3a8
-            return w.ToArray();
         }
 
         // ===================== BROADCAST =====================
@@ -245,46 +327,40 @@ namespace RakionServer.World.Domain
         // ===================== MAQUINA DE ESTADO =====================
 
         /// <summary>
-        /// 0x48 FieldStatus — GROUND TRUTH (mitm_move, servidor ORIGINAL que DESTRAVOU o personagem):
-        /// 12 BYTES = [48 00][round][u16 tempoSeg][win0][win1][14 14][00 a0 0f].
-        /// Ex. capturado: 480001 b301 0000 1414 00a00f (round=1, secs=0x01b3, trailer 00 a0 0f).
-        /// O build anterior mandava SO 9 bytes (truncado em 00 a0 0f) -> cliente parseava errado e NAO
-        /// liberava o controle (input congelado em val=05). Bytes 7-8 = 0x14,0x14 (confirmado no capture;
-        /// NAO usar Mvp/LeaderSlot=0xFF). Trailer 00 a0 0f = constante do modo (RE pendente de 0x122/0x123).
+        /// 0x48 FieldStatus: 9 bytes lógicos conforme FUN_00408440/FUN_00409940:
+        /// [48 00][round][u16 tempoSeg][win0][win1][mvp0][mvp1]. O bloco AES completa 12 bytes;
+        /// a cauda 00 A0 0F de uma captura era conteúdo de stack fora do comprimento lógico.
         /// </summary>
-        public byte[] Build0x48()
+        public byte[] Build0x48() => Build0x48(RemainingSec());
+
+        public byte[] Build0x48(ushort remainingSec)
         {
-            // secs = tempo RESTANTE. O primeiro 0x48 do original funcional veio com 0x01B3; 0x025B
-            // zerava o HUD em alguns testes, mas deixava o cliente em estado de pre-game/travado.
-            ushort secs = RemainingSec();
             return new byte[]
             {
                 0x48, 0x00,
                 Round == 0 ? (byte)1 : Round,
-                (byte)(secs & 0xff), (byte)(secs >> 8),
-                Wins0, Wins1, 0x14, 0x14,
-                0x00, 0xa0, 0x0f,
+                (byte)(remainingSec & 0xff), (byte)(remainingSec >> 8),
+                Wins0, Wins1, Mvp0, Mvp1,
+                0x00, 0x00, 0x00,
             };
         }
 
         /// <summary>0x49 NovoRound (5B): [49 00][round][mvp0][mvp1].</summary>
         public byte[] Build0x49() => new byte[] { 0x49, 0x00, Round, Mvp0, Mvp1 };
 
-        /// <summary>0x4a FimRound — corpo (4B) p/ BroadcastFieldPlaying(0x4a, ...): [lastWinner][winnerSide][wins0][wins1].
+        /// <summary>0x4a FimRound — corpo (4B): [reason][losingSide][wins0][wins1].
         /// layout fiel ao caminho validado in-game (Golem War); modos 2-clientes precisam re-teste.</summary>
-        public byte[] Build0x4a() => new byte[] { LastRoundWinner, WinnerSide, Wins0, Wins1 };
+        public byte[] Build0x4a() => new byte[] { RoundEndReason, LosingSideWire, Wins0, Wins1 };
 
         /// <summary>
-        /// 0x44 FimMatch (formato CAPTURADO do original, _r44 do fluxo solo que FUNCIONA):
-        /// [44 00][reason][00][u32 1][roomName] — a versao curta de 3B era IGNORADA pelo
-        /// cliente (ele nao voltava a sala no fim/saida do match).
+        /// 0x44 FimMatch PvP de FUN_00407BE0: [44 00][reason], com zero-pad do bloco AES.
+        /// O formato longo com nome da sala pertence somente à ponte visual do stage solo.
         /// </summary>
         public byte[] BuildMatchEnd(byte reason)
         {
-            using var w = new PacketWriter();
-            w.WriteWord(0x44).WriteByte(reason).WriteByte(0).WriteInt32(1);
-            w.WriteBytes(System.Text.Encoding.ASCII.GetBytes(Name));
-            return w.ToArray();
+            using var writer = new PacketWriter();
+            writer.WriteWord(0x44).WriteByte(reason).WriteBytes(new byte[9]);
+            return writer.ToArray();
         }
 
         public ushort RemainingSec()
@@ -301,7 +377,9 @@ namespace RakionServer.World.Domain
         /// inicia o round quando nao restam mais 'ready' (todos spawnaram), ou imediatamente se solo.
         /// Devolve true se a partida (re)iniciou nesta chamada.
         /// </summary>
-        public bool OnPlayerReady(ClientSession s)
+        public bool OnPlayerReady(ClientSession s) => OnPlayerReady(s, Environment.TickCount64);
+
+        public bool OnPlayerReady(ClientSession s, long now)
         {
             var rec = FindRec(s);
             if (rec == null) return false;
@@ -310,7 +388,7 @@ namespace RakionServer.World.Domain
             {
                 rec.State = 4;
                 rec.Dead = false;
-                if (CountReady() == 0) { StartRound(); return true; }
+                if (CountReady() == 0) { StartRound(now); return true; }
                 return false;
             }
             // ja em jogo: spawn tardio entra direto como playing
@@ -320,19 +398,22 @@ namespace RakionServer.World.Domain
         }
 
         /// <summary>Inicia o round 1 / reinicia o relogio da partida (transicao Pre/RoundEnd -> Playing).</summary>
-        public void StartRound()
+        public void StartRound() => StartRound(Environment.TickCount64);
+
+        public void StartRound(long now)
         {
             Phase = MatchPhase.Playing;
             State = 2;
             if (Round == 0) Round = 1;
-            DeadlineMs = Environment.TickCount64 + (RoundDurationSec + 3) * 1000L;
+            DeadlineMs = now + (RoundDurationSec + 3) * 1000L;
             Warned30 = 0;
             Score0 = 0; Score1 = 0;
             // reset por ROUND (nao por match): cada round do Golem/Boss comeca com os Master Golens
             // cheios e o objetivo em aberto de novo.
-            Golem0Hp = 100; Golem1Hp = 100; ObjectiveDecided = false;
-            foreach (var r in Slots) if (r.Occupied) { r.Dead = false; if (r.State == 3) r.State = 4; }
-            RecomputeMvp();
+            ObjectivePairA = 1; ObjectivePairB = 1; BossTargetA = 1; BossTargetB = 1;
+            ObjectiveDecided = false;
+            foreach (var r in Slots) if (r.Occupied) r.Dead = false;
+            SelectBossLeaders();
             Log.Ok("field", "field {0} round {1} iniciado (dur={2}s mode={3})", Id, Round, RoundDurationSec, Mode);
         }
 
@@ -343,11 +424,20 @@ namespace RakionServer.World.Domain
         /// </summary>
         public void ResetMatch()
         {
+            MatchId = Guid.NewGuid();
             Round = 0; Wins0 = 0; Wins1 = 0; Score0 = 0; Score1 = 0;
-            WinnerSide = 0; LastRoundWinner = 0; Warned30 = 0;
-            Golem0Hp = 100; Golem1Hp = 100; ObjectiveDecided = false;
+            LosingSideWire = 0; RoundEndReason = 0; Warned30 = 0;
+            ObjectivePairA = 0; ObjectivePairB = 0; BossTargetA = 0; BossTargetB = 0;
+            ObjectiveDecided = false;
             Settled = false;
-            foreach (var r in Slots) if (r.Occupied) r.Score = 0;
+            foreach (var r in Slots)
+            {
+                if (!r.Occupied) continue;
+                r.RoundScore = 0;
+                r.CounterA = 0;
+                r.CounterB = 0;
+                r.ResultPoints = 0;
+            }
         }
 
         /// <summary>
@@ -363,84 +453,107 @@ namespace RakionServer.World.Domain
                 foreach (var r in Slots)
                 {
                     if (!r.Occupied) continue;
-                    if (atBest == 0 || r.Score > best) { best = r.Score; side = r.Team; atBest = 1; }
-                    else if (r.Score == best) atBest++;
+                    if (atBest == 0 || r.RoundScore > best) { best = r.RoundScore; side = r.Team; atBest = 1; }
+                    else if (r.RoundScore == best) atBest++;
                 }
                 return atBest == 1 ? side : (byte)2;
             }
             return Score0 > Score1 ? (byte)0 : Score1 > Score0 ? (byte)1 : (byte)2;
         }
 
-        /// <summary>Recalcula MVP por time (maior Score) — modo 4 / placar.</summary>
-        public void RecomputeMvp()
+        /// <summary>FUN_00408440: no Boss, escolhe por time o jogador ativo de maior nível.</summary>
+        public void SelectBossLeaders()
         {
-            uint best0 = 0, best1 = 0; byte m0 = 0xff, m1 = 0xff;
-            foreach (var r in Slots)
+            LeaderSlotA = NoSeat;
+            LeaderSlotB = NoSeat;
+            if (Mode != (byte)GameMode.Boss) return;
+
+            byte bestLevelA = 0;
+            byte bestLevelB = 0;
+            foreach (PlayerRec record in Slots)
             {
-                if (!r.Occupied) continue;
-                if (r.Team == 0) { if (r.Score >= best0) { best0 = r.Score; m0 = (byte)r.Slot; } }
-                else { if (r.Score >= best1) { best1 = r.Score; m1 = (byte)r.Slot; } }
+                if (!record.Playing || record.Session == null) continue;
+                byte level = record.Session.CharLevel;
+                if (record.Team == 0 && level > bestLevelA)
+                {
+                    bestLevelA = level;
+                    LeaderSlotA = (byte)record.Slot;
+                }
+                else if (record.Team == 1 && level > bestLevelB)
+                {
+                    bestLevelB = level;
+                    LeaderSlotB = (byte)record.Slot;
+                }
             }
-            LeaderSlotA = m0; LeaderSlotB = m1;
         }
 
         /// <summary>
-        /// FUN_00407e00: processa a MORTE de um player (vitima), pelo handler 0x46/0x4f.
-        /// Marca dead, credita o killer, reescolhe host se preciso, e pode encerrar o round.
-        /// Devolve a lista de eventos a serem broadcastados (montados pelo chamador).
+        /// FUN_00407e00: processa a saída do próprio jogador pelo handler 0x46.
+        /// A morte reportada por 0x4F possui scoring próprio em ApplyReportedDeath.
         /// </summary>
-        public void OnPlayerDeath(int victimSeat, int killerSeat, byte cause)
+        public bool OnPlayerExit(int victimSeat, byte cause)
         {
             var v = RecAt(victimSeat);
-            if (v == null || !v.Occupied || v.Dead) return;
+            if (v == null || !v.Occupied || v.Dead) return false;
+            bool wasActive = v.State is 3 or 4;
+            bool wasLeader = victimSeat == LeaderSlotA || victimSeat == LeaderSlotB;
             v.Dead = true;
             v.Cause = cause;
             v.State = 1; // eliminado/aguardando respawn
 
-            var k = RecAt(killerSeat);
-            if (k != null && k.Occupied && k != v)
-            {
-                uint delta = cause == 8 ? 2u : (cause == 1 ? 0u : 1u);
-                k.Score += delta;
-                if (k.Team == 0) Score0 = (byte)Math.Min(255, Score0 + delta);
-                else Score1 = (byte)Math.Min(255, Score1 + delta);
-            }
-            RecomputeMvp();
-
-            // host saiu? reatribui ao 1o ocupado
             if (victimSeat == MasterSlot)
             {
-                foreach (var r in Slots) if (r.Occupied) { MasterSlot = r.Slot; break; }
+                PlayerRec? replacement = FindActiveReplacement(victimSeat);
+                if (replacement?.Session != null)
+                {
+                    MasterSlot = replacement.Slot;
+                    Master = replacement.Session;
+                }
             }
+            return wasActive && EndRoundAfterDeparture((byte)victimSeat, wasLeader);
+        }
 
-            // frag-limit atingido -> fim de round (GATED POR MODO)
-            if (FragLimit > 0)
+        private PlayerRec? FindActiveReplacement(int departingSeat)
+        {
+            foreach (byte state in new byte[] { 4, 3 })
+                foreach (PlayerRec record in Slots)
+                    if (record.Slot != departingSeat && record.State == state && record.Session != null)
+                        return record;
+            return null;
+        }
+
+        public void ArmMatch(long now)
+        {
+            ResetMatch();
+            State = 2;
+            Phase = MatchPhase.Pre;
+            DeadlineMs = now + 40000;
+            foreach (var record in Slots)
             {
-                if (Mode == (byte)GameMode.Deathmatch)
-                {
-                    // DEATHMATCH (FFA): o primeiro JOGADOR a atingir o frag-limit vence o round.
-                    PlayerRec? top = null;
-                    foreach (var r in Slots) if (r.Occupied && (top == null || r.Score > top.Score)) top = r;
-                    if (top != null && top.Score >= FragLimit) EndRound(top.Team);
-                }
-                else if (Score0 >= FragLimit || Score1 >= FragLimit)
-                {
-                    // TEAMDEATH/GOLEM/BOSS: placar por TIME atinge o frag-limit.
-                    EndRound(Score0 > Score1 ? (byte)0 : Score1 > Score0 ? (byte)1 : (byte)2);
-                }
+                if (!record.Occupied) continue;
+                record.State = 3;
+                record.Dead = false;
+                record.LobbyReady = false;
             }
         }
 
         /// <summary>Encerra o round atual: contabiliza wins, vai p/ fase RoundEnd (intermissao 15s).</summary>
-        public void EndRound(byte winnerSide)
+        public void EndRound(byte winningTeam)
         {
-            WinnerSide = winnerSide;
-            LastRoundWinner = winnerSide;
-            if (winnerSide == 0) Wins0++;
-            else if (winnerSide == 1) Wins1++;
-            Phase = MatchPhase.RoundEnd;
-            DeadlineMs = Environment.TickCount64 + 15000;
-            Log.Ok("field", "field {0} round {1} encerrado (winner={2} w0={3} w1={4})", Id, Round, winnerSide, Wins0, Wins1);
+            if (Mode == (byte)GameMode.Deathmatch)
+            {
+                RoundEndReason = 1;
+                LosingSideWire = winningTeam < 2 ? (byte)(1 - winningTeam) : (byte)2;
+                BeginRoundEndTimer();
+                return;
+            }
+            if (winningTeam < 2) CompleteTeamRound(winningTeam, 1);
+            else
+            {
+                RoundEndReason = 1;
+                LosingSideWire = 2;
+                BeginRoundEndTimer();
+            }
         }
 
         /// <summary>FUN_00407be0: fim de match (motivo). field+8=1, players -> state 1.</summary>
@@ -452,34 +565,24 @@ namespace RakionServer.World.Domain
             Log.Ok("field", "field {0} MATCH OVER (motivo={1})", Id, reason);
         }
 
-        /// <summary>
-        /// Modo GOLEM/BOSS: aplica dano ao Master Golem do time alvo (0/1). Quando a energia zera, o time
-        /// ADVERSARIO vence O ROUND (objetivo) — o match segue ate completar os rounds configurados na
-        /// sala (MaxRounds, do 0x3b); quem fecha o match e' o motor (MatchTick). Dano placeholder
-        /// (formula/energia exata = RE/balanceamento; broadcast de "Master Golem has X%% energy" pendente).
-        /// </summary>
-        public void DamageGolem(int golemTeam, ushort dmg)
+        public bool ApplyObjectivePair(short first, short second)
         {
-            if (ObjectiveDecided) return;
-            if (golemTeam == 0) Golem0Hp = (ushort)Math.Max(0, Golem0Hp - dmg);
-            else Golem1Hp = (ushort)Math.Max(0, Golem1Hp - dmg);
-            Log.Ok("field", "field {0} Master Golem time{1} energia={2}%", Id, golemTeam, golemTeam == 0 ? Golem0Hp : Golem1Hp);
-            if (Golem0Hp == 0) EndRoundObjective(1);       // golem do time0 destruido -> time1 vence o round
-            else if (Golem1Hp == 0) EndRoundObjective(0);  // golem do time1 destruido -> time0 vence o round
+            if (State != 2 || Phase != MatchPhase.Playing) return false;
+            ObjectivePairA = first;
+            ObjectivePairB = second;
+            if (first == 0) CompleteTeamRound(1, 2);
+            else if (second == 0) CompleteTeamRound(0, 2);
+            else return false;
+            return true;
         }
 
-        /// <summary>
-        /// Encerra o ROUND por OBJETIVO (Golem/Boss destruido): credita o round ao time vencedor e
-        /// broadcasta o 0x4a de fim-de-round (mesmo layout dos handlers 0x4a/0x4d). ObjectiveDecided
-        /// trava o re-disparo dentro do round; StartRound o re-arma p/ o proximo.
-        /// </summary>
-        public void EndRoundObjective(byte winnerTeam)
+        public bool ApplyBossTarget(byte reporterSeat, byte targetGroup, ushort value)
         {
-            if (ObjectiveDecided) return;
-            ObjectiveDecided = true;
-            Log.Ok("field", "field {0} OBJETIVO: time{1} venceu o ROUND {2} (Golem inimigo destruido)", Id, winnerTeam, Round);
-            EndRound(winnerTeam);
-            BroadcastFieldPlaying(0x4a, Build0x4a());
+            if (State != 2 || Phase != MatchPhase.Playing || Mode != (byte)GameMode.Boss) return false;
+            if (reporterSeat != LeaderSlotA && reporterSeat != LeaderSlotB) return false;
+            if (targetGroup < 10) BossTargetA = value;
+            else BossTargetB = value;
+            return true;
         }
     }
 

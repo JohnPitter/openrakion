@@ -10,242 +10,183 @@ using RakionServer.Common;
 
 namespace RakionServer.Buddy
 {
-    /// <summary>
-    /// Buddy Server. Escuta nas portas de BuddyServer (8500) e BuddyCenter (8504),
-    /// fala o frame [u16 size][u16 CD][payload] do Buddy2.dll e completa o
-    /// handshake de login (PRECREDENTIAL -> LOGIN) com lista de amigos vazia, de
-    /// modo que o client prossiga normalmente. Demais comandos sao logados (stub).
-    /// </summary>
-    public sealed class BuddyServer
+    public sealed partial class BuddyServer
     {
-        private readonly int[] _ports;
+        private readonly BuddyConfig _config;
+        private readonly BuddyDatabase _database;
+        private readonly ChatModerationEngine _moderation;
         private readonly CancellationTokenSource _cts = new();
-        private readonly List<Socket> _listeners = new();
+        private readonly List<Socket> _listeners = [];
+        private readonly ConcurrentDictionary<string, BuddyConnection> _online =
+            new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<uint, BuddyConnection> _udpTokens = new();
 
-        // Registro de presenca (P2P): clients online -> seu endpoint. O buddy server
-        // faz o brokering de enderecos (NTF_VIP_IPPORT/NTF_USER_STATE); o P2P em si
-        // (P2P_SVC_*) corre direto client-a-client por UDP, fora do servidor.
-        private readonly ConcurrentDictionary<Socket, IPEndPoint> _online = new();
-
-        public BuddyServer(params int[] ports) => _ports = ports;
+        public BuddyServer(BuddyConfig config, BuddyDatabase database)
+        {
+            _config = config;
+            _database = database;
+            IReadOnlyList<ChatAbuseRule> rules = ChatModerationEngine.LoadRules(config.AbuseFile);
+            _moderation = new ChatModerationEngine(config.Moderation, rules);
+        }
 
         public void Start()
         {
-            foreach (int port in _ports)
+            foreach (int port in _config.Ports)
             {
-                var l = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-                l.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-                l.Bind(new IPEndPoint(IPAddress.Any, port));
-                l.Listen(64);
-                _listeners.Add(l);
+                var listener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                listener.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+                listener.Bind(new IPEndPoint(IPAddress.Any, port));
+                listener.Listen(64);
+                _listeners.Add(listener);
                 Log.Ok("buddy", "ouvindo na porta {0}", port);
-                _ = Task.Run(() => AcceptLoopAsync(l, port, _cts.Token));
+                _ = Task.Run(() => AcceptLoopAsync(listener, port, _cts.Token));
+
+                var udp = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+                udp.Bind(new IPEndPoint(IPAddress.Any, port));
+                _listeners.Add(udp);
+                Log.Ok("buddy", "ouvindo UDP na porta {0}", port);
+                _ = Task.Run(() => UdpLoopAsync(udp, port, _cts.Token));
             }
         }
 
         public void Stop()
         {
-            try { _cts.Cancel(); } catch { }
-            foreach (var l in _listeners) { try { l.Close(); } catch { } }
+            _cts.Cancel();
+            foreach (Socket listener in _listeners)
+                try { listener.Close(); } catch (SocketException) { }
         }
 
-        private async Task AcceptLoopAsync(Socket l, int port, CancellationToken ct)
+        private async Task AcceptLoopAsync(Socket listener, int port, CancellationToken cancellationToken)
         {
-            while (!ct.IsCancellationRequested)
+            while (!cancellationToken.IsCancellationRequested)
             {
-                Socket sock;
-                try { sock = await l.AcceptAsync(ct); }
+                try
+                {
+                    Socket socket = await listener.AcceptAsync(cancellationToken);
+                    _ = Task.Run(() => HandleAsync(socket, port, cancellationToken));
+                }
                 catch (OperationCanceledException) { break; }
                 catch (ObjectDisposedException) { break; }
-                catch (Exception ex) { Log.Error("buddy", "accept {0}: {1}", port, ex.Message); continue; }
-                _ = Task.Run(() => HandleAsync(sock, port, ct));
+                catch (Exception exception)
+                {
+                    Log.Error("buddy", "accept {0}: {1}", port, exception.Message);
+                }
             }
         }
 
-        private async Task HandleAsync(Socket sock, int port, CancellationToken ct)
+        private async Task HandleAsync(Socket socket, int port, CancellationToken cancellationToken)
         {
-            string ip = (sock.RemoteEndPoint as IPEndPoint)?.Address.ToString() ?? "?";
+            string ip = (socket.RemoteEndPoint as IPEndPoint)?.Address.ToString() ?? "?";
+            var connection = new BuddyConnection(socket, ip);
             Log.Info("buddy", "[{0}] conectado em :{1}", ip, port);
-            byte[] buf = new byte[65536];
-            int have = 0;
+            byte[] buffer = new byte[ushort.MaxValue];
+            int buffered = 0;
             try
             {
-                while (!ct.IsCancellationRequested)
+                while (!cancellationToken.IsCancellationRequested)
                 {
-                    int n = await sock.ReceiveAsync(new ArraySegment<byte>(buf, have, buf.Length - have), SocketFlags.None, ct);
-                    if (n <= 0) break;
-                    have += n;
-
-                    int consumed = 0;
-                    while (have - consumed >= BuddyProtocol.HeaderSize)
+                    int received = await socket.ReceiveAsync(
+                        buffer.AsMemory(buffered, buffer.Length - buffered),
+                        SocketFlags.None, cancellationToken);
+                    if (received == 0) break;
+                    buffered += received;
+                    int consumed = await ProcessFramesAsync(connection, buffer, buffered);
+                    if (consumed > 0)
                     {
-                        ushort size = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(consumed));
-                        // size e u16 (sempre <= 65535 < MaxPacket 0x13880), entao so o limite inferior importa
-                        if (size < BuddyProtocol.HeaderSize) { Log.Warn("buddy", "[{0}] size invalido {1}", ip, size); return; }
-                        if (have - consumed < size) break;
-
-                        ushort cd = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(consumed + 2));
-                        byte[] payload = new byte[size - BuddyProtocol.HeaderSize];
-                        Array.Copy(buf, consumed + 4, payload, 0, payload.Length);
-                        consumed += size;
-
-                        Dispatch(sock, ip, cd, payload);
+                        Buffer.BlockCopy(buffer, consumed, buffer, 0, buffered - consumed);
+                        buffered -= consumed;
                     }
-                    if (consumed > 0) { Array.Copy(buf, consumed, buf, 0, have - consumed); have -= consumed; }
-                    else if (have == buf.Length) { Log.Warn("buddy", "[{0}] buffer cheio", ip); break; }
+                    else if (buffered == buffer.Length)
+                    {
+                        Log.Warn("buddy", "[{0}] frame excedeu o buffer", ip);
+                        break;
+                    }
                 }
             }
             catch (OperationCanceledException) { }
             catch (SocketException) { }
-            catch (Exception ex) { Log.Error("buddy", "[{0}] {1}", ip, ex.Message); }
-            finally { OnPeerOffline(sock); try { sock.Close(); } catch { } Log.Info("buddy", "[{0}] desconectado", ip); }
-        }
-
-        // ---- presenca / P2P (NTF_VIP_IPPORT / NTF_USER_STATE) ----
-
-        /// <summary>Registra o client como online e troca enderecos P2P com os demais.</summary>
-        private void OnPeerOnline(Socket sock)
-        {
-            if (sock.RemoteEndPoint is not IPEndPoint ep) return;
-            _online[sock] = ep;
-            // envia ao novo client o endereco de cada peer online, e notifica os peers do novo.
-            foreach (var kv in _online)
+            catch (Exception exception)
             {
-                if (kv.Key == sock) continue;
-                Send(sock, BuddyProtocol.NTF_VIP_IPPORT, VipPayload(kv.Value));   // peers -> novo
-                Send(kv.Key, BuddyProtocol.NTF_VIP_IPPORT, VipPayload(ep));       // novo -> peers
-                Send(kv.Key, BuddyProtocol.NTF_USER_STATE, StatePayload(1));      // online
+                Log.Error("buddy", "[{0}] fluxo abortado: {1}", ip, exception.Message);
             }
-            Log.Info("buddy", "[{0}] online ({1} peers)", ep, _online.Count);
-        }
-
-        /// <summary>Remove o client e notifica os demais (NTF_USER_STATE offline).</summary>
-        private void OnPeerOffline(Socket sock)
-        {
-            if (!_online.TryRemove(sock, out _)) return;
-            foreach (var kv in _online)
-                Send(kv.Key, BuddyProtocol.NTF_USER_STATE, StatePayload(0)); // offline
-        }
-
-        /// <summary>NTF_VIP_IPPORT: [u32 ip][u16 port] do peer (p/ o client abrir P2P direto).</summary>
-        private static byte[] VipPayload(IPEndPoint ep)
-        {
-            using var p = new PacketWriter();
-            p.WriteUInt32(BitConverter.ToUInt32(ep.Address.MapToIPv4().GetAddressBytes(), 0));
-            p.WriteWord(ep.Port);
-            return p.ToArray();
-        }
-
-        private static byte[] StatePayload(byte state)
-        {
-            using var p = new PacketWriter();
-            p.WriteByte(state); // 1=online, 0=offline
-            return p.ToArray();
-        }
-
-        private void Dispatch(Socket sock, string ip, ushort cd, byte[] payload)
-        {
-            Log.Debug("buddy", "[{0}] RECV CD=0x{1:x4} ({2}) len={3}", ip, cd, BuddyProtocol.Name(cd), payload.Length);
-            // DIAG (RE da venda): dump dos nomes que o cliente manda no LOGIN/SET_NICK p/ entender o
-            // check do messenger ("Character's name for messenger has changed").
-            if (cd == BuddyProtocol.SVC_LOGIN || cd == BuddyProtocol.SVC_SET_NICK ||
-                cd == BuddyProtocol.SVC_SET_EXTUSER || cd == BuddyProtocol.SVC_GROUP_GETLIST)
+            finally
             {
-                var sb = new System.Text.StringBuilder();
-                foreach (var b in payload) sb.Append(b >= 32 && b < 127 ? (char)b : '.');
-                Log.Info("buddy", "[{0}] CD 0x{1:x4} ascii='{2}'", ip, cd, sb.ToString());
-            }
-            switch (cd)
-            {
-                case BuddyProtocol.SVC_PRECREDENTIAL:
-                    // RET_PRECREDENTIAL: devolve o endereco visto do client (p/ P2P).
-                    SendPrecredential(sock, ip);
-                    break;
-
-                case BuddyProtocol.SVC_LOGIN:
-                    // RET_LOGIN sucesso: result=0, 0 amigos (payload > 7 bytes -> caminho de sucesso).
-                    SendLoginOk(sock, ip);
-                    OnPeerOnline(sock);   // registra presenca + brokering de enderecos P2P
-                    break;
-
-                // comandos de buddy/grupo: respondem o RET correspondente com wRtc=0 (sucesso).
-                // A persistencia (tabela buddylist / usergameinfo.buddyname) e RE incremental.
-                case BuddyProtocol.SVC_ADD_BUDDY:    ReplyOk(sock, ip, BuddyProtocol.RET_ADD_BUDDY); break;
-                case BuddyProtocol.SVC_REMOVE_BUDDY: ReplyOk(sock, ip, BuddyProtocol.RET_REMOVE_BUDDY); break;
-                case BuddyProtocol.SVC_GROUP_BUDDY:  ReplyOk(sock, ip, BuddyProtocol.RET_GROUP_BUDDY); break;
-                case BuddyProtocol.SVC_RENAME_GROUP: ReplyOk(sock, ip, BuddyProtocol.RET_RENAME_GROUP); break;
-                case BuddyProtocol.SVC_GROUP_DEL:    ReplyOk(sock, ip, BuddyProtocol.RET_GROUP_DEL); break;
-                case BuddyProtocol.SVC_GROUP_CHG:    ReplyOk(sock, ip, BuddyProtocol.RET_GROUP_CHG); break;
-                case BuddyProtocol.SVC_SMS_SEND:     ReplyOk(sock, ip, BuddyProtocol.RET_SMS_SEND); break;
-
-                // Comandos que o cliente manda APÓS o login (CDs do switch OnMsg do Buddy2.dll). SEM a
-                // confirmação destes o jogo trava a VENDA no shop com "Character's name for messenger has
-                // changed": o SET_NICK (0x3100) sincroniza o nick do messenger com o nome do personagem, e
-                // o jogo só vende depois do RET_SET_NICK (0x3101, wRtc=0). Mapeamento do decompile:
-                //   0x3100 SET_NICK -> 0x3101 | 0x3104 SET_EXTUSER -> 0x3105 | 0x3150 GROUP_GETLIST -> 0x3151
-                case BuddyProtocol.SVC_SET_NICK:      ReplyOk(sock, ip, BuddyProtocol.RET_SET_NICK); break;
-                case BuddyProtocol.SVC_SET_EXTUSER:   ReplyOk(sock, ip, BuddyProtocol.RET_SET_EXTUSER); break;
-                case BuddyProtocol.SVC_GROUP_GETLIST: SendGroupListEmpty(sock, ip); break;
-
-                default:
-                    Log.Debug("buddy", "[{0}] CD 0x{1:x4} ({2}) — handler nao reconstruido (stub)", ip, cd, BuddyProtocol.Name(cd));
-                    break;
+                await RemoveOnlineAsync(connection);
+                try { socket.Close(); } catch (SocketException) { }
+                Log.Info("buddy", "[{0}] desconectado account='{1}'", ip, connection.AccountId);
             }
         }
 
-        private static void SendPrecredential(Socket sock, string ip)
+        private async Task<int> ProcessFramesAsync(
+            BuddyConnection connection, byte[] buffer, int buffered)
         {
-            var ep = sock.RemoteEndPoint as IPEndPoint;
-            using var p = new PacketWriter();
-            uint addr = ep != null ? BitConverter.ToUInt32(ep.Address.MapToIPv4().GetAddressBytes(), 0) : 0;
-            // O cliente (Buddy2.dll OnMsg, RET_PRECREDENTIAL) EXIGE payload de exatamente 8 bytes
-            // (`if (len == 8)`), senão NÃO manda o SVC_LOGIN e o messenger nunca loga — o que trava
-            // a venda no shop ("Character's name for messenger has changed"). Layout: [u32 ip][u32 port].
-            p.WriteUInt32(addr);
-            p.WriteUInt32((uint)(ep?.Port ?? 0));
-            Send(sock, BuddyProtocol.RET_PRECREDENTIAL, p.ToArray());
-            Log.Info("buddy", "[{0}] RET_PRECREDENTIAL enviado (8B)", ip);
+            int consumed = 0;
+            while (buffered - consumed >= BuddyProtocol.HeaderSize)
+            {
+                ushort size = BinaryPrimitives.ReadUInt16LittleEndian(buffer.AsSpan(consumed));
+                if (size < BuddyProtocol.HeaderSize)
+                    throw new InvalidOperationException($"frame Buddy inválido: {size}");
+                if (buffered - consumed < size) break;
+                ushort command = BinaryPrimitives.ReadUInt16LittleEndian(buffer.AsSpan(consumed + 2));
+                byte[] payload = buffer.AsSpan(consumed + 4, size - 4).ToArray();
+                consumed += size;
+                await DispatchAsync(connection, command, payload);
+            }
+            return consumed;
         }
 
-        private static void SendLoginOk(Socket sock, string ip)
-        {
-            using var p = new PacketWriter();
-            p.WriteWord(0); // result = 0 (sucesso)
-            p.WriteWord(0); // reservado
-            p.WriteWord(0); // buddyCount = 0 (lista vazia -> pula o loop de amigos)
-            p.WriteWord(0); // padding (payload > 7 bytes p/ entrar no caminho de sucesso)
-            Send(sock, BuddyProtocol.RET_LOGIN, p.ToArray());
-            Log.Ok("buddy", "[{0}] RET_LOGIN OK (0 amigos)", ip);
-        }
-
-        /// <summary>RET_GROUP_GETLIST (0x3151): [u16 wRtc=0][u16 count=0] — lista de grupos vazia.</summary>
-        private static void SendGroupListEmpty(Socket sock, string ip)
-        {
-            using var p = new PacketWriter();
-            p.WriteWord(0); // wRtc = 0 (sucesso)
-            p.WriteWord(0); // count = 0 (sem grupos)
-            Send(sock, BuddyProtocol.RET_GROUP_GETLIST, p.ToArray());
-            Log.Debug("buddy", "[{0}] RET_GROUP_GETLIST (vazio)", ip);
-        }
-
-        /// <summary>Resposta generica de sucesso: RET com [u16 wRtc=0] (o client trata !=0 como falha).</summary>
-        private static void ReplyOk(Socket sock, string ip, ushort retCd)
-        {
-            using var p = new PacketWriter();
-            p.WriteWord(0); // wRtc = 0 (sucesso)
-            Send(sock, retCd, p.ToArray());
-            Log.Debug("buddy", "[{0}] {1} OK", ip, BuddyProtocol.Name(retCd));
-        }
-
-        /// <summary>Envia um frame [u16 size][u16 CD][payload], size = total.</summary>
-        private static void Send(Socket sock, ushort cd, byte[] payload)
+        private async Task SendAsync(BuddyConnection connection, ushort command, byte[] payload)
         {
             int size = BuddyProtocol.HeaderSize + payload.Length;
+            if (size > ushort.MaxValue) throw new InvalidOperationException("frame Buddy excede u16");
             byte[] frame = new byte[size];
-            BinaryPrimitives.WriteUInt16LittleEndian(frame.AsSpan(0), (ushort)size);
-            BinaryPrimitives.WriteUInt16LittleEndian(frame.AsSpan(2), cd);
-            Array.Copy(payload, 0, frame, 4, payload.Length);
-            try { sock.Send(frame); } catch (Exception ex) { Log.Error("buddy", "send: {0}", ex.Message); }
+            BinaryPrimitives.WriteUInt16LittleEndian(frame, (ushort)size);
+            BinaryPrimitives.WriteUInt16LittleEndian(frame.AsSpan(2), command);
+            payload.CopyTo(frame, 4);
+            await connection.SendLock.WaitAsync(_cts.Token);
+            try
+            {
+                int sent = 0;
+                while (sent < frame.Length)
+                    sent += await connection.Socket.SendAsync(
+                        frame.AsMemory(sent), SocketFlags.None, _cts.Token);
+            }
+            finally
+            {
+                connection.SendLock.Release();
+            }
+        }
+
+        private async Task<bool> TrySendNotificationAsync(
+            BuddyConnection connection, ushort command, byte[] payload)
+        {
+            try
+            {
+                await SendAsync(connection, command, payload);
+                return true;
+            }
+            catch (Exception exception) when (
+                exception is SocketException or ObjectDisposedException or OperationCanceledException)
+            {
+                return false;
+            }
+        }
+
+        private async Task RemoveOnlineAsync(BuddyConnection connection)
+        {
+            if (connection.AccountId.Length == 0) return;
+            if (connection.UdpToken != 0)
+                _udpTokens.TryRemove(connection.UdpToken, out _);
+            _online.TryGetValue(connection.AccountId, out BuddyConnection? current);
+            if (!ReferenceEquals(current, connection)) return;
+            _online.TryRemove(connection.AccountId, out _);
+            if (connection.UdpEndpoint == null || _cts.IsCancellationRequested) return;
+            try { await PublishPresenceAsync(connection, null, false); }
+            catch (Exception exception)
+            {
+                Log.Warn("buddy-presence", "offline account='{0}': {1}",
+                    connection.AccountId, exception.Message);
+            }
         }
     }
 }

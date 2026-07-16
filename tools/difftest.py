@@ -33,8 +33,8 @@ def step(s, label, op, seq, data):
 
 s = socket.create_connection(("127.0.0.1", PORT), timeout=4)
 s.settimeout(2.0)
-# login connType=4 (Normal: pula checagem de nome de sessao), user 'test', char 'JP'
-step(s, "login    ", 0x0C, 0, bytes([4]) + b"test\x00" + b"JP\x00" + b"\x00" + struct.pack("<H", 0))
+# login verifyMode=4 (pula MD5), conta/senha locais 'test'
+step(s, "login    ", 0x0C, 0, bytes([4]) + b"\x00test\x00test\x00" + struct.pack("<H", 0))
 step(s, "enterchan", 0x01, 1, b"")
 step(s, "worldinfo", 0x02, 2, b"")
 s.close()

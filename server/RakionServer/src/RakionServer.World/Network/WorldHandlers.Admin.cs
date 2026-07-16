@@ -1,4 +1,3 @@
-using System;
 using RakionServer.Common;
 using RakionServer.World.Domain;
 
@@ -18,8 +17,8 @@ namespace RakionServer.World.Network
         private static bool CanChat(ClientSession u) =>
             u.Status == UserStatus.LobbyGm || u.SubStatus == SubA || u.SubStatus == SubB;
 
-        /// <summary>FUN_0041f1a0: eco de texto curto (&lt;=12) de volta ao usuario.</summary>
-        private static void Op_SetUserText(HandlerContext ctx)
+        /// <summary>FUN_0041f1a0: AdminBan apenas ecoa flag + texto curto; não persiste ban.</summary>
+        private static void Op_AdminBanEcho(HandlerContext ctx)
         {
             var u = ctx.User;
             if (!CanChat(u)) { u.Disconnect(0x0b); return; }
@@ -32,12 +31,12 @@ namespace RakionServer.World.Network
             u.SendMessage(1, w.ToArray());
         }
 
-        /// <summary>FUN_0041f290: whisper/mensagem privada por nome.</summary>
-        private static void Op_Whisper(HandlerContext ctx)
+        /// <summary>FUN_0041f290: notice por escopo 0/2/3 e nome opcional.</summary>
+        private static void Op_AdminNotice(HandlerContext ctx)
         {
             var u = ctx.User;
             if (!CanChat(u)) { u.Disconnect(0x0d); return; }
-            byte type = ctx.P.CanRead(1) ? ctx.P.Byte() : (byte)0;
+            byte scope = ctx.P.CanRead(1) ? ctx.P.Byte() : (byte)0;
             string name = ctx.P.CString();
             if (name.Length >= 0x0c) { u.Disconnect(0x0e); return; }
             string msg = ctx.P.CString();
@@ -47,30 +46,33 @@ namespace RakionServer.World.Network
             byte[] whisper;
             using (var w = new PacketWriter()) { w.WriteWord(99).WriteCString(msg); whisper = w.ToArray(); }
 
+            var audience = new AdminNoticeAudience(scope, name);
             bool delivered = false;
             foreach (var s in ctx.World.Sessions)
             {
-                if (s.Authenticated && string.Equals(s.CharName, name, StringComparison.OrdinalIgnoreCase))
-                {
-                    s.SendLobby(whisper);
-                    delivered = true;
-                    if (type != 0) break;
-                }
+                var recipient = new AdminNoticeRecipient(
+                    s.Status, s.CharName, s.InField, s.FieldSecondary);
+                if (!s.Authenticated || !audience.Includes(recipient)) continue;
+
+                s.SendLobby(whisper);
+                delivered = true;
+                if (name.Length > 0) break;
             }
-            if (type != 0)
+            if (name.Length > 0)
             {
                 using var ack = new PacketWriter();
                 ack.WriteWord(5).WriteByte(delivered ? 0 : 1); // 0=entregue, 1=offline
                 u.SendLobby(ack.ToArray());
             }
-            Log.Debug("chat", "[{0}] whisper -> '{1}' ({2})", u.Slot, name, delivered ? "ok" : "offline");
+            Log.Info("gm", "[{0}] notice escopo={1} alvo='{2}' ({3})",
+                u.Slot, scope, name, delivered ? "entregue" : "sem destinatário");
         }
 
         /// <summary>FUN_00429030: GM grava variaveis de servidor (this+0x51c8[idx]=val).</summary>
         private static void Op_GmSetVars(HandlerContext ctx)
         {
             var u = ctx.User;
-            if (u.Status != UserStatus.LobbyGm) { u.Disconnect(199); return; }
+            if (!u.CanExecuteGm(GmPermission.VariablesWrite)) { u.Disconnect(199); return; }
             int count = ctx.P.CanRead(2) ? ctx.P.UInt16() : 0;
             byte fails = 0;
             for (int i = 0; i < count && ctx.P.CanRead(8); i++)
@@ -89,7 +91,7 @@ namespace RakionServer.World.Network
         private static void Op_GmQueryEntry(HandlerContext ctx)
         {
             var u = ctx.User;
-            if (u.Status != UserStatus.LobbyGm) { u.Disconnect(0x11); return; }
+            if (!u.CanExecuteGm(GmPermission.QueryEntry)) { u.Disconnect(0x11); return; }
             ushort id = ctx.P.CanRead(2) ? ctx.P.UInt16() : (ushort)0;
             // serializacao da entrada (FUN_004058e0) ainda nao reconstruida — responde vazio.
             using var w = new PacketWriter();
@@ -102,7 +104,7 @@ namespace RakionServer.World.Network
         private static void Op_GmGetVars(HandlerContext ctx)
         {
             var u = ctx.User;
-            if (u.Status != UserStatus.LobbyGm) { u.Disconnect(200); return; }
+            if (!u.CanExecuteGm(GmPermission.VariablesRead)) { u.Disconnect(200); return; }
             int count = ctx.P.CanRead(2) ? ctx.P.UInt16() : 0;
             using var w = new PacketWriter();
             w.WriteWord(10);
@@ -114,40 +116,44 @@ namespace RakionServer.World.Network
             u.SendLobby(w.ToArray());
         }
 
-        /// <summary>FUN_0041f480: GM define os MD5 do client (anti-cheat) e grava no ini.</summary>
+        /// <summary>FUN_0041f480: GM define os MD5 globais do cliente em runtime.</summary>
         private static void Op_GmSetClientMd5(HandlerContext ctx)
         {
             var u = ctx.User;
-            if (u.Status != UserStatus.LobbyGm) { u.Disconnect(0x10); return; }
+            if (!u.CanExecuteGm(GmPermission.ClientHashWrite)) { u.Disconnect(0x10); return; }
             string md5_1 = ctx.P.CString();
             string md5_2 = ctx.P.CString();
-            ctx.World.Config.ClientMd5_1 = md5_1;
-            ctx.World.Config.ClientMd5_2 = md5_2;
-            Log.Info("gm", "[{0}] set client MD5_1={1} MD5_2={2}", u.Slot, md5_1, md5_2);
+            if (!ClientHashPolicy.IsMd5(md5_1) || !ClientHashPolicy.IsMd5(md5_2))
+            {
+                u.Disconnect(0x10);
+                return;
+            }
+            ctx.World.Config.UpdateClientHashes(md5_1, md5_2);
+            Log.Info("gm", "[{0}] atualizou os hashes MD5 do cliente", u.Slot);
             using var w = new PacketWriter();
             w.WriteWord(0x0b).WriteByte(0).WriteCString(md5_1).WriteCString(md5_2);
             u.SendLobby(w.ToArray());
         }
 
-        /// <summary>FUN_0041fa40: sai do field/sala (volta ao lobby).</summary>
-        private static void Op_LeaveField(HandlerContext ctx)
+        private static void Op_GmOperationIpGate(HandlerContext ctx)
         {
-            var u = ctx.User;
-            if (!(u.InField && !u.FieldSecondary)) { u.Disconnect(0x16); return; }
-            u.InField = false;
-            using var w = new PacketWriter();
-            w.WriteWord(0x0e).WriteByte(0).WriteInt32(0).WriteInt32(0);
-            u.SendLobby(w.ToArray());
-            Log.Info("field", "[{0}] saiu do field", u.Slot);
+            byte? reason = GmOperationPolicy.DisconnectReason(
+                ctx.User.SubStatus, ctx.User.RemoteIp,
+                ctx.World.Config.GmOperationAllowedIps);
+            if (reason.HasValue)
+            {
+                Log.Warn("gm", "[{0}] operação GM recusada: substatus={1:X2}, ip={2}, disc={3:X2}",
+                    ctx.User.Slot, ctx.User.SubStatus, ctx.User.RemoteIp, reason.Value);
+                ctx.User.Disconnect(reason.Value);
+            }
         }
 
-        /// <summary>FUN_0041fb30: keepalive; loga latencia alta (&gt;90s). Sem resposta.</summary>
-        private static void Op_KeepAlive(HandlerContext ctx)
+        private static void Op_KeepAlive(HandlerContext context)
         {
-            var u = ctx.User;
-            if (!u.InField) { u.Disconnect(0x1a); return; }
-            // latencia real (FUN_0040bbb0) nao modelada; so reconhece o keepalive.
-            Log.Debug("net", "[{0}] keepalive", u.Slot);
+            long elapsed = context.User.RecordKeepAlive();
+            if (KeepAliveRules.IsLate(elapsed))
+                Log.Warn("net", "[{0}] keepalive atrasado: {1}s",
+                    context.User.Slot, elapsed / 1000);
         }
 
         /// <summary>

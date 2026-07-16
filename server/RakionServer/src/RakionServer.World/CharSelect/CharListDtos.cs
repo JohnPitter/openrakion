@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using RakionServer.World.Domain;
 
 namespace RakionServer.World.CharSelect
 {
@@ -10,9 +11,10 @@ namespace RakionServer.World.CharSelect
     /// </summary>
     public sealed record CharSummary
     {
+        public int CharacterId { get; init; }
         public string Name { get; init; } = "";
         public byte Slot { get; init; }
-        public byte Class { get; init; }            // TODO: offset no record ainda não mapeado (capturas tinham Class=0)
+        public byte Class { get; init; }            // fieldsStart+22, confirmado por captura-diff
         public byte Level { get; init; } = 1;
         public uint Exp { get; init; }
         public byte LevelPoint { get; init; }
@@ -32,12 +34,16 @@ namespace RakionServer.World.CharSelect
     /// </summary>
     public sealed record CharList
     {
-        public string AccountName { get; init; } = "";
-        public uint UserId { get; init; }              // @7-8 do header (u16)
-        public byte SlotCount { get; init; } = 4;      // @64 = nº de slots da conta (usergameinfo.slot)
+        public string DisplayName { get; init; } = "";
+        public ClanLoginSnapshot Clan { get; init; } = ClanLoginSnapshot.Empty;
+        public uint PowerTimeMarker { get; init; }
+        public ushort Country { get; init; }
+        public ushort NetworkSlot { get; init; }       // @7 do header; slot da sessão TCP
+        public byte SlotCount { get; init; } = 4;
         public uint Gold { get; init; }
-        public uint Cash { get; init; }                // @60 do 0x0C (cash / EX points)
+        public uint Cash { get; init; }                // tail+16 do 0x0C (cash / EX points)
         public ushort PowerLevelPoint { get; init; }
+        public uint UdpSessionKey { get; init; }          // @9 do header; user+0x1464 no world original
         public byte[] SessionHandle { get; init; } = new byte[4];
         public IReadOnlyList<CharSummary> Chars { get; init; } = Array.Empty<CharSummary>();
     }

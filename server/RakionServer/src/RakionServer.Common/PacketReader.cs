@@ -98,13 +98,28 @@ namespace RakionServer.Common
         {
             int start = _pos;
             int end = start;
-            int limit = Math.Min(_data.Length, start + maxLen);
+            long requestedLimit = (long)start + Math.Max(0, maxLen);
+            int limit = (int)Math.Min(_data.Length, requestedLimit);
             while (end < limit && _data[end] != 0)
                 end++;
             string s = Encoding.ASCII.GetString(_data, start, end - start);
             // posiciona apos o nul (se houver)
             _pos = (end < _data.Length && _data[end] == 0) ? end + 1 : end;
             return s;
+        }
+
+        public bool TryCString(int maxLength, out string value)
+        {
+            value = "";
+            if (maxLength < 0 || _pos >= _data.Length) return false;
+            int start = _pos;
+            int limit = (int)Math.Min(_data.Length, (long)start + maxLength + 1);
+            int end = start;
+            while (end < limit && _data[end] != 0) end++;
+            if (end >= limit || _data[end] != 0 || end - start > maxLength) return false;
+            value = Encoding.ASCII.GetString(_data, start, end - start);
+            _pos = end + 1;
+            return true;
         }
 
         public byte[] Bytes(int n)
