@@ -105,6 +105,8 @@ Total: **88 cases**, sem handler ausente ou opcode duplicado.
 
 Observações estáticas fechadas:
 
+- a tabela termina em `0x74`; `0x75/0x76` da loteria existem no World original, mas não possuem
+  consumer S→C neste `engine.dll`, nem builder C→S localizado nesta build do cliente;
 - `0x61` não chama a UI: remonta e devolve `[u16 0x61][i32 value]` ao World;
 - `0x04`, `0x05`, `0x29`, `0x2A`, `0x59`, `0x5A`, `0x5C` e `0x67..0x6A` apontam para funções vazias no `rakion.bin`;
 - em especial, `0x6A` não gera UI visual nesta build.

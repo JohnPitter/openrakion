@@ -7,13 +7,18 @@ O World está reconstruído para as duas operações comprovadas no executável 
 - compra de bilhete `0x75`, em gold ou cash, com débito e persistência atômicos;
 - consulta paginada de bilhetes `0x76`, dez registros por página.
 
+Essas rotas são compatibilidade dormente para o cliente v258 disponível. O `engine.dll` encerra o
+dispatcher World S→C em `0x74`: não aceita as respostas `0x75/0x76`, e também não foram encontrados
+builders desses requests no `engine.dll` ou no `rakion.bin`. Portanto, a UI não pode ser ativada
+fielmente com este conjunto de binários, embora o World original contenha o backend.
+
 O sorteio e o pagamento dos vencedores **não estão implementados**. Nenhum dos executáveis
 disponíveis produz linhas em `loglottery` ou liquida prêmios. O World apenas lê resultados que outro
 componente gravava. Inventar esse componente seria incompatível com um RE fiel.
 
 Validação atual: testes golden e de regra aprovados, build sem warnings e smoke MariaDB isolado com
-compra em gold, compra em cash, saldo insuficiente e paginação. A UI ainda precisa ser validada no
-cliente real.
+compra em gold, compra em cash, saldo insuficiente e paginação. Esses testes validam o backend; não
+representam uma UI utilizável no cliente v258.
 
 ## Fontes e funções reconstruídas
 
@@ -33,10 +38,12 @@ As evidências reproduzíveis são geradas por:
 
 ```powershell
 py tools/ghidra/FindWorldLotteryFlows.py
-py tools/ghidra/FindClientLotteryUi.py
+py tools/ghidra/AuditClientWorldLotterySupport.py
 ```
 
-Saídas padrão: `C:\temp\world_lottery_flows.txt` e `C:\temp\client_lottery_ui.txt`.
+O primeiro script roda no projeto do `worldserv.exe`. O segundo roda no projeto do `engine.dll` e
+gera `C:\temp\client_world_lottery_support.txt`, comprovando `0x75=absent`, `0x76=absent` e maior
+case `0x74`.
 
 ## Wire protocol
 
@@ -125,10 +132,25 @@ Também calcula o pool com `SUM(lotto.gold)`, separando bilhetes anteriores ou p
 `loglottery`, matching de bilhetes ou grant de prêmio em `WorldServ.exe`, `RankUpdate.exe` ou
 `BrokenServer.exe`.
 
-Os textos 829–864 do cliente confirmam cinco números mais bônus, histórico de uma semana e prêmio do
-primeiro colocado em gold concedido no login. Eles não revelam algoritmo, calendário, divisão do pool
-ou transação de pagamento. Os itens `11000..11004` são categoria de loja associada à loteria, mas não
-provam tiers de prêmio.
+A associação anterior dos IDs de idioma `829..864` com a loteria não se sustenta: a varredura encontra
+esses escalares em dezenas de funções genéricas, inclusive entrada de UI, render e estruturas sem
+relação com rede. Sem as strings localizadas e sem um call site ligado a `0x75/0x76`, esses números não
+provam tela, regras nem pagamento. Os itens `11000..11004` continuam sendo apenas uma categoria de
+loja associada à loteria e não provam tiers de prêmio.
+
+## Compatibilidade com o cliente v258
+
+`IScavengerWorldNet` entrega todas as respostas pelo dispatcher `engine.dll:0x36197320`, chamado por
+`ProcessWorldRecvBuffer`. A tabela possui 88 cases, termina em `0x74` e não contém `0x75` nem `0x76`.
+Uma resposta do backend de loteria chega ao transporte, mas não possui consumidor de UI nesta build.
+
+A busca por escalares `0x75/0x76` no `rakion.bin` encontrou somente códigos de eventos de interface,
+offsets e dados auxiliares; no `engine.dll`, somente offsets/dados gráficos. Nenhuma ocorrência monta
+um pacote World. Logo, não há caminho C→S nem S→UI comprovado no cliente entregue.
+
+O cache carregado por `FUN_0040F2F0` permanece comportamento interno do World original. Replicá-lo no
+.NET sem produtor externo e sem consumidor no cliente criaria código morto, por isso ele está mapeado,
+mas não materializado como serviço ativo.
 
 ## Implementação
 
@@ -144,8 +166,9 @@ Arquivos canônicos:
 
 ## Ativação e verificação
 
-Não existe feature flag de loteria. Ela fica ativa quando o World usa o schema v258 com as tabelas
-`lotto` e `loglottery`; `EnsureSchemaAsync` prepara `lotto` para a transação no boot.
+Não existe feature flag de loteria. O backend fica disponível quando o World usa o schema v258 com as
+tabelas `lotto` e `loglottery`; `EnsureSchemaAsync` prepara `lotto` para a transação no boot. Isso não
+ativa a UI no cliente v258.
 
 ```powershell
 cd server/RakionServer
@@ -153,8 +176,9 @@ cd server/RakionServer
 & C:\Users\joaop\.dotnet\dotnet.exe test tests/RakionServer.World.Tests/RakionServer.World.Tests.csproj -c Release
 ```
 
-Para validação visual, entre numa room (`Status=2`), compre uma combinação com gold e outra com cash,
-reabra o histórico e confirme rodada, ordem, saldos e paginação. Faça isso em uma conta descartável.
+Uma validação visual exige outro cliente original que comprovadamente possua builders e consumers de
+`0x75/0x76`, ou uma extensão nativa nova. A extensão seria desenvolvimento autoral, não RE fiel da
+build atual, e precisa ser tratada como projeto separado.
 
 ## Lacuna para concluir o domínio inteiro
 
@@ -168,5 +192,6 @@ capturar uma instalação original executando o fechamento diário. Sem essa fon
 - grant automático no login e prevenção de pagamento duplicado;
 - retenção de sete dias e tratamento de sorteio sem vencedor.
 
-Compra e consulta estão concluídas headless; sorteio e liquidação permanecem uma fronteira externa
-comprovadamente ausente dos artefatos disponíveis.
+Compra e consulta estão concluídas no backend headless, mas são dormentes no cliente v258. Sorteio,
+liquidação e uma build cliente compatível permanecem fronteiras comprovadamente ausentes dos
+artefatos disponíveis.

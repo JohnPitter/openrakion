@@ -188,8 +188,9 @@ grades, ranking de membros/clãs e rotação atômica dos snapshots. A saída é
 `ghidra/FindWorldLotteryFlows.py` localiza SQL, handlers, callbacks e consultas de resultado da
 loteria no World original. A saída é `C:\temp\world_lottery_flows.txt`.
 
-`ghidra/FindClientLotteryUi.py` encontra no `rakion.bin` os consumidores dos textos 829–864 da UI
-de loteria. A saída é `C:\temp\client_lottery_ui.txt`.
+`ghidra/AuditClientWorldLotterySupport.py` audita o dispatcher S→C do `engine.dll` e falha se
+`0x75/0x76` aparecerem. Na build v258 analisada, ambos estão ausentes e o maior case é `0x74`; a
+saída é `C:\temp\client_world_lottery_support.txt`.
 
 `ghidra/FindWorldCashAccounting.py` localiza os consumidores de `cash`, `localsales` e tabelas de
 auditoria financeira no World original. A saída é `C:\temp\world_cash_accounting.txt`.
