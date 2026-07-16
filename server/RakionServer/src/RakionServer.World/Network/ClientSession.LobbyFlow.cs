@@ -96,9 +96,8 @@ namespace RakionServer.World.Network
                     Status = UserStatus.InField; // reafirma a promoção feita no 0x43 para fluxos legados sem room-start
                     ResetFieldPotionUsage();
                     StartGameClock();
-                    PaintQuickslot();      // re-registra as poções no campo — hipótese: o cliente zera o contador ao entrar no stage
-                    Log.Ok("lobby", "[{0}] 0x4b (spawn) -> STAGE (Status=3, poções re-enviadas); relogio iniciado (udp={1})", Slot, UdpEndpoint?.ToString() ?? "-");
-                    return true;
+                    Log.Ok("lobby", "[{0}] 0x4b (spawn) -> STAGE; relógio iniciado e payload segue para o relay canônico (udp={1})", Slot, UdpEndpoint?.ToString() ?? "-");
+                    return false;
                 // (0x4b acima inicia o relogio)
                 case 0x46: // o cliente manda 0x46 ao SAIR/dar giveup no stage. Sem o eco FIELD 0x46 [seat]
                     // (+ 0x44 fim) ele trava "waiting for world" — MESMO motivo documentado no Op_0x46_Recon

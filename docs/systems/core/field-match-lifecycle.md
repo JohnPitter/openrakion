@@ -120,7 +120,8 @@ smoke tests MySQL verificam idempotência e rollback.
   objetivos em `1` e não promoção de atrasados;
 - `FieldCombatRulesTests`: frag, morte, líder, objetivo e scoring;
 - `FieldLifecycleFrameGoldenTests`: bytes de `0x44/0x45/0x46/0x48/0x49/0x4A/0x4F`;
-- probes com duas sessões: entrada, relays, Team Death, Golem/Boss, saída e fim curto.
+- probes com duas sessões: entrada, inclusive o primeiro `0x4B` no relay canônico, relays
+  subsequentes, Team Death, Golem/Boss, saída e fim curto.
 
 ## Limites ainda abertos
 

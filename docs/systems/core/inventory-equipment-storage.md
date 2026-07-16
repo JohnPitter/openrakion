@@ -130,7 +130,8 @@ observado segue estas regras:
 2. usar uma célula vazia como origem no-op ao pintar quickslot;
 3. não pintar item zero como item real;
 4. respeitar limite de 120 células do box;
-5. pintar quickslot uma única vez no login e usar a primeira abertura como fallback;
+5. pintar quickslot uma única vez no login e usar a primeira abertura como fallback; entrada no
+   stage não dispara novo `0x31`;
 6. não repetir a lista inteira durante polling de saída.
 
 O caminho de origem `type=1` escreve em array de widgets sem bounds-check; células 13–15 já

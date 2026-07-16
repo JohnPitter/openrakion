@@ -67,6 +67,10 @@ personagem criador e o inicializador que prova os offsets. A saída fica em
 `ghidra/DecompileWorldRoomInfo.py` extrai o parser textual e o serializer de 26 linhas do comando
 `/roominfo`. A saída fica em `C:\temp\world_room_info.txt`.
 
+`ghidra/DecompileWorldFirstFieldMove.py` extrai o handler `0x4B` e o relay para provar que o
+primeiro payload também segue pelo caminho canônico, sem repaint de inventário. A saída fica em
+`C:\temp\world_first_field_move.txt`.
+
 `ghidra/DecompileCharacterCoreLifecycle.py` extrai `0x12/0x13/0x15/0x1A` nas três pontas:
 builders/parsers do `engine.dll`, handlers/fila/workers/callbacks do World e consumidores da UI em
 `rakion.bin`. As saídas são `C:\temp\engine_character_core_lifecycle.txt`,
@@ -290,7 +294,8 @@ Clients headless que falam o protocolo do World direto (conectam, cifram/decifra
   rejeição de senha com status `3` e join sem o ack `0x26` exclusivo de `mode=0`,
   `0x38` incremental,
   roster completo `0x37`, bloqueio de start por não-host e por falta de ready, broadcast de
-  ready/start, entrada dos dois membros no stage por `0x4B`, início do round via `0x48` e
+  ready/start, entrada dos dois membros no stage por `0x4B`, primeiro payload entregue ao relay,
+  início do round via `0x48` e
   relays geral/direcionado `0x4B/0x4C` sem eco ao remetente, além da transferência de host após
   disconnect.
   Requer as contas locais `test` e `test2` (a segunda pode ser uma fixture descartável).

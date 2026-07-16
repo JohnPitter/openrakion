@@ -192,6 +192,9 @@ def main() -> None:
         describe("stage-enter-member-round", round_frames)
         if sum(frame[:2] == b"\x48\x00" for frame in round_frames) != 2:
             raise RuntimeError("início do round não foi transmitido aos dois membros")
+        if not any(frame[:2] == b"\x4b\x00" and frame[3:5] == b"\x00\x00"
+                   for frame in round_frames):
+            raise RuntimeError("primeiro 0x4B do membro não alcançou o relay canônico")
 
         first.sendall(request(0x4B, 7, (3).to_bytes(2, "little") + b"abc"))
         relay_sender = receive(first)

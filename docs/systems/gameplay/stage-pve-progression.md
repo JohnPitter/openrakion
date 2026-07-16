@@ -132,6 +132,10 @@ o estado `cleared=false`. Resultado posterior precisa corresponder ao mesmo fiel
 A elegibilidade não é recalculada no retry do resultado: ela foi autorizada no início e um
 level-up do primeiro commit não pode quebrar a idempotência do replay.
 
+Depois dessa inicialização local, o mesmo primeiro `0x4B` continua no handler canônico
+`FUN_004247B0→FUN_00405C00`. Mesmo com `len=0`, ele é publicado aos outros records em `state=4`;
+o World não responde com `0x31` nem repinta poções durante a entrada no stage.
+
 O marcador de level-free usa o mesmo epoch em minutos do MySQL e permanece ativo até
 `marcador + 1440`, inclusive.
 

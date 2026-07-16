@@ -774,6 +774,18 @@ No dump runtime de `entitiesmp.dll`, `DecompileClientGolemObjective.py` fechou `
 `0x0304/0x0305` são um par adicional da aplicação, não o reliable genérico. O socket escolhe a
 primeira porta livre a partir de `2300 + últimoOctetoIPv4 % 100`, limitado à faixa `2300..2399`.
 
+### Primeiro movimento `0x4B` — 2026-07-16
+
+`DecompileWorldFirstFieldMove.py` extraiu `FUN_004247B0` e `FUN_00405C00`. O handler sempre lê
+`len:u16`, aceita `0..200` e chama o relay depois dos gates `DISC 86/87/88`; não há ramo especial
+para o primeiro pacote nem chamada de inventário. O helper exige field `state=2` e sender
+`state=4`, monta `[0x4B:u16][senderSeat:u8][len:u16][blob]` e envia a todos os outros records em
+`state=4`. Portanto, inclusive `len=0` produz o frame lógico de cinco bytes.
+
+O interceptor .NET preserva apenas a inicialização de `StageRun`, relógio e prontidão, depois
+devolve o pacote ao dispatcher canônico. O repaint especulativo de quickslot no spawn foi removido;
+o `0x31` continua restrito ao login, operações de inventário e fallback da primeira abertura.
+
 ### Prova local de Stage/PvE — 2026-07-15
 
 `tools/world_stage_probe.py` atravessou `0x3B` Mode 0, `0x43`, primeiro `0x4B`, clear `0x4A`
