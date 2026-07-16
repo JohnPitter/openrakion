@@ -113,6 +113,12 @@ Gold Golem, Golden Sword e Master Golem são entidades da game session/P2P; cons
 - no prazo, empate no maior score retorna lado `2`;
 - o resultado W/L/D do World original é draw para modo 2.
 
+O produtor nativo em `entitiesmp.dll:CPlayer::Death @ 0x3515E830` confirma que `cause=1` é morte
+própria: ele troca o killer pelo seat local em `CPlayer+0x264`. `cause=8` é o ramo especial do mesmo
+grupo que produz `cause=2`; o predicado distingue os dois, mas seu nome original não sobreviveu no
+binário. A seleção completa está em
+[`combat-actions-status.md`](combat-actions-status.md#causas-de-morte-e-placar).
+
 O probe alcançou score individual `0/14` e recebeu `0x4A [1,0,0,0]`, sem inventar vitória do
 time associado ao seat.
 

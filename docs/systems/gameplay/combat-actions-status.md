@@ -246,6 +246,27 @@ World para jogadores ativos:
 [u16 0x004F][u8 victimSeat][u8 cause][u8 killerSeat][u8 score0][u8 score1]
 ```
 
+O produtor cliente também está fechado no dump runtime. O export
+`CPlayer::Death(EPlayerDeath) @ 0x3515E830` recebe o evento de 20 bytes por valor; depois da base
+`CEntityEvent` de oito bytes, os três `u32` ficam em `+0x08`, `+0x0C` e `+0x10`. A faixa
+`0x3515E8DE..0x3515E9D9` deriva o byte `cause`, reduz o segundo campo a `killerSeat` e chama
+`IScavengerWorldNet::SendFieldGameDiePlayer` pelo slot virtual `+0x128`. Não existe call site desse
+slot em `rakion_orig.exe`; a única chamada exata desta build está no `entitiesmp.dll`.
+
+| primeiro campo de `EPlayerDeath` | `cause` enviado | derivação comprovada |
+|---:|---:|---|
+| `1` | `2` ou `8` | predicado `0x35169440`; `8` é o ramo especial de dois pontos |
+| `3` | `7` ou `4` | `4` somente quando o terceiro campo resolve a classe `NpcGoldGolem`; senão `7` |
+| `8` | `1` | substitui o killer pelo próprio seat em `CPlayer+0x264` |
+| `4` | `5` ou `6` | segundo campo `0` gera `5`; segundo campo `10` gera `6` |
+| demais | `3` | fallback do cliente |
+
+O produtor não emite `cause=0` nessa função. `cause=1` é, portanto, a morte própria comprovada;
+o efeito no World também coincide: penaliza a vítima em Deathmatch e pontua o time oposto em Team
+Death. O nome histórico do predicado que separa `2/8` e os rótulos originais de `2/3/5/6/7` não
+estão preservados: a tabela exportada `EKillType_values` contém apenas `0..6` com nomes vazios.
+Esses valores devem ser tratados como categorias wire, sem rótulos inventados.
+
 O handler atual confirma apenas:
 
 - sessão e status `InField`;
@@ -381,13 +402,14 @@ ACK, métricas próprias e política de timeout continuam pendentes em
 
 ## Causas de morte e placar
 
-O intervalo `0..8` está comprovado; a semântica integral de cada valor, não. O scoring atual usa
-delta `0` para causa `1`, delta `2` para causa `8` e `1` nos demais casos. Sem captura de cada causa,
-isso é aproximação e não deve ser regra econômica definitiva.
+A derivação nativa acima fecha todos os ramos que alimentam `0x4F`: `1` é morte própria; `4` é
+`NpcGoldGolem`; `7` é o outro ramo de entidade; `5/6` distinguem os seats especiais `0/10`; `2/8`
+dependem do predicado especial, e os demais caem em `3`. O scoring original continua sendo delta
+`0`/penalidade para causa `1`, delta `2` para causa `8` e `1` nos demais casos, variando por modo.
 
-O catálogo final precisa distinguir ao menos kill, suicide, team kill, queda/ambiente, NPC, objetivo,
-disconnect e surrender. O World deve derivar killer/cause do evento validado ou comparar o reporte
-do cliente com a trilha recente de dano.
+O que permanece sem nome não é o fluxo binário, mas a nomenclatura histórica das categorias. Uma
+futura autoridade server-side deve derivar killer/cause do evento validado ou comparar o reporte do
+cliente com a trilha recente de dano; disconnect e surrender continuam no fluxo separado `0x46`.
 
 ## Falhas e riscos confirmados
 
@@ -400,7 +422,7 @@ do cliente com a trilha recente de dano.
 | CP | local no cliente | não aparece em `EPlayerRemainHP` |
 | movimento | sem posição no domínio | teleport/speed não detectados |
 | respawn | timer e evento P2P mapeados; relay aceita 19 B | não é estado do World |
-| invencibilidade | defaults 1/3.0 confirmados | consumidor de `gamemp.dll` ainda pendente |
+| invencibilidade | defaults 1/3.0 confirmados | nenhum consumidor encontrado nesta build |
 | bad-network | ausente | sem diagnóstico ou política |
 | sender UDP | slot/IP/chave e endpoint exato | identidade fechada; conteúdo da ação ainda opaco |
 

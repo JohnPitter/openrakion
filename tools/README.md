@@ -572,6 +572,11 @@ dump. `DecompileGameRespawnSettings.py` extrai registro e cópia dos defaults de
 `gamemp.dll`; `DecompileSessionPropertyConsumers.py` audita os consumidores correspondentes em
 `entitiesmp.dll`.
 
+`ghidra/DecompileClientDeathReport.py` isola em `CPlayer::Death` a conversão dos três campos de
+`EPlayerDeath` para `[cause][killerSeat]`, a chamada virtual `SendFieldGameDiePlayer+0x128`, o caso
+explícito `NpcGoldGolem` e o `RET 0x14` do evento passado por valor. A saída fica em
+`C:\temp\client_death_report.txt`.
+
 `ghidra/DecompileClientWeaponEvents.py` extrai os cinco eventos reliable de arma/hold, seus
 construtores, cópias, produtores, dispatcher e consumidores. `ghidra/DumpInstructionRanges.py`
 aceita intervalos `inicio:fim` e imprime o assembly usado para confirmar offsets quando um objeto
