@@ -235,6 +235,7 @@ string terminada em zero; `blob(n)` contém exatamente `n` bytes.
 |---:|---|---|---|
 | `04` | `SendAdminBan` | `[u8 flag][cstr text]` | Builder e eco original confirmados; não persiste ban |
 | `05` | `SendAdminNotice` | `[u8 scope][cstr target][cstr text]` | Escopos `0/2/3`, alvo opcional e retorno confirmados |
+| `09` | comando GM interno | `[u16 fieldId]` | `FUN_0041F5C0`; status `0/1/2`, ID ecoado e duas C-strings no sucesso |
 | `0C` | `SendLogin` | `[u8 verifyMode][cstr md5][cstr account][cstr password][u16 tail]` | Confirmado em `FUN_0041F6C0` |
 | `0E` | `SendSuccessUDP` | `[u8 result]` | Builder confirmado; nas capturas `result=0` e os sete zeros seguintes são padding AES |
 | `0F` | `SendAlive` | vazio | Builder `engine.dll:0x36190C70`; isento de seq, gate de conta, sem resposta |

@@ -25,8 +25,8 @@
 - ✅ A tabela World foi achatada: `WorldHandlers.Generated.cs`, `RegisterGenerated`, `Stub`,
   `StubGates`, `ReconStub`, `RoomMgmt.cs`, `RoomSettings.cs` e os aliases incompatíveis já foram
   removidos. `WorldHandlers.cs` aponta diretamente para os delegates finais.
-- **Partials gerados antigos**: ainda existem handlers privados sem chamador em
-  `WorldHandlers.Generated.FieldCombat.cs`; remover após conferir que a tabela canônica não os usa.
+- ✅ **Aliases privados sem chamador**: removidos após auditoria cruzada da tabela canônica e dos
+  interceptores por estado; nenhum método `Op_*` privado permanece com apenas a própria declaração.
 - **`ClientSession.cs`**: `public SendInventoryList()` (632-675) sem call-site; `const DiagEmptyInventory=false` + seus blocos (diagnóstico já concluído).
 - **`WorldDatabase.cs`**: `LoadCharactersAsync`, `LoadClanAsync`, `InsertUserItemAsync` — zero chamadores (~74 ln).
 - **Broker**: `ServerListener.cs` inteiro (96 ln, não referenciado por `Main`); `Systems.CheckServerExpired` (corpo vazio); branch `extip` em `Program.cs:47` (descarta o resultado); overloads-fantasma de `PacketWriter` (`Word`/`WordInt`, `DWord`/`DWordInt`, `String`/`HexString` idênticos).

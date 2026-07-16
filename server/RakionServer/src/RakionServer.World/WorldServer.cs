@@ -87,6 +87,7 @@ namespace RakionServer.World
                 var field = new Domain.Field(fieldId)
                 {
                     Name = options.Name,
+                    CreatorCharacterName = master.CharName,
                     Password = options.Password,
                     Description = options.Description,
                     Searchable = options.Searchable,

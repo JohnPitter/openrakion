@@ -57,19 +57,6 @@ namespace RakionServer.World.Network
             master.SendLobby(Prefix(0x29, writer.ToArray()));
         }
 
-        /// <summary>FUN_00420de0: ready/confirm em room. Requer in-field + status 2 (room).</summary>
-        private static void Op_RoomReady(HandlerContext ctx)
-        {
-            var u = ctx.User;
-            if (!(u.InField && u.FieldSecondary)) { u.Disconnect(0x32); return; }
-            if (u.Status != 0x02) { u.Disconnect(0x33); return; }
-            // FUN_0040b000(user): se "ocupado/ja pronto" -> notice 0x2c; senao confirma (subtype 0x12).
-            using var w = new PacketWriter();
-            w.WriteWord(0x2c).WriteInt32(0);
-            u.SendLobby(w.ToArray());
-            Log.Debug("room", "[{0}] room ready", u.Slot);
-        }
-
         /// <summary>FUN_00420cb0: devolve o ping ao usuário global solicitado.</summary>
         private static void Op_ChannelFieldPingResponse(HandlerContext ctx)
         {

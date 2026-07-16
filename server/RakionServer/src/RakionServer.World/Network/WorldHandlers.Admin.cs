@@ -91,13 +91,22 @@ namespace RakionServer.World.Network
         private static void Op_GmQueryEntry(HandlerContext ctx)
         {
             var u = ctx.User;
-            if (!u.CanExecuteGm(GmPermission.QueryEntry)) { u.Disconnect(0x11); return; }
-            ushort id = ctx.P.CanRead(2) ? ctx.P.UInt16() : (ushort)0;
-            // serializacao da entrada (FUN_004058e0) ainda nao reconstruida — responde vazio.
-            using var w = new PacketWriter();
-            w.WriteWord(9).WriteByte(0); // status: 0 = ok / vazio
-            u.SendLobby(w.ToArray());
-            Log.Debug("gm", "[{0}] query entry {1} (serializacao stub)", u.Slot, id);
+            if (u.Status != UserStatus.LobbyGm ||
+                !u.CanExecuteGm(GmPermission.QueryEntry))
+            {
+                u.Disconnect(0x11);
+                return;
+            }
+            if (!GmFieldEntryRequest.TryParse(ctx.Raw, out var request))
+            {
+                u.Disconnect(0x11);
+                return;
+            }
+
+            GmFieldEntrySnapshot snapshot = ctx.World.QueryGmFieldEntry(request.FieldId);
+            u.SendLobby(GmFieldEntryFrames.Response(snapshot));
+            Log.Debug("gm", "[{0}] query field {1}: status={2}",
+                u.Slot, request.FieldId, snapshot.Status);
         }
 
         /// <summary>FUN_00429140: GM le variaveis de servidor.</summary>

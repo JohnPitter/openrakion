@@ -1039,6 +1039,18 @@ subtipo `1`, flag e texto de até 12 bytes; não altera banco nem estado de ban.
 status, `2` exige field-lobby e `3` exige in-field. Nome não vazio é comparado case-sensitive e
 produz ack subtipo `5` (`0` entregue, `1` ausente); nome vazio faz broadcast sem ack.
 
+### Prova de GmQueryEntry `0x09` — 2026-07-16
+
+`DecompileWorldGmQueryEntry.py` extraiu `FUN_0041F5C0`, `FUN_004058E0` e o inicializador
+`FUN_00405440`. O handler exige `Status=5` (`DISC 0x11`), lê `fieldId:u16` e sempre devolve
+`[u16 9][u8 status][u16 fieldId]`. ID fora de `DAT_00455824/MaxField` produz status `1`; uma
+entrada com `field+8 == 0` produz `2`; uma entrada ocupada produz `0` e anexa duas C-strings.
+
+O serializer copia primeiro `field+0x16` e depois `field+0x09`. O inicializador prova os nomes:
+`+0x16` recebe o nome da sala e `+0x09` recebe `user+0x14A8`, personagem do criador. Assim, a
+segunda string é identidade imutável de criação, não o host atual. Os goldens .NET fixam os frames
+de cinco bytes para status `1/2` e o frame variável para sucesso.
+
 ### Fechamento por estado de `0x3D/0x3E` — 2026-07-15
 
 Os builders do cliente são `SendFieldReady(ready:u8)` e `SendFieldChangeTeam()`; o World original

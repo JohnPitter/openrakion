@@ -19,7 +19,7 @@ transacional encadeado. Exposição externa ainda exige certificado/proxy e cred
 - `0x04`: exportado como AdminBan, mas o World apenas ecoa `[flag][texto curto]`; não grava ban;
 - `0x05`: notice por escopo `0/2/3`, field e nome opcional; não é whisper global;
 - `0x08/0x0A`: set/get de até 512 GM vars;
-- `0x09`: consulta entry, serialização ainda stub;
+- `0x09`: consulta field por `u16 id`; responde status, ID, nome da sala e personagem criador;
 - `0x0B`: altera dois MD5 do client em memória/config;
 - `0x64`: `SendGMOperation` sem payload; exige substatus ASCII `0x34` e IP permitido;
 - ban/notice/kick por comando GM não formam um catálogo implementado.
@@ -41,6 +41,27 @@ O export `IScavengerWorldNet::SendGMOperation @ engine.dll:0x36194E00` escreve s
 Na build analisada, as quatro strings da allowlist original são `192.168.1.6`. A reconstrução usa
 `GmOperationPolicy` e `[GM] AllowedIPs`, preserva os motivos `B9/BA` e também termina sem resposta
 quando o IP é aceito. O antigo `VerifyTutorialStage` e `AllowedTutorialStages` foram removidos.
+
+## Contrato exato do `0x09`
+
+`FUN_0041F5C0` exige `user+0x1440 == 5`; caso contrário desconecta com `0x11`. O request
+lê um `u16 fieldId`. A resposta sempre começa por:
+
+```text
+u16 0x0009 | u8 status | u16 fieldId
+```
+
+Os status são `0=field ocupado/encontrado`, `1=id >= MaxField` e `2=slot livre`. Apenas no status
+zero, `FUN_004058E0` acrescenta duas C-strings, nesta ordem:
+
+```text
+roomName\0 | creatorCharacter\0
+```
+
+O segundo valor não é o host atual. `FUN_00405440` copia o personagem do criador para
+`field+0x09` uma única vez durante a inicialização; o nome da sala fica em `field+0x16`. Por isso o
+domínio preserva `CreatorCharacterName` separadamente de `Master`. A implementação também mantém a
+autorização tipada do OpenRakion, além do gate histórico de status.
 
 ## Autorização corrigida no World
 
@@ -110,7 +131,7 @@ backend. Operações críticas podem exigir confirmação/dual control.
 2. manter GM separado de PC Bang;
 3. usar a matriz tipada sem autorizar pelo status de lobby;
 4. manter `0x03/0x08..0x0B` sob RBAC e `0x64` sob allowlist vazia por padrão;
-5. tipar/versionar GM vars;
+5. tipar/versionar GM vars; manter `0x09` como consulta read-only do snapshot de field;
 6. manter segredos externos, RBAC no backend e ledger encadeado; para bind externo, configurar TLS;
 7. implementar ban/kick persistentes por command service próprio; manter `0x04` como eco legado e
    `0x05` como notice compatível, sem atribuir persistência que o original não possui;
@@ -139,6 +160,7 @@ $env:ConnectionStrings__Rakion = '<connection-string>'
 - cada permission permitida/negada e revogação durante sessão;
 - close concorrente, retry e recuperação do servidor;
 - limites/tipos de GM vars e MD5 inválido;
+- `0x09` cobre gate `DISC 11`, request truncado, ID fora da faixa, slot livre e snapshot ativo;
 - `0x64` recusa substatus incorreto com `B9`, IP negado com `BA` e não responde ao IP permitido;
 - login Admin, matriz Viewer/Operator/Owner, CSRF, rate, cookie/TLS e secret ausente;
 - ban persistente/economia com actor/reason/before/after;
@@ -147,7 +169,7 @@ $env:ConnectionStrings__Rakion = '<connection-string>'
 
 ## Critério de conclusão
 
-Os contratos `0x04`, `0x05` e `0x64` estão fechados para esta build. GM/Admin está funcionalmente
+Os contratos `0x04`, `0x05`, `0x09` e `0x64` estão fechados para esta build. GM/Admin está funcionalmente
 fechado no headless: privilégios vêm da identidade, cada comando tem permission tipada, segredos não
 estão versionados, bind externo sem TLS falha e mutações são auditadas. MFA/SSO e provisionamento de
 certificado são integrações de operação, não contratos do cliente Rakion. A semântica histórica da
@@ -156,7 +178,8 @@ coluna `Authority` continua classificada corretamente como não provada.
 ## Evidência executada em 2026-07-15
 
 - `GmAuthorizationTests` cobre canal normal/special, authority ausente/presente e flag ligada/desligada;
-- 358/358 testes .NET e build sem warnings;
+- `GmFieldEntryProtocolTests` fixa request, três status, ID ecoado, ordem das C-strings e projeção
+  do agregado; a suíte atual substitui a contagem histórica desta seção;
 - configuração de deploy mantém `[GM] Enabled=0` e `AllowedIPs=` vazio;
 - handlers de close, vars, query e MD5 não consultam mais `LobbyGm` como autorização.
 - Admin falhou fechado sem secrets e iniciou com variáveis externas; login com antiforgery foi

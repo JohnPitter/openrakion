@@ -58,6 +58,7 @@ namespace RakionServer.World.Domain
 
         public int Id;
         public string Name = "";
+        public string CreatorCharacterName = "";
         public string Password = "";
         public string Description = "";
         public bool Searchable = true;
