@@ -18,18 +18,22 @@ namespace RakionServer.World.Network
             var u = ctx.User;
             if (u.Status != UserStatus.FieldLobby) return;
             string text = ctx.P.CString(0x1000);
-            if (!ctx.World.ModerateChat(u, null, ChatScope.Channel, text, out text)) return;
 
             int colon = text.IndexOf(':');
             if (colon >= 0 && text.Length >= colon + 2 + 9 &&
                 string.CompareOrdinal(text, colon + 2, "/roominfo", 0, 9) == 0)
             {
-                // "/roominfo <id>" — envia info do field ao solicitante (serializacao stub)
                 int id = ParseIntAt(text, colon + 12);
-                Log.Debug("room", "[{0}] /roominfo {1}", u.Slot, id);
+                if (ctx.World.TryGetRoomInfo(id, out FieldRoomInfoSnapshot snapshot))
+                {
+                    foreach (byte[] response in FieldRoomInfoFrames.Responses(snapshot))
+                        u.SendLobby(response);
+                    Log.Debug("room", "[{0}] /roominfo {1}: 26 linhas", u.Slot, id);
+                }
                 return;
             }
 
+            if (!ctx.World.ModerateChat(u, null, ChatScope.Channel, text, out text)) return;
             ctx.World.BroadcastChannelChat(u, text);
         }
 

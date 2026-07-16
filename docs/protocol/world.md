@@ -376,6 +376,11 @@ voto contra o alvo com `0x5F result=1`, publica `0x3A`, pode publicar `0x4A`, tr
 | `78` | consulta de membros do clã | vazio | DB command `0x2C`; retorno `0x78 [status][count+pairs]`; implementado para compatibilidade, mas sem produtor/case S→C nesta build cliente |
 | `79` | disconnect sem texto | vazio | `FUN_00422270` encerra com razão `1`, sem notificação textual |
 
+Exceção S→C do `0x22`: `/roominfo` produz 26 respostas diretas
+`[u16 0x22][u8 0][ASCII sem NUL]`. São seis linhas do field e vinte linhas de slots; o contrato
+completo e os nomes dos campos estão em
+[`channel-lobby.md`](../systems/core/channel-lobby.md#0x22--chat-do-canal).
+
 `SendPacketSpeedTest` tem corpo vazio nesta build e não deve gerar um handler fictício.
 
 ## Auditoria do mapa atual

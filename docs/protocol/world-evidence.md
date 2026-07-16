@@ -1405,6 +1405,19 @@ encontrado fora dos estados 2/3 cai no mesmo status um de não encontrado. Os pa
 `rakion.bin:0x00475A30/0x00475D80/0x00475F10` confirmam que o whisper é exibido em canal, sala e
 field e que os dois kinds selecionam textos de localização diferentes.
 
+### Prova de `/roominfo` — 2026-07-16
+
+`DecompileWorldRoomInfo.py` extraiu `FUN_0041BCA0` e `FUN_00406B10`. O primeiro procura o primeiro
+`':'`, compara `"/roominfo"` em `colon+2`, aplica `atol` em `colon+12` e consome o comando sem
+broadcast. Somente IDs no intervalo `0..MaxField-1` chamam o serializer; não existe gate de field
+ocupado.
+
+`FUN_00406B10` faz 26 chamadas a `FUN_0041B8A0`: seis linhas fixas e vinte registros. Cada buffer
+começa por `[0x22:u16][sender:u8=0]`; o comprimento é `strlen(text)+3`, logo a mensagem diagnóstica
+não carrega NUL. Os offsets confirmados são ID `+0`, state `+8`, creator `+9`, title `+0x16`, senha
+`+0x3F`, níveis/basic `+0x111..113`, map/mode `+0x118/119`, master `+0x121`, tunneling `+0x2CC`,
+voto `+0x2D0..2D2` e records `+0x124`, stride `0x14`.
+
 ## Variações que não podem ser copiadas
 
 - handles/ponteiros vistos em `0x0E` e `0x2C` pertencem à sessão; `0x14` leva apenas o personagem,

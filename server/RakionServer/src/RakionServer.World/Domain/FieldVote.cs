@@ -38,6 +38,7 @@ namespace RakionServer.World.Domain
         private long _voteDeadlineMs;
 
         public bool VoteActive => _voteActive;
+        public byte VotePenaltySlot => _votePenaltySlot;
         public byte VoteTargetSeat => _voteTargetSeat;
         public string VoteReason => _voteReason;
 

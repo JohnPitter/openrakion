@@ -142,8 +142,26 @@ domínio .NET suporta a política gerenciada para canais futuros, mas ela não �
 ```
 
 `FUN_0041BCA0` só atua com status `2`, limita o texto transmitido a 128 bytes e usa o agregado de
-canal. O comando textual `/roominfo` é tratado antes do broadcast. O servidor aplica a moderação
-existente e não usa mais o fallback global `Room(0)`.
+canal. O servidor aplica a moderação existente e não usa mais o fallback global `Room(0)`.
+
+O comando `Nome: /roominfo <id>` é interceptado antes da moderação e do broadcast. ID negativo ou
+fora de `MaxField` é consumido sem resposta. Para um ID válido, inclusive um slot livre,
+`FUN_00406B10` envia diretamente ao solicitante 26 mensagens `0x22`: seis cabeçalhos do field e uma
+linha para cada um dos vinte slots. Essas respostas usam `senderChannelSlot=0` e, diferentemente do
+chat normal, não incluem terminador NUL no comprimento lógico:
+
+```text
+ID[id] Status[state]
+Char[creator] Title[room]
+Password[password]
+Level[min~max] Basic[levelRangeCode] Map[map] Mode[mode]
+Boss[masterSeat] Tunneling[flag]
+OnVote[active] VotePos[penaltyIndex] BanSlot[targetSeat]
+Slot[i] ID[userSlot] Status[state] Auth[substatus] Vote[vote]
+```
+
+A última linha é repetida para `i=0..19`. Os rótulos `VotePos` e `BanSlot` são históricos: os
+offsets provados são `field+0x2D1` (índice da tabela de penalidade) e `field+0x2D2` (seat alvo).
 
 ## Direções e exports legados
 

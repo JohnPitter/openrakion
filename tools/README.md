@@ -64,6 +64,9 @@ O relatório é gravado em `C:\temp\character_db_commands.txt`.
 personagem criador e o inicializador que prova os offsets. A saída fica em
 `C:\temp\world_gm_query_entry.txt`.
 
+`ghidra/DecompileWorldRoomInfo.py` extrai o parser textual e o serializer de 26 linhas do comando
+`/roominfo`. A saída fica em `C:\temp\world_room_info.txt`.
+
 `ghidra/DecompileCharacterCoreLifecycle.py` extrai `0x12/0x13/0x15/0x1A` nas três pontas:
 builders/parsers do `engine.dll`, handlers/fila/workers/callbacks do World e consumidores da UI em
 `rakion.bin`. As saídas são `C:\temp\engine_character_core_lifecycle.txt`,
