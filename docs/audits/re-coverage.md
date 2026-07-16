@@ -220,7 +220,7 @@ Portanto, são ABI legado/dormente desta build e não autorizam criar regra de e
 | `0x46` | FieldGameExit | `Op_0x46_Recon` atua sobre o próprio sender | fechado por modo: estado 1, transferência de host, penalidade de EXP e eventual `0x4A`; Team Death validado em duas sessões |
 | `0x47` | FieldChat | `Op_FieldChat`, canal FIELD e seat real | fechado por RE estático, golden e probe com duas sessões |
 | `0x48` | FieldGameRoundStart | `Op_FieldGameRoundStart` canônico | rota única; request vazio, duração da sala/stage e resposta lógica de nove bytes fechados |
-| `0x5B` | FieldForceChangeTeam | `Op_FieldForceChangeTeam` | fechado estaticamente; move o target ao time oposto e publica `0x3E`; visual pendente |
+| `0x5B` | FieldForceChangeTeam | `Op_FieldForceChangeTeam` | fechado estática e headless; teste atravessa a tabela na janela pré-spawn, move o target e fixa os dois corpos `0x3E`; visual pendente |
 | `0x56`/`0x57` | tunneling all/one | handlers fiéis | all/one saem como `0x57`, escopados ao field/seat e validados headless |
 | `0x59`/`0x5A` | ping request/response | handlers fiéis | request ao host usa slot global; response ao alvo usa seat local; validado headless |
 | `0x64` | GMOperation | `Op_GmOperationIpGate` | corrigido; `B9/BA` e sucesso sem resposta validados ao vivo |

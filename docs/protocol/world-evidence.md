@@ -569,10 +569,13 @@ estado `2` e target `< 18`.
 O target precisa ter state `1/2`; o helper move seu record para o primeiro seat vazio do bloco
 oposto e publica pelo canal FIELD `0x3E [0,oldSeat,newSeat]`. Ready/lock ou ausência de vaga envia
 apenas ao target `0x3E [2]`. O handler .NET anterior tratava o target como action id, não movia o
-record e broadcastava um `0x5B` sem correspondente no original. A correção possui testes de domínio
-para movimento, cópia do score, atualização do seat e negação de target pronto. A validação gráfica
-permanece pendente porque o fluxo headless atual não expõe a fase intermediária `Status=3` com
-`field.State != 2` usada pelo opcode original.
+record e broadcastava um `0x5B` sem correspondente no original.
+
+`FieldForceChangeTeamHandlerTests` atravessa agora a entrada canônica `0x5B` na janela real entre
+`0x43` e o primeiro `0x4B`: sessões já estão em `Status=3`, enquanto o field ainda está em state
+`1`. O teste fixa os dois corpos de resposta, move o target `seat 1→10` e confirma a identidade da
+sessão no novo record. Movimento, cópia de score e negação também permanecem cobertos no domínio;
+resta somente a apresentação gráfica dessa operação rara.
 
 ### Prova local de identidade e relay UDP — 2026-07-14
 

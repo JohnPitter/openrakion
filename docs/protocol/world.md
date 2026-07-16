@@ -407,7 +407,7 @@ completo e os nomes dos campos estão em
 | `3E` | ChangeTeam | intercept por `Status=2`; troca de bloco/assento por `Status=3` | fechado por estado; ambos preservam mudança de time/seat |
 | `46` | FieldGameExit | `Op_0x46_Recon` | fechado: saída/morte própria, penalidade de EXP, retorno `0x58 [i32 remainingExp]` ao sender e broadcast `[seat]` |
 | `47` | FieldChat | `Op_FieldChat` pelo canal FIELD | fechado: `[senderSeat][cstr text]`, broadcast aos ocupados e probe com seat 10 |
-| `5B` | FieldForceChangeTeam | `Op_FieldForceChangeTeam` | fechado estaticamente: target seat, mutação para time oposto e saída `0x3E`; testes de domínio verdes, visual pendente |
+| `5B` | FieldForceChangeTeam | `Op_FieldForceChangeTeam` | fechado: target seat, janela pré-spawn `Status=3/state!=2`, mutação para time oposto e corpos `0x3E [0,old,new]`/`[2]` golden; visual pendente |
 | `56/57` | TunnelingAll/One | handlers renomeados e roteamento original | implementado e validado headless |
 | `59/5A` | Ping request/response | handlers renomeados; slot global/seat local separados | implementado e validado headless |
 | `64` | GMOperation | `Op_GmOperationIpGate` | contrato original reconstruído e validado ao vivo |

@@ -26,12 +26,13 @@ namespace RakionServer.World.Network
 
             if (result == ForcedTeamChangeResult.Denied)
             {
-                target?.SendMessage(0x3e, new byte[] { 2 });
+                target?.SendMessage(0x3e, FieldForceChangeTeamFrames.Denied());
                 return;
             }
             if (result != ForcedTeamChangeResult.Changed) return;
 
-            field.BroadcastField(0x3e, new byte[] { 0, targetSeat, newSeat });
+            field.BroadcastField(0x3e,
+                FieldForceChangeTeamFrames.Changed(targetSeat, newSeat));
             Log.Ok("field", "[{0}] forçou time/seat {1}->{2} no field {3}",
                 user.Slot, targetSeat, newSeat, field.Id);
         }
