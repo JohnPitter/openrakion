@@ -452,8 +452,8 @@ namespace RakionServer.World.Network
         {
             // CONTADOR (v) = widget+0x194: > 0 deixa a poção visível/utilizável; 0 a deixa "zerada"/inerte.
             // É a quantidade real da célula e acompanha o item durante o swap.
-            // Não-poção = 0 (lá o campo é exp/limit). O contador NÃO causa o freeze do stage (independe
-            // dele; cliente NOVO + contador 0 ainda travava, teste 15/06 -> RE pendente).
+            // Não-poção = 0 (lá o campo é exp/limit). A captura de 15/06 confirmou que esse contador
+            // não causava o freeze do stage; o fluxo de entrada foi fechado separadamente no 0x4B.
             uint srcCount = IsPotion(newSrcItem) ? (uint)System.Math.Max(1, srcCnt) : 0u;
             uint destCount = IsPotion(newDestItem) ? (uint)System.Math.Max(1, destCnt) : 0u;
             var source = new InventoryMoveCell(srcType, srcSlot, (ushort)newSrcItem,

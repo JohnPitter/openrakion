@@ -340,8 +340,8 @@ namespace RakionServer.World.Network
         /// <summary>
         /// Envio pelo canal "lobby" (FUN_004038e0 -> FUN_004048e0): frame [u16 size][payload],
         /// size = payload+2 (inclui-se). O payload comeca com [u16 subtype]. No original o
-        /// payload e cifrado em AES quando a cripto esta ligada (this+0x208&amp;1); aqui vai em
-        /// texto enquanto o key-setup AES nao e reconstruido (ver PROTOCOL.md / FUN_00401670).
+        /// payload e cifrado em AES quando a cripto esta ligada (this+0x208&amp;1). Start() aplica
+        /// a chave e o IV v258 reconstruídos em FUN_00403c10/FUN_00401000.
         /// </summary>
         public void SendLobby(byte[] payload)
         {

@@ -62,37 +62,27 @@ dotnet run --project src/RakionServer.Buddy
 ```
 
 ## Estado da reconstrução
-**Validado end-to-end (cliente simulado falando o wire real):**
-- **World**: framing `[u16 size][u16 opcode][u16 seq][payload]` (size inclui-se), validação de
-  sequência (wrap 65000; 0x0C/0x0F isentos), **login opcode 0x0C** (`FUN_0041f6c0`) com os guards
-  e DISC (0x12/0x13/0x14/0x15) e erros (3/8, 3/10) fiéis, e resposta **LoginComplete** byte-perfeita.
-  Heartbeat IPC `ServerInfo` (opcode 257) que marca o world "online" no broker. Camada MySQL
-  (user/usergameinfo/loguserconnect).
-- **Broker**: porta fiel do decompile .NET; sobe e fala o IPC UDP.
-- **Buddy**: framing `[u16 size][u16 CD][payload]` e handshake `PRECREDENTIAL→LOGIN` (login OK,
-  lista vazia → client prossegue). Tabela de CD completa.
 
-**Framework completo e developável:**
-- World: **os 87 opcodes** do dispatcher `FUN_0042ab40` **reconstruídos** em `Network/WorldHandlers*.cs`
-  — 34 à mão + **53 via workflow multi-agente** (cada handler decompilado, transcrito e verificado
-  adversarialmente contra o binário; em `WorldHandlers.Generated.cs`). Guards/DISC fiéis; payloads de
-  resposta transcritos do struct do decompile (helpers `FUN_0040xxxx` profundos marcados `// TODO`).
-- Cripto: **AES-128 quebrado** — chave hardcoded `E1 3A 7E F5 37 2C 10 4D 4E CE B3 0C 56 26 A4 8E`,
-  IV `0xc47f` (`PacketCrypto.WorldKey/EnableWorldDefault()`).
-- Modelo de domínio: `World` (canais, GmVars, Fields, Rooms, lock), `Field`/`Room` (membros+broadcast),
-  `UserStatus`, sessão com campos nomeados (Status, GroupId, CharName, InField, FieldId, RoomId).
-- DB: POCOs + repositório (`WorldDatabase`) para user/usergameinfo/characterinfo/useriteminfo/iteminfo/
-  cash/claninfo/loguserconnect.
-- Cripto: `PacketCrypto` (AES, do `FUN_00401670`) integrado no canal lobby (`SendLobby`), ligado quando
-  o handshake habilitar (key-setup é a RE pendente).
-- Buddy: superfície completa de comandos (login + add/remove buddy, grupos, SMS).
+- A tabela canônica do World cobre `0x00..0x79`; nenhum delegate final aponta para `Stub`,
+  `ReconStub` ou rota genérica. Colisões por estado ficam nos interceptores documentados.
+- Login, canais, salas, partida, inventário, economia, clã, amigos, presentes, eventos, GM/Admin,
+  Broker, Buddy, Ranking e launcher possuem contratos e critérios de validação em
+  [`docs/audits/re-coverage.md`](../../docs/audits/re-coverage.md).
+- AES-128 está fechado: chave hardcoded, IV `0xc47f`, blocos lógicos de 12→16 bytes e ativação no
+  setup da sessão por `Crypto.EnableWorldDefault()`.
+- O RE estático e os fluxos headless estão cobertos por testes golden, probes TCP/UDP e smokes de
+  banco. As pendências restantes são explicitamente classificadas como validação gráfica/P2P real,
+  integrações externas ou extensões modernas opcionais; não são representadas como stubs do v258.
 
-**Stubs (RE incremental por handler):** os ~69 opcodes restantes do world (gameplay/field/item/clã)
-são logados com o nome real e referenciam o `FUN_xxxx` de origem. Pendente: key-setup do AES,
-métodos profundos do `Field` (criar/entrar/ready/slots), UDP de gameplay e o canal P2P do buddy.
+O inventário atual e as evidências reproduzíveis estão em
+[`docs/protocol/world.md`](../../docs/protocol/world.md),
+[`docs/protocol/world-evidence.md`](../../docs/protocol/world-evidence.md) e
+[`docs/audits/re-coverage.md`](../../docs/audits/re-coverage.md). Esses documentos são a fonte
+canônica; este README não duplica contagens de testes ou listas de handlers que envelhecem rápido.
 
 ## Material de RE
-- Binários e Ghidra: `rakion-work/ghidra-proj/` (worldserv.exe, Buddy2.dll, `*.out.txt`).
-- Scripts: `rakion-work/ghidra_scripts/WSProto*.py`, `BuddyProto.py`.
-- Broker original (decompile): `rakion-work/broker_src/`.
-- Configs/schema de referência: `rakion-tutorial/server/` (worldserver.ini, DB/rakion_all.sql).
+
+- Scripts reproduzíveis: [`tools/ghidra`](../../tools/ghidra) e
+  [`tools/README.md`](../../tools/README.md).
+- Evidências consolidadas: [`docs/protocol/world-evidence.md`](../../docs/protocol/world-evidence.md).
+- Configuração e schema: `worldserver.ini`, `deploy/db/` e `TUTORIAL.md`.

@@ -13,9 +13,9 @@ namespace RakionServer.Common
     /// gera 16 por bloco: cada bloco AES = [4 bytes de ctx+0x20c (IV/contador)] + [12 plaintext].
     ///
     /// Esta classe implementa esse esquema com o AES nativo do .NET (ECB por bloco,
-    /// que reproduz o transform T-table do binario). **Pendente:** RE do key-setup
-    /// (onde a chave, o IV ctx+0x20c e o flag ctx+0x208 sao inicializados no handshake)
-    /// para interoperar com o client real. Enquanto Enabled=false, passa em texto.
+    /// que reproduz o transform T-table do binario). O key-setup foi fechado em
+    /// FUN_00403c10/FUN_00401000: chave, IV e flag são aplicados por EnableWorldDefault().
+    /// Enquanto Enabled=false, o codec permanece em texto apenas para testes isolados.
     /// </summary>
     public sealed class PacketCrypto
     {
