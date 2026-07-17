@@ -46,6 +46,7 @@ arquivos em `archive/` somente para contexto histórico.
 - [`systems/gameplay/npc-family-panzer.md`](systems/gameplay/npc-family-panzer.md)
 - [`systems/gameplay/npc-family-crossbow.md`](systems/gameplay/npc-family-crossbow.md)
 - [`systems/gameplay/npc-family-blazer.md`](systems/gameplay/npc-family-blazer.md)
+- [`systems/gameplay/npc-family-golem.md`](systems/gameplay/npc-family-golem.md)
 - [`systems/gameplay/combat-actions-status.md`](systems/gameplay/combat-actions-status.md)
 - [`systems/gameplay/potions-chaos-effects.md`](systems/gameplay/potions-chaos-effects.md)
 - [`systems/gameplay/votes-invites-kicks.md`](systems/gameplay/votes-invites-kicks.md)
