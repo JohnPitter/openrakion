@@ -9,19 +9,19 @@ using Xunit;
 namespace RakionServer.World.Tests.E2E
 {
     /// <summary>
-    /// Validação dinâmica da jornada de sala com dois clientes headless reais: login →
-    /// char-select → um cria a sala (Golem War) → o outro entra. Prova, no fio, que o
-    /// servidor porta criação de sala competitiva, papel de master, join do segundo
-    /// jogador e a coabitação dos dois no mesmo <see cref="Field"/> com assentos
-    /// distintos — sem cliente gráfico.
+    /// Valida a camada UDP de gameplay com dois clientes headless reais: ambos autenticam
+    /// o endpoint UDP (handshake 0x0202) contra o servidor vivo, e um movimento 0x030A de
+    /// um jogador é RELAYADO para o outro peer do mesmo field. Prova no fio o handshake de
+    /// gameplay, o registro do endpoint e o relay peer→peer — o núcleo do PvP em runtime,
+    /// sem cliente gráfico.
     /// </summary>
     [Collection("E2E")]
-    public sealed class TwoClientRoomTests
+    public sealed class TwoClientGameplayUdpTests
     {
         private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
         [Fact]
-        public async Task TwoHeadlessClients_CreateAndJoinGolemRoom_ShareFieldWithDistinctSeats()
+        public async Task TwoHeadlessClients_UdpHandshakeAndMoveRelay_ReachesOtherPeer()
         {
             await using var fixture = await WorldServerFixture.CreateAsync();
             if (!fixture.Available) return; // skip suave
@@ -32,7 +32,6 @@ namespace RakionServer.World.Tests.E2E
             await using var joiner = await HeadlessWorldClient.ConnectAsync(
                 WorldServerFixture.Host, fixture.TcpPort, "joiner");
 
-            // Login + char-select (test→GoHeroi #1, test2→ProbeTwo #9001).
             master.Login("test", "test");
             joiner.Login("test2", "test2");
             master.WaitForFirstByte(0x0C, Timeout);
@@ -40,35 +39,37 @@ namespace RakionServer.World.Tests.E2E
 
             master.SelectCharacter(1);
             joiner.SelectCharacter(9001);
-            // FieldLobby == LoggedIn == 2, então o gate real é o char selecionado (ActiveCharId>0).
             ClientSession masterSession = WaitForSession(server, "test",
                 s => s.ActiveCharId > 0 && s.Status == UserStatus.FieldLobby, Timeout);
             ClientSession joinerSession = WaitForSession(server, "test2",
                 s => s.ActiveCharId > 0 && s.Status == UserStatus.FieldLobby, Timeout);
 
-            // Master cria a sala Golem; lê o field criado no estado do servidor.
-            master.CreateGolemRoom("e2e-golem");
+            master.CreateGolemRoom("e2e-udp");
             WaitUntil(() => masterSession.FieldId >= 0 && server.GetField(masterSession.FieldId) != null, Timeout, "sala não criada");
             int fieldId = masterSession.FieldId;
-            Field field = server.GetField(fieldId)!;
-            Assert.NotNull(field);
-            Assert.Equal((byte)GameMode.Golem, field.Mode);
-            Assert.Same(masterSession, field.Master);
-
-            // Joiner entra pela sala anunciada.
             joiner.JoinRoom((ushort)fieldId);
-            WaitUntil(() => joinerSession.FieldId == fieldId, Timeout, "joiner não entrou na sala");
+            WaitUntil(() => joinerSession.FieldId == fieldId, Timeout, "joiner não entrou");
 
-            // Coabitação no mesmo field, assentos distintos, master preservado.
-            Assert.Equal(fieldId, masterSession.FieldId);
-            Assert.Equal(fieldId, joinerSession.FieldId);
-            Assert.NotEqual(masterSession.FieldSeat, joinerSession.FieldSeat);
-            Assert.Same(masterSession, field.Master);
+            // Handshake UDP dos dois: registra os endpoints de gameplay no servidor.
+            master.OpenUdp();
+            joiner.OpenUdp();
+            master.UdpHandshake(fixture.UdpPort2, masterSession.Slot, masterSession.UdpKey);
+            joiner.UdpHandshake(fixture.UdpPort2, joinerSession.Slot, joinerSession.UdpKey);
 
-            int occupied = field.Slots.Count(rec => rec.Session != null);
-            Assert.Equal(2, occupied);
-            Assert.Contains(field.Slots, rec => rec.Session == masterSession);
-            Assert.Contains(field.Slots, rec => rec.Session == joinerSession);
+            WaitUntil(() => masterSession.UdpEndpoint != null && joinerSession.UdpEndpoint != null, Timeout,
+                "endpoints UDP não foram autenticados");
+
+            // O echo do handshake (0x0201, 12 bytes) volta a ambos.
+            master.WaitForUdp(p => p.Length == 12 && p[0] == 0x01 && p[1] == 0x02, Timeout);
+            joiner.WaitForUdp(p => p.Length == 12 && p[0] == 0x01 && p[1] == 0x02, Timeout);
+
+            // Master (assento 0) manda movimento 0x030A; o servidor relaya ao OUTRO peer.
+            byte[] sent = master.SendMove(fixture.UdpPort2, masterSession.FieldSeat, 100, 0, 250);
+            byte[] relayed = joiner.WaitForUdp(
+                p => p.Length == 26 && p[0] == 0x0a && p[1] == 0x03, Timeout);
+
+            Assert.Equal(sent, relayed);            // relay íntegro byte a byte
+            Assert.Equal(masterSession.FieldSeat, relayed[6]); // assento de origem preservado
         }
 
         private static ClientSession WaitForSession(

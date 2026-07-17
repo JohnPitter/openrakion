@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using MySqlConnector;
 using RakionServer.World;
@@ -19,10 +20,14 @@ namespace RakionServer.World.Tests.E2E
     /// </summary>
     public sealed class WorldServerFixture : IAsyncDisposable
     {
-        public const int TcpPort = 41708;
-        public const int UdpPort2 = 41709;
-        public const int BrokerPort = 41706;
         public const string Host = "127.0.0.1";
+
+        // Cada fixture usa um trio de portas próprio para não colidir com a instância
+        // anterior (o socket pode ficar em TIME_WAIT entre testes serializados).
+        private static int _portCursor = 41700;
+        public int TcpPort { get; private set; }
+        public int UdpPort2 { get; private set; }
+        public int BrokerPort { get; private set; }
 
         public WorldServer? Server { get; private set; }
         public bool Available { get; private set; }
@@ -32,7 +37,13 @@ namespace RakionServer.World.Tests.E2E
 
         public static async Task<WorldServerFixture> CreateAsync()
         {
-            var fixture = new WorldServerFixture();
+            int basePort = Interlocked.Add(ref _portCursor, 10);
+            var fixture = new WorldServerFixture
+            {
+                TcpPort = basePort,
+                UdpPort2 = basePort + 1,
+                BrokerPort = basePort + 2,
+            };
             string conn = Environment.GetEnvironmentVariable("RAKION_E2E_CONNECTION")
                 ?? "Server=127.0.0.1;Port=3306;Database=rakion;Uid=root;Pwd=123456;" +
                    "Pooling=true;Default Command Timeout=15;Connection Timeout=5;" +
@@ -41,10 +52,10 @@ namespace RakionServer.World.Tests.E2E
             var csb = new MySqlConnectionStringBuilder(conn);
             var cfg = new WorldConfig
             {
-                Port = TcpPort,
-                UdpPort1 = TcpPort,
-                UdpPort2 = UdpPort2,
-                BrokerPort = BrokerPort,
+                Port = fixture.TcpPort,
+                UdpPort1 = fixture.TcpPort,
+                UdpPort2 = fixture.UdpPort2,
+                BrokerPort = fixture.BrokerPort,
                 AuthType = 0,
                 AllowPasswordLogin = true,
                 MaxUser = 64,

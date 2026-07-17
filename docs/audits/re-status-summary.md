@@ -56,11 +56,12 @@ Começou a validação **dinâmica** dirigindo o `WorldServer` real por clientes
 
 - login concorrente + rejeição de credencial inválida;
 - char-select, criar sala Golem, join do 2º jogador (coabitação no mesmo field, assentos distintos);
-- ready + start da partida (armada em fase Pre, ambos os assentos promovidos a combatente).
+- ready + start da partida (armada em fase Pre, ambos os assentos promovidos a combatente);
+- handshake UDP dos dois peers + relay de movimento `0x030A` byte a byte entre eles.
 
 Próximos alvos headless (ainda abertos):
 
-- gameplay UDP: handshake, movimento `0x030A`, combate/dano, tick 1583 e relay entre peers;
+- combate UDP: datagramas de ataque/dano (`0x0311`/`0x030F`), tick 1583 e eco do cliente;
 - ciclo completo de partida: engage→rounds→morte/respawn→placar→settlement persistido;
 - PvE stage: spawn `0x4b`, clear/derrota, `0x53` result e liquidação de exp/gold/rank;
 - matriz de modos (Golem/TeamDeath/Deathmatch/Boss) e matriz P2P (direto/Tunnel, LAN/NAT/UDP bloqueado);

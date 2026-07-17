@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
@@ -128,6 +129,86 @@ namespace RakionServer.World.Tests.E2E
         /// <summary>Master inicia a partida (0x43): sem payload.</summary>
         public void StartMatch() => Send(0x43, Array.Empty<byte>());
 
+        // ---- UDP de gameplay ------------------------------------------------
+
+        private Socket? _udp;
+        private readonly BlockingCollection<byte[]> _udpRx = new(new ConcurrentQueue<byte[]>());
+
+        public IPEndPoint UdpLocalEndpoint => (IPEndPoint)_udp!.LocalEndPoint!;
+
+        /// <summary>Abre o socket UDP local do cliente (porta efêmera de loopback).</summary>
+        public void OpenUdp()
+        {
+            _udp = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            _udp.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+            _ = Task.Run(() => UdpReceiveLoopAsync(_cts.Token));
+        }
+
+        /// <summary>Handshake da porta de gameplay (0x0202, 23 bytes): registra o endpoint UDP
+        /// do jogador no servidor. slot e sessionKey vêm do estado da sessão (o cliente real os
+        /// lê do 0x0C; aqui o teste os fornece do servidor).</summary>
+        public void UdpHandshake(int serverGamePort, ushort slot, uint sessionKey)
+        {
+            byte[] p = new byte[GameplayUdpHandshakeSize];
+            BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(0), 0x0202); // Port2Type
+            BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(7), slot);
+            BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(9), sessionKey);
+            IPEndPoint local = UdpLocalEndpoint;
+            local.Address.MapToIPv4().GetAddressBytes().CopyTo(p, 13);
+            p[17] = (byte)(local.Port >> 8);
+            p[18] = (byte)local.Port;            // porta big-endian
+            BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(19), 0x12345678); // echoData
+            _udp!.SendTo(p, new IPEndPoint(IPAddress.Loopback, serverGamePort));
+        }
+
+        /// <summary>Datagrama de movimento 0x030A (26 bytes) com o assento de origem no offset 6.</summary>
+        public byte[] SendMove(int serverGamePort, byte sourceSeat, short x, short y, short z)
+        {
+            byte[] p = new byte[26];
+            BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(0), 0x030a);
+            BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(2), 1); // sequence
+            p[6] = sourceSeat;
+            BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(7), 16); // deltaMs
+            p[9] = 0;   // state/echo empacotados
+            p[10] = 0;  // actionCode
+            BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(11), x);
+            BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(13), y);
+            BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(15), z);
+            _udp!.SendTo(p, new IPEndPoint(IPAddress.Loopback, serverGamePort));
+            return p;
+        }
+
+        public byte[] WaitForUdp(Func<byte[], bool> predicate, TimeSpan timeout)
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            while (DateTime.UtcNow < deadline)
+                if (_udpRx.TryTake(out byte[]? pkt, 200) && predicate(pkt))
+                    return pkt;
+            throw new TimeoutException($"[{Name}] nenhum datagrama UDP casou o predicado em {timeout.TotalSeconds:0.#}s");
+        }
+
+        private const int GameplayUdpHandshakeSize = 23;
+
+        private async Task UdpReceiveLoopAsync(CancellationToken ct)
+        {
+            byte[] buf = new byte[2048];
+            var any = new IPEndPoint(IPAddress.Any, 0);
+            try
+            {
+                while (!ct.IsCancellationRequested && _udp != null)
+                {
+                    SocketReceiveFromResult r = await _udp.ReceiveFromAsync(buf, SocketFlags.None, any, ct);
+                    if (r.ReceivedBytes <= 0) continue;
+                    byte[] pkt = new byte[r.ReceivedBytes];
+                    Array.Copy(buf, pkt, r.ReceivedBytes);
+                    _udpRx.Add(pkt, ct);
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (SocketException) { }
+            catch (ObjectDisposedException) { }
+        }
+
         /// <summary>Espera um frame decifrado cujo primeiro byte casa com <paramref name="firstByte"/>
         /// (ex.: 0x0C login, 0x0D tabela, 0x10 GameGuard).</summary>
         public byte[] WaitForFirstByte(byte firstByte, TimeSpan timeout)
@@ -204,6 +285,7 @@ namespace RakionServer.World.Tests.E2E
             try { _cts.Cancel(); } catch { }
             try { _sock.Shutdown(SocketShutdown.Both); } catch { }
             try { _sock.Close(); } catch { }
+            try { _udp?.Close(); } catch { }
             await Task.CompletedTask;
         }
     }

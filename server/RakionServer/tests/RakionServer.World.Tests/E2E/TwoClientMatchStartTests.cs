@@ -28,9 +28,9 @@ namespace RakionServer.World.Tests.E2E
             var server = fixture.Server!;
 
             await using var master = await HeadlessWorldClient.ConnectAsync(
-                WorldServerFixture.Host, WorldServerFixture.TcpPort, "master");
+                WorldServerFixture.Host, fixture.TcpPort, "master");
             await using var joiner = await HeadlessWorldClient.ConnectAsync(
-                WorldServerFixture.Host, WorldServerFixture.TcpPort, "joiner");
+                WorldServerFixture.Host, fixture.TcpPort, "joiner");
 
             master.Login("test", "test");
             joiner.Login("test2", "test2");
@@ -45,7 +45,7 @@ namespace RakionServer.World.Tests.E2E
                 s => s.ActiveCharId > 0 && s.Status == UserStatus.FieldLobby, Timeout);
 
             master.CreateGolemRoom("e2e-start");
-            WaitUntil(() => masterSession.FieldId >= 0, Timeout, "sala não criada");
+            WaitUntil(() => masterSession.FieldId >= 0 && server.GetField(masterSession.FieldId) != null, Timeout, "sala não criada");
             int fieldId = masterSession.FieldId;
             Field field = server.GetField(fieldId)!;
 

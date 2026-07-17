@@ -36,15 +36,22 @@ Seed usado (banco `rakion`): conta `test` → personagem `GoHeroi` (`#1`); conta
 | Credencial inválida | `TwoClientLoginTests.HeadlessClient_LoginWithWrongPassword_IsRejected` | Senha errada não gera char-list nem promove sessão |
 | Criar + entrar em sala Golem | `TwoClientRoomTests.TwoHeadlessClients_CreateAndJoinGolemRoom_...` | Master cria field competitivo (mode Golem), joiner entra por `0x38`; ambos no mesmo `Field`, assentos distintos, papel de master preservado |
 | Ready + start da partida | `TwoClientMatchStartTests.TwoHeadlessClients_ReadyAndStart_...` | Joiner marca ready (`0x3d`); master inicia (`0x43`); partida armada (fase Pre, `MatchId`, deadline de engajamento no futuro); ambos os assentos promovidos a combatente (`State==3`) |
+| Gameplay UDP + relay de movimento | `TwoClientGameplayUdpTests.TwoHeadlessClients_UdpHandshakeAndMoveRelay_...` | Ambos autenticam o endpoint UDP (handshake `0x0202`, validação de slot+IP+chave); echo `0x0201` retorna; um movimento `0x030A` do master é relayado **byte a byte** ao outro peer do mesmo field, com o assento de origem preservado |
 
-Todos verdes junto dos 768 de domínio (**772 total**). Descobertas de RE confirmadas em runtime:
+Todos verdes junto dos 768 de domínio (**773 total**). Descobertas de RE confirmadas em runtime:
 
 - o transporte do cliente e do servidor é simétrico na cifra (AES-128 do canal lobby) mas
   **assimétrico no envelope**: cliente→servidor carrega `[opcode][seq]`, servidor→cliente carrega
   o frame já pronto pelo primeiro byte (`0x0C`/`0x0D`/`0x10`) ou `[msgType][data]`;
 - `FieldLobby == LoggedIn == 2`: o gate real de criar/entrar em sala não é o `Status`, e sim o
   **personagem selecionado** (`ActiveCharId>0`, contrato `WorldRequestGatePolicy`), senão o
-  `0x3b` cai em disconnect `0x52` — comportamento reproduzido e documentado pelo harness.
+  `0x3b` cai em disconnect `0x52` — comportamento reproduzido e documentado pelo harness;
+- o endpoint UDP relayado é o **observado** (`from` real do socket), não o anunciado — o relay de
+  gameplay volta ao socket de origem, então o handshake basta para o peer receber o tráfego;
+- `CreateField` publica a sala em duas etapas: `JoinField` grava `session.FieldId` **antes** de
+  `Fields.Add(field)`. Há uma janela em que `FieldId>=0` mas `GetField` ainda é nulo — quem
+  observa o estado da sala deve esperar `GetField != null`, não só `FieldId>=0` (o harness faz
+  isso).
 
 ## Como rodar
 
@@ -59,11 +66,12 @@ Sem banco, os testes fazem skip suave (não quebram o CI). Para apontar outro ba
 
 ## Fronteira dinâmica restante
 
-Coberto no backend até aqui: login → char-select → sala → join → ready → start (partida armada).
-Ainda **não** exercitado headless (próximos alvos):
+Coberto no backend até aqui: login → char-select → sala → join → ready → start (partida armada) →
+handshake UDP + relay de movimento `0x030A` entre peers. Ainda **não** exercitado headless
+(próximos alvos):
 
-- **gameplay UDP**: handshake das portas, movimento `0x030A`, combate/dano, tick 1583 e relay
-  entre peers no field armado;
+- **combate UDP**: datagramas de ataque/dano (`0x0311`/sync `0x030F`), tick 1583 e o eco do
+  cliente, sobre o relay já validado;
 - **ciclo de partida completo**: engage (Pre→Playing), rounds, morte/respawn, placar e o
   settlement persistido (`SettleMatchAsync`) com dois clientes;
 - **PvE stage**: `0x4b` spawn, clear/derrota, `0x53` result e a liquidação de exp/gold/rank;

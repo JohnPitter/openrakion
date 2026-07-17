@@ -29,9 +29,9 @@ namespace RakionServer.World.Tests.E2E
             var server = fixture.Server!;
 
             await using var alice = await HeadlessWorldClient.ConnectAsync(
-                WorldServerFixture.Host, WorldServerFixture.TcpPort, "alice");
+                WorldServerFixture.Host, fixture.TcpPort, "alice");
             await using var bob = await HeadlessWorldClient.ConnectAsync(
-                WorldServerFixture.Host, WorldServerFixture.TcpPort, "bob");
+                WorldServerFixture.Host, fixture.TcpPort, "bob");
 
             alice.Login("test", "test");
             bob.Login("test2", "test2");
@@ -64,7 +64,7 @@ namespace RakionServer.World.Tests.E2E
             var server = fixture.Server!;
 
             await using var intruder = await HeadlessWorldClient.ConnectAsync(
-                WorldServerFixture.Host, WorldServerFixture.TcpPort, "intruder");
+                WorldServerFixture.Host, fixture.TcpPort, "intruder");
             intruder.Login("test", "senha-errada");
 
             // Login inválido não deve produzir char-list nem promover a sessão.
