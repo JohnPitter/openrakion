@@ -11,8 +11,9 @@ A validação headless está concluída. As fórmulas executadas vêm dos Lua or
 enquanto `items.dat` liga cada item à família de script. O dispatcher nativo, os oito efeitos, o
 multiplicador de Steam e os resets de Steam/Scouter também foram fechados estaticamente. O relay
 possui parser tipado para `EUsePotion` e rejeita tamanho ou kind incompatível com o dispatcher.
-Ainda faltam captura visual com dois clientes e provar onde o cliente aplica as durações comerciais
-de Steam/Scouter; os timestamps existem, mas não possuem consumidor direto em `entitiesmp.dll`.
+Ainda falta captura visual com dois clientes. O passe cruzado dos quatro módulos de gameplay fechou
+as durações comerciais como não implementadas nesta build: os timestamps são gravados, mas nunca
+lidos para expiração.
 
 ## Evidência binária
 
@@ -39,6 +40,9 @@ Scripts reproduzíveis:
 - `tools/extract_potion_catalog.py` gera o catálogo JSON de itens, aliases e fórmulas;
 - `tools/ghidra/FindPotionStateConsumers.py` audita os subobjetos/propriedades de Steam e Scouter
   entre `CPlayer+0x2C40..+0x2C68` e gera `C:\temp\potion_state_consumers.txt`.
+- `tools/ghidra/AuditPotionDurationConsumers.py` varre offsets e escalares de duração em
+  `entitiesmp`, `engine`, `gamemp` e `rakion_orig`, gerando
+  `C:\temp\potion_duration_consumers_<programa>.txt`.
 - `tools/ghidra/DumpBasicEffectTypes.py` extrai a enum canônica para
   `C:\temp\basic_effect_types.txt`.
 
@@ -122,8 +126,8 @@ o item desta build carrega exatamente uma célula. As descrições em `items.dat
 - Scouter: revela a energia do inimigo por um minuto.
 
 As porcentagens de HP/AP/CP, o custo de HP e o argumento de Chaos são regras executáveis e estão
-confirmados. Os bônus/durações de Steam e Scouter acima são contrato do catálogo; o término e os
-modificadores internos ainda precisam de observação dinâmica antes de virarem regra autoritativa.
+confirmados. O bônus de Steam também é executável; os `30 s/60 s` de Steam/Scouter são apenas
+descrição comercial e não devem virar regra autoritativa compatível com a v258.
 
 ### Dispatcher e efeitos nativos
 
@@ -167,10 +171,20 @@ bônus é ataque `+30%`, e não vulnerabilidade do usuário da poção.
 
 `CPlayer::StartRound` grava `0` nas propriedades ativas de Steam e Scouter. `CPlayer::Death` grava
 `0` somente em Scouter. Nenhuma instrução de `entitiesmp.dll` lê diretamente `+0x2C4C/+0x2C50` ou
-`+0x2C64/+0x2C68` depois da gravação. A varredura headless também encontrou zero operandos
-escalares `30000` e `60000` nesse módulo. Assim, `30 s` de Steam e `60 s` de Scouter permanecem
-confirmados apenas pelo catálogo; atribuir a expiração ao DLL sem captura dinâmica ou consumidor
-em outro módulo seria evidência falsa.
+`+0x2C64/+0x2C68` depois da gravação. A auditoria adicional cobriu os quatro módulos que compõem o
+gameplay carregado:
+
+| módulo | offsets de timestamp | `30000` | `60000` | classificação |
+|---|---|---:|---:|---|
+| `entitiesmp.dll` runtime | duas gravações, zero leituras | 0 | 0 | estado Steam/Scouter |
+| `gamemp.dll` | 0 | 0 | 0 | wrapper sem regra temporal |
+| `engine.dll` | hits homônimos em `AccountInfo`/clã | 0 | 1 | conversão hora/minuto, não `CPlayer` |
+| `rakion_orig.exe` | hits homônimos em UI/conta | 3 | 2 | keepalive, voto e IPC, não poção |
+
+Logo, o comportamento executável da v258 não possui expiração por relógio: Steam fica ativo até
+`StartRound`; Scouter fica ativo até `Death` ou `StartRound`. Os timestamps armazenados são estado
+morto nesta build. Implementar 30/60 segundos seria uma correção/feature nova baseada no catálogo,
+não reprodução fiel do binário.
 
 A varredura anterior que incluía `CPlayer+0x277C/+0x277E/+0x277F/+0x2958` foi invalidada: esses
 offsets pertencem a contadores/timestamp de combate e não participam deste sistema.
@@ -273,12 +287,12 @@ Ainda pendem:
 
 - teste de integração MySQL concorrente e falha injetada durante o consumo;
 - captura visual de cada `potionKind` em dois clientes;
-- localizar fora de `entitiesmp.dll` ou observar dinamicamente a expiração de Steam/Scouter;
 - confirmar visualmente a queda das variantes Horror e a HUD revelada por Scouter;
 - modifiers e término completo do modo Chaos;
 - endurecimento autoritativo opcional, pois o protocolo legado deixa o efeito no cliente/P2P.
 
 O sistema de transporte/autorização e a aplicação nativa dos oito kinds estão reconstruídos. Steam
 tem multiplicador e resets comprovados; Horror tem efeito/raio/variantes; Scouter tem estado,
-timestamp e resets. O domínio visual/temporal só poderá ser chamado de completo após os timers e a
-validação gráfica, sem confundir build verde com resultado visível em jogo.
+timestamp e resets. O RE temporal está fechado pela ausência de consumidores; o domínio visual só
+poderá ser chamado de validado após observação em jogo, sem confundir build verde com resultado
+visível.

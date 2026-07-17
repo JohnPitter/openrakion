@@ -628,6 +628,9 @@ analyzeHeadless.bat <workspace-ghidra> wsSell -process worldserv.exe -noanalysis
 `ghidra/FindPotionStateConsumers.py` varre os subobjetos e propriedades internas de Steam/Scouter
 em `CPlayer+0x2C40..+0x2C68`, incluindo aplicação, multiplicador e resets, e grava as funções
 proprietárias em `C:\temp\potion_state_consumers.txt`.
+`ghidra/AuditPotionDurationConsumers.py` cruza esses offsets com os escalares `30000/60000` em
+`entitiesmp`, `engine`, `gamemp` e `rakion_orig` para separar gravações de timestamp dos hits
+homônimos de UI, conta, keepalive e conversão de tempo.
 `ghidra/DumpBasicEffectTypes.py` extrai os 76 pares valor/nome da golden table
 `BasicEffectType_values @ 0x3537FC20` para `C:\temp\basic_effect_types.txt`; ela é a fonte canônica
 dos códigos compartilhados por poções, Chaos e efeitos de summon/desaparecimento de NPC.
