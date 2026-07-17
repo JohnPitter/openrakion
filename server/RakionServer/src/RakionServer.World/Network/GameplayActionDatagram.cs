@@ -30,15 +30,45 @@ namespace RakionServer.World.Network
         public short ViewRotationZ { get; init; }
     }
 
+    public readonly record struct GameplaySyncAction
+    {
+        public GameplayActionHeader Header { get; init; }
+        public byte SourceEcho { get; init; }
+        public byte LifeState { get; init; }
+        public byte PlayerValueA { get; init; }
+        public byte AnimatorValue { get; init; }
+        public byte PlayerValueB { get; init; }
+        public byte ControlMode { get; init; }
+        public byte ControlDetail { get; init; }
+    }
+
+    public enum PlayerAnimationKind : byte
+    {
+        Normal = 0,
+        Attack = 1,
+        Damage = 2
+    }
+
+    public readonly record struct GameplayAnimationAction
+    {
+        public GameplayActionHeader Header { get; init; }
+        public byte SourceEcho { get; init; }
+        public PlayerAnimationKind Kind { get; init; }
+        public byte Argument0 { get; init; }
+        public byte Argument1 { get; init; }
+        public byte Argument2 { get; init; }
+        public bool HasExtendedPayload { get; init; }
+    }
+
     public static class GameplayActionDatagram
     {
         public const ushort MoveType = 0x030a;
-        public const ushort KeyStateType = 0x030f;
-        public const ushort AttackType = 0x0311;
+        public const ushort SyncType = 0x030f;
+        public const ushort AnimationType = 0x0311;
         public const int MoveSize = 26;
-        public const int KeyStateSize = 14;
-        public const int AttackSize = 10;
-        public const int ExtendedAttackSize = 12;
+        public const int SyncSize = 14;
+        public const int AnimationSize = 10;
+        public const int ExtendedAnimationSize = 12;
 
         public static bool TryParseHeader(ReadOnlySpan<byte> packet, out GameplayActionHeader header)
         {
@@ -77,11 +107,52 @@ namespace RakionServer.World.Network
             return true;
         }
 
+        public static bool TryParseSync(ReadOnlySpan<byte> packet, out GameplaySyncAction action)
+        {
+            action = default;
+            if (!TryParseHeader(packet, out var header) || header.Type != SyncType) return false;
+            action = new GameplaySyncAction
+            {
+                Header = header,
+                SourceEcho = packet[7],
+                LifeState = packet[8],
+                PlayerValueA = packet[9],
+                AnimatorValue = packet[10],
+                PlayerValueB = packet[11],
+                ControlMode = packet[12],
+                ControlDetail = packet[13]
+            };
+            return true;
+        }
+
+        public static bool TryParseAnimation(
+            ReadOnlySpan<byte> packet,
+            out GameplayAnimationAction action)
+        {
+            action = default;
+            if (!TryParseHeader(packet, out var header) || header.Type != AnimationType) return false;
+            var kind = (PlayerAnimationKind)packet[8];
+            if (kind is < PlayerAnimationKind.Normal or > PlayerAnimationKind.Damage) return false;
+            bool extended = packet.Length == ExtendedAnimationSize;
+            if (kind == PlayerAnimationKind.Damage && !extended) return false;
+            action = new GameplayAnimationAction
+            {
+                Header = header,
+                SourceEcho = packet[7],
+                Kind = kind,
+                Argument0 = packet[9],
+                Argument1 = extended ? packet[10] : (byte)0,
+                Argument2 = extended ? packet[11] : (byte)0,
+                HasExtendedPayload = extended
+            };
+            return true;
+        }
+
         private static bool HasValidSize(ushort type, int size) => type switch
         {
             MoveType => size == MoveSize,
-            KeyStateType => size == KeyStateSize,
-            AttackType => size is AttackSize or ExtendedAttackSize,
+            SyncType => size == SyncSize,
+            AnimationType => size is AnimationSize or ExtendedAnimationSize,
             _ => false
         };
 

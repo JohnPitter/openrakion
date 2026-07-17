@@ -235,18 +235,38 @@ O `0x030A` só deve ser aceito depois que a sessão peer do jogo foi carregada e
 existe. Eventos reliable de load/connect precedem gameplay. O World não deve tentar interpretar
 esse opcode como um comando TCP de lobby.
 
-### `0x030F` — teclas/estado complementar
+### `0x030F` — snapshot de sincronização do jogador
 
-Shape confirmado de 14 bytes: header comum de 7 bytes seguido por
-`[u8 sourceEcho][u16 0x0008][u16 0x0001][u16 stateTail]`. Acompanha `0x030A` aproximadamente
-1:1. O relay valida o tamanho, mas ainda não correlaciona sequência/cadência.
+Shape confirmado de 14 bytes: header comum de 7 bytes seguido por `u8 sourceEcho` e seis campos
+`u8`. `CPlayerSource::SendSyncData @ engine.dll:0x36103040` chama o slot virtual `+0x1BC`,
+exportado como `CPlayer::GetSyncData(CNetMessage&)`; `HandleMessage @ 0x3610D7C0` resolve o peer e
+chama o slot `+0x1C0`, exportado como `CPlayer::ApplySyncData(CNetMessage&)`.
 
-### `0x0311` — action ID
+O produtor `entitiesmp.dll:0x3513A200` serializa, na ordem: resultado de `IsAlive`, valor reduzido
+de `CPlayer+0x2AD8`, byte do animator `+0x128`, valor reduzido de `CPlayer+0x2B8C`, modo em
+`CPlayer+0x2904` e detalhe `+0x2908` somente quando o modo é zero. Os nomes de domínio dos quatro
+últimos offsets não aparecem nos símbolos desta build e permanecem neutros no DTO. O consumidor
+`0x3514CA80` lê os mesmos seis bytes. Na captura
+`0F03280000000A 0A 08 00 01 00 00 03`, portanto, `08 00 01 00 00 03` não são três `u16`.
+O stream acompanha `0x030A` aproximadamente 1:1; o relay valida o tamanho, mas ainda não
+correlaciona sequência/cadência.
 
-Shapes aceitos de 10 ou 12 bytes: header comum, `u8 sourceEcho` e `u16 actionId`; a variante
-estendida preserva dois bytes adicionais observados. HP e morte não estão nesse pacote. Um `actionId`
-isolado não comprova hit: para validar dano é necessário correlacioná-lo com sequência, arma,
-posição, orientação, janela da animação, alvo e estado do match.
+### `0x0311` — animação normal, ataque ou dano
+
+O dispatcher `rakion.bin:0x00411760` lê `u8 sourceEcho` e chama
+`CPlayer::DoAnimPacket(CNetMessage&) @ entitiesmp.dll:0x35152990`. O byte seguinte seleciona uma
+união explícita:
+
+| `kind` | corpo após o kind | consumidor |
+|---:|---|---|
+| `0` | `u8 animationId` | `ExecNormalAnim(long) @ 0x3513E570` |
+| `1` | `u8 animationId` | `ExecAttackAnim(long) @ 0x3514A5F0` |
+| `2` | `u8 argument0, u8 argument1, u8 argument2` | `ExecDamageAnim(long,long,int) @ 0x3514A6C0` |
+
+Assim, os shapes lógicos medem 10 bytes para normal/ataque e 12 bytes para dano. A captura de 12
+bytes com `kind=1` também é aceita porque o receiver consome só o primeiro argumento e tolera os
+dois bytes finais. HP e morte não estão nesse pacote. A animação isolada não comprova hit: dano
+autoritativo ainda exige correlação com sequência, arma, posição, orientação, janela, alvo e match.
 
 ## Controle TCP de morte e saída
 

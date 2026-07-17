@@ -18,7 +18,7 @@ CASES = {
     0x30A: ("Player action/movement", "CNetMessage de ação serializada"),
     0x30B: ("Entity placement/state", "u16 state, u8 kind/group/index, 4*s16 placement"),
     0x30C: ("Entity event", "u8 source/class/indexA/indexB, u32 event, u32 length, payload"),
-    0x30F: ("Remote player action", "u8 player slot"),
+    0x30F: ("Player sync snapshot", "u8 source echo, 6*u8 sync fields"),
     0x310: ("Map NPC state/action", "u8 state, u8 kind, u8 map index"),
     0x312: ("Map item snapshot", "u8 count, count * (u8 index, u8 state)"),
 }
@@ -73,6 +73,9 @@ def render(values: list[int], engine_sha: str, rakion_sha: str) -> str:
             "No UDP reliable, o transporte acrescenta `0x8000` ao tipo lógico; por exemplo,",
             "`0x030C` aparece no fio como `0x830C`. ACK `0x4000`, sequência e slot de origem são",
             "metadados de transporte e não pertencem ao payload acima.",
+            "O case direto `0x0311` lê `u8 sourceEcho` e delega o restante a `CPlayer::DoAnimPacket`:",
+            "`kind=0/1` consome `u8 animationId`; `kind=2` consome três argumentos `u8` de dano.",
+            "A implementação original tolera dois bytes finais não consumidos em pacotes de kind `0/1`.",
             "",
             "`worldserv!FUN_0041B940` não produz mensagens CNet. Ela grava a fila de requests DB no formato",
             "`[u16 requestSequence][u16 commandType][data]`; `FUN_0041B3F0/FUN_0041AE50` a consomem.",

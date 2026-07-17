@@ -21,7 +21,7 @@ ADDRESSES = (
     0x36103CB0,  # SendAction relay
     0x3610AFE0,  # CSessionState::GetActionFromMessage
     0x3610CD20,  # loop que emite ações
-    0x3610D730,  # dispatcher de mensagens da sessão
+    0x3610D7C0,  # CSessionState::HandleMessage
     0x361AA780,  # CPlayerEntity::ApplyAction
     0x361AA790,  # CPlayerEntity::UpdatePlacement
 )

@@ -16,7 +16,7 @@ ADDRESSES = (
     0x3610C8C0,  # CSessionState::DestroyMasterGolems
     0x3610D060,  # CSessionState::BuildMapItemList
     0x3610D6A0,  # CSessionState::SendInfoMapItemStatus
-    0x3610D730,  # CSessionState::HandleMessage 0x0307..0x0312
+    0x3610D7C0,  # CSessionState::HandleMessage 0x0307..0x0312
 )
 
 REFERENCE_TARGETS = (

@@ -113,5 +113,5 @@ legado não consegue provar esses comportamentos e não deve ser apresentado com
   writers do modo no login;
 - `world_ch_code_probe.py` confirmou ao vivo `DISC BB`, hash correto sem resposta e `DISC BC`;
 - o login antigo com hash sintético continuou funcionando com `EnforceMD5=0`;
-- 761/761 testes do World, 11/11 do launcher e build Release sem warnings; o smoke MariaDB
+- 768/768 testes do World, 11/11 do launcher e build Release sem warnings; o smoke MariaDB
   também confirmou migração do schema antigo e rejeição de build divergente sem consumir ticket.

@@ -52,6 +52,52 @@ namespace RakionServer.World.Tests
             Assert.Equal(type, header.Type);
         }
 
+        [Fact]
+        public void Sync_ParsesSixBytePlayerSnapshot()
+        {
+            byte[] packet = System.Convert.FromHexString("0F03280000000A0A080001000003");
+
+            Assert.True(GameplayActionDatagram.TryParseSync(packet, out var action));
+            Assert.Equal((byte)0x0a, action.SourceEcho);
+            Assert.Equal((byte)0x08, action.LifeState);
+            Assert.Equal((byte)0, action.PlayerValueA);
+            Assert.Equal((byte)1, action.AnimatorValue);
+            Assert.Equal((byte)0, action.PlayerValueB);
+            Assert.Equal((byte)0, action.ControlMode);
+            Assert.Equal((byte)3, action.ControlDetail);
+        }
+
+        [Theory]
+        [InlineData("1103630000000A0A0007", PlayerAnimationKind.Normal, false)]
+        [InlineData("1103630000000A0A0109", PlayerAnimationKind.Attack, false)]
+        [InlineData("1103630000000A0A01090000", PlayerAnimationKind.Attack, true)]
+        [InlineData("1103630000000A0A02010203", PlayerAnimationKind.Damage, true)]
+        public void Animation_ParsesKindSpecificUnion(
+            string hex,
+            PlayerAnimationKind kind,
+            bool extended)
+        {
+            Assert.True(GameplayActionDatagram.TryParseAnimation(
+                System.Convert.FromHexString(hex), out var action));
+            Assert.Equal(kind, action.Kind);
+            Assert.Equal(extended, action.HasExtendedPayload);
+            if (kind == PlayerAnimationKind.Normal) Assert.Equal((byte)7, action.Argument0);
+            if (kind == PlayerAnimationKind.Attack) Assert.Equal((byte)9, action.Argument0);
+            if (kind != PlayerAnimationKind.Damage) return;
+            Assert.Equal((byte)1, action.Argument0);
+            Assert.Equal((byte)2, action.Argument1);
+            Assert.Equal((byte)3, action.Argument2);
+        }
+
+        [Theory]
+        [InlineData("1103630000000A0A0201")]
+        [InlineData("1103630000000A0A0301")]
+        public void Animation_RejectsTruncatedDamageOrUnknownKind(string hex)
+        {
+            Assert.False(GameplayActionDatagram.TryParseAnimation(
+                System.Convert.FromHexString(hex), out _));
+        }
+
         [Theory]
         [InlineData("0A030000000000")]
         [InlineData("0F030000000000000000000000")]

@@ -654,7 +654,10 @@ sem desconectar. A sonda passou repetidamente após passar a extrair o `fieldId`
 `PlayerActionState`, `u8 ePlayerAction`, três posições `s16`, `s16 angleWord`, `u8 angleByte` e
 três componentes `s16` de `pa_aViewRotation`. Com header
 `[u16 type][u32 sequence][u8 source]`, o datagrama mede 26 bytes. Capturas pareadas fixam ainda
-`0x030F` em 14 bytes e `0x0311` em 10/12 bytes.
+`0x030F` em 14 bytes e `0x0311` em 10/12 bytes. O passe complementar
+`DecompileClientCompanionActionStreams.py` fecha `0x030F` como `sourceEcho` mais os seis bytes
+simétricos de `CPlayer::GetSyncData/ApplySyncData`; fecha `0x0311` como `sourceEcho`, kind
+`Normal/Attack/Damage` e um ou três argumentos consumidos por `CPlayer::DoAnimPacket`.
 
 `GameplayActionDatagram` protege os shapes e o codec de movimento. `world_udp_probe.py` enviou
 as três famílias por um endpoint autenticado: somente o peer do mesmo field recebeu bytes

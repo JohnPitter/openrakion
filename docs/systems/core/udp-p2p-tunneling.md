@@ -173,8 +173,8 @@ Shapes já fechados por disassembly/captura indireta:
 | `0x0304` | 12/13 | push do protocolo de aplicação |
 | `0x0305` | 12/13 | ack correspondente |
 | `0x030A` | 26 | movimento |
-| `0x030F` | 14 | estado de teclas/mira |
-| `0x0311` | 10/12 | ataque |
+| `0x030F` | 14 | snapshot de seis estados `u8` do jogador |
+| `0x0311` | 10/12 | união de animação normal/ataque/dano |
 | `0x0319` | 8 | atualização de endereço |
 | `0x4000` | 11 | ack reliable genérico |
 | `0x8307/08/09/0B/10/12` | variável | entidades/NPC/itens |

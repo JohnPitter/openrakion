@@ -303,7 +303,7 @@ snapshot/restauração da fixture ou use uma conta descartável.
 
 ## Validação executada em 2026-07-16
 
-- 761/761 testes do projeto World;
+- 768/768 testes do projeto World;
 - smoke MariaDB transacional aprovado;
 - build World Release com zero warnings e zero erros;
 - probe runtime: create → start → spawn → clear → settlement;

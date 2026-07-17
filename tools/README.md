@@ -510,6 +510,10 @@ o wrapper de `gamemp.dll` para extrair `ctl_ComposeActionPacket`, `CPlayer::Appl
 `+0xAB0/+0xAB4/+0xAB8`. As saídas usam o nome do programa em
 `C:\temp\*_action_producer.txt`; o passe fecha `CPlayerAction+0x38/+0x3C/+0x40` como
 `pa_aViewRotation`.
+`ghidra/DecompileClientCompanionActionStreams.py` cruza `engine.dll`, `rakion_orig.exe`, o dump
+runtime e os exports de `entitiesmp.dll` para reproduzir `GetSyncData/ApplySyncData` do `0x030F`
+e a união `DoAnimPacket` do `0x0311`, preservando decompile e disassembly nas saídas
+`C:\temp\client_companion_action_streams_*.txt`.
 `ghidra/DumpEnumValues.py` extrai tabelas `[u32 value, char* name]` por símbolo ou endereço
 runtime; ele fecha `PlayerActionState` e `ePlayerAction` no dump de `entitiesmp.dll`.
 
