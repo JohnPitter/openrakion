@@ -192,7 +192,7 @@ no give-up `0x46` quanto na remoção real da sala.
 | Boss `0x60`, líderes e morte decisiva | implementado e headless |
 | timeout/intermissão/próximo round | implementado e headless |
 | settlement idempotente | implementado e testes de banco |
-| ações internas P2P por arma | parcialmente nomeadas |
+| ações internas P2P | `0x030A` fechado até `pa_aViewRotation`; arma/disparo/hold fechados por layout e consumidor, com words sem nome histórico mantidos neutros |
 | placar, respawn, entidades e efeitos visuais | validação gráfica pendente |
 
 Headless significa sockets reais contra Broker/World/Buddy e MariaDB local, não dois clientes

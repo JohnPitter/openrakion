@@ -504,6 +504,12 @@ saída real `0x3E` e as condições de falha.
 
 `ghidra/DecompileClientActionStreams.py` extrai do `engine.dll` os codecs de ação e o transporte
 `0x0304/0x0305/0x0319/0x4000`. A saída é `C:\temp\client_action_streams.txt`.
+`ghidra/DecompileClientActionProducer.py` cruza os exports de `entitiesmp.dll`, o dump runtime e
+o wrapper de `gamemp.dll` para extrair `ctl_ComposeActionPacket`, `CPlayer::ApplyAction`,
+`ActiveActions`, `AliveActions`, `UpdatePlacement` e os acessos aos acumuladores
+`+0xAB0/+0xAB4/+0xAB8`. As saídas usam o nome do programa em
+`C:\temp\*_action_producer.txt`; o passe fecha `CPlayerAction+0x38/+0x3C/+0x40` como
+`pa_aViewRotation`.
 `ghidra/DumpEnumValues.py` extrai tabelas `[u32 value, char* name]` por símbolo ou endereço
 runtime; ele fecha `PlayerActionState` e `ePlayerAction` no dump de `entitiesmp.dll`.
 

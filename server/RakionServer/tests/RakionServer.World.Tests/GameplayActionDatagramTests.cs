@@ -23,6 +23,21 @@ namespace RakionServer.World.Tests
             Assert.Equal((short)0, action.PositionY);
             Assert.Equal((short)2450, action.PositionZ);
             Assert.Equal((byte)0xa5, action.AngleByte);
+            Assert.Equal((short)0, action.ViewRotationX);
+            Assert.Equal((short)0, action.ViewRotationY);
+            Assert.Equal((short)0, action.ViewRotationZ);
+        }
+
+        [Fact]
+        public void Move_ParsesViewRotationAtFinalOffsets()
+        {
+            byte[] packet = System.Convert.FromHexString(
+                "0A032700000000650020005E01000092090000A50100FEFF3412");
+
+            Assert.True(GameplayActionDatagram.TryParseMove(packet, out var action));
+            Assert.Equal((short)1, action.ViewRotationX);
+            Assert.Equal((short)-2, action.ViewRotationY);
+            Assert.Equal((short)0x1234, action.ViewRotationZ);
         }
 
         [Theory]

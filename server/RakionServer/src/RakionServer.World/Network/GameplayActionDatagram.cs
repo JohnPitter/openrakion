@@ -25,9 +25,9 @@ namespace RakionServer.World.Network
         public short PositionZ { get; init; }
         public short AngleWord { get; init; }
         public byte AngleByte { get; init; }
-        public short ActionVectorX { get; init; }
-        public short ActionVectorY { get; init; }
-        public short ActionVectorZ { get; init; }
+        public short ViewRotationX { get; init; }
+        public short ViewRotationY { get; init; }
+        public short ViewRotationZ { get; init; }
     }
 
     public static class GameplayActionDatagram
@@ -70,9 +70,9 @@ namespace RakionServer.World.Network
                 PositionZ = ReadI16(packet, 15),
                 AngleWord = ReadI16(packet, 17),
                 AngleByte = packet[19],
-                ActionVectorX = ReadI16(packet, 20),
-                ActionVectorY = ReadI16(packet, 22),
-                ActionVectorZ = ReadI16(packet, 24)
+                ViewRotationX = ReadI16(packet, 20),
+                ViewRotationY = ReadI16(packet, 22),
+                ViewRotationZ = ReadI16(packet, 24)
             };
             return true;
         }

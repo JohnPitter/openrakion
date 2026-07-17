@@ -652,7 +652,7 @@ sem desconectar. A sonda passou repetidamente após passar a extrair o `fieldId`
 `DecompileClientActionStreams.py` reproduz `CSessionState::GetActionFromMessage @ 0x3610AFE0` no
 `engine.dll`. O corpo `0x030A` tem 19 bytes: `u16 deltaMilliseconds`, um byte que compacta seat e
 `PlayerActionState`, `u8 ePlayerAction`, três posições `s16`, `s16 angleWord`, `u8 angleByte` e
-três componentes `s16` de `actionVector`. Com header
+três componentes `s16` de `pa_aViewRotation`. Com header
 `[u16 type][u32 sequence][u8 source]`, o datagrama mede 26 bytes. Capturas pareadas fixam ainda
 `0x030F` em 14 bytes e `0x0311` em 10/12 bytes.
 
@@ -752,8 +752,10 @@ sender retransmite após 1000 ms enquanto o registro continuar na fila. O receiv
 `0x8000` antes de entregar ao dispatcher, logo criação `0x0308` cruza a rede como `0x8308`.
 No `0x030A`, `SendAction @ 0x36103940` compacta o seat nos cinco bits baixos e
 `PlayerActionState` nos bits `5..6`; o byte seguinte é `ePlayerAction`. As tabelas runtime fecham
-os quatro estados e 32 ações de movimento/guard/troca de arma. Os três `s16` finais permanecem
-nomeados como vetor de ação, sem inferir aim antes de localizar o consumidor concreto.
+os quatro estados e 32 ações de movimento/guard/troca de arma. O produtor
+`ctl_ComposeActionPacket @ entitiesmp.dll:0x35139310`, o armazenamento em
+`CPlayerAction+0x38/+0x3C/+0x40`, o consumidor `CPlayer::ActiveActions @ 0x35151300` e o golden
+source do engine fecham os três `s16` finais como `pa_aViewRotation`.
 `SendToOtherClient @ 0x36100780` e `SendToOtherClientReliable @ 0x36100980` sempre oferecem a
 mensagem a `0x56` quando o World está conectado; `IsTunneling_Client @ 0x36194DB0` decide se o
 UDP direto deve ser suprimido. O flag vem de `user+0x1478`, serializado por `FUN_0040B7F0` após

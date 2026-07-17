@@ -18,6 +18,8 @@ uma simulação server-side que não existe nessa build.
 ## Fontes e limite da análise
 
 - `tools/ghidra/DecompileClientActionStreams.py`, executado sobre `engine.dll`;
+- `tools/ghidra/DecompileClientActionProducer.py`, aplicado ao dump runtime de `entitiesmp.dll`
+  e ao `gamemp.dll`;
 - `tools/ghidra/DumpEnumValues.py`, aplicado às tabelas runtime de `entitiesmp.dll`;
 - `tools/ghidra/TraceClientReliableCallers.py` e `TraceRakionReliableImports.py`;
 - captura pareada de 2.593 updates `0x030A` e 2.589 companheiros `0x030F`;
@@ -36,6 +38,11 @@ uma simulação server-side que não existe nessa build.
   dispatcher e consumidores de arma/hold;
 - `tools/ghidra/DumpInstructionRanges.py`, usado para confirmar os offsets que o decompilador
   não preserva com clareza em parâmetros passados por valor.
+- o golden source público do Serious Engine, em
+  [`NetworkMessage.h`](https://github.com/Croteam-official/Serious-Engine/blob/b408e88a16fd01aa1cfd0e0a999c86c2c1437c9e/Sources/Engine/Network/NetworkMessage.h#L274-L280),
+  [`Game.cpp`](https://github.com/Croteam-official/Serious-Engine/blob/b408e88a16fd01aa1cfd0e0a999c86c2c1437c9e/Sources/GameMP/Game.cpp#L438-L460)
+  e [`Player.es`](https://github.com/Croteam-official/Serious-Engine/blob/b408e88a16fd01aa1cfd0e0a999c86c2c1437c9e/Sources/EntitiesMP/Player.es#L446-L527),
+  usado apenas depois de confirmar o mesmo export e o fluxo correspondente na build v258.
 
 O layout dos três streams de ação está comprovado por decompilação e captura. Os shapes
 `0x0304/0x0305/0x0319/0x4000/0x830C/0x8313/0x8315` estão fechados para classificação e relay.
@@ -192,7 +199,7 @@ u16 deltaMilliseconds
 u8 packedSourceAndState | u8 actionCode
 s16 positionX | s16 positionY | s16 positionZ
 s16 angleWord | u8 angleByte
-s16 actionVectorX | s16 actionVectorY | s16 actionVectorZ
+s16 viewRotationX | s16 viewRotationY | s16 viewRotationZ
 ```
 
 `packedSourceAndState & 0x1F` repete o seat e `(packedSourceAndState >> 5) & 3` seleciona a enum
@@ -208,10 +215,21 @@ s16 actionVectorX | s16 actionVectorY | s16 actionVectorZ
 | `27..31` | troca para weapon 1/2, TryHold, TurnLeft, TurnRight |
 
 `CSessionState::GetActionFromMessage @ 0x3610AFE0` lê os 19 bytes nessa ordem e recompõe um
-`CPlayerAction` de 72 bytes. O produtor mantém dez snapshots anteriores dessa estrutura. Os três
-valores finais ainda são chamados `actionVector` porque nenhum consumidor permite distingui-los
-com segurança como aim, velocidade ou direção. A captura mostra cadência próxima de 100 ms e
-sequência compartilhada com os streams companheiros.
+`CPlayerAction` de 72 bytes. O produtor mantém dez snapshots anteriores dessa estrutura. O trio
+final é `pa_aViewRotation`, não velocidade nem um vetor genérico. `SendAction @ 0x36103940` lê o
+trio em `CPlayerSource+0x90/+0x94/+0x98`, isto é, `CPlayerAction+0x38/+0x3C/+0x40` dentro do
+snapshot guardado em `CPlayerSource+0x58`. `ctl_ComposeActionPacket @ entitiesmp.dll:0x35139310`
+copia para esses offsets os acumuladores locais `+0xAB0/+0xAB4/+0xAB8` e os zera após compor o
+pacote; o assembly grava zero explicitamente no componente central nesse caminho. Por fim,
+`CPlayer::ActiveActions @ 0x35151300` consome exatamente `+0x38/+0x3C/+0x40` nos cálculos
+angulares/direcionais.
+
+O golden source do mesmo engine nomeia os três vetores de ação como `pa_vTranslation`,
+`pa_aRotation` e `pa_aViewRotation`; `CControls::CreateAction` alimenta o último com
+`AXIS_LOOK_LR/UD/BK`, e `ctl_ComposeActionPacket` acumula e reaplica `m_aLocalViewRotation`.
+A build Rakion acrescenta placement, estado e ação compacta à estrutura, mas preserva esse último
+trio e o mesmo export. A captura mostra cadência próxima de 100 ms e sequência compartilhada com
+os streams companheiros.
 
 O `0x030A` só deve ser aceito depois que a sessão peer do jogo foi carregada e o peer correspondente
 existe. Eventos reliable de load/connect precedem gameplay. O World não deve tentar interpretar
