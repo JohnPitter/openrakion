@@ -631,6 +631,9 @@ proprietárias em `C:\temp\potion_state_consumers.txt`.
 `ghidra/AuditPotionDurationConsumers.py` cruza esses offsets com os escalares `30000/60000` em
 `entitiesmp`, `engine`, `gamemp` e `rakion_orig` para separar gravações de timestamp dos hits
 homônimos de UI, conta, keepalive e conversão de tempo.
+`ghidra/DecompileClientChaosState.py` reproduz `IncreaseChaosPoint`, `ChaosProc`, `ChangeMode`,
+morte e todos os consumidores principais de `CPlayer+0x2AD8`; também resolve os imports do dump e
+preserva disassembly para validar multiplicadores e transições.
 `ghidra/DumpBasicEffectTypes.py` extrai os 76 pares valor/nome da golden table
 `BasicEffectType_values @ 0x3537FC20` para `C:\temp\basic_effect_types.txt`; ela é a fonte canônica
 dos códigos compartilhados por poções, Chaos e efeitos de summon/desaparecimento de NPC.

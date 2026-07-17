@@ -43,6 +43,8 @@ Scripts reproduzíveis:
 - `tools/ghidra/AuditPotionDurationConsumers.py` varre offsets e escalares de duração em
   `entitiesmp`, `engine`, `gamemp` e `rakion_orig`, gerando
   `C:\temp\potion_duration_consumers_<programa>.txt`.
+- `tools/ghidra/DecompileClientChaosState.py` extrai a máquina `ChaosProc`, carga, modificadores,
+  morte, animação e armas para `C:\temp\client_chaos_state.txt`.
 - `tools/ghidra/DumpBasicEffectTypes.py` extrai a enum canônica para
   `C:\temp\basic_effect_types.txt`.
 
@@ -205,7 +207,42 @@ claras:
 - `ChaosProc` controla a transição do modo e eventos visuais correspondentes.
 
 Isso comprova recurso, carga, clamp, sinal de pronto e state machine no cliente. Não comprova ainda
-duração, modifiers, argumento de cada item `Chaos+1` nem política de término em todos os modos.
+duração comercial independente nem argumento de itens ausentes; o item `Chaos+1` desta build passa
+`2`, isto é, uma célula completa.
+
+### Modificadores do modo
+
+O passe integral encontrou 52 acessos a `CPlayer+0x2AD8` em 16 funções já delimitadas e em métodos
+exportados adicionais. Quando o valor decodificado é `1`:
+
+| consumidor | alteração executável |
+|---|---|
+| `CPlayer::GetHitPower @ 0x351413C0` | ignora o canal pedido e retorna a soma de `+0x2B38/+0x2B44/+0x2B50` |
+| `CPlayer::GetMoveSpeed @ 0x35147D30` | multiplica a velocidade-base por `1,1` |
+| `CPlayer::ReceiveDamage @ 0x35152DA0` | usa fator de dano recebido `0,5` em vez de `1,0` |
+| `SetupDownState/GetDamageAnimName` | seleciona estado e animação próprios de Chaos |
+| `CPlayerAnimator::AnimateAttack_Chaos` | executa a animação de ataque específica |
+| `CPlayerWeapons::GetDamageMotionType/SetupDamageInfo/UpdateWeaponHit` | troca motion, dados e condições de hit pelo ramo Chaos |
+| `SetModelsColor/SetArmor/SetModelsOriginalColor/GetModeName` | alterna apresentação, armadura e nome do modo |
+
+Isso fecha os modificadores centrais sem transportar regra de combate para o World: o original os
+aplica no `entitiesmp.dll` host-authoritative e os distribui pelos eventos P2P já tipados.
+
+### Entrada, saída e morte
+
+`CPlayer::ChaosProc(float) @ 0x3515A7F0` roda somente para a entidade local. Os campos comprovados
+são `mode +0x2AD8`, pontos `+0x2AF0`, meta `+0x2960`, estado de transição `+0x2B14` e relógios
+`+0x2AF8/+0x2B04/+0x2B28`. No modo normal, a máquina segue `0 → 1 → 2`: valida gauge/meta e o
+gate local, publica `EChaosGuageFull`, promove o estado e finalmente publica `EChangeMode(1)`.
+`CPlayer::ChangeMode @ 0x3515C480` grava o modo, zera pontos/estado auxiliar, registra o relógio de
+entrada e recria modelo, armor, som e efeito visual.
+
+No modo Chaos, `ChaosProc` mantém os relógios conforme round/property e, quando os dois predicados
+internos de `+0x2B28/+0x2B04` são satisfeitos, publica `EChangeMode(0)`, zera o estado de transição
+e limpa ambos os relógios. Os símbolos não preservam nomes para esses dois predicados, então a doc
+mantém os offsets em vez de atribuir uma duração inventada. `CPlayer::Death @ 0x3515E830` é o outro
+caminho fechado: se `mode == 1`, limpa transição/relógio, constrói `EChangeMode(0)` e chama
+`ChangeMode` antes de continuar a morte. Portanto Chaos não sobrevive à morte.
 
 ## Catálogo, aliases e persistência
 
@@ -288,7 +325,6 @@ Ainda pendem:
 - teste de integração MySQL concorrente e falha injetada durante o consumo;
 - captura visual de cada `potionKind` em dois clientes;
 - confirmar visualmente a queda das variantes Horror e a HUD revelada por Scouter;
-- modifiers e término completo do modo Chaos;
 - endurecimento autoritativo opcional, pois o protocolo legado deixa o efeito no cliente/P2P.
 
 O sistema de transporte/autorização e a aplicação nativa dos oito kinds estão reconstruídos. Steam
