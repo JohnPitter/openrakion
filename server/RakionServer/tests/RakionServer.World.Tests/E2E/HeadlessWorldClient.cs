@@ -143,6 +143,14 @@ namespace RakionServer.World.Tests.E2E
         /// <summary>Troca de time na sala (0x3e): sem payload; move para o bloco de 10 assentos oposto.</summary>
         public void ChangeTeam() => Send(0x3e, Array.Empty<byte>());
 
+        /// <summary>Chat de canal (0x22): `[cstr text]`. O cliente real embute "nome : msg".</summary>
+        public void SendChannelChat(string text)
+        {
+            using var w = new PacketWriter();
+            w.WriteCString(text);
+            Send(0x22, w.ToArray());
+        }
+
         /// <summary>Master inicia a partida (0x43): sem payload.</summary>
         public void StartMatch() => Send(0x43, Array.Empty<byte>());
 

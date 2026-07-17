@@ -41,8 +41,9 @@ Seed usado (banco `rakion`): conta `test` → personagem `GoHeroi` (`#1`); conta
 | Settlement PvP persistido | `TwoClientSettlementTests.PvpMatchEnd_PersistsWinLoseToDatabase` | TeamDeath com times opostos; ao encerrar (time 0 vencedor) o **motor da partida vivo** grava WIN em `characterinfo` do master e LOSE do joiner no MySQL real (delta antes/depois) |
 | Matriz de modos PvP | `TwoClientModeMatrixTests` | Golem/Deathmatch/TeamDeath/Boss criam+entram+armam com 2 clientes; fragLimit fora da faixa do Deathmatch é rejeitado (disconnect `0xCC`) |
 | Entrada em stage PvE solo | `SoloStageEntryTests.SoloStage_SpawnStartsStageRun` | Sala solo (stage 1) → start → spawn `0x4b` abre a execução de stage (`BeginStageRun`): `StageRunId`=`MatchId`, `ActiveStageId`=1 |
+| Chat de canal | `TwoClientChatTests.ChannelChat_BroadcastsToOtherClientInSameChannel` | Um cliente envia chat de canal (`0x22`); o outro no mesmo canal-lobby recebe o broadcast com o texto — e o remetente recebe o próprio eco |
 
-Todos verdes junto dos 768 de domínio (**781 total**, 13 testes E2E). Descobertas de RE confirmadas em runtime:
+Todos verdes junto dos 768 de domínio (**782 total**, 14 testes E2E). Descobertas de RE confirmadas em runtime:
 
 - o transporte do cliente e do servidor é simétrico na cifra (AES-128 do canal lobby) mas
   **assimétrico no envelope**: cliente→servidor carrega `[opcode][seq]`, servidor→cliente carrega

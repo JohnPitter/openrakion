@@ -48,21 +48,22 @@ classificação — **o RE estático por classe está encerrado**.
 Nenhum marco estático em aberto: o RE estático está **completo** pelo critério de encerramento.
 A fronteira do projeto agora é dinâmica.
 
-### 1. Validação dinâmica via backend (headless, 2 clientes) — EM ANDAMENTO
+### 1. Validação dinâmica via backend (headless, 2 clientes) — AMPLA COBERTURA
 
-Começou a validação **dinâmica** dirigindo o `WorldServer` real por clientes headless no fio
+A validação **dinâmica** dirige o `WorldServer` real por clientes headless no fio
 (TCP + AES + dispatch + motor de partida + banco), registrada em
-[`dynamic-validation.md`](dynamic-validation.md). Já verde ponta a ponta com dois clientes:
+[`dynamic-validation.md`](dynamic-validation.md). Verde ponta a ponta com dois clientes:
 
 - login concorrente + rejeição de credencial inválida;
 - char-select, criar sala, join do 2º jogador (coabitação no mesmo field, assentos distintos);
 - ready + start da partida (armada em fase Pre, ambos os assentos promovidos a combatente);
 - handshake UDP dos dois peers + relay de movimento `0x030A` e de combate (`0x0311`/`0x030F`) byte a byte;
+- chat de canal (0x22) broadcast entre os dois clientes;
 - **settlement PvP persistido no DB real** pelo motor da partida vivo (WIN/LOSE em `characterinfo`);
 - **matriz dos 4 modos** (Golem/Deathmatch/TeamDeath/Boss) armando a partida + rejeição de fragLimit inválido;
 - **entrada em stage PvE solo** (`BeginStageRun` via `0x4b`).
 
-São 13 testes E2E, **781 verdes**. Detalhe em [`dynamic-validation.md`](dynamic-validation.md).
+São 14 testes E2E, **782 verdes**. Detalhe em [`dynamic-validation.md`](dynamic-validation.md).
 
 Próximos alvos headless (ainda abertos):
 
