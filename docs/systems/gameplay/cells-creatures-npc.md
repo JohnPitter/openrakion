@@ -249,7 +249,8 @@ começam em [`npc-family-panzer.md`](npc-family-panzer.md), que fecha 34 eventos
 submáquina própria da segunda variante, e em [`npc-family-blazer.md`](npc-family-blazer.md), que
 fecha o ataque de FireBall, alcance, efeitos das mãos e transições. A família Golem está em
 [`npc-family-golem.md`](npc-family-golem.md): golpe próximo, arremesso, seleção `2/10/50` e a
-classe auxiliar de cinco debris estão fechados. As famílias após Golem
+classe auxiliar de cinco debris estão fechados. [`npc-family-soulcannon.md`](npc-family-soulcannon.md)
+fecha 29 eventos, ataque próximo, disparo e previsão do alvo. As famílias após SoulCannon
 continuam sendo comportamento por classe, não uma lacuna dessa política comum.
 
 A série `uint32[99]` em `creatures.dat+0x1A4C` começa em `300, 340, 380...` para Nak e alimenta o
@@ -586,8 +587,8 @@ cliente estão fechadas estaticamente, mas ainda carecem de validação visual c
 O formato e os fluxos estão fechados estaticamente, mas estes comportamentos ainda precisam de
 observação/instrumentação do runtime real:
 
-- timings, animações e ataques das famílias após Golem; targeting, Nak, Panzer, CrossBow,
-  Blazer e Golem estão fechados;
+- timings, animações e ataques das famílias após SoulCannon; targeting, Nak, Panzer, CrossBow,
+  Blazer, Golem e SoulCannon estão fechados;
 - dano causado/recebido e “Cell destruction”;
 - valores concretos dos eventos de morte/despawn;
 - EXP/gold por kill via `npcinfo`;
@@ -613,7 +614,7 @@ condição para fidelidade do RE host-authoritative.
 | Max CP/Cell destruction | persistidos como stats |
 | CP runtime | atual, máximo, clamp, morte, custo e débito mapeados no cliente; client-authoritative como no original |
 | summon | três slots, estados `0/1/2`, rejeição, débito, spawn, liberação e refund de 30% fechados no cliente |
-| entidade/IA/HP | ownership, friendly fire, dano e targeting comum fechados; Nak/Panzer/CrossBow/Blazer/Golem fechadas estaticamente, demais famílias e efeitos/hitboxes exatos pendentes |
+| entidade/IA/HP | ownership, friendly fire, dano e targeting comum fechados; Nak/Panzer/CrossBow/Blazer/Golem/SoulCannon fechadas estaticamente, demais famílias e efeitos/hitboxes exatos pendentes |
 | protocolo `0x307..0x312` | envelopes tipados/validados e relayados; três famílias de init blob identificadas; `0x310` corrigido |
 | map items | cliente/host identificados; backend ausente conforme arquitetura original |
 | stage solo | client-authoritative |
