@@ -27,6 +27,7 @@ namespace RakionServer.World.Network
             foreach (PlayerRec record in field.Slots)
             {
                 writer.WriteByte(record.State);
+                if (record.Bot != null) { writer.WriteWord(BotWireSlot(record)).WriteByte(0); WriteBotRecord(writer, record.Bot); continue; }
                 if (!record.Occupied || record.Session == null) continue;
                 writer.WriteWord(record.Session.Slot).WriteByte(0);
                 record.Session.WriteRoomPlayerRecord(writer, record.UsesTunneling);
@@ -41,12 +42,41 @@ namespace RakionServer.World.Network
                 .WriteByte(0)
                 .WriteByte(record.Slot)
                 .WriteByte(record.State);
-            if (record.Occupied && record.Session != null)
+            if (record.Bot != null)
+            {
+                writer.WriteWord(BotWireSlot(record)).WriteByte(0);
+                WriteBotRecord(writer, record.Bot);
+            }
+            else if (record.Occupied && record.Session != null)
             {
                 writer.WriteWord(record.Session.Slot).WriteByte(0);
                 record.Session.WriteRoomPlayerRecord(writer, record.UsesTunneling);
             }
             return writer.ToArray();
+        }
+
+        /// <summary>Slot "de rede" sintético do bot (base alta p/ não colidir com slots de sessão real).</summary>
+        private static ushort BotWireSlot(PlayerRec record) => (ushort)(0x0400 + record.Slot);
+
+        /// <summary>
+        /// Registro do bot no roster, no MESMO layout de <c>WriteRoomPlayerRecord</c>: nome, buddy vazio,
+        /// sem tunneling, endpoint zerado (bot não tem rota P2P — o servidor sintetiza o movimento),
+        /// classe/level e quickslots vazios.
+        /// </summary>
+        private static void WriteBotRecord(PacketWriter writer, BotPlayer bot)
+        {
+            writer.WriteCString(bot.Name)
+                .WriteCString("")
+                .WriteByte(0)          // usesTunneling
+                .WriteInt32(0);        // groupId
+            NetworkEndpointCodec.WritePort(writer, 0);
+            writer.WriteBytes(new byte[4]);   // endpoint observado 0.0.0.0
+            NetworkEndpointCodec.WritePort(writer, 0);  // endpoint anunciado
+            writer.WriteByte(bot.CharClass)
+                .WriteByte(bot.Level)
+                .WriteByte(0);
+            for (int slot = 0; slot < 0x13; slot++) writer.WriteWord(0);   // quickslots vazios
+            for (int slot = 0; slot < 0x13; slot++) writer.WriteByte(0);   // níveis vazios
         }
     }
 }

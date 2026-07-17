@@ -394,6 +394,16 @@ namespace RakionServer.World
                 new CharacterDeletePickupNotifier(cfg.CharacterDelete);
         }
 
+        /// <summary>Subsistema de bots (peers sintéticos server-side). Ver <see cref="BotManager"/>.</summary>
+        public BotManager Bots { get; } = new();
+
+        /// <summary>Mensagem de sistema para UMA sessão (feedback de comando), via chat de canal.</summary>
+        public void WhisperSystem(ClientSession target, string message)
+        {
+            byte slot = target.ChannelSlot == byte.MaxValue ? (byte)0 : target.ChannelSlot;
+            try { target.SendLobby(Network.LobbyFrames.ChannelChat(slot, message)); } catch { }
+        }
+
         public bool Locked { get; private set; }                 // this+0x50 (servidor fechado p/ GM)
         public PuConfig PuConfig { get; private set; } = new();   // pu_config: preço/bônus/multiplicadores do PU (lida no boot)
         public EnchantConfig EnchantConfig { get; private set; } = new();   // enchant_*: coeficientes do refino (lida no boot)
@@ -505,6 +515,9 @@ namespace RakionServer.World
                                 _udpGame?.SendTick(s.UdpEndpoint, s.GameSeq);
                             }
                         }
+                        // Tick de IA/movimento dos bots (fora do lock do clock; TickField trava o field).
+                        if (f.BotCount > 0 && _udpGame != null)
+                            Bots.TickField(f, 0.15f, _udpGame.SendGameplayDatagram);
                     }
                 }
                 catch (Exception ex) { Log.Debug("field", "game clock: {0}", ex.Message); }

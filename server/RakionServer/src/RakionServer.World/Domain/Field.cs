@@ -24,9 +24,12 @@ namespace RakionServer.World.Domain
         public byte Cause;               // ultima causa de morte
         public bool LobbyReady;           // prontidão no lobby, separada do spawn
         public bool UsesTunneling;         // user+0x1478: sem rota UDP direta confirmada
+        public BotPlayer? Bot;             // peer sintético server-side (assento ocupado por bot)
+        public BotVector Position;          // última posição observada (do 0x030A do humano / IA do bot) p/ mira do bot
         public byte Team => (byte)(Slot < 10 ? 0 : 1); // slots 0..9 = time0, 10..0x13 = time1
         public int Slot;                 // indice no array (0..0x13)
 
+        public bool IsBot => Bot != null;
         public bool Occupied => State != 0 && State != 5;
         public bool Playing => State == 4;
         public bool Ready => State == 3;

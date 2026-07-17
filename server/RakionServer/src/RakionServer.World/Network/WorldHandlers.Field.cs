@@ -33,8 +33,51 @@ namespace RakionServer.World.Network
                 return;
             }
 
+            // "/addbot [facil|normal|dificil] [n]" — só o host, dentro de uma sala competitiva.
+            if (colon >= 0 && text.Length >= colon + 2 + 7 &&
+                string.CompareOrdinal(text, colon + 2, "/addbot", 0, 7) == 0)
+            {
+                HandleAddBotCommand(ctx, text.Substring(colon + 2));
+                return;
+            }
+
             if (!ctx.World.ModerateChat(u, null, ChatScope.Channel, text, out text)) return;
             ctx.World.BroadcastChannelChat(u, text);
+        }
+
+        /// <summary>Traduz "/addbot [dificuldade] [n]" em chamadas ao <see cref="BotManager"/> e ecoa o
+        /// resultado ao host (chat de canal). Regra de negócio (host-only, time oposto, pré-match) mora
+        /// no BotManager; aqui só parse + feedback.</summary>
+        private static void HandleAddBotCommand(HandlerContext ctx, string command)
+        {
+            ClientSession host = ctx.User;
+            Domain.Field? field = ctx.World.GetField(host.FieldId);
+            if (field == null) { ctx.World.WhisperSystem(host, "voce nao esta em uma sala"); return; }
+
+            string[] parts = command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            Domain.BotDifficulty difficulty = Domain.BotDifficulty.Normal;
+            int count = 1;
+            foreach (string p in parts[1..])
+            {
+                switch (p.ToLowerInvariant())
+                {
+                    case "facil" or "easy" or "fácil": difficulty = Domain.BotDifficulty.Easy; break;
+                    case "normal": difficulty = Domain.BotDifficulty.Normal; break;
+                    case "dificil" or "hard" or "difícil": difficulty = Domain.BotDifficulty.Hard; break;
+                    default: if (int.TryParse(p, out int n)) count = Math.Clamp(n, 1, 10); break;
+                }
+            }
+
+            int added = 0;
+            string lastMessage = "";
+            for (int i = 0; i < count; i++)
+            {
+                var result = ctx.World.Bots.AddBotToField(field, host, difficulty);
+                if (result.Ok) added++; else { lastMessage = result.Message; break; }
+            }
+            ctx.World.WhisperSystem(host, added > 0
+                ? $"{added} bot(s) adicionado(s) ({difficulty})"
+                : $"nao foi possivel adicionar bot: {lastMessage}");
         }
 
         /// <summary>FUN_004244f0: chat no field; publica seat do remetente e texto.</summary>

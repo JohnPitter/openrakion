@@ -93,6 +93,14 @@ namespace RakionServer.World.Network
         /// congela o timer/personagem; por isso o seq vem da sessao (ClientSession.GameSeq, que
         /// um timer incrementa).
         /// </summary>
+        /// <summary>Envia um datagrama de gameplay já montado ao endpoint (usado p/ injetar o movimento
+        /// SINTETIZADO do bot aos peers humanos — o servidor é a fonte, sem relay do canal humano).</summary>
+        public void SendGameplayDatagram(IPEndPoint to, byte[] datagram)
+        {
+            try { _sock?.SendTo(datagram, to); }
+            catch (Exception ex) { Log.Debug("udp", "bot datagram {0}: {1}", to, ex.Message); }
+        }
+
         public void SendTick(IPEndPoint to, byte seq, byte state = DefaultGameplayState)
         {
             byte[] p = { GameplayFeedbackOp0, GameplayFeedbackOp1, seq, 0x00, 0x00, 0x00, 0x00, state };
@@ -185,6 +193,14 @@ namespace RakionServer.World.Network
             {
                 Log.Debug("udp", "datagrama 0x{0:X4} limitado para slot {1}", type, sender.Slot);
                 return;
+            }
+
+            // Rastreia a posição do humano (do 0x030A) p/ a IA do bot mirar. Só leitura; não altera o relay.
+            if (type == BotMovement.MoveType && BotMovement.TryReadPosition(packet, out var humanPos))
+            {
+                var field = _world.GetField(sender.FieldId);
+                var rec = field?.FindRec(sender);
+                if (rec != null) rec.Position = humanPos;
             }
 
             int relayed = 0;
