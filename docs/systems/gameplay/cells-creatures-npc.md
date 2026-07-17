@@ -246,8 +246,9 @@ A primeira família específica também está fechada estaticamente em
 começam em [`npc-family-panzer.md`](npc-family-panzer.md), que fecha 34 eventos locais, ataques
 `Attack_01/02` e seleção por distância `0.6/0.9`, e em
 [`npc-family-crossbow.md`](npc-family-crossbow.md), que fecha ataque próximo, tiro, projétil e a
-submáquina própria da segunda variante. As famílias após CrossBow continuam sendo
-comportamento por classe, não uma lacuna dessa política comum.
+submáquina própria da segunda variante, e em [`npc-family-blazer.md`](npc-family-blazer.md), que
+fecha o ataque de FireBall, alcance, efeitos das mãos e transições. As famílias após Blazer
+continuam sendo comportamento por classe, não uma lacuna dessa política comum.
 
 A série `uint32[99]` em `creatures.dat+0x1A4C` começa em `300, 340, 380...` para Nak e alimenta o
 campo runtime `NpcSetup+0x8C`. O loader prova a largura de quatro bytes; a leitura anterior como
@@ -583,7 +584,8 @@ cliente estão fechadas estaticamente, mas ainda carecem de validação visual c
 O formato e os fluxos estão fechados estaticamente, mas estes comportamentos ainda precisam de
 observação/instrumentação do runtime real:
 
-- timings, animações e ataques das famílias após CrossBow; targeting, Nak, Panzer e CrossBow estão fechados;
+- timings, animações e ataques das famílias após Blazer; targeting, Nak, Panzer, CrossBow e
+  Blazer estão fechados;
 - dano causado/recebido e “Cell destruction”;
 - valores concretos dos eventos de morte/despawn;
 - EXP/gold por kill via `npcinfo`;
@@ -609,7 +611,7 @@ condição para fidelidade do RE host-authoritative.
 | Max CP/Cell destruction | persistidos como stats |
 | CP runtime | atual, máximo, clamp, morte, custo e débito mapeados no cliente; client-authoritative como no original |
 | summon | três slots, estados `0/1/2`, rejeição, débito, spawn, liberação e refund de 30% fechados no cliente |
-| entidade/IA/HP | ownership, friendly fire, dano e targeting comum fechados; Nak/Panzer/CrossBow fechadas estaticamente, demais famílias e efeitos/hitboxes exatos pendentes |
+| entidade/IA/HP | ownership, friendly fire, dano e targeting comum fechados; Nak/Panzer/CrossBow/Blazer fechadas estaticamente, demais famílias e efeitos/hitboxes exatos pendentes |
 | protocolo `0x307..0x312` | envelopes tipados/validados e relayados; três famílias de init blob identificadas; `0x310` corrigido |
 | map items | cliente/host identificados; backend ausente conforme arquitetura original |
 | stage solo | client-authoritative |
