@@ -38,7 +38,12 @@ internal static class GameLauncher
         string exe = Path.Combine(binDir, GameProcess);
         if (!File.Exists(exe)) throw new FileNotFoundException("rakion.exe não encontrado", exe);
 
+        // 2 clientes na MESMA máquina brigam pela porta UDP (SE1 net_iPort). O 2º+ instance recebe um net_iPort
+        // DISTINTO via cvar de linha de comando da SE1 (+net_iPort N) -> portas UDP únicas, sem conflito de bind
+        // (o 2º cliente ficava com UDP morto e não era endereçável no stage). 1º instance = default do jogo.
+        int running = System.Diagnostics.Process.GetProcessesByName("rakion").Length;
         var cmd = new StringBuilder($"{user} {hexPass} {serverId}");   // argv[0]=user (sem o exe)
+        if (running >= 1) cmd.Append($" +net_iPort {2300 + running * 10}");   // 2º=2310, 3º=2320…
         var si = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>() };
         if (!CreateProcess(exe, cmd, IntPtr.Zero, IntPtr.Zero, false, CREATE_SUSPENDED, IntPtr.Zero, binDir, ref si, out var pi))
             throw new InvalidOperationException($"CreateProcess falhou (err {Marshal.GetLastWin32Error()})");
@@ -51,10 +56,4 @@ internal static class GameLauncher
 
     /// <summary>Converte a senha em hex ASCII (o esquema que o cliente/world esperam no argv[1]).</summary>
     public static string HexPass(string pass) => Convert.ToHexString(Encoding.ASCII.GetBytes(pass)).ToLowerInvariant();
-
-    public static bool IsRunning()
-    {
-        foreach (var _ in System.Diagnostics.Process.GetProcessesByName("rakion")) return true;
-        return false;
-    }
 }

@@ -411,7 +411,10 @@ internal static class WindowMode
 
         // espera o loader do alvo subir (engine.dll mapeada) — sinal de que o LoadLibrary remoto vai funcionar
         for (int i = 0; i < 120 && IsAlive((uint)pid); i++) { if (ModuleBase((uint)pid, "engine.dll") != IntPtr.Zero) break; Thread.Sleep(100); }
-        if (ModuleBase((uint)pid, "engine.dll") == IntPtr.Zero) { Log("diag-inject: engine.dll não subiu no alvo — aborta"); return; }
+        string pname = ProcName(pid);
+        bool engHere = ModuleBase((uint)pid, "engine.dll") != IntPtr.Zero;
+        Log($"diag-inject: alvo pid={pid} proc='{pname}' engine.dll={(engHere ? "presente" : "AUSENTE")}");
+        if (!engHere) { Log("diag-inject: engine.dll não subiu no alvo — aborta (stub/re-spawn?)"); return; }
         Thread.Sleep(300);   // folga p/ o loader assentar antes do LoadLibrary remoto
 
         IntPtr h = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION, false, (uint)pid);
@@ -434,6 +437,11 @@ internal static class WindowMode
             else Log($"diag-inject: OK -> {name} carregada (hmod=0x{hmod:X8}, base={modBase:X}) em pid={pid}");
         }
         finally { CloseHandle(h); }
+    }
+
+    private static string ProcName(int pid)
+    {
+        try { return Process.GetProcessById(pid).ProcessName; } catch { return "?"; }
     }
 
     internal static IntPtr ModuleBase(uint pid, string name)

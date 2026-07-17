@@ -209,6 +209,10 @@ namespace RakionServer.World.Network
                         Log.Ok("lobby", "[{0}] 0x4f morte no stage solo -> eco FIELD 0x4f + resumo 0x4a(2bd=1) + 0x44 (delay)", Slot);
                         return true;
                     }
+                case 0x15: // CharacterChangeBuddyName (messenger "nick change"): persiste o buddyname (do char
+                    // selecionado) e responde [0x15][0x0B][status]. Sem a resposta o nick change trava na UI.
+                    _ = HandleChangeBuddyNameAsync(data);
+                    return true;
                 case 0x19: // CharacterGetUserName (messenger "add buddy"): o cliente pede ao WORLD o account-id
                     // do dono do nick digitado e trava em "Waiting for ID Information on account from server"
                     // (lang 599) ate' a resposta 0x0D. Sem isso o "add" do messenger nao avanca.
@@ -255,6 +259,25 @@ namespace RakionServer.World.Network
             byte status = account != null ? (byte)0 : (byte)2;   // 0=ok, 2=char nao existe (lang 598)
             SendEncryptedFrame(LobbyFrames.GetUserNameResult(status, account ?? "", nick));
             Log.Ok("lobby", "[{0}] 0x19 GetUserName('{1}') -> status={2} account='{3}'", Slot, nick, status, account ?? "");
+
+            // O 0x19 e' o UNICO sinal de "add" que chega ao servidor (o AddBuddy do cliente e' mudo): grava a
+            // amizade no dominio (WorldServer valida nao-self + persiste). O buddy carrega a lista no proximo login.
+            if (status == 0) await _server.AddBuddyAsync(this, account!, nick);
+        }
+
+        /// <summary>0x15 CharacterChangeBuddyName ("nick change"): persiste o buddyname (usergameinfo, pelo id da
+        /// sessao) e responde [0x15][0x0B][status][nome]. data = [nome\0] (id vem da sessao, nao do pacote).
+        /// RE: DBCommandCharacterChangeBuddyName @worldserv 0x4137a0.</summary>
+        private async Task HandleChangeBuddyNameAsync(byte[] data)
+        {
+            int nul = Array.IndexOf(data, (byte)0);
+            int len = nul >= 0 ? nul : data.Length;
+            if (len == 0) { Log.Warn("lobby", "[{0}] 0x15 nick change: nome vazio", Slot); return; }
+            string name = Encoding.ASCII.GetString(data, 0, len);
+
+            bool ok = GameInfoId > 0 && await _server.Db.UpdateBuddyNameAsync(GameInfoId, name);
+            SendEncryptedFrame(LobbyFrames.ChangeBuddyNameResult(ok ? (byte)0 : (byte)1, name));
+            Log.Ok("lobby", "[{0}] 0x15 nick change -> buddyname='{1}' status={2}", Slot, name, ok ? 0 : 1);
         }
 
         /// <summary>LoginComplete (msgType 2) — sucesso de FUN_0041f6c0.</summary>

@@ -92,7 +92,16 @@ namespace RakionServer.World.Database
                     " downgrade_lo DECIMAL(4,3) NOT NULL DEFAULT 0.120," +
                     " downgrade_hi DECIMAL(4,3) NOT NULL DEFAULT 0.300)");
                 await Exec(c, "INSERT IGNORE INTO enchant_config (id) VALUES (1)");
-                Log.Ok("db", "schema verificado (itembox.qslot, pu_config, enchant_*)");
+                // Sessao do messenger: o buddy (processo separado; login cifrado AES-ECB ilegivel) descobre
+                // a identidade de cada conexao por aqui — o world grava (account, ip) no login. Limpa no boot
+                // (sessoes stale de um crash anterior). Ver BuddyDatabase.ResolveAccountByIpAsync.
+                await Exec(c,
+                    "CREATE TABLE IF NOT EXISTS messenger_session (" +
+                    " account VARCHAR(16) NOT NULL PRIMARY KEY," +
+                    " ip VARCHAR(45) NOT NULL DEFAULT ''," +
+                    " login_ts DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+                await Exec(c, "DELETE FROM messenger_session");
+                Log.Ok("db", "schema verificado (itembox.qslot, pu_config, enchant_*, messenger_session)");
             }
             catch (Exception ex) { Log.Error("db", "EnsureSchemaAsync: {0}", ex.Message); }
         }
@@ -277,6 +286,75 @@ namespace RakionServer.World.Database
                 return (await cmd.ExecuteScalarAsync()) as string;
             }
             catch (Exception ex) { Log.Error("db", "GetCharOwnerByNickAsync({0}): {1}", nick, ex.Message); return null; }
+        }
+
+        /// <summary>Persiste uma amizade na buddylist (Id=dono, Buddy=amigo; account-names) sem duplicar.
+        /// Idempotente. Ver WorldServer.AddBuddyAsync — o AddBuddy do cliente e' mudo (mascara +0x140d4
+        /// bit12=0 -> nao emite SVC_ADD_BUDDY), entao o world grava a amizade no 0x19.</summary>
+        public async Task<bool> AddBuddyAsync(string ownerAccount, string buddyAccount)
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "INSERT INTO buddylist (Id, Category, Buddy) SELECT @o, '', @b FROM DUAL " +
+                    "WHERE NOT EXISTS (SELECT 1 FROM buddylist WHERE Id=@o AND Buddy=@b)", c);
+                cmd.Parameters.AddWithValue("@o", ownerAccount);
+                cmd.Parameters.AddWithValue("@b", buddyAccount);
+                return await cmd.ExecuteNonQueryAsync() > 0;
+            }
+            catch (Exception ex) { Log.Error("db", "AddBuddyAsync({0},{1}): {2}", ownerAccount, buddyAccount, ex.Message); return false; }
+        }
+
+        /// <summary>Messenger "nick change" (opcode 0x15 = CharacterChangeBuddyName): persiste o buddyname.
+        /// Replica DBCommandCharacterChangeBuddyName @worldserv 0x4137a0 (UPDATE por usergameinfo.id).</summary>
+        public async Task<bool> UpdateBuddyNameAsync(int gameInfoId, string buddyName)
+        {
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand("UPDATE usergameinfo SET buddyname=@bn WHERE id=@id", c);
+                cmd.Parameters.AddWithValue("@bn", buddyName);
+                cmd.Parameters.AddWithValue("@id", gameInfoId);
+                await cmd.ExecuteNonQueryAsync();
+                return true;
+            }
+            catch (Exception ex) { Log.Error("db", "UpdateBuddyNameAsync({0},{1}): {2}", gameInfoId, buddyName, ex.Message); return false; }
+        }
+
+        /// <summary>Grava/atualiza a sessao do messenger (account, ip) — o buddy resolve a identidade da
+        /// conexao por IP. REPLACE: re-login do mesmo account sobrescreve. Ver BuddyDatabase.</summary>
+        public async Task UpsertMessengerSessionAsync(string account, string ip)
+        {
+            if (string.IsNullOrEmpty(account)) return;
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "REPLACE INTO messenger_session (account, ip, login_ts) VALUES (@a, @ip, NOW())", c);
+                cmd.Parameters.AddWithValue("@a", account);
+                cmd.Parameters.AddWithValue("@ip", ip);
+                await cmd.ExecuteNonQueryAsync();
+            }
+            catch (Exception ex) { Log.Error("db", "UpsertMessengerSession({0}): {1}", account, ex.Message); }
+        }
+
+        /// <summary>Remove a sessao do messenger no logout do world.</summary>
+        public async Task RemoveMessengerSessionAsync(string account)
+        {
+            if (string.IsNullOrEmpty(account)) return;
+            try
+            {
+                await using var c = new MySqlConnection(_conn);
+                await c.OpenAsync();
+                await using var cmd = new MySqlCommand("DELETE FROM messenger_session WHERE account=@a", c);
+                cmd.Parameters.AddWithValue("@a", account);
+                await cmd.ExecuteNonQueryAsync();
+            }
+            catch (Exception ex) { Log.Error("db", "RemoveMessengerSession({0}): {1}", account, ex.Message); }
         }
 
         /// <summary>Registra a conexao do usuario (tabela loguserconnect).</summary>

@@ -67,6 +67,18 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
+        /// <summary>Resposta do "nick change" do messenger (opcode 0x15 = CharacterChangeBuddyName). Layout do
+        /// worldserv 0x4137a0: [u16 0x15][u16 0x0B subtype][byte status][buddyName\0]. status 0=ok, 1=falha.</summary>
+        public static byte[] ChangeBuddyNameResult(byte status, string buddyName)
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(0x0015);   // opcode (ecoa o pedido)
+            w.WriteWord(0x000B);   // subtype interno (do worldserv 0x4137a0)
+            w.WriteByte(status);
+            w.WriteCString(buddyName);
+            return w.ToArray();
+        }
+
         // ---- BUILDERS ----------------------------------------------------------------------------------
 
         /// <summary>0x10 GameGuard challenge: [10 00][nonce 16B][00 x6]. Tudo constante.</summary>

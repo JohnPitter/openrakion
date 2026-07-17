@@ -11,21 +11,28 @@ using RakionServer.Common;
 namespace RakionServer.Buddy
 {
     /// <summary>
-    /// Buddy Server. Escuta nas portas de BuddyServer (8500) e BuddyCenter (8504),
-    /// fala o frame [u16 size][u16 CD][payload] do Buddy2.dll e completa o
-    /// handshake de login (PRECREDENTIAL -> LOGIN) com lista de amigos vazia, de
-    /// modo que o client prossiga normalmente. Demais comandos sao logados (stub).
+    /// Buddy Server (messenger F9). Fala o frame [u16 size][u16 CD][payload] do Buddy2.dll. Reconstruido
+    /// por RE COMPLETA do dispatcher CBuddy2::OnMsg (FUN_10007420) e auxiliares. Messenger é P2P PURO
+    /// (SEM relay): as mensagens correm UDP direto cliente-a-cliente (cifradas pelo Buddy2.dll); o servidor
+    /// só faz o BROKERING de endereços.
+    ///  - Handshake: PRECREDENTIAL (8B) -> LOGIN. Login cifrado -> IDENTIDADE por IP (messenger_session do
+    ///    world, via <see cref="BuddyDatabase"/>). Chave de rede = NICK do char.
+    ///  - Lista de amigos: RET_LOGIN, 1 registro 0x94 por amigo (<see cref="BuddyFrames.BuddyRecord"/>).
+    ///  - Brokering P2P: no RET_LOGIN vai um TOKEN (body[2:6]); o cliente o ECOA via UDP (sendto @100759e),
+    ///    e o servidor aprende o endpoint UDP de origem. A presença (NTF_USER_STATE) leva esse ip:porta ->
+    ///    SetUserOnline ativa o P2P. As PMs nunca passam pelo servidor.
     /// </summary>
     public sealed class BuddyServer
     {
         private readonly int[] _ports;
         private readonly CancellationTokenSource _cts = new();
         private readonly List<Socket> _listeners = new();
-
-        // Registro de presenca (P2P): clients online -> seu endpoint. O buddy server
-        // faz o brokering de enderecos (NTF_VIP_IPPORT/NTF_USER_STATE); o P2P em si
-        // (P2P_SVC_*) corre direto client-a-client por UDP, fora do servidor.
-        private readonly ConcurrentDictionary<Socket, IPEndPoint> _online = new();
+        private readonly List<Socket> _udpSockets = new();
+        private readonly BuddyDatabase _db = new();
+        private readonly ConcurrentDictionary<Socket, BuddyConn> _conns = new();
+        // token (body[2:6] do RET_LOGIN) -> conexao: correlaciona o eco UDP do cliente com a sessao TCP.
+        private readonly ConcurrentDictionary<uint, BuddyConn> _byToken = new();
+        private int _tokenSeq;
 
         public BuddyServer(params int[] ports) => _ports = ports;
 
@@ -38,8 +45,15 @@ namespace RakionServer.Buddy
                 l.Bind(new IPEndPoint(IPAddress.Any, port));
                 l.Listen(64);
                 _listeners.Add(l);
-                Log.Ok("buddy", "ouvindo na porta {0}", port);
                 _ = Task.Run(() => AcceptLoopAsync(l, port, _cts.Token));
+
+                // UDP na MESMA porta: o cliente faz sendto do token p/ getpeername(tcp) = ip:porta do servidor.
+                var u = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+                u.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+                u.Bind(new IPEndPoint(IPAddress.Any, port));
+                _udpSockets.Add(u);
+                _ = Task.Run(() => UdpLoopAsync(u, port, _cts.Token));
+                Log.Ok("buddy", "ouvindo na porta {0} (TCP+UDP)", port);
             }
         }
 
@@ -47,6 +61,7 @@ namespace RakionServer.Buddy
         {
             try { _cts.Cancel(); } catch { }
             foreach (var l in _listeners) { try { l.Close(); } catch { } }
+            foreach (var u in _udpSockets) { try { u.Close(); } catch { } }
         }
 
         private async Task AcceptLoopAsync(Socket l, int port, CancellationToken ct)
@@ -62,9 +77,40 @@ namespace RakionServer.Buddy
             }
         }
 
+        // ---- brokering P2P: aprende o endpoint UDP do cliente pelo eco do token ----------
+
+        private async Task UdpLoopAsync(Socket u, int port, CancellationToken ct)
+        {
+            byte[] buf = new byte[2048];
+            var any = new IPEndPoint(IPAddress.Any, 0);
+            while (!ct.IsCancellationRequested)
+            {
+                SocketReceiveFromResult r;
+                try { r = await u.ReceiveFromAsync(buf.AsMemory(), SocketFlags.None, any, ct); }
+                catch (OperationCanceledException) { break; }
+                catch (ObjectDisposedException) { break; }
+                catch (Exception ex) { Log.Error("buddy", "udp {0}: {1}", port, ex.Message); continue; }
+                if (r.ReceivedBytes >= 4 && r.RemoteEndPoint is IPEndPoint ep)
+                    OnUdpRegister(BinaryPrimitives.ReadUInt32LittleEndian(buf), ep);
+            }
+        }
+
+        /// <summary>Eco do token (4B) via UDP = o cliente registrando seu endpoint P2P. Aprende o ip:porta de
+        /// origem e anuncia a presença (agora com endereço real) aos amigos online.</summary>
+        private void OnUdpRegister(uint token, IPEndPoint ep)
+        {
+            if (!_byToken.TryGetValue(token, out var conn)) return;   // token desconhecido (ruido UDP)
+            if (conn.UdpEndpoint != null) return;                     // ja' registrado
+            conn.UdpEndpoint = ep;
+            Log.Ok("buddy", "[{0}] endpoint P2P registrado: {1} (nick {2})", conn.Ip, ep, conn.Nick ?? "?");
+            AnnouncePresence(conn, online: true);
+        }
+
         private async Task HandleAsync(Socket sock, int port, CancellationToken ct)
         {
             string ip = (sock.RemoteEndPoint as IPEndPoint)?.Address.ToString() ?? "?";
+            var conn = new BuddyConn(sock, ip);
+            _conns[sock] = conn;
             Log.Info("buddy", "[{0}] conectado em :{1}", ip, port);
             byte[] buf = new byte[65536];
             int have = 0;
@@ -80,7 +126,6 @@ namespace RakionServer.Buddy
                     while (have - consumed >= BuddyProtocol.HeaderSize)
                     {
                         ushort size = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(consumed));
-                        // size e u16 (sempre <= 65535 < MaxPacket 0x13880), entao so o limite inferior importa
                         if (size < BuddyProtocol.HeaderSize) { Log.Warn("buddy", "[{0}] size invalido {1}", ip, size); return; }
                         if (have - consumed < size) break;
 
@@ -88,8 +133,7 @@ namespace RakionServer.Buddy
                         byte[] payload = new byte[size - BuddyProtocol.HeaderSize];
                         Array.Copy(buf, consumed + 4, payload, 0, payload.Length);
                         consumed += size;
-
-                        Dispatch(sock, ip, cd, payload);
+                        Dispatch(conn, cd, payload);
                     }
                     if (consumed > 0) { Array.Copy(buf, consumed, buf, 0, have - consumed); have -= consumed; }
                     else if (have == buf.Length) { Log.Warn("buddy", "[{0}] buffer cheio", ip); break; }
@@ -98,132 +142,103 @@ namespace RakionServer.Buddy
             catch (OperationCanceledException) { }
             catch (SocketException) { }
             catch (Exception ex) { Log.Error("buddy", "[{0}] {1}", ip, ex.Message); }
-            finally { OnPeerOffline(sock); try { sock.Close(); } catch { } Log.Info("buddy", "[{0}] desconectado", ip); }
+            finally { OnDisconnect(conn); try { sock.Close(); } catch { } Log.Info("buddy", "[{0}] desconectado", ip); }
         }
 
-        // ---- presenca / P2P (NTF_VIP_IPPORT / NTF_USER_STATE) ----
-
-        /// <summary>Registra o client como online e troca enderecos P2P com os demais.</summary>
-        private void OnPeerOnline(Socket sock)
+        private void Dispatch(BuddyConn conn, ushort cd, byte[] payload)
         {
-            if (sock.RemoteEndPoint is not IPEndPoint ep) return;
-            _online[sock] = ep;
-            // envia ao novo client o endereco de cada peer online, e notifica os peers do novo.
-            foreach (var kv in _online)
-            {
-                if (kv.Key == sock) continue;
-                Send(sock, BuddyProtocol.NTF_VIP_IPPORT, VipPayload(kv.Value));   // peers -> novo
-                Send(kv.Key, BuddyProtocol.NTF_VIP_IPPORT, VipPayload(ep));       // novo -> peers
-                Send(kv.Key, BuddyProtocol.NTF_USER_STATE, StatePayload(1));      // online
-            }
-            Log.Info("buddy", "[{0}] online ({1} peers)", ep, _online.Count);
-        }
-
-        /// <summary>Remove o client e notifica os demais (NTF_USER_STATE offline).</summary>
-        private void OnPeerOffline(Socket sock)
-        {
-            if (!_online.TryRemove(sock, out _)) return;
-            foreach (var kv in _online)
-                Send(kv.Key, BuddyProtocol.NTF_USER_STATE, StatePayload(0)); // offline
-        }
-
-        /// <summary>NTF_VIP_IPPORT: [u32 ip][u16 port] do peer (p/ o client abrir P2P direto).</summary>
-        private static byte[] VipPayload(IPEndPoint ep)
-        {
-            using var p = new PacketWriter();
-            p.WriteUInt32(BitConverter.ToUInt32(ep.Address.MapToIPv4().GetAddressBytes(), 0));
-            p.WriteWord(ep.Port);
-            return p.ToArray();
-        }
-
-        private static byte[] StatePayload(byte state)
-        {
-            using var p = new PacketWriter();
-            p.WriteByte(state); // 1=online, 0=offline
-            return p.ToArray();
-        }
-
-        private void Dispatch(Socket sock, string ip, ushort cd, byte[] payload)
-        {
-            Log.Debug("buddy", "[{0}] RECV CD=0x{1:x4} ({2}) len={3}", ip, cd, BuddyProtocol.Name(cd), payload.Length);
-            // DIAG (RE da venda): dump dos nomes que o cliente manda no LOGIN/SET_NICK p/ entender o
-            // check do messenger ("Character's name for messenger has changed").
-            if (cd == BuddyProtocol.SVC_LOGIN || cd == BuddyProtocol.SVC_SET_NICK ||
-                cd == BuddyProtocol.SVC_SET_EXTUSER || cd == BuddyProtocol.SVC_GROUP_GETLIST)
-            {
-                var sb = new System.Text.StringBuilder();
-                foreach (var b in payload) sb.Append(b >= 32 && b < 127 ? (char)b : '.');
-                Log.Info("buddy", "[{0}] CD 0x{1:x4} ascii='{2}'", ip, cd, sb.ToString());
-            }
+            Log.Debug("buddy", "[{0}] RECV CD=0x{1:x4} ({2}) len={3}", conn.Ip, cd, BuddyProtocol.Name(cd), payload.Length);
             switch (cd)
             {
-                case BuddyProtocol.SVC_PRECREDENTIAL:
-                    // RET_PRECREDENTIAL: devolve o endereco visto do client (p/ P2P).
-                    SendPrecredential(sock, ip);
-                    break;
+                case BuddyProtocol.SVC_PRECREDENTIAL: SendPrecredential(conn.Sock, conn.Ip); break;
+                case BuddyProtocol.SVC_LOGIN:         _ = HandleLoginAsync(conn); break;
 
-                case BuddyProtocol.SVC_LOGIN:
-                    // RET_LOGIN sucesso: result=0, 0 amigos (payload > 7 bytes -> caminho de sucesso).
-                    SendLoginOk(sock, ip);
-                    OnPeerOnline(sock);   // registra presenca + brokering de enderecos P2P
-                    break;
-
-                // comandos de buddy/grupo: respondem o RET correspondente com wRtc=0 (sucesso).
-                // A persistencia (tabela buddylist / usergameinfo.buddyname) e RE incremental.
-                case BuddyProtocol.SVC_ADD_BUDDY:    ReplyOk(sock, ip, BuddyProtocol.RET_ADD_BUDDY); break;
-                case BuddyProtocol.SVC_REMOVE_BUDDY: ReplyOk(sock, ip, BuddyProtocol.RET_REMOVE_BUDDY); break;
-                case BuddyProtocol.SVC_GROUP_BUDDY:  ReplyOk(sock, ip, BuddyProtocol.RET_GROUP_BUDDY); break;
-                case BuddyProtocol.SVC_RENAME_GROUP: ReplyOk(sock, ip, BuddyProtocol.RET_RENAME_GROUP); break;
-                case BuddyProtocol.SVC_GROUP_DEL:    ReplyOk(sock, ip, BuddyProtocol.RET_GROUP_DEL); break;
-                case BuddyProtocol.SVC_GROUP_CHG:    ReplyOk(sock, ip, BuddyProtocol.RET_GROUP_CHG); break;
-                case BuddyProtocol.SVC_SMS_SEND:     ReplyOk(sock, ip, BuddyProtocol.RET_SMS_SEND); break;
-
-                // Comandos que o cliente manda APÓS o login (CDs do switch OnMsg do Buddy2.dll). SEM a
-                // confirmação destes o jogo trava a VENDA no shop com "Character's name for messenger has
-                // changed": o SET_NICK (0x3100) sincroniza o nick do messenger com o nome do personagem, e
-                // o jogo só vende depois do RET_SET_NICK (0x3101, wRtc=0). Mapeamento do decompile:
-                //   0x3100 SET_NICK -> 0x3101 | 0x3104 SET_EXTUSER -> 0x3105 | 0x3150 GROUP_GETLIST -> 0x3151
-                case BuddyProtocol.SVC_SET_NICK:      ReplyOk(sock, ip, BuddyProtocol.RET_SET_NICK); break;
-                case BuddyProtocol.SVC_SET_EXTUSER:   ReplyOk(sock, ip, BuddyProtocol.RET_SET_EXTUSER); break;
-                case BuddyProtocol.SVC_GROUP_GETLIST: SendGroupListEmpty(sock, ip); break;
+                // confirmacoes que destravam fluxos do cliente (wRtc=0 = sucesso). SET_NICK sincroniza o
+                // nick do messenger (sem o RET_SET_NICK o jogo trava a VENDA no shop). Ver BuddyProtocol.
+                case BuddyProtocol.SVC_ADD_BUDDY:     ReplyOk(conn.Sock, conn.Ip, BuddyProtocol.RET_ADD_BUDDY); break;
+                case BuddyProtocol.SVC_REMOVE_BUDDY:  ReplyOk(conn.Sock, conn.Ip, BuddyProtocol.RET_REMOVE_BUDDY); break;
+                case BuddyProtocol.SVC_GROUP_BUDDY:   ReplyOk(conn.Sock, conn.Ip, BuddyProtocol.RET_GROUP_BUDDY); break;
+                case BuddyProtocol.SVC_RENAME_GROUP:  ReplyOk(conn.Sock, conn.Ip, BuddyProtocol.RET_RENAME_GROUP); break;
+                case BuddyProtocol.SVC_GROUP_DEL:     ReplyOk(conn.Sock, conn.Ip, BuddyProtocol.RET_GROUP_DEL); break;
+                case BuddyProtocol.SVC_GROUP_CHG:     ReplyOk(conn.Sock, conn.Ip, BuddyProtocol.RET_GROUP_CHG); break;
+                case BuddyProtocol.SVC_SMS_SEND:      ReplyOk(conn.Sock, conn.Ip, BuddyProtocol.RET_SMS_SEND); break;
+                case BuddyProtocol.SVC_SET_NICK:      ReplyOk(conn.Sock, conn.Ip, BuddyProtocol.RET_SET_NICK); break;
+                case BuddyProtocol.SVC_SET_EXTUSER:   ReplyOk(conn.Sock, conn.Ip, BuddyProtocol.RET_SET_EXTUSER); break;
+                case BuddyProtocol.SVC_GROUP_GETLIST: SendGroupListEmpty(conn.Sock, conn.Ip); break;
 
                 default:
-                    Log.Debug("buddy", "[{0}] CD 0x{1:x4} ({2}) — handler nao reconstruido (stub)", ip, cd, BuddyProtocol.Name(cd));
+                    Log.Debug("buddy", "[{0}] CD 0x{1:x4} ({2}) — sem handler (stub)", conn.Ip, cd, BuddyProtocol.Name(cd));
                     break;
             }
         }
+
+        // ---- login: identidade + lista de amigos + token P2P ----------------------------
+
+        /// <summary>RET_LOGIN: resolve a identidade (account pelo IP), carrega a buddylist e monta a lista,
+        /// embutindo o token P2P (body[2:6]). A presença NÃO sai aqui: espera o cliente ecoar o token via UDP
+        /// (OnUdpRegister) p/ ter o endpoint real. Sem identidade (sem sessao world p/ o IP) = lista vazia.</summary>
+        private async Task HandleLoginAsync(BuddyConn conn)
+        {
+            string? account = await _db.ResolveAccountByIpAsync(conn.Ip);
+            conn.Account = account;
+            conn.Buddies = account != null ? await _db.LoadBuddiesAsync(account) : new List<BuddyEntry>();
+            conn.Nick = account != null ? (await _db.GetNickByAccountAsync(account) ?? account) : null;
+            conn.LoggedIn = true;
+            conn.Token = (uint)Interlocked.Increment(ref _tokenSeq);
+            _byToken[conn.Token] = conn;
+
+            Send(conn.Sock, BuddyProtocol.RET_LOGIN, BuddyFrames.LoginList(conn.Buddies, conn.Token));
+            Log.Ok("buddy", "[{0}] RET_LOGIN: conta='{1}' nick='{2}' token={3} — {4} amigo(s): [{5}]",
+                conn.Ip, account ?? "?", conn.Nick ?? "?", conn.Token, conn.Buddies.Count,
+                string.Join(", ", conn.Buddies.ConvertAll(b => b.Nick)));
+        }
+
+        private void OnDisconnect(BuddyConn conn)
+        {
+            _conns.TryRemove(conn.Sock, out _);
+            if (conn.Token != 0) _byToken.TryRemove(conn.Token, out _);
+            if (conn.LoggedIn && conn.Nick != null && conn.UdpEndpoint != null) AnnouncePresence(conn, online: false);
+        }
+
+        /// <summary>Brokering de presença (NTF_USER_STATE). Quando <paramref name="conn"/> registra o endpoint
+        /// (entra) ou cai (sai): avisa cada amigo online que tem conn na lista, com o ip:porta P2P de conn; e,
+        /// na entrada, conta a conn os amigos online que já têm endpoint. Casa amizade por NICK.</summary>
+        private void AnnouncePresence(BuddyConn conn, bool online)
+        {
+            if (conn.Nick == null) return;
+            byte[]? ip4 = conn.UdpEndpoint?.Address.GetAddressBytes();
+            ushort port = (ushort)(conn.UdpEndpoint?.Port ?? 0);
+            foreach (var other in _conns.Values)
+            {
+                if (ReferenceEquals(other, conn) || !other.LoggedIn || other.Nick == null) continue;
+                if (other.HasBuddy(conn.Nick))
+                    Send(other.Sock, BuddyProtocol.NTF_USER_STATE, BuddyFrames.UserState(conn.Nick, online, ip4, port));
+                if (online && conn.HasBuddy(other.Nick) && other.UdpEndpoint != null)
+                    Send(conn.Sock, BuddyProtocol.NTF_USER_STATE, BuddyFrames.UserState(
+                        other.Nick, true, other.UdpEndpoint.Address.GetAddressBytes(), (ushort)other.UdpEndpoint.Port));
+            }
+        }
+
+        // ---- handshake / respostas simples ---------------------------------------------
 
         private static void SendPrecredential(Socket sock, string ip)
         {
             var ep = sock.RemoteEndPoint as IPEndPoint;
             using var p = new PacketWriter();
             uint addr = ep != null ? BitConverter.ToUInt32(ep.Address.MapToIPv4().GetAddressBytes(), 0) : 0;
-            // O cliente (Buddy2.dll OnMsg, RET_PRECREDENTIAL) EXIGE payload de exatamente 8 bytes
-            // (`if (len == 8)`), senão NÃO manda o SVC_LOGIN e o messenger nunca loga — o que trava
-            // a venda no shop ("Character's name for messenger has changed"). Layout: [u32 ip][u32 port].
+            // RET_PRECREDENTIAL EXIGE 8 bytes (`if (len == 8)`), senao o cliente nao manda o SVC_LOGIN.
             p.WriteUInt32(addr);
             p.WriteUInt32((uint)(ep?.Port ?? 0));
             Send(sock, BuddyProtocol.RET_PRECREDENTIAL, p.ToArray());
             Log.Info("buddy", "[{0}] RET_PRECREDENTIAL enviado (8B)", ip);
         }
 
-        private static void SendLoginOk(Socket sock, string ip)
-        {
-            using var p = new PacketWriter();
-            p.WriteWord(0); // result = 0 (sucesso)
-            p.WriteWord(0); // reservado
-            p.WriteWord(0); // buddyCount = 0 (lista vazia -> pula o loop de amigos)
-            p.WriteWord(0); // padding (payload > 7 bytes p/ entrar no caminho de sucesso)
-            Send(sock, BuddyProtocol.RET_LOGIN, p.ToArray());
-            Log.Ok("buddy", "[{0}] RET_LOGIN OK (0 amigos)", ip);
-        }
-
         /// <summary>RET_GROUP_GETLIST (0x3151): [u16 wRtc=0][u16 count=0] — lista de grupos vazia.</summary>
         private static void SendGroupListEmpty(Socket sock, string ip)
         {
             using var p = new PacketWriter();
-            p.WriteWord(0); // wRtc = 0 (sucesso)
-            p.WriteWord(0); // count = 0 (sem grupos)
+            p.WriteWord(0);
+            p.WriteWord(0);
             Send(sock, BuddyProtocol.RET_GROUP_GETLIST, p.ToArray());
             Log.Debug("buddy", "[{0}] RET_GROUP_GETLIST (vazio)", ip);
         }
@@ -232,7 +247,7 @@ namespace RakionServer.Buddy
         private static void ReplyOk(Socket sock, string ip, ushort retCd)
         {
             using var p = new PacketWriter();
-            p.WriteWord(0); // wRtc = 0 (sucesso)
+            p.WriteWord(0);
             Send(sock, retCd, p.ToArray());
             Log.Debug("buddy", "[{0}] {1} OK", ip, BuddyProtocol.Name(retCd));
         }
@@ -247,5 +262,22 @@ namespace RakionServer.Buddy
             Array.Copy(payload, 0, frame, 4, payload.Length);
             try { sock.Send(frame); } catch (Exception ex) { Log.Error("buddy", "send: {0}", ex.Message); }
         }
+    }
+
+    /// <summary>Estado de uma conexao do messenger. Chave de rede = <see cref="Nick"/>; <see cref="Token"/>
+    /// correlaciona o eco UDP -> <see cref="UdpEndpoint"/> (endpoint P2P aprendido).</summary>
+    internal sealed class BuddyConn
+    {
+        public BuddyConn(Socket sock, string ip) { Sock = sock; Ip = ip; }
+        public Socket Sock { get; }
+        public string Ip { get; }
+        public string? Account { get; set; }
+        public string? Nick { get; set; }
+        public bool LoggedIn { get; set; }
+        public uint Token { get; set; }
+        public IPEndPoint? UdpEndpoint { get; set; }
+        public List<BuddyEntry> Buddies { get; set; } = new();
+        public bool HasBuddy(string? nick) =>
+            nick != null && Buddies.Exists(b => string.Equals(b.Nick, nick, StringComparison.OrdinalIgnoreCase));
     }
 }

@@ -445,6 +445,23 @@ namespace RakionServer.World
             return GrantExp(s, exp);
         }
 
+        /// <summary>Messenger "add buddy": persiste a amizade (buddylist) a partir do 0x19. O AddBuddy do cliente
+        /// e' MUDO (mascara +0x140d4 bit12=0 -> o Buddy2.dll nao emite SVC_ADD_BUDDY), entao o WORLD — que conhece
+        /// os dois lados no 0x19 (dono logado + alvo resolvido) — grava a amizade; o buddy server carrega a lista
+        /// no login. Regra de dominio (valida nao-self) fora do handler de rede. Account-names (usergameinfo.name).</summary>
+        public async Task<bool> AddBuddyAsync(ClientSession owner, string buddyAccount, string buddyNick)
+        {
+            if (string.IsNullOrEmpty(owner.UserId) || string.IsNullOrEmpty(buddyAccount)) return false;
+            if (string.Equals(owner.UserId, buddyAccount, StringComparison.OrdinalIgnoreCase)) return false; // self-add degenerado
+            bool added = await _db.AddBuddyAsync(owner.UserId, buddyAccount);
+            // RECÍPROCO: o chat P2P/presença é bidirecional (cada lado casa o outro por nick). Sem fluxo de
+            // aceitação de convite no servidor offline (uso pessoal de poucos chars), gravamos os dois sentidos.
+            await _db.AddBuddyAsync(buddyAccount, owner.UserId);
+            Log.Ok("buddy", "[{0}] '{1}' <-> '{2}' (conta {3}) -> {4}", owner.Slot, owner.UserId, buddyNick, buddyAccount,
+                added ? "amizade gravada (recíproca)" : "ja existia");
+            return added;
+        }
+
         /// <summary>Aplica o UPGRADE do refino (handler 0x74 = clique de upgrade). SERVER-AUTHORITATIVE: este build do
         /// worldserv DESCARTAVA o roll de FUN_0040c310 (o cliente fica em "Upgrading Now" esperando o resultado), então
         /// reconstruímos o comportamento pretendido — valida (CUser::CheckEnchantReinforce), ROLA a probabilidade,
@@ -672,6 +689,7 @@ namespace RakionServer.World
             // Carrega gold/cash/level/itens do DB ANTES do 0x0C: a síntese do 0x0C serializa gold/cash do
             // estado vivo (o display reflete a compra). Sincrono p/ garantir s.Gold/s.Cash setados no 0x0C.
             await LoadAndLogAsync(s, s.UserId);
+            _ = _db.UpsertMessengerSessionAsync(s.UserId, s.RemoteIp);   // identidade p/ o buddy (login cifrado -> resolve por IP)
             s.SendLoginResponse();   // 0x0C sintetizado (lista de chars) + 0x0D — 0x10 vai apos o handshake UDP
         }
 
@@ -789,6 +807,7 @@ namespace RakionServer.World
                 LeaveField(s);
                 if (s.Authenticated)
                     Interlocked.Decrement(ref _currentUsers);
+                _ = _db.RemoveMessengerSessionAsync(s.UserId);   // libera a identidade do buddy
                 Log.Info("world", "[{0}] sessao encerrada ('{1}') — {2}/{3} online",
                     s.Slot, s.UserId, CurrentUsers, MaxUser);
             }

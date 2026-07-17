@@ -58,6 +58,7 @@ namespace RakionServer.Buddy
         public const ushort SVC_GROUP_DEL       = 0x3154;
         public const ushort SVC_GROUP_CHG       = 0x3156;
         public const ushort SVC_SMS_SEND        = 0x2030;
+        public const ushort SVC_TUNNEL          = 0x2020;   // PM p/ relay (CBuddy2::TunnelPacket FUN_10008720) -> NTF 0x2021
 
         private static readonly IReadOnlyDictionary<int, string> Names = new Dictionary<int, string>
         {
@@ -66,7 +67,7 @@ namespace RakionServer.Buddy
             [NTF_VIP_IPPORT] = "NTF_VIP_IPPORT", [NTF_NOTICE] = "NTF_NOTICE",
             [NTF_CLOSE_CONNECTION] = "NTF_CLOSE_CONNECTION", [NTF_SAVE_PACKET] = "NTF_SAVE_PACKET",
             [NTF_TUNNEL_PACKET] = "NTF_TUNNEL_PACKET", [RET_SMS_SEND] = "RET_SMS_SEND",
-            [SVC_SMS_SEND] = "SVC_SMS_SEND",
+            [SVC_SMS_SEND] = "SVC_SMS_SEND", [SVC_TUNNEL] = "SVC_TUNNEL",
             [RET_ADD_BUDDY] = "RET_ADD_BUDDY", [SVC_ADD_BUDDY] = "SVC_ADD_BUDDY",
             [RET_REMOVE_BUDDY] = "RET_REMOVE_BUDDY", [SVC_REMOVE_BUDDY] = "SVC_REMOVE_BUDDY",
             [RET_GROUP_BUDDY] = "RET_GROUP_BUDDY", [RET_RENAME_GROUP] = "RET_RENAME_GROUP",
