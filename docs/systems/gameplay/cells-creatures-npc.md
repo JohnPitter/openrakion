@@ -240,8 +240,10 @@ Player/NpcBase, relação inimiga. O bone flag `NoDamage_Switch` bloqueia dano; 
   `CNpcBase::SetTarget` mantém referência forte em `+0x368`; o prior target fica em `+0x7F8`.
 
 Isso fecha owner, separação de times, friendly fire e a política base de aquisição/troca de alvo.
-Animações, timings e ataques específicos de cada uma das 43 classes carregáveis continuam sendo
-comportamento por classe, não uma lacuna dessa política comum.
+A primeira família específica também está fechada estaticamente em
+[`npc-family-nak.md`](npc-family-nak.md): as quatro variantes compartilham 29 eventos locais,
+`Shoot_Poison`, perseguição, reação a impacto, morte e faixa própria `3.0f`. As demais famílias
+continuam sendo comportamento por classe, não uma lacuna dessa política comum.
 
 A série `uint32[99]` em `creatures.dat+0x1A4C` começa em `300, 340, 380...` para Nak e alimenta o
 campo runtime `NpcSetup+0x8C`. O loader prova a largura de quatro bytes; a leitura anterior como
@@ -577,8 +579,7 @@ cliente estão fechadas estaticamente, mas ainda carecem de validação visual c
 O formato e os fluxos estão fechados estaticamente, mas estes comportamentos ainda precisam de
 observação/instrumentação do runtime real:
 
-- stats por nível/tier;
-- timings, animações e ataques específicos por classe; a seleção comum de alvo já está fechada;
+- timings, animações e ataques das famílias após Nak; a seleção comum de alvo e Nak já estão fechadas;
 - dano causado/recebido e “Cell destruction”;
 - valores concretos dos eventos de morte/despawn;
 - EXP/gold por kill via `npcinfo`;
@@ -604,7 +605,7 @@ condição para fidelidade do RE host-authoritative.
 | Max CP/Cell destruction | persistidos como stats |
 | CP runtime | atual, máximo, clamp, morte, custo e débito mapeados no cliente; client-authoritative como no original |
 | summon | três slots, estados `0/1/2`, rejeição, débito, spawn, liberação e refund de 30% fechados no cliente |
-| entidade/IA/HP | ownership, friendly fire, validação de dano e targeting comum fechados; ataques por classe ainda requerem validação dinâmica |
+| entidade/IA/HP | ownership, friendly fire, validação de dano e targeting comum fechados; Nak fechada estaticamente, demais famílias e efeitos exatos do poison pendentes |
 | protocolo `0x307..0x312` | envelopes tipados/validados e relayados; três famílias de init blob identificadas; `0x310` corrigido |
 | map items | cliente/host identificados; backend ausente conforme arquitetura original |
 | stage solo | client-authoritative |
