@@ -8,7 +8,7 @@ Servidor do Rakion v258 **reescrito do zero em .NET** — não usa os executáve
 |---|---|---|---|
 | `RakionServer.Broker` | BrokenServer | 40706/TCP | Lista de servidores/canais, anuncia o world (advertised IP), ponte de login |
 | `RakionServer.World` | RakionWorldServer | 40708/TCP, 40708-40709/UDP | Login, lobby, salas, personagem, inventário/box, loja, compra e histórico da loteria, chat, partida (UDP) |
-| `RakionServer.Buddy` | RakionServer.Buddy | — | Lista de amigos/mensageiro (opcional) |
+| `RakionServer.Buddy` | RakionServer.Buddy | 8500/8504 | Amigos/mensageiro (F9): amigos, grupos, presença, SMS/PM, tunnel P2P — serviço canônico |
 | `RakionServer.Ranking` | RakionRankUpdate | — | Job diário one-shot de ranking total, classe, membro e clã |
 | `RakionServer.Common` | (lib) | — | Cripto (AES-128-ECB do protocolo), leitura/escrita de pacotes, IPC |
 | `RakionServer.LauncherWeb` | RakionLauncherWeb | configurável | Ticket de launch, update assinado e adaptadores legados `launcherlogin/fetch` |

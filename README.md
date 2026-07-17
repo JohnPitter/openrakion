@@ -13,7 +13,7 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
 - 🟢 **Servidor 100% próprio em .NET** (não usa os executáveis da SoftNyx). Serviços:
   - **Broker** (`RakionServer.Broker`) — lista de servidores/canais, anuncia o world (advertised IP) e faz a ponte de login.
   - **World** (`RakionServer.World`) — login completo, lobby, lista de canais/salas, seleção de personagem, **inventário + armazém (box) persistente**, **loja (compra e venda) com saldo em tempo real**, **Power User** (compra + bônus configurável de XP/gold), chat, handshake **UDP de gameplay**, **motor de partida** (Golem/Deathmatch/TeamDeath/Boss com settlement persistido) e **bots PvP** server-side (`/addbot`).
-  - **Buddy** (`RakionServer.Buddy`) — lista de amigos/mensageiro.
+  - **Buddy** (`RakionServer.Buddy`) — serviço **canônico** de amigos/mensageiro (F9): login, adicionar/remover amigo, grupos, apelido, **presença** (amigo acende online), **SMS/PM** e **brokering de tunnel P2P** para convite/mensagem direta.
   - **LauncherWeb** (`RakionServer.LauncherWeb`) — auth web do launcher (login + auto-update `fetch`) em ASP.NET; reimplementa o backend PHP de auth/`fetch` do [RakionLauncher do CarlosX](https://github.com/CarlosX/RakionLauncher) (ver [CREDITS.md](CREDITS.md); o PHP original não é redistribuído aqui).
   - **Admin** (`RakionServer.Admin`) — painel web (Blazor) pra gerenciar **contas, gold/cash, itens no inventário** (visual estilo jogo, com nomes), a **config do Power User** (preço/bônus/multiplicadores/promoção) e **publicar updates** do launcher.
 - 🟢 **Login resolvido** — a peça que travava a comunidade. A conta loga, o world aceita, o banco carrega personagem e itens.
@@ -32,6 +32,7 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
 | **Stack roda nativo em Windows/Linux/Mac** (.NET 9, sem Wine/P-Invoke) | ✅ |
 | Modos PvP (Golem/Deathmatch/TeamDeath/Boss) | ✅ motor de round server-side + **validado headless com 2 clientes no fio** (criar/entrar sala, ready/start, movimento e combate UDP, win/lose persistido no DB) |
 | **Bots PvP** (peer sintético server-side, `/addbot`) | ✅ roster, IA (perseguição/orbita/antecipação) e movimento/combate sintetizados no fio; sem HIT×N nativo (teto de RE) |
+| **Buddy/Mensageiro (F9)**: amigos, grupos, presença, SMS/PM, tunnel P2P | ✅ serviço canônico do stack; persistência atômica de amigos/grupos e presença bidirecional |
 | **GameGuard** original | ❌ morto (servidor nProtect offline desde ~2007) — exige client no-GG |
 | Navegação inventário/loja ↔ lista de salas (botão **Previous**) | ✅ |
 
@@ -89,7 +90,7 @@ cd server/RakionServer && ./start-stack.ps1
 #    - broker:       RakionServer.Broker      (BrokenServer)       porta 40706
 #    - world:        RakionServer.World       (RakionWorldServer)  TCP 40708 / UDP 40708-40709
 #    - admin:        RakionServer.Admin       (RakionAdmin)        porta 8080
-#    - buddy:        RakionServer.Buddy       (opcional)
+#    - buddy:        RakionServer.Buddy       (BuddyServer)         portas 8500/8504
 ```
 
 > Os **web apps** (LauncherWeb/Admin) usam o runtime ASP.NET. Se o .NET for user-local (fora de
