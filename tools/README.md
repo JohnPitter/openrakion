@@ -396,6 +396,9 @@ JSON com arquivo, linha e API usada; sem lista explícita, audita as cinco APIs 
 `ghidra/DecompileClientCellRuntime.py` escolhe os alvos pelo programa aberto e extrai bindings Lua,
 construtor/serializers de CP ou a sequência de late join. Pode receber o caminho de saída como
 primeiro argumento; sem ele, grava `C:\temp\client_cell_runtime_<programa>.txt`.
+`ghidra/DecompileClientNpcTargeting.py` extrai imports, strings, team helpers, master/owner,
+validadores de inimigo/dano e a máquina de seleção do `CNpcWatcher`; grava por padrão
+`C:\temp\client_npc_targeting.txt` ou aceita outro caminho como primeiro argumento.
 `DumpFunctionsByAddress.py`, `DumpCallersByAddress.py` e `DumpNpcSetupReferences.py` são auxiliares
 reproduzíveis para seguir consumidores sem depender da interface gráfica do Ghidra. O último
 fecha a composição dos três slots e do custo efetivo em `FUN_351DBFF0`.

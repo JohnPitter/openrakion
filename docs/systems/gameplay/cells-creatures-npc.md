@@ -191,7 +191,54 @@ A recarga de CP comprovada é orientada a combate. No encerramento válido do NP
 `FUN_350EE230` lê o campo runtime `NpcSetup[level]+0x64`, carregado da série `uint16`
 `creatures.dat+0x166E`, chama `AddCP` e, para o jogador local responsável, `EmitCPMessage`.
 Para Nak, a curva começa em `20, 21, 22, 23, 24...` CP. Isso prova ganho por morte; não foi
-encontrada ainda uma regeneração passiva por tempo.
+encontrada regeneração passiva por tempo no código nativo nem no corpus Lua desta build.
+
+## Ownership, times, friendly fire e alvo
+
+`DecompileClientNpcTargeting.py` fecha a regra comum usada pelos summons e NPCs de stage. A
+identidade de time está em `MovableEntity+0x264`:
+
+| Faixa | Predicado original |
+|---:|---|
+| `0..9` | `IsRedTeam` |
+| `10..19` | `IsBlueTeam` |
+| `20..255` | `IsGrayTeam` |
+
+`IsEnemy @ 0x351DDDD0` rejeita primeiro entidades com o mesmo byte `+0x264`. Em modo Deathmatch
+(`session+0x1A3 == 2`), qualquer slot diferente é inimigo. Nos demais modos, dois cinzas não são
+inimigos; dois slots coloridos são inimigos somente quando um é vermelho e o outro azul; misturar
+cinza com colorido é inimigo. Portanto o dono e aliados do mesmo time ficam fora de targeting e
+friendly fire no cliente original.
+
+O NPC guarda o master em `CNpcBase+0x620`; `SetSpawnVariable @ 0x350E26B0` resolve esse ponteiro a
+partir do spawn. `IsHaveMasterPlayer @ 0x350E17C0` devolve o seat `+0x264` de Player/NpcBase e, nas
+partidas por time, consegue escolher um player ativo dentro de `0..9` ou `10..19` quando precisa
+representar o lado do NPC.
+
+`IsValidForEnemy @ 0x350E24C0` exige candidato não nulo e vivo, diferente do master, aceito por
+`IsEnemy` e que não seja `MapItem` nem `BoxItem`. `IsValidReceiveDamage @ 0x350E5130` exige o NPC
+vivo, fora dos dois estados de bloqueio `+0x5AC/+0x5B8`, atacante diferente dele mesmo e, para
+Player/NpcBase, relação inimiga. O bone flag `NoDamage_Switch` bloqueia dano; `NpcChocolateCake`
+é a exceção explícita a esse flag. O overload `0x350DD3C0` também rejeita dano `<= 0`.
+
+`CNpcWatcher` implementa a escolha de alvo host-side:
+
+- considera entidades de runtime `9/10` que sejam Player ou derivadas de NpcBase;
+- exclui o próprio owner, seu master `+0x620` e NPCs que compartilhem o mesmo master;
+- exige flags `0x8` e ausência de `0x1000`, cone de visão, linha de visada e distância até
+  `owner+0x584`;
+- usa `watcher+0x130` como ângulo: entrada `<= 0,1` vira `10`, entrada `>= 179` vira `179` e os
+  valores intermediários são preservados;
+- modos `0/1` comparam distância; `2/3` comparam a propriedade virtual do candidato;
+- modos `0/3` escolhem o menor valor e `1/2`, o maior;
+- LongBow tenta player voando, depois primeiro NPC e player; IceWind tenta primeiro NPC e depois
+  player; as demais classes usam a busca de player do setor;
+- quando o vencedor muda e é melhor que o alvo atual, `SendWatchEvent` publica a troca e
+  `CNpcBase::SetTarget` mantém referência forte em `+0x368`; o prior target fica em `+0x7F8`.
+
+Isso fecha owner, separação de times, friendly fire e a política base de aquisição/troca de alvo.
+Animações, timings e ataques específicos de cada uma das 43 classes carregáveis continuam sendo
+comportamento por classe, não uma lacuna dessa política comum.
 
 A série inteira em `creatures.dat+0x1A4C` começa em `300, 340, 380...` para Nak e alimenta o campo
 runtime criptografado `NpcSetup+0x8C`. `FindNpcSetupFieldConsumers.py` examinou os 61 chamadores
@@ -528,8 +575,7 @@ O formato e os fluxos estão fechados estaticamente, mas estes comportamentos ai
 observação/instrumentação do runtime real:
 
 - stats por nível/tier;
-- owner/team/friendly fire;
-- IA e escolha de alvo;
+- timings, animações e ataques específicos por classe; a seleção comum de alvo já está fechada;
 - dano causado/recebido e “Cell destruction”;
 - valores concretos dos eventos de morte/despawn;
 - EXP/gold por kill via `npcinfo`;
@@ -555,7 +601,7 @@ condição para fidelidade do RE host-authoritative.
 | Max CP/Cell destruction | persistidos como stats |
 | CP runtime | atual, máximo, clamp, morte, custo e débito mapeados no cliente; client-authoritative como no original |
 | summon | três slots, estados `0/1/2`, rejeição, débito, spawn, liberação e refund de 30% fechados no cliente |
-| entidade/IA/HP | runtime client-side presente; comportamento por classe ainda requer captura dinâmica |
+| entidade/IA/HP | ownership, friendly fire, validação de dano e targeting comum fechados; ataques por classe ainda requerem validação dinâmica |
 | protocolo `0x307..0x312` | envelopes tipados/validados e relayados; três famílias de init blob identificadas; `0x310` corrigido |
 | map items | cliente/host identificados; backend ausente conforme arquitetura original |
 | stage solo | client-authoritative |
@@ -634,7 +680,7 @@ divergente foi descartado. As fixtures `test2/test3` foram removidas ao final.
 - golden captures das três famílias de init blob, valores representativos de eventos e validação
   visual de `0x307..0x312`;
 - posição compactada, limites e payload truncado;
-- owner/team e target inválido;
+- owner/team e target inválido como regressão da política já mapeada;
 - dano, morte, reward e duplicação de evento;
 - late join recebe visualmente o snapshot uma vez; o caller, as guardas e a ordem já estão fechados;
 - disconnect do host/owner e transferência de autoridade;

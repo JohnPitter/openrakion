@@ -927,6 +927,14 @@ O construtor de `CPlayer` inicializa CP atual em zero; `GetInitData` serializa `
 Não há `ReduceCP`, `SetCP` ou outro `AddCP` em Lua, fechando a hipótese de regeneração passiva
 indireta nesta build.
 
+No runtime de entidades, `IsEnemy` usa o seat/time em `MovableEntity+0x264`: vermelho `0..9`, azul
+`10..19` e cinza `20+`. Deathmatch considera inimigo todo seat diferente; nos demais modos, mesmo
+time e dois cinzas são aliados. `CNpcBase::IsValidForEnemy/IsValidReceiveDamage` aplicam essa
+relação, excluem master, morto, `MapItem`/`BoxItem` e `NoDamage_Switch`. `CNpcWatcher` filtra
+owner/master, flags, cone, visibilidade e alcance antes de escolher mínimo/máximo por distância ou
+propriedade. A política comum de owner, friendly fire e targeting está fechada; ataques específicos
+de cada classe permanecem na validação dinâmica.
+
 `Classes.xfs` confirmou que os `.ecl` são manifests apontando para classes compiladas em
 `Entities.dll`, não scripts externos. A tabela compilada de eventos em `entitiesmp.dll` associa
 `0x30=Summoner star explosion`, `0x44=Weapon Cell`, `0x48=Summon Npc`,
