@@ -55,16 +55,20 @@ Começou a validação **dinâmica** dirigindo o `WorldServer` real por clientes
 [`dynamic-validation.md`](dynamic-validation.md). Já verde ponta a ponta com dois clientes:
 
 - login concorrente + rejeição de credencial inválida;
-- char-select, criar sala Golem, join do 2º jogador (coabitação no mesmo field, assentos distintos);
+- char-select, criar sala, join do 2º jogador (coabitação no mesmo field, assentos distintos);
 - ready + start da partida (armada em fase Pre, ambos os assentos promovidos a combatente);
-- handshake UDP dos dois peers + relay de movimento `0x030A` byte a byte entre eles.
+- handshake UDP dos dois peers + relay de movimento `0x030A` e de combate (`0x0311`/`0x030F`) byte a byte;
+- **settlement PvP persistido no DB real** pelo motor da partida vivo (WIN/LOSE em `characterinfo`);
+- **matriz dos 4 modos** (Golem/Deathmatch/TeamDeath/Boss) armando a partida + rejeição de fragLimit inválido;
+- **entrada em stage PvE solo** (`BeginStageRun` via `0x4b`).
+
+São 13 testes E2E, **781 verdes**. Detalhe em [`dynamic-validation.md`](dynamic-validation.md).
 
 Próximos alvos headless (ainda abertos):
 
-- combate UDP: datagramas de ataque/dano (`0x0311`/`0x030F`), tick 1583 e eco do cliente;
-- ciclo completo de partida: engage→rounds→morte/respawn→placar→settlement persistido;
-- PvE stage: spawn `0x4b`, clear/derrota, `0x53` result e liquidação de exp/gold/rank;
-- matriz de modos (Golem/TeamDeath/Deathmatch/Boss) e matriz P2P (direto/Tunnel, LAN/NAT/UDP bloqueado);
+- ciclo de partida ao vivo pelo tick real (engage por deadline, rounds, morte `0x4f` no fio, placar);
+- liquidação `0x53` com reward exato (coberta hoje por testes de domínio/DB);
+- matriz P2P (direto/Tunnel, mesma máquina/LAN/NAT/UDP bloqueado);
 - economia/UI ao vivo: loja, inventário, enchant, presentes, Power User, ranking.
 
 ### 2. Validação gráfica com o cliente real

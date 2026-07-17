@@ -94,25 +94,39 @@ namespace RakionServer.World.Tests.E2E
             Send(0x14, payload);
         }
 
+        /// <summary>Parâmetros de criação de sala (0x3b).</summary>
+        public readonly record struct RoomSpec(
+            string Name, byte Map, byte Mode, byte Rounds, ushort DurationSec,
+            byte FragLimit, byte MinLevel, byte MaxLevel)
+        {
+            // Enum de domínio: Golem=1, Deathmatch=2, TeamDeath=3, Boss=4.
+            // fragLimit: Deathmatch (2) em 13..30; TeamDeath (3) em 20..50.
+            public static RoomSpec Golem(string name) => new(name, 0, 1, 1, 432, 0, 1, 99);
+            public static RoomSpec Deathmatch(string name) => new(name, 0, 2, 1, 432, 20, 1, 99);
+            public static RoomSpec TeamDeath(string name) => new(name, 0, 3, 1, 432, 25, 1, 99);
+            public static RoomSpec Boss(string name) => new(name, 0, 4, 1, 432, 0, 1, 99);
+        }
+
         /// <summary>Cria sala competitiva (0x3b). Layout:
-        /// `[cstr name][cstr pass][cstr desc][u8 map][u8 mode][u8 rounds][u16 dur][u8 frag][u8 minLvl][u8 maxLvl][u8 rangeCode]`.
-        /// mode 1 = Golem War (sem restrição de fragLimit).</summary>
-        public void CreateGolemRoom(string name, byte map = 0)
+        /// `[cstr name][cstr pass][cstr desc][u8 map][u8 mode][u8 rounds][u16 dur][u8 frag][u8 minLvl][u8 maxLvl][u8 rangeCode]`.</summary>
+        public void CreateRoom(RoomSpec spec)
         {
             using var w = new PacketWriter();
-            w.WriteCString(name);   // ≤ 0x28
-            w.WriteCString("");     // senha ≤ 8
-            w.WriteCString("");     // descrição ≤ 0xc8
-            w.WriteByte(map);       // mapId
-            w.WriteByte(1);         // mode = Golem
-            w.WriteByte(1);         // rounds
-            w.WriteWord(432);       // duração (0x1b0, dentro de 0x122..0x4ba)
-            w.WriteByte(0);         // fragLimit (ignorado no Golem)
-            w.WriteByte(1);         // minLevel
-            w.WriteByte(99);        // maxLevel
-            w.WriteByte(0);         // levelRangeCode
+            w.WriteCString(spec.Name);   // ≤ 0x28
+            w.WriteCString("");          // senha ≤ 8
+            w.WriteCString("");          // descrição ≤ 0xc8
+            w.WriteByte(spec.Map);
+            w.WriteByte(spec.Mode);
+            w.WriteByte(spec.Rounds);
+            w.WriteWord(spec.DurationSec);
+            w.WriteByte(spec.FragLimit);
+            w.WriteByte(spec.MinLevel);
+            w.WriteByte(spec.MaxLevel);
+            w.WriteByte(0);              // levelRangeCode
             Send(0x3b, w.ToArray());
         }
+
+        public void CreateGolemRoom(string name) => CreateRoom(RoomSpec.Golem(name));
 
         /// <summary>Entra numa sala (0x38): `[u16 fieldId][cstr password]`.</summary>
         public void JoinRoom(ushort fieldId, string password = "")
@@ -126,8 +140,29 @@ namespace RakionServer.World.Tests.E2E
         /// <summary>Marca ready/not-ready na sala (0x3d): `[u8 ready]`.</summary>
         public void SetReady(bool ready) => Send(0x3d, new[] { (byte)(ready ? 1 : 0) });
 
+        /// <summary>Troca de time na sala (0x3e): sem payload; move para o bloco de 10 assentos oposto.</summary>
+        public void ChangeTeam() => Send(0x3e, Array.Empty<byte>());
+
         /// <summary>Master inicia a partida (0x43): sem payload.</summary>
         public void StartMatch() => Send(0x43, Array.Empty<byte>());
+
+        /// <summary>Spawn no stage (0x4b): primeiro 0x4b da entrada inicia o relógio da partida.
+        /// Payload real do cliente é grande; o servidor só usa o gatilho, então mandamos vazio.</summary>
+        public void SpawnField() => Send(0x4b, new byte[72]);
+
+        /// <summary>Resultado de stage solo (0x53). Layout:
+        /// `[u8 stage][u8 rank][u8 count][count×u16 slots][u32 exp][u32 gold][u32 cell0..2]`.</summary>
+        public void SendStageResult(byte stage, byte rank, uint exp, uint gold)
+        {
+            using var w = new PacketWriter();
+            w.WriteByte(stage);
+            w.WriteByte(rank);
+            w.WriteByte(0);          // count de cells = 0
+            w.WriteUInt32(exp);
+            w.WriteUInt32(gold);
+            w.WriteUInt32(0).WriteUInt32(0).WriteUInt32(0); // cell exp 0..2
+            Send(0x53, w.ToArray());
+        }
 
         // ---- UDP de gameplay ------------------------------------------------
 
@@ -174,6 +209,33 @@ namespace RakionServer.World.Tests.E2E
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(11), x);
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(13), y);
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(15), z);
+            _udp!.SendTo(p, new IPEndPoint(IPAddress.Loopback, serverGamePort));
+            return p;
+        }
+
+        /// <summary>Datagrama de ANIMAÇÃO/ataque 0x0311 (10 bytes): kind 1 = Attack.</summary>
+        public byte[] SendAttack(int serverGamePort, byte sourceSeat, byte kind = 1, byte arg0 = 0)
+        {
+            byte[] p = new byte[10];
+            BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(0), 0x0311);
+            BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(2), 2); // sequence
+            p[6] = sourceSeat;
+            p[7] = 0;      // sourceEcho
+            p[8] = kind;   // 0=Normal, 1=Attack, 2=Damage(precisa estendido)
+            p[9] = arg0;
+            _udp!.SendTo(p, new IPEndPoint(IPAddress.Loopback, serverGamePort));
+            return p;
+        }
+
+        /// <summary>Datagrama de SYNC de estado 0x030F (14 bytes).</summary>
+        public byte[] SendSync(int serverGamePort, byte sourceSeat, byte lifeState = 1)
+        {
+            byte[] p = new byte[14];
+            BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(0), 0x030f);
+            BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(2), 3); // sequence
+            p[6] = sourceSeat;
+            p[7] = 0;           // sourceEcho
+            p[8] = lifeState;
             _udp!.SendTo(p, new IPEndPoint(IPAddress.Loopback, serverGamePort));
             return p;
         }

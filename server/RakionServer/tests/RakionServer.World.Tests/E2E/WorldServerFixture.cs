@@ -32,6 +32,7 @@ namespace RakionServer.World.Tests.E2E
         public WorldServer? Server { get; private set; }
         public bool Available { get; private set; }
         public string Reason { get; private set; } = "";
+        public string DbConnectionString { get; private set; } = "";
 
         private WorldServerFixture() { }
 
@@ -66,6 +67,7 @@ namespace RakionServer.World.Tests.E2E
             cfg.Db.Pass = csb.Password;
             cfg.Db.Name = string.IsNullOrEmpty(csb.Database) ? "rakion" : csb.Database;
 
+            fixture.DbConnectionString = cfg.Db.ConnectionString;
             var db = new WorldDatabase(cfg.Db);
             try
             {
