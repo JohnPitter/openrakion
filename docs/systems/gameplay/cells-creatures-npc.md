@@ -255,8 +255,10 @@ fecha 22 eventos, arco/flecha e acompanhamento de target aéreo.
 [`npc-family-taurus.md`](npc-family-taurus.md) fecha quatro variantes, caminhada proporcional,
 ataque próximo, investida, reações temporizadas e materialização.
 [`npc-family-dragon.md`](npc-family-dragon.md) fecha voo, correção vertical, seleção por dois
-alcances e as cadeias de chama no solo/céu. As famílias após Dragon
-continuam sendo comportamento por classe, não uma lacuna dessa política comum.
+alcances e as cadeias de chama no solo/céu.
+[`npc-family-icewind.md`](npc-family-icewind.md) fecha a segunda família aérea: banda de
+altitude, carga de gelo e o projétil dedicado `CIceWind`. Com IceWind, todas as famílias-base do
+`creaturelist.txt` possuem documento; restam as classes residuais/especiais do passe final.
 
 A série `uint32[99]` em `creatures.dat+0x1A4C` começa em `300, 340, 380...` para Nak e alimenta o
 campo runtime `NpcSetup+0x8C`. O loader prova a largura de quatro bytes; a leitura anterior como
@@ -592,8 +594,8 @@ cliente estão fechadas estaticamente, mas ainda carecem de validação visual c
 O formato e os fluxos estão fechados estaticamente, mas estes comportamentos ainda precisam de
 observação/instrumentação do runtime real:
 
-- timings, animações e ataques das famílias após Dragon; targeting e famílias até Dragon estão
-  fechados estaticamente;
+- timings, animações e ataques das classes residuais/especiais ainda sem passe dedicado;
+  targeting e as famílias-base até IceWind estão fechados estaticamente;
 - dano causado/recebido e “Cell destruction”;
 - valores concretos dos eventos de morte/despawn;
 - EXP/gold por kill via `npcinfo`;
@@ -619,7 +621,7 @@ condição para fidelidade do RE host-authoritative.
 | Max CP/Cell destruction | persistidos como stats |
 | CP runtime | atual, máximo, clamp, morte, custo e débito mapeados no cliente; client-authoritative como no original |
 | summon | três slots, estados `0/1/2`, rejeição, débito, spawn, liberação e refund de 30% fechados no cliente |
-| entidade/IA/HP | ownership, friendly fire, dano e targeting comum fechados; famílias Nak até Dragon fechadas estaticamente, demais famílias e efeitos/hitboxes exatos pendentes |
+| entidade/IA/HP | ownership, friendly fire, dano e targeting comum fechados; famílias-base Nak até IceWind fechadas estaticamente, classes residuais e efeitos/hitboxes exatos pendentes |
 | protocolo `0x307..0x312` | envelopes tipados/validados e relayados; três famílias de init blob identificadas; `0x310` corrigido |
 | map items | cliente/host identificados; backend ausente conforme arquitetura original |
 | stage solo | client-authoritative |

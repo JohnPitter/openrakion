@@ -30,45 +30,35 @@ o jogo inteiro esteja validado visualmente: a principal fronteira restante é di
 | Economia e progressão | Loja, inventário, storage, coupons, Power User, enchant, ranking e vendas locais fechados no limite headless documentado |
 | Gameplay comum | PvP, stage, combate, potions, Chaos, objetivos, votes e fluxo de Cells/NPC possuem contratos canônicos |
 | Curvas e infraestrutura de NPC | 47 tipos, 99 níveis, 43 classes carregáveis, atributos, CP, targeting, ownership, dano, late join e catálogo de eventos fechados estaticamente |
-| Famílias-base de NPC até Dragon | Nak, Panzer, CrossBow, Blazer, Golem, SoulCannon, LongBow, Taurus e Dragon possuem documentos e extratores reproduzíveis |
+| Famílias-base de NPC completas | Nak, Panzer, CrossBow, Blazer, Golem, SoulCannon, LongBow, Taurus, Dragon e IceWind possuem documentos e extratores reproduzíveis; IceWind fecha inclusive o projétil dedicado `CIceWind` |
 | Ferramentas de análise | SDK .NET e fluxo headless do Ghidra estão disponíveis para reproduzir extrações, testes e builds |
 
 ## Objetivo em andamento
 
-### 1. Fechar a família IceWind
+### 1. Auditar classes residuais e especiais de NPC
 
-IceWind é a última família-base listada em `creaturelist.txt` sem documento dedicado. O marco deve
-entregar:
-
-- descritores das quatro variantes e da base;
-- tabela completa de eventos e handler default;
-- construtor, defaults, seletores, ataques, movimento e comportamento aéreo;
-- assets, animações, áudio e pontos de attachment;
-- extrator Ghidra reproduzível e documento canônico;
-- atualização da auditoria, testes e build sem warnings;
-- commit e push próprios.
-
-## Objetivos que ainda faltam
-
-### 2. Auditar classes residuais e especiais de NPC
-
-Depois de IceWind, fazer uma varredura de fechamento para provar que nenhuma classe concreta ficou
-fora da documentação. O passe inclui aliases e variantes Gold, Master, Black e Special, além de
-confirmar formalmente os quatro `NpcBlackDragon*` ausentes nesta build. O resultado deve distinguir:
+IceWind foi fechada em [`npc-family-icewind.md`](../systems/gameplay/npc-family-icewind.md)
+(banda de altitude, carga de gelo, projétil dedicado `CIceWind` `0x049A` e seis classes), então
+todas as famílias-base do `creaturelist.txt` possuem documento. Agora falta a varredura de
+fechamento para provar que nenhuma classe concreta ficou fora da documentação. O passe inclui
+aliases e variantes Gold, Master, Black e Special, além de confirmar formalmente os quatro
+`NpcBlackDragon*` ausentes nesta build. O resultado deve distinguir:
 
 - classe real com comportamento próprio;
 - alias de uma família já documentada;
 - conteúdo configurado sem classe carregável;
 - nome/asset sem produtor ou consumidor ativo.
 
-### 3. Fechar a auditoria estática final
+## Objetivos que ainda faltam
 
-Recontar descritores, classes, eventos e documentos após o passe residual; eliminar referências como
-“famílias após Dragon”; verificar links e fontes canônicas; e publicar uma matriz final de
+### 2. Fechar a auditoria estática final
+
+Recontar descritores, classes, eventos e documentos após o passe residual; eliminar referências
+remanescentes de progresso parcial por família; verificar links e fontes canônicas; e publicar uma matriz final de
 **coberto**, **ausente comprovado** ou **extensão fora do original**. Esse marco encerra o RE estático,
 caso a varredura não revele um novo subsistema.
 
-### 4. Executar validação dinâmica com o cliente real
+### 3. Executar validação dinâmica com o cliente real
 
 Esta é a maior pendência para chamar o jogo de completo em runtime:
 
@@ -83,7 +73,7 @@ Esta é a maior pendência para chamar o jogo de completo em runtime:
 Cada validação precisa registrar build/hash, configuração, captura ou log, resultado esperado e
 resultado observado. Build verde não substitui a prova visual.
 
-### 5. Decidir extensões que não pertencem ao v258 original
+### 4. Decidir extensões que não pertencem ao v258 original
 
 Somente depois do fechamento compatível devem ser priorizadas features autorais: servidor de combate
 autoritativo, bots/puppets, checkout/recarga, liquidação de loteria, política moderna de PC Bang,
@@ -91,18 +81,17 @@ SMTP e eventual evento de Natal novo. Elas não devem ser contabilizadas como la
 
 ## Ordem recomendada
 
-1. IceWind;
-2. classes residuais/especiais;
-3. auditoria estática final;
-4. smoke visual da jornada básica com dois clientes;
-5. matriz PvP/P2P;
-6. matriz PvE/NPC;
-7. economia, launcher e integrações externas;
-8. extensões autorais escolhidas para o lançamento.
+1. classes residuais/especiais;
+2. auditoria estática final;
+3. smoke visual da jornada básica com dois clientes;
+4. matriz PvP/P2P;
+5. matriz PvE/NPC;
+6. economia, launcher e integrações externas;
+7. extensões autorais escolhidas para o lançamento.
 
 ## Critério de encerramento
 
-O **RE estático completo** exige IceWind, passe residual e auditoria final sem classe ou domínio sem
+O **RE estático completo** exige o passe residual e a auditoria final sem classe ou domínio sem
 veredito. O **jogo completo para lançamento** exige, além disso, os goldens runtime dos fluxos
 críticos. Enquanto esses testes visuais não forem executados, o estado correto do projeto é:
 **superfície estática catalogada e ampla compatibilidade headless, com validação dinâmica pendente**.
