@@ -12,7 +12,7 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
 
 - 🟢 **Servidor 100% próprio em .NET** (não usa os executáveis da SoftNyx). Serviços:
   - **Broker** (`RakionServer.Broker`) — lista de servidores/canais, anuncia o world (advertised IP) e faz a ponte de login.
-  - **World** (`RakionServer.World`) — login completo, lobby, lista de canais/salas, seleção de personagem, **inventário + armazém (box) persistente**, **loja (compra e venda) com saldo em tempo real**, **Power User** (compra + bônus configurável de XP/gold), chat, handshake **UDP de gameplay** e motor de partida.
+  - **World** (`RakionServer.World`) — login completo, lobby, lista de canais/salas, seleção de personagem, **inventário + armazém (box) persistente**, **loja (compra e venda) com saldo em tempo real**, **Power User** (compra + bônus configurável de XP/gold), chat, handshake **UDP de gameplay**, **motor de partida** (Golem/Deathmatch/TeamDeath/Boss com settlement persistido) e **bots PvP** server-side (`/addbot`).
   - **Buddy** (`RakionServer.Buddy`) — lista de amigos/mensageiro.
   - **LauncherWeb** (`RakionServer.LauncherWeb`) — auth web do launcher (login + auto-update `fetch`) em ASP.NET; reimplementa o backend PHP de auth/`fetch` do [RakionLauncher do CarlosX](https://github.com/CarlosX/RakionLauncher) (ver [CREDITS.md](CREDITS.md); o PHP original não é redistribuído aqui).
   - **Admin** (`RakionServer.Admin`) — painel web (Blazor) pra gerenciar **contas, gold/cash, itens no inventário** (visual estilo jogo, com nomes), a **config do Power User** (preço/bônus/multiplicadores/promoção) e **publicar updates** do launcher.
@@ -30,11 +30,18 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
 | **Power User** (compra + bônus de XP/gold configurável + bonus points) | ✅ |
 | **Painel admin** (contas, gold/cash, itens, config do PU, updates) | ✅ |
 | **Stack roda nativo em Windows/Linux/Mac** (.NET 9, sem Wine/P-Invoke) | ✅ |
-| Modos PvP/deathmatch completos | 🟡 motor de round server-side implementado (timer, fim de round por placar, win/lose/draw persistido); falta validar com 2 clientes |
+| Modos PvP (Golem/Deathmatch/TeamDeath/Boss) | ✅ motor de round server-side + **validado headless com 2 clientes no fio** (criar/entrar sala, ready/start, movimento e combate UDP, win/lose persistido no DB) |
+| **Bots PvP** (peer sintético server-side, `/addbot`) | ✅ roster, IA (perseguição/orbita/antecipação) e movimento/combate sintetizados no fio; sem HIT×N nativo (teto de RE) |
 | **GameGuard** original | ❌ morto (servidor nProtect offline desde ~2007) — exige client no-GG |
 | Navegação inventário/loja ↔ lista de salas (botão **Previous**) | ✅ |
 
 > O único ❌ é o **GameGuard** — não é limitação do nosso servidor, e sim de um serviço externo da nProtect offline há anos ([detalhe](#gameguard-veredito-honesto)).
+
+### Engenharia reversa e validação
+
+- **RE estático completo** do v258: os 29 domínios do jogo, todas as 10 famílias de NPC + 3 classes especiais, e um **censo de 116 classes de entidade** com veredito por classe. Ver [`docs/audits/entity-class-census.md`](docs/audits/entity-class-census.md) e [`docs/audits/re-status-summary.md`](docs/audits/re-status-summary.md).
+- **Validação dinâmica via backend** com **dois clientes headless** dirigindo o `WorldServer` real (TCP + AES + UDP + banco): login, sala, partida, movimento/combate UDP, settlement persistido, matriz de modos e chat. Ver [`docs/audits/dynamic-validation.md`](docs/audits/dynamic-validation.md).
+- **~800 testes** (regras de domínio, golden byte-a-byte contra captura, e os E2E no fio) verdes.
 
 Documentação técnica, mapas de RE e lacunas de validação: [`docs/README.md`](docs/README.md).
 
