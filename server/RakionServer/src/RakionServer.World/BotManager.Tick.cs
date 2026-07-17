@@ -16,6 +16,7 @@ namespace RakionServer.World
     {
         public void TickField(Field field, float dt, Action<IPEndPoint, byte[]> send)
         {
+            long now = Environment.TickCount64;
             lock (field.SyncRoot)
             {
                 if (field.State != 2) return; // só durante a partida
@@ -23,22 +24,35 @@ namespace RakionServer.World
                 {
                     BotPlayer bot = botRec.Bot!;
                     if (!bot.Alive) continue;
+                    if (botRec.State == 3) botRec.State = 4;   // ready -> playing (vítima válida do 0x4f)
 
                     if (!TryFindEnemyTarget(field, bot, out BotVector target, out byte targetSeat))
                         continue;
                     bot.TargetSeat = targetSeat;
-                    bot.Tick(target, dt);
+                    bool inMelee = bot.Tick(target, dt);
                     botRec.Position = bot.Position;
 
                     byte[] move = BotMovement.SynthesizeMove(
                         (byte)botRec.Slot, bot.Position, bot.Heading, ++bot.MoveSeq);
+                    Broadcast(field, send, move);
 
-                    foreach (PlayerRec human in field.Slots)
+                    // Ataque do bot: sintetiza a animação 0x0311 (cosmético — o dano bot->humano é
+                    // client-authoritative, teto RE). Cooldown p/ não floodar.
+                    if (inMelee && now >= bot.NextAttackReadyMs)
                     {
-                        IPEndPoint? endpoint = human.Session?.UdpEndpoint;
-                        if (endpoint != null && human.Occupied) send(endpoint, move);
+                        bot.NextAttackReadyMs = now + 900;
+                        Broadcast(field, send, BotMovement.SynthesizeAttack((byte)botRec.Slot, ++bot.MoveSeq));
                     }
                 }
+            }
+        }
+
+        private static void Broadcast(Field field, Action<IPEndPoint, byte[]> send, byte[] datagram)
+        {
+            foreach (PlayerRec human in field.Slots)
+            {
+                IPEndPoint? endpoint = human.Session?.UdpEndpoint;
+                if (endpoint != null && human.Occupied) send(endpoint, datagram);
             }
         }
 

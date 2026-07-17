@@ -54,6 +54,7 @@ namespace RakionServer.World
                     Difficulty = difficulty,
                     Profile = BotProfile.For(difficulty),
                 };
+                bot.InitHealth(level);
 
                 int seat = field.AddBot(bot, team);
                 if (seat < 0) return new AddBotResult(false, "time cheio", -1, null);

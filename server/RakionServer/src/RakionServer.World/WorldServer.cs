@@ -404,6 +404,35 @@ namespace RakionServer.World
             try { target.SendLobby(Network.LobbyFrames.ChannelChat(slot, message)); } catch { }
         }
 
+        /// <summary>Dano de melee do <paramref name="attacker"/> humano nos bots inimigos próximos. O
+        /// servidor é a autoridade do HP do bot: aplica dano, e ao morrer reporta a morte (0x4f) com o
+        /// scoring do modo — o humano recebe o kill/pontos. Teto RE: o cliente detecta o hit no bot, mas
+        /// o número cosmético HIT×N não aparece (exige peer de sessão real).</summary>
+        public void ResolveBotMeleeAttack(ClientSession attacker, int damage = 34)
+        {
+            var field = GetField(attacker.FieldId);
+            if (field == null || field.State != 2 || field.BotCount == 0) return;
+            lock (field.SyncRoot)
+            {
+                var attackerRec = field.FindRec(attacker);
+                if (attackerRec == null) return;
+                var hits = Domain.BotCombat.ResolveMeleeAttack(
+                    field, attackerRec.Position, attackerRec.Team, damage);
+                foreach (var hit in hits)
+                {
+                    if (!hit.Died) continue;
+                    byte botSeat = (byte)hit.Bot.Slot;
+                    if (hit.Bot.State != 4) hit.Bot.State = 4;   // vítima válida do 0x4f
+                    var death = field.ApplyReportedDeath(botSeat, attackerRec.Slot, 0);
+                    if (death.Processed)
+                        field.BroadcastFieldPlaying(0x4f,
+                            new byte[] { botSeat, 0, (byte)attackerRec.Slot, death.ScoreA, death.ScoreB });
+                    Log.Ok("bot", "bot seat {0} morto por humano seat {1} (field {2})",
+                        botSeat, attackerRec.Slot, field.Id);
+                }
+            }
+        }
+
         public bool Locked { get; private set; }                 // this+0x50 (servidor fechado p/ GM)
         public PuConfig PuConfig { get; private set; } = new();   // pu_config: preço/bônus/multiplicadores do PU (lida no boot)
         public EnchantConfig EnchantConfig { get; private set; } = new();   // enchant_*: coeficientes do refino (lida no boot)

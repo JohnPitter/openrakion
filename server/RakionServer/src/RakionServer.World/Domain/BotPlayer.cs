@@ -25,6 +25,29 @@ namespace RakionServer.World.Domain
         public byte TargetSeat = Field.NoSeat;
         public uint MoveSeq;    // sequência crescente do 0x030A sintetizado (o cliente ecoa/ordena)
 
+        // ---- combate server-side (o servidor é a autoridade do HP do bot; teto RE: sem HIT×N nativo) ----
+        public int MaxHealth { get; private set; } = 100;
+        public int Health { get; private set; } = 100;
+        public long NextAttackReadyMs;   // cooldown do ataque sintetizado do bot
+
+        /// <summary>HP inicial derivado de level/classe (curva simples; server-authoritative p/ o bot).</summary>
+        public void InitHealth(byte level)
+        {
+            MaxHealth = 100 + level * 10;
+            Health = MaxHealth;
+        }
+
+        /// <summary>Aplica dano server-side. Devolve true se o bot morreu neste golpe.</summary>
+        public bool TakeDamage(int amount)
+        {
+            if (!Alive || amount <= 0) return false;
+            Health -= amount;
+            if (Health > 0) return false;
+            Health = 0;
+            Alive = false;
+            return true;
+        }
+
         // Estado interno da IA: EMA da velocidade do alvo (antecipação) e a última posição observada.
         private BotVector _targetVelocityEma;
         private BotVector _lastTargetPosition;

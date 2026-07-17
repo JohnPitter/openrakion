@@ -38,6 +38,23 @@ namespace RakionServer.World.Network
             return p;
         }
 
+        public const ushort AttackType = 0x0311;
+        public const int AttackSize = 10;
+
+        /// <summary>Sintetiza a animação de ataque do bot (0x0311, kind=Attack). Cosmético: o cliente
+        /// vê o bot golpear; o dano bot→humano é client-authoritative (teto RE), não server-side.</summary>
+        public static byte[] SynthesizeAttack(byte seat, uint sequence)
+        {
+            byte[] p = new byte[AttackSize];
+            BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(0), AttackType);
+            BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(2), sequence);
+            p[6] = seat;
+            p[7] = 0;   // sourceEcho
+            p[8] = 1;   // kind = Attack
+            p[9] = 0;   // arg0
+            return p;
+        }
+
         /// <summary>Extrai a posição (i16 x/y/z) de um 0x030A humano recebido, p/ a IA do bot mirar.</summary>
         public static bool TryReadPosition(ReadOnlySpan<byte> packet, out BotVector position)
         {

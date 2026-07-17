@@ -41,6 +41,22 @@ re-tentado). Regras invioláveis herdadas do RE:
    `UdpGameplay.SendGameplayDatagram`. O servidor é a **fonte**; não há relay do bot.
 3. **Cleanup**: fim de match / último humano sai → `RemoveAllBots`.
 
+## Combate (server-side, dentro do teto RE)
+
+O servidor é a **autoridade do HP do bot** (`BotPlayer.Health`, curva `100 + level*10`). O que é
+entregue e o que é teto:
+
+- **Bot como VÍTIMA (funcional)**: quando um humano manda um ataque de melee (`0x0311` kind=Attack),
+  o `UdpGameplay` chama `WorldServer.ResolveBotMeleeAttack` → `BotCombat.ResolveMeleeAttack` aplica
+  dano aos bots inimigos vivos no alcance (posições rastreadas). Ao zerar o HP, a morte é liquidada
+  pelo **`Field.ApplyReportedDeath`** do modo e transmitida com **`0x4f`** aos humanos: o atacante
+  recebe o kill/pontos. O cliente do humano detecta o hit (computa cell points) — **sem** o número
+  cosmético HIT×N (gate `[+0x394]`, limite type-7).
+- **Bot como ATACANTE (cosmético)**: no melee, o tick sintetiza a animação de ataque (`0x0311`
+  kind=Attack) para os humanos verem o bot golpear. O dano bot→humano é **client-authoritative** —
+  o cliente do humano não processa dano de um peer sintético, então é apresentação, não dano real.
+  Esse é o teto arquitetural do RE, não um bug.
+
 ## Cobertura de testes
 
 - `BotSteeringTests` (7): perseguição, orbita no melee, aceleração (sem teleporte), antecipação por

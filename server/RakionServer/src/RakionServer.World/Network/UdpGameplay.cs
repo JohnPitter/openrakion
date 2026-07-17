@@ -202,6 +202,11 @@ namespace RakionServer.World.Network
                 var rec = field?.FindRec(sender);
                 if (rec != null) rec.Position = humanPos;
             }
+            // Ataque de melee humano (0x0311 kind=Attack): o servidor resolve dano nos bots inimigos.
+            else if (type == BotMovement.AttackType && packet.Length >= BotMovement.AttackSize && packet[8] == 1)
+            {
+                _world.ResolveBotMeleeAttack(sender);
+            }
 
             int relayed = 0;
             foreach (var session in _world.Sessions)
