@@ -16,6 +16,7 @@ namespace RakionServer.World.Tests.E2E
     /// *DatabaseSmokeTests). Com o stack de dev de pé (root/123456 @ localhost:3306,
     /// base `rakion` seed test/test2), roda de verdade.
     /// </summary>
+    [Collection("E2E")]
     public sealed class TwoClientLoginTests
     {
         private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);

@@ -84,6 +84,50 @@ namespace RakionServer.World.Tests.E2E
             Send(0x0C, w.ToArray());
         }
 
+        /// <summary>Char-select 0x14: `[int32 characterId]`. Promove a sessão a FieldLobby e
+        /// entra no channel-lobby (o servidor responde ack + 0x1f/0x1e).</summary>
+        public void SelectCharacter(int characterId)
+        {
+            byte[] payload = new byte[4];
+            BinaryPrimitives.WriteInt32LittleEndian(payload, characterId);
+            Send(0x14, payload);
+        }
+
+        /// <summary>Cria sala competitiva (0x3b). Layout:
+        /// `[cstr name][cstr pass][cstr desc][u8 map][u8 mode][u8 rounds][u16 dur][u8 frag][u8 minLvl][u8 maxLvl][u8 rangeCode]`.
+        /// mode 1 = Golem War (sem restrição de fragLimit).</summary>
+        public void CreateGolemRoom(string name, byte map = 0)
+        {
+            using var w = new PacketWriter();
+            w.WriteCString(name);   // ≤ 0x28
+            w.WriteCString("");     // senha ≤ 8
+            w.WriteCString("");     // descrição ≤ 0xc8
+            w.WriteByte(map);       // mapId
+            w.WriteByte(1);         // mode = Golem
+            w.WriteByte(1);         // rounds
+            w.WriteWord(432);       // duração (0x1b0, dentro de 0x122..0x4ba)
+            w.WriteByte(0);         // fragLimit (ignorado no Golem)
+            w.WriteByte(1);         // minLevel
+            w.WriteByte(99);        // maxLevel
+            w.WriteByte(0);         // levelRangeCode
+            Send(0x3b, w.ToArray());
+        }
+
+        /// <summary>Entra numa sala (0x38): `[u16 fieldId][cstr password]`.</summary>
+        public void JoinRoom(ushort fieldId, string password = "")
+        {
+            using var w = new PacketWriter();
+            w.WriteWord(fieldId);
+            w.WriteCString(password);
+            Send(0x38, w.ToArray());
+        }
+
+        /// <summary>Marca ready/not-ready na sala (0x3d): `[u8 ready]`.</summary>
+        public void SetReady(bool ready) => Send(0x3d, new[] { (byte)(ready ? 1 : 0) });
+
+        /// <summary>Master inicia a partida (0x43): sem payload.</summary>
+        public void StartMatch() => Send(0x43, Array.Empty<byte>());
+
         /// <summary>Espera um frame decifrado cujo primeiro byte casa com <paramref name="firstByte"/>
         /// (ex.: 0x0C login, 0x0D tabela, 0x10 GameGuard).</summary>
         public byte[] WaitForFirstByte(byte firstByte, TimeSpan timeout)

@@ -48,22 +48,37 @@ classificação — **o RE estático por classe está encerrado**.
 Nenhum marco estático em aberto: o RE estático está **completo** pelo critério de encerramento.
 A fronteira do projeto agora é dinâmica.
 
-### 1. Executar validação dinâmica com o cliente real
+### 1. Validação dinâmica via backend (headless, 2 clientes) — EM ANDAMENTO
 
-Esta é a maior pendência para chamar o jogo de completo em runtime:
+Começou a validação **dinâmica** dirigindo o `WorldServer` real por clientes headless no fio
+(TCP + AES + dispatch + motor de partida + banco), registrada em
+[`dynamic-validation.md`](dynamic-validation.md). Já verde ponta a ponta com dois clientes:
 
-- duas contas: login, personagem, canal, sala, field, clã e Buddy;
-- matriz P2P direta, TunnelOne/TunnelAll, mesma máquina, LAN, NAT e UDP bloqueado;
-- PvP: movimento, dano, morte, respawn, placar, round e resultado;
-- PvE: os 48 stages, waves, objetivos, clear/derrota, settlement e late join;
-- NPCs: spawn, animação, targeting, hitbox, projéteis, efeitos, áudio e morte;
-- economia/UI: inventário, loja, storage, presentes, enchant, coupons, Power User e ranking;
-- launcher/update, ticket, integridade e rollback no fluxo real.
+- login concorrente + rejeição de credencial inválida;
+- char-select, criar sala Golem, join do 2º jogador (coabitação no mesmo field, assentos distintos);
+- ready + start da partida (armada em fase Pre, ambos os assentos promovidos a combatente).
+
+Próximos alvos headless (ainda abertos):
+
+- gameplay UDP: handshake, movimento `0x030A`, combate/dano, tick 1583 e relay entre peers;
+- ciclo completo de partida: engage→rounds→morte/respawn→placar→settlement persistido;
+- PvE stage: spawn `0x4b`, clear/derrota, `0x53` result e liquidação de exp/gold/rank;
+- matriz de modos (Golem/TeamDeath/Deathmatch/Boss) e matriz P2P (direto/Tunnel, LAN/NAT/UDP bloqueado);
+- economia/UI ao vivo: loja, inventário, enchant, presentes, Power User, ranking.
+
+### 2. Validação gráfica com o cliente real
+
+Camada que **exige o cliente v258** e não é atingível só pelo backend:
+
+- render de personagem, inventário, loja, clã, amigos e presentes;
+- PvP/PvE visual: animação, frames de ataque, hitbox, colisão, trajetória de projétil, efeitos;
+- HUD de placar, enchant, compras, Power User e ranking;
+- fluxo completo de launcher/update no cliente.
 
 Cada validação precisa registrar build/hash, configuração, captura ou log, resultado esperado e
 resultado observado. Build verde não substitui a prova visual.
 
-### 2. Decidir extensões que não pertencem ao v258 original
+### 3. Decidir extensões que não pertencem ao v258 original
 
 Somente depois do fechamento compatível devem ser priorizadas features autorais: servidor de combate
 autoritativo, bots/puppets, checkout/recarga, liquidação de loteria, política moderna de PC Bang,
@@ -71,11 +86,13 @@ SMTP e eventual evento de Natal novo. Elas não devem ser contabilizadas como la
 
 ## Ordem recomendada
 
-1. smoke visual da jornada básica com dois clientes;
-2. matriz PvP/P2P;
-3. matriz PvE/NPC;
-4. economia, launcher e integrações externas;
-5. extensões autorais escolhidas para o lançamento.
+1. estender a validação **headless** (2 clientes no fio): gameplay UDP → ciclo de partida →
+   settlement → PvE stage → matrizes de modo/P2P → economia/UI;
+2. smoke **visual** da jornada básica com dois clientes;
+3. matriz PvP/P2P visual;
+4. matriz PvE/NPC visual;
+5. economia, launcher e integrações externas;
+6. extensões autorais escolhidas para o lançamento.
 
 ## Critério de encerramento
 

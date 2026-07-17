@@ -13,6 +13,7 @@ arquivos em `archive/` somente para contexto histórico.
 | ver o resumo do que foi concluído e do que falta | [`audits/re-status-summary.md`](audits/re-status-summary.md) |
 | ver cobertura e próxima prioridade | [`audits/re-coverage.md`](audits/re-coverage.md) |
 | ver o censo/veredito de todas as classes de entidade | [`audits/entity-class-census.md`](audits/entity-class-census.md) |
+| ver a validação dinâmica headless (2 clientes no fio) | [`audits/dynamic-validation.md`](audits/dynamic-validation.md) |
 | revisar qualidade estrutural | [`audits/code-quality.md`](audits/code-quality.md) |
 | configurar o cliente | [`guides/config-xfs.md`](guides/config-xfs.md) |
 | entender o GameGuard | [`guides/gameguard.md`](guides/gameguard.md) |
