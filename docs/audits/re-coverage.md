@@ -22,6 +22,9 @@ fechado por binário/probe do que ainda depende de implementação, integração
 visual; uma pendência visual não transforma automaticamente um contrato estático fechado em RE
 ausente.
 
+Para uma visão curta dos objetivos concluídos, do marco em andamento e da ordem restante, consulte
+[`re-status-summary.md`](re-status-summary.md).
+
 ## Resultado executivo
 
 - Os **29 blocos de trabalho** têm documento dedicado e classificação verificável.

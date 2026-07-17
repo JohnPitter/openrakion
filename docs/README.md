@@ -10,6 +10,7 @@ arquivos em `archive/` somente para contexto histórico.
 | instalar e executar o servidor | [`server/RakionServer/TUTORIAL.md`](../server/RakionServer/TUTORIAL.md) |
 | entender o protocolo World | [`protocol/world.md`](protocol/world.md) |
 | entender amigos/Buddy | [`protocol/buddy.md`](protocol/buddy.md) |
+| ver o resumo do que foi concluído e do que falta | [`audits/re-status-summary.md`](audits/re-status-summary.md) |
 | ver cobertura e próxima prioridade | [`audits/re-coverage.md`](audits/re-coverage.md) |
 | revisar qualidade estrutural | [`audits/code-quality.md`](audits/code-quality.md) |
 | configurar o cliente | [`guides/config-xfs.md`](guides/config-xfs.md) |
