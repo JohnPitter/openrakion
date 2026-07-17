@@ -89,11 +89,14 @@ RequiredAppId=0
 RequiredBuildVersion=0
 ```
 
-## Testes pendentes
+## Validações restantes fora do RE estático
 
 - reconexão e build antigo em cliente real;
-- spam, movimento impossível, cadência e economia manipulada;
 - teste visual do cliente no-GG do login ao field.
+
+Spam, movimento impossível e economia manipulada não são pendências deste contrato de integridade:
+pertencem, respectivamente, aos limites do dispatcher e à autoridade de combate/economia. O MD5
+legado não consegue provar esses comportamentos e não deve ser apresentado como anticheat.
 
 ## Classificação
 
@@ -110,5 +113,5 @@ RequiredBuildVersion=0
   writers do modo no login;
 - `world_ch_code_probe.py` confirmou ao vivo `DISC BB`, hash correto sem resposta e `DISC BC`;
 - o login antigo com hash sintético continuou funcionando com `EnforceMD5=0`;
-- 382/382 testes do servidor, 11/11 do launcher e build Release sem warnings; o smoke MariaDB
+- 760/760 testes do World, 11/11 do launcher e build Release sem warnings; o smoke MariaDB
   também confirmou migração do schema antigo e rejeição de build divergente sem consumir ticket.
