@@ -140,6 +140,13 @@ class NpcFamilyExtractor(object):
             output.write("\n===== assets =====\n")
             for address in self.config["assets"]:
                 output.write("%08x %s\n" % (address, self.ascii_string(address)))
+            for label, address, word_count in self.config.get("raw_records", ()):
+                output.write("\n===== %s raw record =====\n" % label)
+                output.write("%08x %s\n" % (
+                    address,
+                    " ".join("%08x" % self.u32(address + index * 4)
+                             for index in range(word_count)),
+                ))
             output.write("\n===== scalars =====\n")
             for label, bits in self.config.get("scalars", ()):
                 output.write("%s bits=%08x value=%s\n" % (
