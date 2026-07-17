@@ -194,6 +194,12 @@ array residente do legado sem alterar o contrato: `NotFound` gera `2`, falha de 
 `1`, e o bootstrap de canal (`0x1F`/`0x1E`) só ocorre após sucesso. O DTO aceita os quatro bytes
 lógicos e ignora qualquer padding posterior, sem promovê-lo a campo de domínio.
 
+O estado inicial de `ClientSession.ActiveCharId` é `0`, como `user+0x14A4` no original. Um default
+antigo de `-1` fazia `CharacterLifecycleRules.CanSelect` rejeitar toda primeira seleção antes da
+consulta; o smoke Stage 3 em processo Release atravessou `0x14 -> 0x1F/0x1E -> 0x3B` após a
+correção. `PreviewCharId` continua separado e pode apontar o personagem usado para pintar `0x0C`
+sem torná-lo selecionado para o domínio.
+
 ### `0x15` — identidade pública de buddy
 
 ```text

@@ -85,7 +85,7 @@ namespace RakionServer.World.Network
         public uint StageLevelFreeMarker { get; set; }       // usergameinfo.stagelevelfree (minutos desde TO_DAYS)
         // --- estado de COMPRA / char ativo (shop 0x2e) ---
         public int PreviewCharId { get; set; } = -1;         // characterinfo.used carregado para montar o 0x0C
-        public int ActiveCharId { get; set; } = -1;          // user+0x14a4: zero até o 0x14 selecionar personagem
+        public int ActiveCharId { get; set; } = 0;           // user+0x14a4: zero até o 0x14 selecionar personagem
         public int GameInfoId { get; set; } = -1;            // user+0x1460: usergameinfo.id autenticado
         public volatile bool ShopBuyInProgress;              // espelha user+0x144c==2 (anti-duplo-clique)
         private bool InventoryMutationInProgress =>

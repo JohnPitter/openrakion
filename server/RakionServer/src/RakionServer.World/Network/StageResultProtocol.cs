@@ -32,7 +32,8 @@ public static class StageResultProtocol
         if (count >= 5) return Fail(StageResultParseError.SlotCountOutOfRange, out error);
 
         int expectedLength = 3 + count * 2 + FixedTailLength;
-        if (data.Length != expectedLength)
+        int paddedLength = ((expectedLength + 4 + 11) / 12) * 12 - 4;
+        if (data.Length != expectedLength && data.Length != paddedLength)
             return Fail(StageResultParseError.LengthMismatch, out error);
 
         var slots = new ushort[count];

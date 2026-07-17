@@ -830,22 +830,32 @@ os antigos valores `72/54/36/27/18` eram uma inferência incorreta e foram remov
 
 Com essa prova, o catálogo v258 foi embutido no World, a duração Mode 0 tornou-se autoritativa e
 `0x53` passou a exigir o delta exato de EXP/gold e a EXP exata dos Cells. O probe foi atualizado
-para Stage 3/A `40 EXP/83 gold`; falta repetir o smoke runtime atualizado.
+para Stage 3/A `40 EXP/83 gold`.
+
+Em 2026-07-16, o smoke atualizado foi repetido contra um processo Release isolado nas portas
+`41708/41709`. Ele atravessou seleção `0x14`, create/start/spawn, rejeitou `0x53` antes do clear e
+com Stage ID divergente, recebeu `53 00 00 03 04 00` no commit e no replay idêntico e rejeitou o
+replay com gold divergente. O ledger gravou `reported=40/83` e `applied=60/83`: a EXP aplicada foi
+`40 x 1,5` porque a fixture tinha Power User ativo. A progressão temporária foi de EXP `37` para
+`97`, gold recebeu `+83` e rank virou `4`; snapshot de personagem, wallet e rank foi restaurado ao
+final. O mesmo percurso revelou e fechou o default incorreto de `ActiveCharId=-1` e o padding wire
+do `0x53` descrito abaixo.
 
 O dispatch efetivo também foi fechado. `ClientSession.DispatchOpcode` consulta
 `TryHandleLobbyEntry` antes da jump table; portanto o request `0x53` sempre segue
 `OnStageResultAsync -> StageResultProtocol.TryParse -> ApplyStageResultAsync`. Os dois handlers
 alternativos existentes na tabela eram inalcançáveis e divergiam da transação; foram removidos.
-O parser agora exige exatamente `23 + count*2` bytes, `stage < 100`, `rank < 6`, `count < 5`, e o
-domínio rejeita cada `mapSlot >= MaxUser`. O ACK só é enviado depois do settlement aplicado ou de
-um replay idêntico reconhecido.
+O parser exige `23 + count*2` bytes lógicos ou o único tamanho equivalente após o padding da cifra
+em blocos de 12 bytes; comprimentos intermediários ou maiores continuam rejeitados. Também exige
+`stage < 100`, `rank < 6`, `count < 5`, e o domínio rejeita cada `mapSlot >= MaxUser`. O ACK só é
+enviado depois do settlement aplicado ou de um replay idêntico reconhecido.
 
 O settlement foi estendido para gravar `useriteminfo.level/exp` e
 `stage_result_cell_settlement_ledger` no mesmo commit de personagem, wallet e rank. O snapshot
 dos três Cells permanece ligado à run para que replay idêntico não reaplique EXP. O smoke MariaDB
-agora verifica uma Cell equipada, três linhas de ledger por resultado, replay, divergência e
-segunda run; nesta sessão ele não executou porque não havia MariaDB nem
-`RAKION_MYSQL_SMOKE_CONNECTION` ativos.
+verifica uma Cell equipada, três linhas de ledger por resultado, replay, divergência e segunda run.
+Ele foi repetido nesta rodada com `RAKION_MYSQL_SMOKE_CONNECTION` contra schema temporário e passou
+sem resíduos no schema `rakion`.
 
 `FUN_351933D0` seleciona por `_s_stage+0x360`: `0=time attack`, `1=butchery`,
 `2=survival`, `3=guard`. `FUN_35192F40` percorre as cinco linhas S→D em stride `0x18`, lendo o

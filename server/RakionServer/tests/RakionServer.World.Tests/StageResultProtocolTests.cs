@@ -22,6 +22,22 @@ public sealed class StageResultProtocolTests
         Assert.Equal((uint)50, report.CellExpSlot3);
     }
 
+    [Fact]
+    public void ParsesCanonicalEncryptedPadding()
+    {
+        byte[] body = Convert.FromHexString(
+            "0304002800000053000000000000000000000000000000A1B2C3D4E5F6071829");
+
+        bool parsed = StageResultProtocol.TryParse(body, out StageResultReport? report, out var error);
+
+        Assert.True(parsed);
+        Assert.Equal(StageResultParseError.None, error);
+        Assert.NotNull(report);
+        Assert.Empty(report.MapSlots);
+        Assert.Equal((uint)40, report.ReportedExp);
+        Assert.Equal((uint)83, report.ReportedGold);
+    }
+
     [Theory]
     [InlineData("", StageResultParseError.HeaderTruncated)]
     [InlineData("640000", StageResultParseError.StageOutOfRange)]
@@ -29,6 +45,7 @@ public sealed class StageResultProtocolTests
     [InlineData("000005", StageResultParseError.SlotCountOutOfRange)]
     [InlineData("000000", StageResultParseError.LengthMismatch)]
     [InlineData("000000000000000000000000000000000000000000000000", StageResultParseError.LengthMismatch)]
+    [InlineData("000000000000000000000000000000000000000000000000000000000000000000", StageResultParseError.LengthMismatch)]
     public void RejectsInvalidShape(string hex, StageResultParseError expected)
     {
         bool parsed = StageResultProtocol.TryParse(

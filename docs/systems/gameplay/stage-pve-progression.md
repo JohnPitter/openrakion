@@ -182,9 +182,10 @@ u32 cellExpSlot3
 ```
 
 Os três últimos campos são a EXP dos Cells equipados nos slots `10`, `11` e `12`.
-O servidor rejeita header truncado, ranges inválidos, qualquer comprimento diferente de
-`23 + count*2`, map slot fora da capacidade do World, stage divergente, resultado antes do clear
-e recompensa acima do teto original de Mode 0: `1500 EXP / 500 gold`.
+O servidor rejeita header truncado, ranges inválidos e qualquer comprimento diferente de
+`23 + count*2` lógico ou do tamanho canônico após padding da cifra em blocos de 12 bytes. Também
+rejeita map slot fora da capacidade do World, stage divergente, resultado antes do clear e
+recompensa acima do teto original de Mode 0: `1500 EXP / 500 gold`.
 
 Há uma única rota ativa: `ClientSession.DispatchOpcode` entrega primeiro ao intercept de lobby,
 que chama `OnStageResultAsync`, faz o parse estrito e delega a
@@ -302,7 +303,7 @@ snapshot/restauração da fixture ou use uma conta descartável.
 
 ## Validação executada em 2026-07-16
 
-- 522/522 testes do projeto World;
+- 760/760 testes do projeto World;
 - smoke MariaDB transacional aprovado;
 - build World Release com zero warnings e zero erros;
 - probe runtime: create → start → spawn → clear → settlement;
@@ -311,9 +312,8 @@ snapshot/restauração da fixture ou use uma conta descartável.
 - resultado válido: `53 00 00 03 04 00`;
 - replay idêntico: mesmo ACK e uma única linha/crédito;
 - replay divergente: sem ACK;
-- a execução runtime histórica usou `+50 EXP/+25 gold`; após ligar o catálogo diretamente ao XFS
-  e fechar o layout do loader, o probe foi atualizado para `+40 EXP/+83 gold` e ainda precisa ser
-  repetido com World/MariaDB ativos;
+- a execução atualizada reportou `+40 EXP/+83 gold`, aplicou `+60 EXP/+83 gold` com Power User
+  ativo e restaurou a fixture após verificar ledger, progressão e rank `4`;
 - fórmula de primeiro rank, melhoria, repetição e EXP de Cell com/sem Power User coberta em teste.
 
 ## Cobertura e lacunas restantes
