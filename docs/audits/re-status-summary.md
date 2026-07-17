@@ -31,34 +31,24 @@ o jogo inteiro esteja validado visualmente: a principal fronteira restante é di
 | Gameplay comum | PvP, stage, combate, potions, Chaos, objetivos, votes e fluxo de Cells/NPC possuem contratos canônicos |
 | Curvas e infraestrutura de NPC | 47 tipos, 99 níveis, 43 classes carregáveis, atributos, CP, targeting, ownership, dano, late join e catálogo de eventos fechados estaticamente |
 | Famílias-base de NPC completas | Nak, Panzer, CrossBow, Blazer, Golem, SoulCannon, LongBow, Taurus, Dragon e IceWind possuem documentos e extratores reproduzíveis; IceWind fecha inclusive o projétil dedicado `CIceWind` |
+| Classes especiais e censo | MasterGolem, GoldGolem e ChocolateCake fechados em `npc-special-classes.md`; censo de 116 descritores com veredito por classe em `entity-class-census.md` |
 | Ferramentas de análise | SDK .NET e fluxo headless do Ghidra estão disponíveis para reproduzir extrações, testes e builds |
 
-## Objetivo em andamento
-
-### 1. Auditar classes residuais e especiais de NPC
-
-IceWind foi fechada em [`npc-family-icewind.md`](../systems/gameplay/npc-family-icewind.md)
-(banda de altitude, carga de gelo, projétil dedicado `CIceWind` `0x049A` e seis classes), então
-todas as famílias-base do `creaturelist.txt` possuem documento. Agora falta a varredura de
-fechamento para provar que nenhuma classe concreta ficou fora da documentação. O passe inclui
-aliases e variantes Gold, Master, Black e Special, além de confirmar formalmente os quatro
-`NpcBlackDragon*` ausentes nesta build. O resultado deve distinguir:
-
-- classe real com comportamento próprio;
-- alias de uma família já documentada;
-- conteúdo configurado sem classe carregável;
-- nome/asset sem produtor ou consumidor ativo.
+O passe residual também está concluído:
+[`npc-special-classes.md`](../systems/gameplay/npc-special-classes.md) fecha MasterGolem,
+GoldGolem e ChocolateCake, e o censo
+[`entity-class-census.md`](entity-class-census.md) enumera os **116 descritores concretos** do
+`entitiesmp.dll` com veredito para cada um (família documentada, especial, player, skill,
+efeito/infra, item/evento ou herança SE1). Os quatro `NpcBlackDragon*` estão formalmente
+ausentes por três fontes independentes. Nenhuma classe, alias ou variante ficou sem
+classificação — **o RE estático por classe está encerrado**.
 
 ## Objetivos que ainda faltam
 
-### 2. Fechar a auditoria estática final
+Nenhum marco estático em aberto: o RE estático está **completo** pelo critério de encerramento.
+A fronteira do projeto agora é dinâmica.
 
-Recontar descritores, classes, eventos e documentos após o passe residual; eliminar referências
-remanescentes de progresso parcial por família; verificar links e fontes canônicas; e publicar uma matriz final de
-**coberto**, **ausente comprovado** ou **extensão fora do original**. Esse marco encerra o RE estático,
-caso a varredura não revele um novo subsistema.
-
-### 3. Executar validação dinâmica com o cliente real
+### 1. Executar validação dinâmica com o cliente real
 
 Esta é a maior pendência para chamar o jogo de completo em runtime:
 
@@ -73,7 +63,7 @@ Esta é a maior pendência para chamar o jogo de completo em runtime:
 Cada validação precisa registrar build/hash, configuração, captura ou log, resultado esperado e
 resultado observado. Build verde não substitui a prova visual.
 
-### 4. Decidir extensões que não pertencem ao v258 original
+### 2. Decidir extensões que não pertencem ao v258 original
 
 Somente depois do fechamento compatível devem ser priorizadas features autorais: servidor de combate
 autoritativo, bots/puppets, checkout/recarga, liquidação de loteria, política moderna de PC Bang,
@@ -81,17 +71,17 @@ SMTP e eventual evento de Natal novo. Elas não devem ser contabilizadas como la
 
 ## Ordem recomendada
 
-1. classes residuais/especiais;
-2. auditoria estática final;
-3. smoke visual da jornada básica com dois clientes;
-4. matriz PvP/P2P;
-5. matriz PvE/NPC;
-6. economia, launcher e integrações externas;
-7. extensões autorais escolhidas para o lançamento.
+1. smoke visual da jornada básica com dois clientes;
+2. matriz PvP/P2P;
+3. matriz PvE/NPC;
+4. economia, launcher e integrações externas;
+5. extensões autorais escolhidas para o lançamento.
 
 ## Critério de encerramento
 
-O **RE estático completo** exige o passe residual e a auditoria final sem classe ou domínio sem
-veredito. O **jogo completo para lançamento** exige, além disso, os goldens runtime dos fluxos
-críticos. Enquanto esses testes visuais não forem executados, o estado correto do projeto é:
-**superfície estática catalogada e ampla compatibilidade headless, com validação dinâmica pendente**.
+O **RE estático completo** — passe residual e auditoria final sem classe ou domínio sem veredito —
+foi **atingido em 17 de julho de 2026**: 29/29 domínios, 10 famílias, 3 especiais e 116
+descritores classificados. O **jogo completo para lançamento** exige, além disso, os goldens
+runtime dos fluxos críticos. Enquanto esses testes visuais não forem executados, o estado correto
+do projeto é: **RE estático completo e ampla compatibilidade headless, com validação dinâmica
+pendente**.

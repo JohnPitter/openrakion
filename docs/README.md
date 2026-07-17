@@ -12,6 +12,7 @@ arquivos em `archive/` somente para contexto histórico.
 | entender amigos/Buddy | [`protocol/buddy.md`](protocol/buddy.md) |
 | ver o resumo do que foi concluído e do que falta | [`audits/re-status-summary.md`](audits/re-status-summary.md) |
 | ver cobertura e próxima prioridade | [`audits/re-coverage.md`](audits/re-coverage.md) |
+| ver o censo/veredito de todas as classes de entidade | [`audits/entity-class-census.md`](audits/entity-class-census.md) |
 | revisar qualidade estrutural | [`audits/code-quality.md`](audits/code-quality.md) |
 | configurar o cliente | [`guides/config-xfs.md`](guides/config-xfs.md) |
 | entender o GameGuard | [`guides/gameguard.md`](guides/gameguard.md) |
@@ -53,6 +54,7 @@ arquivos em `archive/` somente para contexto histórico.
 - [`systems/gameplay/npc-family-taurus.md`](systems/gameplay/npc-family-taurus.md)
 - [`systems/gameplay/npc-family-dragon.md`](systems/gameplay/npc-family-dragon.md)
 - [`systems/gameplay/npc-family-icewind.md`](systems/gameplay/npc-family-icewind.md)
+- [`systems/gameplay/npc-special-classes.md`](systems/gameplay/npc-special-classes.md)
 - [`systems/gameplay/combat-actions-status.md`](systems/gameplay/combat-actions-status.md)
 - [`systems/gameplay/potions-chaos-effects.md`](systems/gameplay/potions-chaos-effects.md)
 - [`systems/gameplay/votes-invites-kicks.md`](systems/gameplay/votes-invites-kicks.md)
