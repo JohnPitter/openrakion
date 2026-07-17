@@ -39,9 +39,10 @@ ausente.
   consolidação continua nos opcodes que realmente mudam de semântica entre lobby e stage.
 
 A fonte canônica do protocolo World orienta os demais documentos. A busca estática dos exports
-rejeitados foi fechada: apenas `0x1D` tem um call site UI condicional, ainda não observado em
-runtime; os demais não aparecem no grafo WorldNet da UI. Permanecem nomes semânticos de alguns
-campos, transições internas e validações visual/multicliente.
+rejeitados foi fechada: apenas `0x1D` tem um call site UI, e seu produtor, argumentos, resposta e
+estado de primeiro/último registro estão mapeados; os demais não aparecem no grafo WorldNet da UI.
+O World v258 rejeita todos esses requests. Permanecem nomes semânticos de alguns campos,
+transições internas e validações visual/multicliente.
 
 ## Níveis de cobertura
 
@@ -98,7 +99,7 @@ Um mesmo opcode ainda pode ter comportamento condicionado ao estado da sessão. 
 
 | Opcode | Método do cliente |
 |---:|---|
-| `0x1D` | `SendChannelList` (call site UI no evento `0x174`; runtime não observado e World rejeita) |
+| `0x1D` | `SendChannelList` (evento UI `0x174`; corpo `[primeiroId][1]` fechado e World rejeita) |
 | `0x1E` | `SendChannelCharacters` |
 | `0x1F` | `SendChannelEnter` |
 | `0x20` | `SendChannelExit` |

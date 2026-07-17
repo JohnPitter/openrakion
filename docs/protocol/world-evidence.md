@@ -1047,9 +1047,18 @@ accessor e chama o slot `+0x60`, mapeado para `SendChannelList` (`0x1D`).
 Não foi encontrada chamada WorldNet aos slots `+0x68`, `+0x6C`, `+0x74..+0x88`, `+0xE0` ou
 `+0x100`, correspondentes a `0x1F`, `0x21`, `0x23..0x28`, `0x3C` e `0x44`. Chamadas virtuais
 brutas nos mesmos offsets pertencem a outras classes e não constituem evidência de envio. O
-resultado fecha a busca estática desta build: `0x1D` possui rota UI condicional ainda não observada
-em runtime; os demais não têm consumidor Rakion identificado. Todos continuam caindo no default
-`DISC C9` do World original.
+resultado fecha a busca estática desta build: `0x1D` possui rota UI completa; os demais não têm
+consumidor Rakion identificado. Todos continuam caindo no default `DISC C9` do World original.
+
+`DecompileClientChannelListRequest.py` fechou também os argumentos omitidos pelo decompiler no
+call virtual. O assembly `rakion.bin:0x0046AA63..0x0046AA7C` carrega
+`global+0x444A`, empilha `1` e chama o slot `+0x60`. O builder
+`engine.dll:0x361911D0` confirma o corpo lógico `[0x1D:u16][primeiroId:u8][1:u8]`.
+O primeiro ID é produzido pelo callback `0x00474260`: a resposta `0x1D` é lida em
+`engine.dll:0x361931E0` como `[count]`, seguida por entradas com quatro bytes e C-string, e
+materializada em registros de `0x2D` bytes; `0x0040A3C0` preserva os IDs da primeira e última
+entrada em `+0x444A/+0x444B`. Assim, “page/type” e “filter” eram nomes especulativos: o contrato
+comprovado é primeiro ID + flag literal `1`, embora o World v258 não implemente o request.
 
 ### Prova de AdminBan/AdminNotice `0x04/0x05` — 2026-07-15
 

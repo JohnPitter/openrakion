@@ -232,6 +232,11 @@ transferência de owner `0x28`, chat e os pares de ping `0x29/0x2A` e `0x59/0x5A
 da `engine.dll`. Ele confirma o owner slot no `0x1E` e a troca de owner `0x28`. A saída é
 `C:\temp\client_channel_lobby.txt`.
 
+`ghidra/DecompileClientChannelListRequest.py` fecha o request C→S `0x1D`, o parser da resposta de
+mesmo opcode e a origem dos dois argumentos no evento UI `0x174`. Execute em `engine.dll` e
+`rakion_orig.exe`; as saídas são `C:\temp\client_channel_list_request_engine_dll.txt` e
+`C:\temp\client_channel_list_request_rakion_orig_exe.txt`.
+
 `ghidra/TraceClientClanPresence.py` fecha o caminho do `clanId` da presença `0x1E/0x1F` até a
 linha visual do canal e compara sua vida útil com a troca para a tela de sala. Execute uma vez em
 `engine.dll` e outra em `rakion.bin`; as saídas são

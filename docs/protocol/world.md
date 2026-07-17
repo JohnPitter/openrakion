@@ -114,11 +114,12 @@ duplicados, lotação, nomes e comprimentos e envia a resposta correspondente. P
 Os exports do cliente `0x1D`, `0x1F`, `0x21`, `0x23..0x28`, `0x3C`, `0x44`, `0x66` e
 `0x69` existem na mesma `engine.dll`, mas são rejeitados pelo `worldserv.exe` analisado.
 A busca pelos 143 callers do accessor WorldNet da UI encontrou uma chamada ao slot `+0x60`
-(`SendChannelList`, `0x1D`) em `FUN_0046A0F0`, evento `0x174`; o gatilho não foi observado em
-runtime. Nos mesmos callers não há chamada WorldNet aos slots dos demais exports rejeitados.
-Logo, `0x1D` é uma rota de UI estática incompatível ou condicional, enquanto os demais permanecem
-ABI legado/dormente nesta build. Nenhum deles deve ser implementado sem captura de envio real ou
-outra build compatível do World.
+(`SendChannelList`, `0x1D`) em `FUN_0046A0F0`, evento `0x174`. O assembly fecha os argumentos como
+`[primeiroId:u8][flag=1:u8]`: o primeiro byte vem do primeiro registro da última resposta
+S→C `0x1D`, e cada registro decodificado ocupa `0x2D` bytes. Nos mesmos callers não há chamada
+WorldNet aos slots dos demais exports rejeitados. Logo, `0x1D` é uma rota UI incompatível com o
+World desta build, não uma operação sem layout; os demais permanecem ABI legado/dormente. Nenhum
+deles deve ser implementado sem outra build compatível do World.
 
 ### Jump table comprovada
 
@@ -271,7 +272,7 @@ membro de field/sala e usa `FieldId` (`user+0x14A0`). O byte inicial do `0x17` v
 
 | Op | Método do cliente | Payload | Evidência |
 |---:|---|---|---|
-| `1D` | `SendChannelList` | `[u8 page/type][u8 filter]` | Export e call site UI no evento `0x174`; gatilho runtime não observado; World rejeita |
+| `1D` | `SendChannelList` | `[u8 primeiroId][u8 flag]` | Evento UI `0x174` envia o primeiro ID armazenado e flag literal `1`; World rejeita |
 | `1E` | `SendChannelCharacters` | vazio | Retorna amostra aleatória de até 8 membros do canal |
 | `1F` | `SendChannelEnter` | `[u8 channel][cstr password/name]` | Export confirmado; rejeitado pelo World analisado |
 | `20` | `SendChannelExit` | vazio | Remove o slot local e publica `0x20` aos membros restantes |
@@ -521,8 +522,8 @@ implementação, não afirma que o protocolo canônico já está ativado.
 
 ## Pontos em aberto
 
-- observar em runtime se o evento UI `0x174` realmente dispara `0x1D`; o World v258 original o
-  rejeita, portanto a evidência estática não autoriza ativá-lo;
+- manter `0x1D` fora do dispatcher: o produtor, os dois bytes e o consumidor S→C estão fechados,
+  mas o World v258 original rejeita a operação;
 - a fila `IScavengerWorldNet` S→C `engine.dll:0x36197320` está fechada em 88/88 cases no
   [`world-response-dispatch.md`](world-response-dispatch.md), inclusive respostas de controle FIELD,
   e o dispatcher CNet/P2P está fechado em 24 cases explícitos em

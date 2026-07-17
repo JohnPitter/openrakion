@@ -190,7 +190,7 @@ Requests C→S da mesma faixa:
 
 | Op | Export | Estado no World v258 |
 |---:|---|---|
-| `1D` | `SendChannelList` | call site UI no evento `0x174`, mas dispatcher rejeita com `DISC 0xC9` |
+| `1D` | `SendChannelList` | evento UI `0x174` envia `[primeiroId][1]`; dispatcher rejeita com `DISC 0xC9` |
 | `1E` | `SendChannelCharacters` | aceito; amostra de até 8 membros |
 | `1F` | `SendChannelEnter` | rejeitado com `DISC 0xC9` |
 | `20` | `SendChannelExit` | aceito; remove canal e limpa field |
@@ -201,6 +201,13 @@ Requests C→S da mesma faixa:
 
 Esses exports não autorizam inventar criação, senha, kick ou transferência dinâmica. Nesta build,
 os canais são configurados pelo servidor e a entrada ativa acontece pela rotina automática.
+
+O `0x1D` é uma rota residual com contrato completo, não um request vazio. O parser S→C
+`engine.dll:0x361931E0` lê `[count:u8]` e registros variáveis no fio, materializando cada entrada
+em `0x2D` bytes com quatro campos `u8` e uma C-string. O callback `rakion.bin:0x00474260` guarda o
+primeiro e o último byte-ID em `global+0x444A/+0x444B`. No refresh `0x174`, o cliente envia o
+primeiro ID e a flag literal `1` por `SendChannelList @ 0x361911D0`. Como o World não possui esse case,
+habilitá-lo na reconstrução criaria uma semântica ausente do servidor v258.
 
 ## Ping: duas famílias distintas
 
