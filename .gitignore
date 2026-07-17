@@ -23,6 +23,7 @@ gg*.dll
 # ===== Lixo de build/OS =====
 __pycache__/
 *.pyc
+*.class
 _verify.xfs
 *.log
 .DS_Store
