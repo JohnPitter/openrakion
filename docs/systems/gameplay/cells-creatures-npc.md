@@ -131,16 +131,24 @@ promovidos a conteúdo equipável sem uma decisão explícita de migração de d
 `characterinfo.maxcp` é carregado como “Max cell point”; `chit` é documentado como “Cell
 destruction”. No runtime, `CPlayer+0xB8C` guarda Max CP e `CPlayer+0x2714` guarda CP atual;
 `SetCP` limita o valor ao intervalo `0..max`, e `CPlayer::Death` reduz exatamente 10% do CP atual
-(`0x3DCCCCCD`). `AddCP` é chamado por dano e morte. `GetCP/AddCP/ReduceCP` também são registrados
-dinamicamente para o runtime de entidades por `FUN_0045FDD0`; isso não significa que todo débito
-passe por `ReduceCP`.
+(`0x3DCCCCCD`). `AddCP` é chamado por dano e morte. `GetCP/AddCP/ReduceCP/GetMaxCP` são registrados
+no runtime Lua por `FUN_0045FDD0`; isso não significa que todo débito passe por `ReduceCP`.
 
 `DumpCpFieldReferences.py` fez uma varredura integral das instruções do dump runtime e encontrou 22
 acessos diretos ao campo `+0x2714/+0xB8C` ou às seis rotinas de CP. Fora dos próprios accessors,
 os calls nativos aparecem em receive-damage, death, respawn e um bloco ainda sem função tipada;
-nenhum timer/update nativo escreve CP diretamente. Isso descarta regeneração passiva implementada
-como acesso/call direto, mas não uma chamada indireta por script/reflection, porque os métodos são
-registrados dinamicamente. Evidência reproduzida em `C:\temp\cell_cp_field_references.txt`.
+nenhum timer/update nativo escreve CP diretamente. A origem inicial também está fechada: o
+construtor `CPlayer @ 0x35158DB0` grava zero em
+`this[0x9C5]`, exatamente `+0x2714`; `GetInitData @ 0x35141000` serializa esse `float32`, e
+`ApplyInitData @ 0x3515A0E0` o restaura no player remoto. `Respawn @ 0x35162370` recalcula Max CP,
+mas não preenche o CP atual.
+
+Para cobrir a chamada indireta, `tools/extract_script_api_usage.py` varreu as 130 entradas do
+`Scripts.xfs` entregue. Somente `scripts\item\12070.lua` usa a API de CP: compara `GetCP()` com
+`GetMaxCP()` e chama `AddCP(GetMaxCP() * 0,3)`. Não existe `ReduceCP`, `SetCP` ou outro `AddCP` no
+corpus Lua, portanto esta build não possui regeneração passiva de CP por script/reflection. A
+varredura nativa é reproduzida por `DumpCpFieldReferences.py`; o binding, construtor e serializers
+são reproduzidos por `DecompileClientCellRuntime.py`.
 
 Em `FUN_004525F0`, o texto 769, “CP consumption”, mostra `GetItemInfo+0xB8`. Isso confirma um
 atributo agregado/modificador com esse rótulo, não o custo bruto de uma criatura.
@@ -454,11 +462,14 @@ unreliable, não são ausências do allowlist reliable.
 
 ## Criação e sincronização
 
-Ao adicionar player remoto, o host/session server:
+`CSessionState::AddRemotePlayer @ 0x3610E2B0` é o único chamador das quatro rotinas de snapshot.
+Se o slot ainda não existe, ele executa, nesta ordem:
 
-1. cria a entidade Player via entity-message type 7;
-2. chama `SendInfoCreateNpcTo` para sincronizar NPCs existentes;
-3. se é host/boss, envia map NPCs, Master Golems e map item status.
+1. cria o player remoto e, quando há blob de entrada, aplica `CPlayer::ApplyInitData` nele;
+2. serializa o player local com `CPlayer::GetInitData` e o envia diretamente ao novo peer;
+3. chama `SendInfoCreateNpcTo` para sincronizar NPCs existentes;
+4. somente quando o índice local `world+0x470C` é igual ao boss `world+0x2E`, envia, nessa ordem,
+   map NPCs, Master Golems e map item status.
 
 Isso demonstra que a autoridade da sessão/host mantém o estado necessário e monta um snapshot
 direcionado no momento do late join. O servidor .NET não deve duplicar esse cache no modo
@@ -475,7 +486,12 @@ Funções relevantes do engine:
 | `0x3610C7C0` | `CreateMasterGolem` |
 | `0x3610D060` | `BuildMapItemList` |
 | `0x3610D6A0` | `SendInfoMapItemStatus` |
+| `0x3610E2B0` | `CSessionState::AddRemotePlayer` |
 | `0x360C4830` | `CWorld::CreateNpc` |
+
+Os quatro alvos têm um único caller e a ordem acima aparece no mesmo bloco do engine. Assim, o
+contrato estático de late join está encerrado; o que permanece é confirmar o resultado visual em
+uma sessão real de dois clientes, não descobrir outro opcode ou cache no World.
 
 ## Autoridade atual por cenário
 
@@ -512,7 +528,6 @@ O formato e os fluxos estão fechados estaticamente, mas estes comportamentos ai
 observação/instrumentação do runtime real:
 
 - stats por nível/tier;
-- origem indireta do CP inicial e eventual regeneração via script/reflection; não há timer nativo direto;
 - owner/team/friendly fire;
 - IA e escolha de alvo;
 - dano causado/recebido e “Cell destruction”;
@@ -520,7 +535,7 @@ observação/instrumentação do runtime real:
 - EXP/gold por kill via `npcinfo`;
 - drops/map items e pickup;
 - waves/objetivos por stage;
-- reconstrução visual em reconexão/late join;
+- reconstrução visual em reconexão/late join; a sequência estática já está fechada;
 - Master/Gold Golem e Golden Sword.
 
 ## Extensão server-authoritative opcional
@@ -621,7 +636,7 @@ divergente foi descartado. As fixtures `test2/test3` foram removidas ao final.
 - posição compactada, limites e payload truncado;
 - owner/team e target inválido;
 - dano, morte, reward e duplicação de evento;
-- late join recebe snapshot uma vez;
+- late join recebe visualmente o snapshot uma vez; o caller, as guardas e a ordem já estão fechados;
 - disconnect do host/owner e transferência de autoridade;
 - map items/pickup sem duplicação;
 - visual com dois clientes para cada família habilitada;
@@ -629,7 +644,8 @@ divergente foi descartado. As fixtures `test2/test3` foram removidas ao final.
 
 ## Critério de conclusão do RE v258
 
-Catálogo, mappings, regras client-side de CP/summon e autoridade original já estão confirmados.
+Catálogo, mappings, regras client-side de CP/summon, APIs Lua, CP inicial, late join estático e
+autoridade original já estão confirmados.
 Para marcar o RE dinâmico completo ainda faltam goldens runtime das três famílias, correlação dos
 valores variáveis, late join observado e validação visual multi-cliente das criaturas habilitadas.
 Uma simulação server-authoritative não faz parte desse critério; se criada, deve possuir plano,

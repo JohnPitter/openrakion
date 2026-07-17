@@ -769,9 +769,12 @@ outros players ativos; sender direto alcança somente targets em tunnel; TunnelO
 quando uma das pontas está em tunnel. Field fora de `state=2`, agregado zerado e par direto/direto
 não geram `0x57`. `TunnelingRelayPolicyTests`, o probe UDP e `world_tunneling_probe.py` cobrem a
 matriz e o flag do roster no `.NET`.
-`DecompileEngineGolemObjective.py` confirmou que `AddRemotePlayer` faz o client master enviar ao
-novo peer `0x0307`, `0x0309`, os dois `0x0308` e `0x0312`; `SetMasterClient` alterna Master Golems e
-map NPCs entre local/remoto e reconstrói o Gold Golem quando necessário.
+`DecompileEngineGolemObjective.py` confirmou que `AddRemotePlayer @ 0x3610E2B0` faz o client master
+enviar ao novo peer `0x0307`, `0x0309`, os dois `0x0308` e `0x0312`; `SetMasterClient` alterna
+Master Golems e map NPCs entre local/remoto e reconstrói o Gold Golem quando necessário. A
+auditoria de callers mostrou que esse é o único chamador dos quatro builders. Ele primeiro aplica
+o init blob recebido ao player remoto, envia o `GetInitData` do player local e então envia NPCs;
+map NPCs, Master Golems e map items seguem nessa ordem apenas se o player local é o boss.
 
 No dump runtime de `entitiesmp.dll`, `DecompileClientGolemObjective.py` fechou `EGoldSword`
 `0x044D000B` com payload próprio `[enabled][secondary][padding]`, a propriedade de porte
@@ -917,6 +920,12 @@ Na morte válida de NPC, `FUN_350EE230` lê
 jogador local. A série posterior `+0x1A4C`/runtime `+0x8C` não é custo CP. A varredura dos 61
 chamadores dos accessors de `NpcSetup` não encontrou consumidor direto; ela fica catalogada como
 `unconsumed_field_1a4c`, sem regra inferida.
+
+O construtor de `CPlayer` inicializa CP atual em zero; `GetInitData` serializa `+0x2714` e
+`ApplyInitData` restaura o mesmo `float32` no peer remoto. A varredura das 130 entradas do
+`Scripts.xfs` encontrou APIs de CP somente em `scripts\item\12070.lua`, que adiciona 30% do Max CP.
+Não há `ReduceCP`, `SetCP` ou outro `AddCP` em Lua, fechando a hipótese de regeneração passiva
+indireta nesta build.
 
 `Classes.xfs` confirmou que os `.ecl` são manifests apontando para classes compiladas em
 `Entities.dll`, não scripts externos. A tabela compilada de eventos em `entitiesmp.dll` associa

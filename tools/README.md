@@ -391,6 +391,11 @@ Clients headless que falam o protocolo do World direto (conectam, cifram/decifra
 `ghidra/DumpCellCpEvidence.py` decompila os exports de CP e o loader de `creatures.dat` no dump
 runtime de `entitiesmp.dll`; aceita filtros de nome como argumento. `DumpCpFieldReferences.py`
 audita todos os acessos aos campos atual/máximo e a constante de perda na morte.
+`extract_script_api_usage.py <Scripts.xfs> [API ...]` varre todas as entradas do arquivo e gera
+JSON com arquivo, linha e API usada; sem lista explícita, audita as cinco APIs de CP.
+`ghidra/DecompileClientCellRuntime.py` escolhe os alvos pelo programa aberto e extrai bindings Lua,
+construtor/serializers de CP ou a sequência de late join. Pode receber o caminho de saída como
+primeiro argumento; sem ele, grava `C:\temp\client_cell_runtime_<programa>.txt`.
 `DumpFunctionsByAddress.py`, `DumpCallersByAddress.py` e `DumpNpcSetupReferences.py` são auxiliares
 reproduzíveis para seguir consumidores sem depender da interface gráfica do Ghidra. O último
 fecha a composição dos três slots e do custo efetivo em `FUN_351DBFF0`.
