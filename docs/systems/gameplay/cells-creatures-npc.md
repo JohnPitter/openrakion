@@ -30,6 +30,9 @@ transacional das cells equipadas pelo `0x50`; gold por kill continua sem consumi
 o XFS ativo e delimita 47 blocos de 8.118 bytes, na ordem de `creaturelist.txt`, mais 6.204 bytes
 finais. O tamanho fecha exatamente `47 × 8.118 + 47 × 4 × 33`.
 
+O layout completo das 24 séries por nível, os dez labels do painel e as curvas de
+Attack/Energy/CP estão em [`npc-stat-curves.md`](npc-stat-curves.md).
+
 O loader `ReadNpcDataFromFile → 0x35228D10` confirma 99 níveis por tipo, registro runtime de
 160 bytes e leitores escalares de 1, 2 e 4 bytes. A série de 99 `uint32` em `+0x18C` é o limiar
 cumulativo de EXP da cell: `FUN_00454BD0` calcula a barra do nível atual subtraindo o limiar do
@@ -240,13 +243,13 @@ Isso fecha owner, separação de times, friendly fire e a política base de aqui
 Animações, timings e ataques específicos de cada uma das 43 classes carregáveis continuam sendo
 comportamento por classe, não uma lacuna dessa política comum.
 
-A série inteira em `creatures.dat+0x1A4C` começa em `300, 340, 380...` para Nak e alimenta o campo
-runtime criptografado `NpcSetup+0x8C`. `FindNpcSetupFieldConsumers.py` examinou os 61 chamadores
-dos dois accessors de `NpcSetup` e não encontrou leitura direta desse offset, nem como byte offset
-hex/decimal nem como índice DWORD. Portanto ela está **carregada, mas sem consumidor estático
-direto nesta build**; não é custo CP e não deve receber uma regra server-side especulativa. O
-extrator a preserva como `unconsumed_field_1a4c` para comparação futura. O servidor persiste os
-dois stats de personagem, porém não mantém CP atual, custo de
+A série `uint32[99]` em `creatures.dat+0x1A4C` começa em `300, 340, 380...` para Nak e alimenta o
+campo runtime `NpcSetup+0x8C`. O loader prova a largura de quatro bytes; a leitura anterior como
+`uint16` foi corrigida. A busca dos consumidores recuperados não encontrou leitura direta desse
+offset. Portanto ela está **carregada, mas sem consumidor estático direto nesta build**; não é
+custo CP e não deve receber regra server-side especulativa. O extrator a preserva como
+`unconsumed_field_1a4c` para comparação futura. O servidor persiste os dois stats de personagem,
+porém não mantém CP atual, custo de
 summon, regeneração, destruição de cell ou cooldown.
 
 ## `npcinfo`

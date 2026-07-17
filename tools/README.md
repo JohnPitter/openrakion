@@ -385,8 +385,9 @@ Clients headless que falam o protocolo do World direto (conectam, cifram/decifra
   como `<creaturelist.txt> <items.dat> [--creatures-data creatures.dat]`. `--summary`,
   `--stage-directory` e `--active-item-ids` auditam o subconjunto SQL. A série `uint32 +0x18C`
   é EXP cumulativa da cell, `uint16 +0x166E` é o ganho de CP por morte de NPC e `uint16 +0x1734`
-  é o custo CP de summon por nível; os demais campos permanecem nomeados apenas quando há
-  consumidor comprovado no binário.
+  é o custo CP de summon por nível. O JSON inclui as 24 séries de 99 valores, offsets
+  serializados/runtime, tipos escalares e os dez labels validados por `language.txt`; campos sem
+  consumidor comprovado permanecem `unknown_runtime_*`.
 
 `ghidra/DumpCellCpEvidence.py` decompila os exports de CP e o loader de `creatures.dat` no dump
 runtime de `entitiesmp.dll`; aceita filtros de nome como argumento. `DumpCpFieldReferences.py`
@@ -399,6 +400,9 @@ primeiro argumento; sem ele, grava `C:\temp\client_cell_runtime_<programa>.txt`.
 `ghidra/DecompileClientNpcTargeting.py` extrai imports, strings, team helpers, master/owner,
 validadores de inimigo/dano e a máquina de seleção do `CNpcWatcher`; grava por padrão
 `C:\temp\client_npc_targeting.txt` ou aceita outro caminho como primeiro argumento.
+`ghidra/DecompileClientNpcStats.py` extrai o painel de Cell, IDs de idioma, formatos, loader das
+24 séries, accessor de status, dano-base e recompensa CP. Ele seleciona automaticamente os alvos
+de `rakion_orig.exe`, `entitiesmp_dump.bin` ou `entitiesmp.dll` e aceita o output como argumento.
 `DumpFunctionsByAddress.py`, `DumpCallersByAddress.py` e `DumpNpcSetupReferences.py` são auxiliares
 reproduzíveis para seguir consumidores sem depender da interface gráfica do Ghidra. O último
 fecha a composição dos três slots e do custo efetivo em `FUN_351DBFF0`.

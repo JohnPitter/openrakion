@@ -41,6 +41,7 @@ arquivos em `archive/` somente para contexto histórico.
 - [`systems/gameplay/pvp-modes-combat.md`](systems/gameplay/pvp-modes-combat.md)
 - [`systems/gameplay/stage-pve-progression.md`](systems/gameplay/stage-pve-progression.md)
 - [`systems/gameplay/cells-creatures-npc.md`](systems/gameplay/cells-creatures-npc.md)
+- [`systems/gameplay/npc-stat-curves.md`](systems/gameplay/npc-stat-curves.md)
 - [`systems/gameplay/combat-actions-status.md`](systems/gameplay/combat-actions-status.md)
 - [`systems/gameplay/potions-chaos-effects.md`](systems/gameplay/potions-chaos-effects.md)
 - [`systems/gameplay/votes-invites-kicks.md`](systems/gameplay/votes-invites-kicks.md)
