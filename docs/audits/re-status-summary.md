@@ -92,6 +92,12 @@ Camada que **exige o cliente v258** e não é atingível só pelo backend:
 Cada validação precisa registrar build/hash, configuração, captura ou log, resultado esperado e
 resultado observado. Build verde não substitui a prova visual.
 
+A instalação usada para o próximo smoke já é reproduzível por
+[`client-compatibility-dll.md`](../guides/client-compatibility-dll.md): executável pristine v258,
+engine golden, proxy com 17 exports, launcher atual e manifesto de 14 arquivos passaram na
+verificação estática. O jogo ainda não foi iniciado; portanto nenhum item visual acima muda de
+estado com base somente nessa preparação.
+
 ### 3. Decidir as extensões restantes que não pertencem ao v258 original
 
 O bot peer sintético server-side já foi entregue e está documentado em

@@ -85,6 +85,31 @@ compatível se não restaurar arquivos, iniciar o GameGuard ou sobrescrever a co
 Não renomeie `rakion.bin` antigo para `rakion.exe`: além do tamanho diferente, sua `engine.dll`
 também é incompatível. A atualização para v258 deve acontecer antes da ativação da DLL.
 
+### Instalação reproduzível no cliente usado como exemplo
+
+O script instala somente a sobreposição necessária, cria backup dos destinos substituídos e não
+inicia o jogo. Ele preserva o `Bin/rakion.bin` antigo e copia `rakion.exe.orig` como
+`Bin/rakion.exe`; assim o smoke realmente parte do executável pristine e os 317 bytes só podem vir
+da DLL em memória.
+
+```powershell
+cd client\RakionClientCompat
+.\deploy_validation.ps1 `
+  -TargetRoot "C:\Users\joaop\Downloads\Rakion-Original\Rakion" `
+  -GoldenRoot "C:\Users\joaop\Desenvolvimento\Rakion\rakion-final" `
+  -ServerHost "127.0.0.1" `
+  -DisplayMode windowed
+
+python .\verify_validation_install.py `
+  "C:\Users\joaop\Downloads\Rakion-Original\Rakion"
+```
+
+O verificador confere todos os hashes de `validation-install.json`, baseline pristine, golden da
+engine, import de `version.dll` pelo executável e as 17 exportações do proxy. Em 18/07/2026, essa
+instalação estática passou com 14 arquivos íntegros; nenhum processo do jogo foi iniciado.
+Uma instalação existente só é atualizada com `-Refresh`; o manifesto mantém
+`originalBackupRoot`, impedindo que um refresh esconda o backup do cliente histórico.
+
 ## Validação
 
 - `build.ps1`: proxy x86 e smoke das 17 exportações;
@@ -102,3 +127,8 @@ Para voltar ao cliente anteriormente patcheado, feche o jogo, desative a instala
 launcher usado para rollback, remova `Bin/version.dll` e `Bin/verorig.dll` e restaure o
 `rakion-final/Bin/rakion.exe` golden. Não combine o executável já patcheado com uma DLL de outra
 versão; embora a aplicação seja idempotente na build correta, misturar builds invalida o gate.
+
+Na instalação de exemplo, restaure os arquivos da pasta indicada por `originalBackupRoot` em
+`validation-install.json`. Arquivos que não existiam antes (`Bin/rakion.exe`, proxy, launcher e
+manifesto) devem ser removidos somente após conferir o backup. O script nunca apaga nem altera o
+`Bin/rakion.bin` histórico.
