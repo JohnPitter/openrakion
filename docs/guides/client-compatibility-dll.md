@@ -65,8 +65,11 @@ Os parâmetros regeneram `baked_patches.h`. Sem eles, o build usa o manifesto ve
 valida também o hash e o prólogo de `CNet::SendToOtherClient` na `engine.dll`, compila x86 com
 `/W4 /WX` e executa `proxy_smoke.exe` para conferir exports e forwarding.
 
-O build de `client/RakionLauncher` chama esse script, embute `version.dll` e `verorig.dll` e os
-instala em `Bin` antes de iniciar o jogo.
+O linker usa `/Brepro`: duas compilações consecutivas com o mesmo toolchain e as mesmas entradas
+devem produzir o mesmo SHA-256. A build validada em 18/07/2026 gerou
+`2DA526C8DA13A8F499DDCD6E6BA7568D6D41D71E6466550A2DBA825D9857D7FE` nas duas execuções. O build de
+`client/RakionLauncher` chama esse script, embute `version.dll` e `verorig.dll` e os instala em
+`Bin` antes de iniciar o jogo.
 
 ## Instalação e ativação
 
@@ -88,7 +91,10 @@ também é incompatível. A atualização para v258 deve acontecer antes da ativ
 ### Instalação reproduzível no cliente usado como exemplo
 
 O script instala somente a sobreposição necessária, cria backup dos destinos substituídos e não
-inicia o jogo. Ele preserva o `Bin/rakion.bin` antigo e copia `rakion.exe.orig` como
+inicia o jogo. Antes da primeira escrita, verifica todas as origens e tenta abrir com exclusividade
+cada destino que realmente mudará; arquivo idêntico é apenas registrado. Se uma falha ocorrer após
+o preflight, os arquivos já tocados são restaurados ou removidos conforme existiam antes. Ele
+preserva o `Bin/rakion.bin` antigo e copia `rakion.exe.orig` como
 `Bin/rakion.exe`; assim o smoke realmente parte do executável pristine e os 317 bytes só podem vir
 da DLL em memória.
 

@@ -31,9 +31,9 @@ $proxySources = @(
     'bot_telemetry.cpp',
     'compat_log.cpp'
 ) | ForEach-Object { '"{0}"' -f (Join-Path $PSScriptRoot $_) }
-$proxy = 'call "{0}" >nul && cl /nologo /std:c++20 /O2 /MT /EHsc /LD /W4 /WX {1} /link /DEF:"{2}" /OUT:"{3}"' -f `
+$proxy = 'call "{0}" >nul && cl /nologo /std:c++20 /O2 /MT /EHsc /LD /W4 /WX {1} /link /Brepro /DEF:"{2}" /OUT:"{3}"' -f `
     $vcvars, ($proxySources -join ' '), (Join-Path $PSScriptRoot 'version_proxy.def'), (Join-Path $out 'version.dll')
-$smoke = 'call "{0}" >nul && cl /nologo /std:c++20 /O2 /MT /EHsc /W4 /WX "{1}" /link /OUT:"{2}"' -f `
+$smoke = 'call "{0}" >nul && cl /nologo /std:c++20 /O2 /MT /EHsc /W4 /WX "{1}" /link /Brepro /OUT:"{2}"' -f `
     $vcvars, (Join-Path $PSScriptRoot 'proxy_smoke.cpp'), (Join-Path $out 'proxy_smoke.exe')
 
 Push-Location $out

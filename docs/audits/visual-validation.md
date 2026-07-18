@@ -17,10 +17,10 @@ do contrato.
 | Cliente de validação | `C:\Users\joaop\Downloads\Rakion-Original\Rakion` |
 | Executável pristine v258 | `Bin/rakion.exe`, SHA-256 `88E177F243FA4C43769CD323FB4D73E106AE833070F9BCE7B2DC05B8DDFD6AF8` |
 | Engine golden | SHA-256 `83B20D6C32CD66B95C8F8E41AD6DE13A58E8F5F948CD21CBD118D42EF8CF88F2` |
-| Proxy golden | `Bin/version.dll`, SHA-256 `7A766A5B69A2BBBEA8E4C75F2F5E7E669B12406E6313507A3B7B02994CEA3E66` |
+| Proxy golden determinístico | `Bin/version.dll`, SHA-256 `2DA526C8DA13A8F499DDCD6E6BA7568D6D41D71E6466550A2DBA825D9857D7FE` |
 | Forwarder oficial | `Bin/verorig.dll`, SHA-256 `4F66B88731E84BE8E1545EEFC589A79E701CCA426CE916E4AC9322E60EA9680B` |
 | Destino | `server.host=127.0.0.1`, `display.mode=windowed` |
-| Verificação estática | aprovada: 14 arquivos íntegros e 17 exports do proxy |
+| Verificação estática | baseline anterior aprovada; refresh do manifesto para o proxy determinístico pendente |
 
 O `validation-install.json` é a fonte reproduzível desses hashes. O `rakion-final` continua sendo o
 golden source; este diretório é somente o ambiente de execução.
@@ -33,7 +33,8 @@ golden source; este diretório é somente o ambiente de execução.
 | Broker | aprovado | TCP/UDP `40706` ouvindo |
 | World | aprovado | TCP `40708` e UDP `40708/40709` ouvindo |
 | Buddy | aprovado | TCP/UDP `8500/8504` ouvindo |
-| Instalação do cliente | aprovado | `verify_validation_install.py` validou manifesto, imports e exports |
+| Build do cliente/DLL | aprovado | solução 0 warnings/erros; launcher 11/11; DLL x86 `/W4 /WX`, 317 patches, 17 exports e duas builds com hash idêntico |
+| Instalação do cliente | pendente | o UAC bloqueou `RakionLauncher.exe`; preflight atômico aprovado, mas o refresh final precisa ser repetido após fechar o prompt |
 | Elevação e abertura do launcher | pendente | prompt UAC aberto; exige confirmação interativa do usuário |
 | Login e render inicial | pendente | nenhuma observação visual registrada nesta rodada |
 

@@ -45,24 +45,87 @@ function Backup-Destination([string]$Destination, [string]$RelativePath)
     Copy-Item -LiteralPath $Destination -Destination $backup -Force
 }
 
+function Test-SameFile([string]$Source, [string]$Destination)
+{
+    if (-not (Test-Path -LiteralPath $Destination -PathType Leaf)) { return $false }
+    return (Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash -eq
+        (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash
+}
+
+function Assert-FileInstallable([string]$Source, [string]$RelativePath)
+{
+    if (-not (Test-Path -LiteralPath $Source -PathType Leaf)) {
+        throw "artefato de origem ausente: $Source"
+    }
+    $destination = Join-Path $script:Target $RelativePath
+    if (Test-SameFile $Source $destination) { return }
+    if (-not (Test-Path -LiteralPath $destination -PathType Leaf)) { return }
+
+    try {
+        $stream = [System.IO.File]::Open(
+            $destination,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::ReadWrite,
+            [System.IO.FileShare]::None)
+        $stream.Dispose()
+    } catch {
+        throw "destino em uso ou sem permissão: $destination"
+    }
+}
+
+function Prepare-Destination([string]$Destination, [string]$RelativePath)
+{
+    $existed = Test-Path -LiteralPath $Destination -PathType Leaf
+    Backup-Destination $Destination $RelativePath
+    $script:Touched.Add([pscustomobject]@{
+        Destination = $Destination
+        RelativePath = $RelativePath
+        Existed = $existed
+    })
+}
+
 function Install-File([string]$Source, [string]$RelativePath)
 {
     if (-not (Test-Path -LiteralPath $Source -PathType Leaf)) {
         throw "artefato de origem ausente: $Source"
     }
     $destination = Join-Path $script:Target $RelativePath
-    Backup-Destination $destination $RelativePath
+    $hash = (Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash
+    if (Test-SameFile $Source $destination) {
+        $script:Installed[$RelativePath] = $hash
+        return
+    }
+    Prepare-Destination $destination $RelativePath
     New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
     Copy-Item -LiteralPath $Source -Destination $destination -Force
-    $script:Installed[$RelativePath] = (Get-FileHash $destination -Algorithm SHA256).Hash
+    $script:Installed[$RelativePath] = $hash
 }
 
 function Install-Text([string]$Content, [string]$RelativePath)
 {
     $destination = Join-Path $script:Target $RelativePath
-    Backup-Destination $destination $RelativePath
-    [System.IO.File]::WriteAllText($destination, "$Content`r`n", [System.Text.UTF8Encoding]::new($false))
+    $expected = "$Content`r`n"
+    if ((Test-Path -LiteralPath $destination -PathType Leaf) -and
+        [System.IO.File]::ReadAllText($destination) -eq $expected) {
+        $script:Installed[$RelativePath] = (Get-FileHash $destination -Algorithm SHA256).Hash
+        return
+    }
+    Prepare-Destination $destination $RelativePath
+    [System.IO.File]::WriteAllText($destination, $expected, [System.Text.UTF8Encoding]::new($false))
     $script:Installed[$RelativePath] = (Get-FileHash $destination -Algorithm SHA256).Hash
+}
+
+function Restore-TouchedFiles()
+{
+    for ($index = $script:Touched.Count - 1; $index -ge 0; $index--) {
+        $entry = $script:Touched[$index]
+        $backup = Join-Path $script:BackupRoot $entry.RelativePath
+        if ($entry.Existed) {
+            Copy-Item -LiteralPath $backup -Destination $entry.Destination -Force
+        } elseif (Test-Path -LiteralPath $entry.Destination -PathType Leaf) {
+            Remove-Item -LiteralPath $entry.Destination -Force
+        }
+    }
 }
 
 $ip = [System.Net.IPAddress]::None
@@ -111,40 +174,53 @@ $originalBackupRoot = if ($existingManifest) {
     $script:BackupRoot
 }
 $script:Installed = [ordered]@{}
-
-Install-File (Join-Path $golden 'DataSetup.xfs') 'DataSetup.xfs'
-Install-File (Join-Path $golden 'Data\SeriousSam.gms') 'Data\SeriousSam.gms'
-Install-File (Join-Path $goldenBin 'engine.dll') 'Bin\engine.dll'
-Install-File $pristineExe 'Bin\rakion.exe'
-Install-File (Join-Path $compatRoot 'bin\version.dll') 'Bin\version.dll'
-Install-File (Join-Path $compatRoot 'bin\verorig.dll') 'Bin\verorig.dll'
-
+$script:Touched = [System.Collections.Generic.List[object]]::new()
+$filePlan = [System.Collections.Generic.List[object]]::new()
+$filePlan.Add([pscustomobject]@{ Source = (Join-Path $golden 'DataSetup.xfs'); RelativePath = 'DataSetup.xfs' })
+$filePlan.Add([pscustomobject]@{ Source = (Join-Path $golden 'Data\SeriousSam.gms'); RelativePath = 'Data\SeriousSam.gms' })
+$filePlan.Add([pscustomobject]@{ Source = (Join-Path $goldenBin 'engine.dll'); RelativePath = 'Bin\engine.dll' })
+$filePlan.Add([pscustomobject]@{ Source = $pristineExe; RelativePath = 'Bin\rakion.exe' })
+$filePlan.Add([pscustomobject]@{ Source = (Join-Path $compatRoot 'bin\version.dll'); RelativePath = 'Bin\version.dll' })
+$filePlan.Add([pscustomobject]@{ Source = (Join-Path $compatRoot 'bin\verorig.dll'); RelativePath = 'Bin\verorig.dll' })
 Get-ChildItem $publishDir -File | Where-Object { $_.Extension -ne '.pdb' } | ForEach-Object {
-    Install-File $_.FullName $_.Name
+    $filePlan.Add([pscustomobject]@{ Source = $_.FullName; RelativePath = $_.Name })
 }
-Install-Text $ServerHost 'server.host'
-Install-Text $DisplayMode 'display.mode'
+
+foreach ($entry in $filePlan) {
+    Assert-FileInstallable $entry.Source $entry.RelativePath
+}
 
 $manifestPath = Join-Path $script:Target 'validation-install.json'
-Backup-Destination $manifestPath 'validation-install.json'
-$manifest = [ordered]@{
-    schema = 1
-    installedAtUtc = [DateTime]::UtcNow.ToString('O')
-    goldenRoot = $golden
-    targetRoot = $script:Target
-    backupRoot = $script:BackupRoot
-    originalBackupRoot = $originalBackupRoot
-    baseline = [ordered]@{
-        rakionExeOriginalSha256 = (Get-FileHash $pristineExe -Algorithm SHA256).Hash
-        rakionExePatchedSha256 = (Get-FileHash $patchedExe -Algorithm SHA256).Hash
-        engineSha256 = (Get-FileHash (Join-Path $goldenBin 'engine.dll') -Algorithm SHA256).Hash
+try {
+    foreach ($entry in $filePlan) {
+        Install-File $entry.Source $entry.RelativePath
     }
-    files = $script:Installed
+    Install-Text $ServerHost 'server.host'
+    Install-Text $DisplayMode 'display.mode'
+
+    $manifest = [ordered]@{
+        schema = 1
+        installedAtUtc = [DateTime]::UtcNow.ToString('O')
+        goldenRoot = $golden
+        targetRoot = $script:Target
+        backupRoot = $script:BackupRoot
+        originalBackupRoot = $originalBackupRoot
+        baseline = [ordered]@{
+            rakionExeOriginalSha256 = (Get-FileHash $pristineExe -Algorithm SHA256).Hash
+            rakionExePatchedSha256 = (Get-FileHash $patchedExe -Algorithm SHA256).Hash
+            engineSha256 = (Get-FileHash (Join-Path $goldenBin 'engine.dll') -Algorithm SHA256).Hash
+        }
+        files = $script:Installed
+    }
+    Prepare-Destination $manifestPath 'validation-install.json'
+    [System.IO.File]::WriteAllText(
+        $manifestPath,
+        ($manifest | ConvertTo-Json -Depth 5),
+        [System.Text.UTF8Encoding]::new($false))
+} catch {
+    Restore-TouchedFiles
+    throw
 }
-[System.IO.File]::WriteAllText(
-    $manifestPath,
-    ($manifest | ConvertTo-Json -Depth 5),
-    [System.Text.UTF8Encoding]::new($false))
 
 Write-Host "Validação v258 instalada em $script:Target"
 Write-Host "Backup dos arquivos substituídos: $script:BackupRoot"
