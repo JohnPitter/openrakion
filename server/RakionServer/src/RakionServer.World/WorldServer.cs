@@ -406,9 +406,10 @@ namespace RakionServer.World
 
         /// <summary>Dano de melee do <paramref name="attacker"/> humano nos bots inimigos próximos. O
         /// servidor é a autoridade do HP do bot: aplica dano, e ao morrer reporta a morte (0x4f) com o
-        /// scoring do modo — o humano recebe o kill/pontos. Teto RE: o cliente detecta o hit no bot, mas
-        /// o número cosmético HIT×N não aparece (exige peer de sessão real).</summary>
-        public void ResolveBotMeleeAttack(ClientSession attacker, int damage = 34)
+        /// scoring do modo — o humano recebe o kill/pontos. Teto RE: o número cosmético HIT×N não
+        /// aparece porque exige peer de sessão real.</summary>
+        public void ResolveBotMeleeAttack(
+            ClientSession attacker, System.Action<byte[]> publishHit, int damage = 34)
         {
             var field = GetField(attacker.FieldId);
             if (field == null || field.State != 2 || field.BotCount == 0) return;
@@ -420,8 +421,13 @@ namespace RakionServer.World
                     field, attackerRec.Position, attackerRec.Team, damage);
                 foreach (var hit in hits)
                 {
-                    if (!hit.Died) continue;
                     byte botSeat = (byte)hit.Bot.Slot;
+                    BotPlayer bot = hit.Bot.Bot!;
+                    bot.BeginHitReaction(Environment.TickCount64);
+                    publishHit(Network.BotMovement.SynthesizeDamage(botSeat, ++bot.MoveSeq));
+                    Log.Debug("bot", "humano seat {0} acertou bot seat {1}: hp={2}/{3}",
+                        attackerRec.Slot, botSeat, bot.Health, bot.MaxHealth);
+                    if (!hit.Died) continue;
                     if (hit.Bot.State != 4) hit.Bot.State = 4;   // vítima válida do 0x4f
                     var death = field.ApplyReportedDeath(botSeat, attackerRec.Slot, 0);
                     if (death.Processed)

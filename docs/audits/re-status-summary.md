@@ -70,9 +70,10 @@ A validação **dinâmica** dirige o `WorldServer` real por clientes headless no
   reconnect, venda `0x2F` e ledgers no banco real;
 - **ciclo vivo da partida**: engage `Pre→Playing` pelo deadline, spawn tardio, morte `0x4F`,
   placar, fim de round `0x4A` e fim de match `0x44` pelo motor global;
-- **bots server-side**: movimento, perseguição, convivência com dois humanos e morte no field.
+- **bots server-side**: movimento, perseguição, convivência com dois humanos, datagrama de reação
+  ao dano e morte no field, provados headless pelo canal World; ponte P2P gráfica ainda pendente.
 
-São **23 testes E2E** e **811 testes World verdes**. Detalhe em
+São **23 testes E2E** e **812 testes World verdes**. Detalhe em
 [`dynamic-validation.md`](dynamic-validation.md).
 
 Próximos alvos headless (ainda abertos):

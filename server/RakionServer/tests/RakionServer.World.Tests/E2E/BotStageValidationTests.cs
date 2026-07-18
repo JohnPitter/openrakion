@@ -89,9 +89,16 @@ namespace RakionServer.World.Tests.E2E
             lock (field.SyncRoot) { field.Slots[hs.FieldSeat].Position = spot; field.Slots[bot.Seat].Position = spot; bot.Position = spot; }
             human.SendMove(fixture.UdpPort2, hs.FieldSeat, (short)spot.X, 0, (short)spot.Z);
 
-            // Golpeia até o bot morrer (HP base ~ level*10+100; dano 34/golpe).
+            int healthBefore = bot.Health;
+            human.SendAttack(fixture.UdpPort2, hs.FieldSeat, kind: 1);
+            byte[] hitReaction = human.WaitForUdp(
+                packet => IsBotDamage(packet, bot.Seat), JourneyHelper.Timeout);
+            Assert.Equal((byte)bot.Seat, hitReaction[6]);
+            Assert.True(bot.Health < healthBefore, "primeiro golpe deve reduzir o HP do bot");
+
+            // Continua golpeando até o bot morrer (HP base ~ level*10+100; dano 34/golpe).
             byte[]? death = null;
-            for (int i = 0; i < 20 && death == null; i++)
+            for (int i = 1; i < 20 && death == null; i++)
             {
                 human.SendAttack(fixture.UdpPort2, hs.FieldSeat, kind: 1);
                 try { death = human.WaitFor(Frame4f, TimeSpan.FromMilliseconds(400)); }
@@ -102,6 +109,11 @@ namespace RakionServer.World.Tests.E2E
             Assert.NotNull(death);
             Assert.Equal((byte)bot.Seat, death![2]);
         }
+
+        private static bool IsBotDamage(byte[] packet, byte botSeat) =>
+            packet.Length == GameplayActionDatagram.ExtendedAnimationSize &&
+            packet[0] == 0x11 && packet[1] == 0x03 && packet[6] == botSeat &&
+            packet[8] == (byte)PlayerAnimationKind.Damage;
 
         private static bool Frame4f(byte[] frame)
         {

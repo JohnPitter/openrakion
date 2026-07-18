@@ -205,7 +205,8 @@ namespace RakionServer.World.Network
             // Ataque de melee humano (0x0311 kind=Attack): o servidor resolve dano nos bots inimigos.
             else if (type == BotMovement.AttackType && packet.Length >= BotMovement.AttackSize && packet[8] == 1)
             {
-                _world.ResolveBotMeleeAttack(sender);
+                _world.ResolveBotMeleeAttack(sender,
+                    feedback => BroadcastBotFeedback(sender.FieldId, feedback));
             }
 
             int relayed = 0;
@@ -217,6 +218,16 @@ namespace RakionServer.World.Network
                 catch (SocketException ex) { Log.Debug("udp", "relay 0x{0:X4} para {1}: {2}", type, session.UdpEndpoint, ex.Message); }
             }
             Log.Debug("udp", "datagrama 0x{0:X4} relay p/ {1} peer(s) do field {2}", type, relayed, sender.FieldId);
+        }
+
+        private void BroadcastBotFeedback(int fieldId, byte[] datagram)
+        {
+            foreach (ClientSession session in _world.Sessions)
+            {
+                if (!session.InField || session.FieldId != fieldId || session.UdpEndpoint == null)
+                    continue;
+                SendGameplayDatagram(session.UdpEndpoint, datagram);
+            }
         }
     }
 }

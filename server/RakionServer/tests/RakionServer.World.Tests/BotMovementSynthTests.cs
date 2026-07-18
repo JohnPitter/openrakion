@@ -37,5 +37,17 @@ namespace RakionServer.World.Tests
             notMove[0] = 0x0f; notMove[1] = 0x03; // 0x030F sync, não move
             Assert.False(BotMovement.TryReadPosition(notMove, out _));
         }
+
+        [Fact]
+        public void SynthesizeDamage_ProducesExtendedBotReaction()
+        {
+            byte[] packet = BotMovement.SynthesizeDamage(10, 99);
+
+            Assert.True(GameplayActionDatagram.TryParseAnimation(packet, out var action));
+            Assert.Equal(10, action.Header.SourceSlot);
+            Assert.Equal(99u, action.Header.Sequence);
+            Assert.Equal(PlayerAnimationKind.Damage, action.Kind);
+            Assert.True(action.HasExtendedPayload);
+        }
     }
 }

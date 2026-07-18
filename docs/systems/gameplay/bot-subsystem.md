@@ -3,12 +3,15 @@
 Bot **funcional** reconstruído do zero sobre o motor de partida do golden, ancorado no RE. A
 implementação antiga (do master pré-golden) foi descartada. O bot é um **peer sintético
 server-side**: entra no roster como um jogador, é movido pela IA e tem o movimento sintetizado no
-fio — sem nenhuma DLL injetada e sem falar direto com o cliente.
+fio. Nos testes headless, o ataque chega pela extensão UDP do World; no cliente gráfico com P2P
+direto, a DLL de compatibilidade precisa espelhar essa telemetria ao World sem duplicar o pacote
+entregue aos peers.
 
 ## Veredito do RE (respeitado, não contornado)
 
 O bot server-side entrega um oponente **FUNCIONAL** — aparece no roster, anda na tela do humano,
-e (extensão) leva/dá dano server-side. Ele **não** produz o número cosmético **HIT×N** nativo: o
+leva dano, reage visualmente ao golpe e morre com placar server-side. Ele **não** produz o número
+cosmético **HIT×N** nativo: o
 gate `ReceiveDamage@0x3518ce40` exige `[vítima+0x394]!=0`, que só é setado numa entidade **simulada
 em combate localmente** = um peer de sessão real sincronizado (limite type-7, confirmado e não
 re-tentado). Regras invioláveis herdadas do RE:
@@ -46,12 +49,16 @@ re-tentado). Regras invioláveis herdadas do RE:
 O servidor é a **autoridade do HP do bot** (`BotPlayer.Health`, curva `100 + level*10`). O que é
 entregue e o que é teto:
 
-- **Bot como VÍTIMA (funcional)**: quando um humano manda um ataque de melee (`0x0311` kind=Attack),
+- **Bot como VÍTIMA (funcional no canal World)**: quando o World recebe um ataque de melee humano
+  (`0x0311` kind=Attack),
   o `UdpGameplay` chama `WorldServer.ResolveBotMeleeAttack` → `BotCombat.ResolveMeleeAttack` aplica
-  dano aos bots inimigos vivos no alcance (posições rastreadas). Ao zerar o HP, a morte é liquidada
+  dano aos bots inimigos vivos no alcance (posições rastreadas). A cada acerto, o servidor devolve
+  um `0x0311 kind=Damage` estendido com o assento do bot e segura a IA por 300 ms, tornando a reação
+  visível no cliente. Ao zerar o HP, a morte é liquidada
   pelo **`Field.ApplyReportedDeath`** do modo e transmitida com **`0x4f`** aos humanos: o atacante
-  recebe o kill/pontos. O cliente do humano detecta o hit (computa cell points) — **sem** o número
-  cosmético HIT×N (gate `[+0x394]`, limite type-7).
+  recebe o kill/pontos. A detecção autoritativa é por ataque, time, estado e proximidade no servidor;
+  o cliente apresenta a reação, mas não computa o número cosmético HIT×N (gate `[+0x394]`, limite
+  type-7).
 - **Bot como ATACANTE (cosmético)**: no melee, o tick sintetiza a animação de ataque (`0x0311`
   kind=Attack) para os humanos verem o bot golpear. O dano bot→humano é **client-authoritative** —
   o cliente do humano não processa dano de um peer sintético, então é apresentação, não dano real.
@@ -63,13 +70,18 @@ entregue e o que é teto:
   dificuldade, tick do `BotPlayer`.
 - `BotManagerTests` (6): add pelo host no time oposto, gates (não-host / em-jogo / solo), limpeza,
   time cheio.
-- `BotMovementSynthTests` (3): formato do 0x030A, assento na origem, roundtrip da posição.
+- `BotMovementSynthTests` (4): formato do 0x030A, assento na origem, roundtrip da posição e reação
+  estendida `0x0311 kind=Damage`.
 - `E2E/BotMovementE2ETests` (1): no fio, um humano recebe o `0x030A` sintetizado do bot com a
   partida em jogo.
+- `E2E/BotStageValidationTests`: o primeiro golpe reduz HP e retorna `0x0311 kind=Damage` ao humano;
+  golpes seguintes matam o bot e publicam `0x4F` com o assento correto.
 
 ## Fronteira (o teto do RE, não um bug)
 
-Entregue: roster, movimento na tela do humano, dificuldade/IA. **Não** entregue por limite
+Entregue e provado headless: roster, movimento, reação de dano, HP/morte e dificuldade/IA. A rota
+do ataque no cliente gráfico P2P depende da ponte da DLL de compatibilidade e ainda exige smoke
+visual. **Não** entregue por limite
 arquitetural: o número cosmético HIT×N nativo (exige peer de sessão real). Extensões possíveis
-(dano/morte server-side do bot, spawn 0x307 hittável) seguem o mesmo teto — funcionais, sem o HUD
-nativo do combo. Ver o cluster HIT×N na memória do projeto.
+(hitbox mais precisa, projéteis e dano bot→humano) seguem o mesmo teto sem um peer simulado pelo
+engine. Ver o cluster HIT×N na memória do projeto.

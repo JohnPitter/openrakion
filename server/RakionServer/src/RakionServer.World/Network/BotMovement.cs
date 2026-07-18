@@ -55,6 +55,19 @@ namespace RakionServer.World.Network
             return p;
         }
 
+        /// <summary>Reação visual de dano do bot (0x0311 kind=Damage, shape estendido de 12 bytes).</summary>
+        public static byte[] SynthesizeDamage(byte seat, uint sequence)
+        {
+            byte[] packet = new byte[GameplayActionDatagram.ExtendedAnimationSize];
+            BinaryPrimitives.WriteUInt16LittleEndian(packet.AsSpan(0), AttackType);
+            BinaryPrimitives.WriteUInt32LittleEndian(packet.AsSpan(2), sequence);
+            packet[6] = seat;
+            packet[7] = 0;
+            packet[8] = (byte)PlayerAnimationKind.Damage;
+            packet[9] = 1;
+            return packet;
+        }
+
         /// <summary>Extrai a posição (i16 x/y/z) de um 0x030A humano recebido, p/ a IA do bot mirar.</summary>
         public static bool TryReadPosition(ReadOnlySpan<byte> packet, out BotVector position)
         {

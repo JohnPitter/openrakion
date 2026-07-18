@@ -25,6 +25,7 @@ namespace RakionServer.World
                     BotPlayer bot = botRec.Bot!;
                     if (!bot.Alive) continue;
                     if (botRec.State == 3) botRec.State = 4;   // ready -> playing (vítima válida do 0x4f)
+                    if (now < bot.HitReactionUntilMs) continue;
 
                     if (!TryFindEnemyTarget(field, bot, out BotVector target, out byte targetSeat))
                         continue;
