@@ -119,7 +119,13 @@ namespace RakionServer.World
         {
             _cfg = cfg;
             _db = db;
+            AntiCheat = new Security.AntiCheatService(cfg.AntiCheat, new Security.CompositeViolationSink(
+                new Security.LogViolationSink(),
+                new Security.DbViolationSink(cfg.Db.ConnectionString)));
         }
+
+        /// <summary>Anti-cheat server-side (OpenGuard): integridade, anomalia de protocolo e flood.</summary>
+        public Security.AntiCheatService AntiCheat { get; }
 
         public bool Locked { get; private set; }                 // this+0x50 (servidor fechado p/ GM)
         public PuConfig PuConfig { get; private set; } = new();   // pu_config: preço/bônus/multiplicadores do PU (lida no boot)
@@ -804,6 +810,7 @@ namespace RakionServer.World
         {
             if (_sessions.TryRemove(s.Slot, out _))
             {
+                AntiCheat.ForgetSession(s.Slot);
                 LeaveField(s);
                 if (s.Authenticated)
                     Interlocked.Decrement(ref _currentUsers);

@@ -101,7 +101,21 @@ namespace RakionServer.World.Database
                     " ip VARCHAR(45) NOT NULL DEFAULT ''," +
                     " login_ts DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)");
                 await Exec(c, "DELETE FROM messenger_session");
-                Log.Ok("db", "schema verificado (itembox.qslot, pu_config, enchant_*, messenger_session)");
+                // Auditoria do OpenGuard (Security/DbViolationSink escreve; painel admin le).
+                await Exec(c,
+                    "CREATE TABLE IF NOT EXISTS anticheat_log (" +
+                    " id INT NOT NULL AUTO_INCREMENT PRIMARY KEY," +
+                    " ts DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP," +
+                    " slot SMALLINT UNSIGNED NOT NULL," +
+                    " account VARCHAR(32) NOT NULL DEFAULT ''," +
+                    " kind VARCHAR(24) NOT NULL," +
+                    " severity TINYINT NOT NULL," +
+                    " score INT NOT NULL," +
+                    " action VARCHAR(8) NOT NULL," +
+                    " hits INT NOT NULL DEFAULT 1," +
+                    " detail VARCHAR(128) NOT NULL DEFAULT ''," +
+                    " INDEX idx_ts (ts), INDEX idx_account (account))");
+                Log.Ok("db", "schema verificado (itembox.qslot, pu_config, enchant_*, messenger_session, anticheat_log)");
             }
             catch (Exception ex) { Log.Error("db", "EnsureSchemaAsync: {0}", ex.Message); }
         }

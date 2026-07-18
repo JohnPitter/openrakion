@@ -165,6 +165,9 @@ namespace RakionServer.World.Network
                 //  HUD nao depende de eco do servidor — o card de Rank do world original nem tem campo
                 //  de hits; a nota e' 100% por tempo.)
                 var sender = ResolveSender(from);
+                // OpenGuard: flood de gameplay UDP (o relay amplifica p/ todos os peers do field).
+                if (sender != null && _world.AntiCheat.OnGameplayPacket(sender.Slot, sender.UserId).Drop)
+                    return;
                 int senderField = sender?.FieldId ?? -1;
                 int n = 0;
                 foreach (var sess in _world.Sessions)
@@ -191,7 +194,12 @@ namespace RakionServer.World.Network
             if (s == null) { Log.Debug("udp", "[{0}] UDP sem sessao (slot off5 nem IP {1})", slot, from.Address); return; } // UDP 0
             if (!s.Connected || !s.SlotActive) return;                                       // UDP 1/2 (status+slot ativo; NAO exige InField)
             uint key = BinaryPrimitives.ReadUInt32LittleEndian(pkt.AsSpan(7));
-            if (s.UdpKey != 0 && key != s.UdpKey) { Log.Debug("udp", "[{0}] UDP key mismatch (got {1:X8} exp {2:X8})", slot, key, s.UdpKey); return; } // UDP 4
+            if (s.UdpKey != 0 && key != s.UdpKey)
+            {
+                _world.AntiCheat.OnProtocolViolation(s.Slot, s.UserId, Security.ViolationKind.UdpKeyMismatch, $"got {key:X8} exp {s.UdpKey:X8}");
+                Log.Debug("udp", "[{0}] UDP key mismatch (got {1:X8} exp {2:X8})", slot, key, s.UdpKey);
+                return;
+            } // UDP 4
 
             // Registra o endpoint UDP e dispara (1x) a msg TCP 0x10 que destrava a entrada no
             // campo (capturada do world ORIGINAL via MITM). Substitui o "msg5" que era errado.

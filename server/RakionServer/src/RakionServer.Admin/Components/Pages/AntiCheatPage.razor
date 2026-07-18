@@ -1,0 +1,61 @@
+@page "/openguard"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AdminDb Db
+
+<PageTitle>OpenGuard — OpenRakion Admin</PageTitle>
+<h1>OpenGuard — auditoria do anti-cheat</h1>
+
+<div class="card">
+    <div class="row">
+        <div style="flex:1;"><label>Filtrar por conta</label>
+            <input @bind="_search" @bind:event="oninput" @onkeyup="OnKey" placeholder="conta…" style="width:100%;" /></div>
+        <button @onclick="Load">Buscar</button>
+        <button class="danger" @onclick="Clear">Limpar log</button>
+    </div>
+    <p class="mut">Violações detectadas pelo World (hash do cliente, seq/opcode/frame, flood TCP/UDP).
+        <b>hits</b> = ocorrências coalescidas na janela de 5s. A imposição (kick) segue o
+        <code>[AntiCheat]</code> do worldserver.ini.</p>
+</div>
+
+<div class="card">
+    <table>
+        <thead><tr><th>Quando</th><th>Conta</th><th>Slot</th><th>Tipo</th><th>Sev</th><th class="right">Score</th><th>Ação</th><th class="right">Hits</th><th>Detalhe</th></tr></thead>
+        <tbody>
+            @foreach (var v in _rows)
+            {
+                <tr>
+                    <td>@v.Ts.ToString("dd/MM HH:mm:ss")</td>
+                    <td>@if (v.Account.Length > 0) { <a href="@($"/account/{v.Account}")">@v.Account</a> } else { <span class="mut">—</span> }</td>
+                    <td>@v.Slot</td>
+                    <td>@v.Kind</td>
+                    <td>@SevBadge(v.Severity)</td>
+                    <td class="right">@v.Score</td>
+                    <td>@if (v.Action == "KICK") { <span class="badge ban">KICK</span> }
+                        else if (v.Action == "DROP") { <span class="badge">drop</span> }
+                        else { <span class="badge on">log</span> }</td>
+                    <td class="right">@v.Hits</td>
+                    <td class="mut">@v.Detail</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (_rows.Count == 0) { <p class="mut">Nenhuma violação registrada.</p> }
+</div>
+
+@code {
+    private string? _search;
+    private List<AcViolationRow> _rows = new();
+
+    protected override async Task OnInitializedAsync() => await Load();
+    private async Task Load() => _rows = await Db.ListAntiCheatAsync(_search);
+    private async Task OnKey(KeyboardEventArgs e) { if (e.Key == "Enter") await Load(); }
+    private async Task Clear() { await Db.ClearAntiCheatAsync(); await Load(); }
+
+    private static MarkupString SevBadge(int sev) => new(sev switch
+    {
+        >= 3 => "<span class=\"badge ban\">high</span>",
+        2 => "<span class=\"badge\">med</span>",
+        _ => "<span class=\"badge on\">low</span>",
+    });
+}

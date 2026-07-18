@@ -178,7 +178,13 @@ namespace RakionServer.World.Network
                     while (have - consumed >= 2)
                     {
                         ushort size = BinaryPrimitives.ReadUInt16LittleEndian(buffer.AsSpan(consumed));
-                        if (size < 4 || size > buffer.Length) { Log.Warn("client", "[{0}] frame size invalido {1}", Slot, size); _ = CloseAsync(); return; }
+                        if (size < 4 || size > buffer.Length)
+                        {
+                            _server.AntiCheat.OnProtocolViolation(Slot, UserId, Security.ViolationKind.MalformedFrame, $"size={size}");
+                            Log.Warn("client", "[{0}] frame size invalido {1}", Slot, size);
+                            _ = CloseAsync();
+                            return;
+                        }
                         if (have - consumed < size) break; // frame incompleto
 
                         // O client CIFRA todo o conteudo apos o size (AES, cada bloco de 16
@@ -249,6 +255,7 @@ namespace RakionServer.World.Network
                 if (expected > SeqWrap) expected = 0;
                 if (seq != expected)
                 {
+                    _server.AntiCheat.OnProtocolViolation(Slot, UserId, Security.ViolationKind.ProtocolSequence, $"got {seq} exp {expected}");
                     Log.Warn("client", "[{0}] seq invalida (got {1}, esperado {2}) -> DISC 2", Slot, seq, expected);
                     Disconnect(2);
                     return;

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using RakionServer.Common;
+using RakionServer.World.Security;
 
 namespace RakionServer.World
 {
@@ -34,6 +35,9 @@ namespace RakionServer.World
         // [Client] — MD5 dos binarios do client que o world valida
         public string ClientMd5_1 = "";
         public string ClientMd5_2 = "";
+
+        // [AntiCheat] — anti-cheat server-side (OpenGuard)
+        public AntiCheatConfig AntiCheat = new();
 
         // [DB] / [USERDB] / [LOGDB]
         public DbConfig Db = new();
@@ -91,6 +95,8 @@ namespace RakionServer.World
             cfg.ClientMd5_1 = ini.GetValue("Client", "MD5_1", cfg.ClientMd5_1);
             cfg.ClientMd5_2 = ini.GetValue("Client", "MD5_2", cfg.ClientMd5_2);
 
+            LoadAntiCheat(ini, cfg.AntiCheat);
+
             LoadDb(ini, "DB", cfg.Db);
             LoadDb(ini, "USERDB", cfg.UserDb);
             LoadDb(ini, "LOGDB", cfg.LogDb);
@@ -107,6 +113,21 @@ namespace RakionServer.World
                 cfg.Brokers.Add((cfg.BrokerIp, cfg.BrokerPort));
 
             return cfg;
+        }
+
+        private static void LoadAntiCheat(IniFile ini, AntiCheatConfig ac)
+        {
+            const string s = "AntiCheat";
+            if (!ini.HasSection(s))
+                return;
+            ac.Enabled = ini.GetBool(s, "Enabled", ac.Enabled);
+            ac.EnforceKick = ini.GetBool(s, "EnforceKick", ac.EnforceKick);
+            ac.EnforceClientHash = ini.GetBool(s, "EnforceClientHash", ac.EnforceClientHash);
+            ac.OpcodeWindowMs = ini.GetValue(s, "OpcodeWindowMs", ac.OpcodeWindowMs);
+            ac.MaxOpcodesPerWindow = ini.GetValue(s, "MaxOpcodesPerWindow", ac.MaxOpcodesPerWindow);
+            ac.GameplayWindowMs = ini.GetValue(s, "GameplayWindowMs", ac.GameplayWindowMs);
+            ac.MaxGameplayPerWindow = ini.GetValue(s, "MaxGameplayPerWindow", ac.MaxGameplayPerWindow);
+            ac.KickScore = ini.GetValue(s, "KickScore", ac.KickScore);
         }
 
         private static void LoadDb(IniFile ini, string section, DbConfig db)
@@ -126,6 +147,8 @@ namespace RakionServer.World
                 ServerId, MaxUser, MaxField, Port, UdpPort1, UdpPort2);
             Log.Info("config", "Broker={0}:{1}  DB={2}@{3}:{4}/{5}  Auth.Type={6}",
                 BrokerIp, BrokerPort, Db.User, Db.Ip, Db.Port, Db.Name, AuthType);
+            Log.Info("config", "OpenGuard: enabled={0} enforceKick={1} enforceHash={2} (kick@{3})",
+                AntiCheat.Enabled, AntiCheat.EnforceKick, AntiCheat.EnforceClientHash, AntiCheat.KickScore);
         }
     }
 }

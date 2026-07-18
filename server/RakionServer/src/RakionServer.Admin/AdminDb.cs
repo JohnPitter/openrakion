@@ -295,6 +295,28 @@ public sealed class AdminDb(IConfiguration cfg)
         => await NonQuery("DELETE FROM fetchfile WHERE AppId=@a AND FileIns=@ins AND FileVer=@v",
             ("@a", appId), ("@ins", fileIns), ("@v", fileVer));
 
+    // ---- OpenGuard (anticheat_log) ----
+
+    /// <summary>Violações mais recentes; filtro opcional por conta (LIKE seguro via parâmetro).</summary>
+    public async Task<List<AcViolationRow>> ListAntiCheatAsync(string? account = null, int limit = 200)
+    {
+        var l = new List<AcViolationRow>();
+        await using var c = await OpenAsync();
+        string where = string.IsNullOrWhiteSpace(account) ? "" : " WHERE account LIKE @acc";
+        await using var cmd = new MySqlCommand(
+            "SELECT id, ts, slot, account, kind, severity, score, action, hits, detail" +
+            $" FROM anticheat_log{where} ORDER BY id DESC LIMIT @lim", c);
+        if (where.Length > 0) cmd.Parameters.AddWithValue("@acc", "%" + account!.Trim() + "%");
+        cmd.Parameters.AddWithValue("@lim", Math.Clamp(limit, 1, 1000));
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync())
+            l.Add(new AcViolationRow(r.GetInt32(0), r.GetDateTime(1), r.GetInt32(2), r.GetString(3),
+                r.GetString(4), r.GetInt32(5), r.GetInt32(6), r.GetString(7), r.GetInt32(8), r.GetString(9)));
+        return l;
+    }
+
+    public async Task ClearAntiCheatAsync() => await NonQuery("DELETE FROM anticheat_log");
+
     // ---- helper ----
 
     private async Task NonQuery(string sql, params (string, object)[] ps)

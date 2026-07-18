@@ -76,6 +76,8 @@ namespace RakionServer.World.Network
             public const byte SlotInUse = 0x13;      // user+0x1460 / +0x14a4 != 0 (login duplicado)
             public const byte Field2TooLong = 0x14;  // 2o campo >= 17 (o "DISC 020")
             public const byte Field3TooLong = 0x15;  // 3o campo >= 21
+            public const byte GameGuard = 0x18;      // 24 — falha do anti-cheat/GameGuard (opcode 0x10)
+            public const byte ClientHash = 0xBC;     // 188 — falha de integridade do binario (Op_VerifyClientHash)
             public const byte UnknownOpcode = 0xC9;  // 201 — default do dispatcher
         }
 

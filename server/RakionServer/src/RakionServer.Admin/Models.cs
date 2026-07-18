@@ -78,6 +78,11 @@ public sealed class PuConfigForm
     public DateTime? PromoEnd { get; set; }
 }
 
+/// <summary>Linha de auditoria do OpenGuard (anticheat_log; hits = ocorrências coalescidas).</summary>
+public sealed record AcViolationRow(
+    int Id, DateTime Ts, int Slot, string Account, string Kind,
+    int Severity, int Score, string Action, int Hits, string Detail);
+
 /// <summary>Linha editável de um catalisador do refino (enchant_catalyzer).</summary>
 public sealed class EnchantCatalyzerForm
 {

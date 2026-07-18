@@ -24,6 +24,11 @@ namespace RakionServer.World.Network
 
         public static void Dispatch(HandlerContext ctx)
         {
+            // OpenGuard: rate-limit de opcodes (flood -> dropa; escala a kick se EnforceKick).
+            var guard = ctx.World.AntiCheat.OnOpcode(ctx.User.Slot, ctx.User.UserId, ctx.Opcode);
+            if (guard.Kick) { ctx.User.Disconnect(Protocol.DiscReason.GameGuard); return; }
+            if (guard.Drop) return;
+
             if (Table.TryGetValue(ctx.Opcode, out var e))
             {
                 Log.Debug("op", "[{0}] 0x{1:x2} {2}", ctx.User.Slot, ctx.Opcode, e.Name);
@@ -32,8 +37,10 @@ namespace RakionServer.World.Network
                 return;
             }
             // fora da tabela -> default do dispatcher FUN_0042ab40
+            var d = ctx.World.AntiCheat.OnProtocolViolation(
+                ctx.User.Slot, ctx.User.UserId, Security.ViolationKind.UnknownOpcode, $"0x{ctx.Opcode:x2}");
             Log.Warn("op", "[{0}] opcode 0x{1:x2} desconhecido -> DISC {2}", ctx.User.Slot, ctx.Opcode, Protocol.DiscReason.UnknownOpcode);
-            ctx.User.Disconnect(Protocol.DiscReason.UnknownOpcode);
+            ctx.User.Disconnect(d.Kick ? Protocol.DiscReason.GameGuard : Protocol.DiscReason.UnknownOpcode);
         }
 
         public static string OpName(ushort op) => Table.TryGetValue(op, out var e) ? e.Name : $"op0x{op:x2}";

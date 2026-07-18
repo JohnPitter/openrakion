@@ -57,6 +57,7 @@ namespace RakionServer.World.Network
             // Copia 0x21 bytes (8 dwords + 1 byte terminador) do payload => string recebida.
             if (!ctx.P.CanRead(0x21))
             {
+                ctx.World.AntiCheat.OnProtocolViolation(u.Slot, u.UserId, Security.ViolationKind.MalformedFrame, "verify-hash curto");
                 u.Disconnect(0xbc);
                 return;
             }
@@ -66,12 +67,11 @@ namespace RakionServer.World.Network
             // (this+0x14d e this+0x12c sao os dois hashes MD5 salvos em opcode 0x0b.)
             string expected = (mode == 0x01) ? u.Md5Hash2 : u.Md5Hash1;
 
-            // Comparacao de string (case-sensitive). Diferente => disconnect 0xbc.
-            if (!string.Equals(received ?? string.Empty, expected ?? string.Empty, System.StringComparison.Ordinal))
-            {
-                u.Disconnect(0xbc);
-                return;
-            }
+            // OpenGuard: atestacao de integridade do binario. Modo observacao apenas audita; com
+            // EnforceClientHash liga o kick (DISC 0xbc, fiel ao exe). Sem hash de referencia = no-op.
+            var dec = ctx.World.AntiCheat.OnClientHash(u.Slot, u.UserId, received, expected, present: received.Length > 0);
+            if (dec.Kick)
+                u.Disconnect(Protocol.DiscReason.ClientHash);
         }
 
         private static void Op_ServerInfoDump(HandlerContext ctx)
