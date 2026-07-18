@@ -22,7 +22,9 @@ namespace RakionServer.World.Security
 
         private readonly string _conn;
         private readonly Func<long> _nowMs;
-        private readonly ConcurrentDictionary<(ushort Slot, ViolationKind Kind), Window> _windows = new();
+        // Chave inclui a CONTA: slot e reusado entre sessoes — sem ela, o pending de uma sessao
+        // antiga inflaria o `hits` atribuido a conta seguinte no mesmo slot dentro da janela.
+        private readonly ConcurrentDictionary<(ushort Slot, string Account, ViolationKind Kind), Window> _windows = new();
 
         private sealed class Window
         {
@@ -38,7 +40,7 @@ namespace RakionServer.World.Security
 
         public void Record(in Violation v, int sessionScore, in GuardDecision decision)
         {
-            var w = _windows.GetOrAdd((v.Slot, v.Kind), _ => new Window { LastWriteMs = long.MinValue });
+            var w = _windows.GetOrAdd((v.Slot, v.UserId ?? "", v.Kind), _ => new Window { LastWriteMs = long.MinValue });
             long now = _nowMs();
             int hits;
             lock (w)

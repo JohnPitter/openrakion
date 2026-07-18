@@ -83,6 +83,30 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
+        public void Score_DecaysOverTime_SlowAccumulationDoesNotKick()
+        {
+            var (svc, _, clock) = Make(new AntiCheatConfig { EnforceKick = true, KickScore = 100, ScoreDecayPerMin = 40 });
+
+            svc.OnProtocolViolation(1, "u", ViolationKind.MalformedFrame, "x"); // 40
+            svc.OnProtocolViolation(1, "u", ViolationKind.MalformedFrame, "x"); // 80
+            clock[0] += 120_000;                                                // 2 min -> decai 80 -> 0
+
+            // sem decay isto cruzaria 100 e kickaria; com decay a sessao longa "esfria"
+            Assert.False(svc.OnProtocolViolation(1, "u", ViolationKind.MalformedFrame, "x").Kick); // 0+40
+        }
+
+        [Fact]
+        public void Score_DecayDisabled_KeepsAccumulating()
+        {
+            var (svc, _, clock) = Make(new AntiCheatConfig { EnforceKick = true, KickScore = 100, ScoreDecayPerMin = 0 });
+
+            svc.OnProtocolViolation(1, "u", ViolationKind.MalformedFrame, "x"); // 40
+            svc.OnProtocolViolation(1, "u", ViolationKind.MalformedFrame, "x"); // 80
+            clock[0] += 3_600_000;                                              // 1h — sem decay
+            Assert.True(svc.OnProtocolViolation(1, "u", ViolationKind.MalformedFrame, "x").Kick); // 120
+        }
+
+        [Fact]
         public void ProtocolViolations_MonitorMode_NeverKicks()
         {
             var (svc, _, _) = Make(new AntiCheatConfig { EnforceKick = false });

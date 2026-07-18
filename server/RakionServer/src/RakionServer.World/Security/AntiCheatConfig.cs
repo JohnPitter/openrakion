@@ -32,5 +32,9 @@ namespace RakionServer.World.Security
 
         /// <summary>Score acumulado que dispara Kick (quando <see cref="EnforceKick"/>).</summary>
         public int KickScore = 100;
+
+        /// <summary>Decaimento do score por minuto (0 = nunca decai). Evita que violacoes Low
+        /// esparsas numa sessao longa cruzem o KickScore por puro acumulo (falso positivo).</summary>
+        public int ScoreDecayPerMin = 10;
     }
 }

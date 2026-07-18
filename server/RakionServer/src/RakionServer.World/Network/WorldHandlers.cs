@@ -24,11 +24,8 @@ namespace RakionServer.World.Network
 
         public static void Dispatch(HandlerContext ctx)
         {
-            // OpenGuard: rate-limit de opcodes (flood -> dropa; escala a kick se EnforceKick).
-            var guard = ctx.World.AntiCheat.OnOpcode(ctx.User.Slot, ctx.User.UserId, ctx.Opcode);
-            if (guard.Kick) { ctx.User.Disconnect(Protocol.DiscReason.GameGuard); return; }
-            if (guard.Drop) return;
-
+            // (o rate-limit de opcodes do OpenGuard roda ANTES, em ClientSession.DispatchAsync —
+            //  ponto unico de entrada TCP; aqui so a violacao de opcode desconhecido.)
             if (Table.TryGetValue(ctx.Opcode, out var e))
             {
                 Log.Debug("op", "[{0}] 0x{1:x2} {2}", ctx.User.Slot, ctx.Opcode, e.Name);

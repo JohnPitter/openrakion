@@ -1,5 +1,34 @@
 # Auditoria de qualidade de código — OpenRakion
 
+## Addendum 2026-07-18 — pós-split + slice OpenGuard
+
+> O panorama de 2026-06-14 abaixo é **histórico**: a dívida dos god-files foi QUITADA em
+> 2026-06-17 (ver CLAUDE.md) — `WorldHandlers.Generated.cs` 2692→125, `Broker/Systems.cs`
+> 1797→266, `ClientSession.cs` 1032→387. Estado atual medido:
+
+| Arquivo | Linhas | Status |
+|---|---:|---|
+| `World/Database/WorldDatabase.cs` | **907** | 🔴 **cruzou o gate de ~800** — split obrigatório antes de crescer |
+| `World/WorldServer.cs` | **841** | 🔴 **cruzou o gate de ~800** — split obrigatório antes de crescer |
+| `World/Security/*` (OpenGuard, 5 arquivos) | 40–159 | ✅ dentro do alvo |
+
+**Plano de split proposto (P1 atual):**
+- `WorldDatabase.cs` → `partial class` por domínio, como os handlers: `WorldDatabase.Schema.cs`
+  (EnsureSchema/provisionamento), `WorldDatabase.Inventory.cs` (itembox/useriteminfo/quickslot),
+  `WorldDatabase.Progress.cs` (exp/stats/stage-ranks), núcleo (auth/conexão) fica no arquivo raiz.
+- `WorldServer.cs` → extrair o **motor de partida** (`GrantExp`/`ApplyStageResult`/clocks) para
+  `Services/MatchEngine` (já era o P2 de 06-14; agora o tamanho força), bootstrap/sessões ficam.
+
+**OpenGuard (slice `World/Security/`, auditado no ship 2026-07-18):** 3 achados corrigidos no
+mesmo dia — (1) rate-limit de opcodes movido para o ponto único `ClientSession.DispatchAsync`
+(cobria só o dispatch genérico; login 0x0C e cadeia de lobby escapavam); (2) chave do coalesce
+do `DbViolationSink` inclui a conta (slot é reusado entre sessões — `hits` vazava);
+(3) decaimento de score (`ScoreDecayPerMin`) — sem ele, sessão longa acumulava Low até
+falso positivo com `EnforceKick`. Limitações conhecidas e aceitas: hash de cliente é
+auto-reportado (documentado); flood UDP cobre só o ramo de relay (o único com amplificação).
+
+---
+
 > 2026-06-14. Auditoria estrutural do servidor .NET (`server/RakionServer/`) + scripts.
 > Contexto respeitado: comentários `FUN_xxxx`/offsets/MITM são **documentação de RE** (manter);
 > AES-128-ECB é a cifra **intencional** do jogo; credenciais de amostra (`root/123456`, `test/test`)

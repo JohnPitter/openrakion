@@ -44,7 +44,7 @@ servidor **consegue impor sozinho** e que antes estavam dispersas e passivas pel
 | **Sequência de protocolo** | seq TCP fora de ordem (`ClientSession`) | Medium |
 | **Opcode desconhecido** | fora da tabela de dispatch | Medium |
 | **Frame forjado** | `[u16 size]` inválido ou conteúdo curto | High |
-| **Flood de opcodes (TCP)** | rate-limit por janela no `Dispatch` | Low (dropa) |
+| **Flood de opcodes (TCP)** | rate-limit no ponto único de entrada (`ClientSession.DispatchAsync`) — cobre login 0x0C, keepalive e a cadeia de lobby | Low (dropa) |
 | **Flood de gameplay (UDP)** | rate-limit no relay do `UdpGameplay` (vetor de amplificação) | Low (dropa) |
 | **Chave de sessão UDP** | `user+0x1464` divergente | Medium |
 
@@ -62,8 +62,10 @@ pacotes viraria um flood idêntico de INSERTs. O painel admin lê em **`/opengua
 (filtro por conta, limpar log).
 
 - **Pontuação/política**: cada violação soma pontos por gravidade; ao cruzar `KickScore`,
-  o serviço sinaliza kick (quando `EnforceKick`). A integridade de binário kicka na hora
-  (`EnforceClientHash`, DISC `0xbc`, fiel ao exe).
+  o serviço sinaliza kick (quando `EnforceKick`). O score **decai** `ScoreDecayPerMin`
+  pontos/min — violações esparsas numa sessão longa "esfriam" em vez de acumular até um
+  falso positivo. A integridade de binário kicka na hora (`EnforceClientHash`, DISC `0xbc`,
+  fiel ao exe).
 - **Estado por sessão**: contadores de janela fixa + score, esquecidos no disconnect.
 
 ## Modo de operação (config `[AntiCheat]`)
@@ -79,6 +81,7 @@ cliente offline de uso pessoal. Ligue a imposição quando quiser:
 | `MaxOpcodesPerWindow` / `OpcodeWindowMs` | `120` / `1000` | teto de opcodes TCP por janela |
 | `MaxGameplayPerWindow` / `GameplayWindowMs` | `400` / `1000` | teto de pacotes UDP por janela |
 | `KickScore` | `100` | score acumulado que dispara o kick |
+| `ScoreDecayPerMin` | `10` | decaimento do score por minuto (0 = nunca decai) |
 
 Contrato coberto por testes de domínio puros
 ([`AntiCheatServiceTests`](../server/RakionServer/tests/RakionServer.World.Tests/AntiCheatServiceTests.cs)):

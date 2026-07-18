@@ -128,6 +128,7 @@ namespace RakionServer.World
             ac.GameplayWindowMs = ini.GetValue(s, "GameplayWindowMs", ac.GameplayWindowMs);
             ac.MaxGameplayPerWindow = ini.GetValue(s, "MaxGameplayPerWindow", ac.MaxGameplayPerWindow);
             ac.KickScore = ini.GetValue(s, "KickScore", ac.KickScore);
+            ac.ScoreDecayPerMin = ini.GetValue(s, "ScoreDecayPerMin", ac.ScoreDecayPerMin);
         }
 
         private static void LoadDb(IniFile ini, string section, DbConfig db)

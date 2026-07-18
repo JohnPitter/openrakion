@@ -95,8 +95,13 @@ namespace RakionServer.World.Security
             string detail, bool drop, bool forceKick = false)
         {
             var m = _monitors.GetOrAdd(slot, NewMonitor);
+            long now = _nowMs();
             int score;
-            lock (m) score = m.Score += ScoreOf(sev);
+            lock (m)
+            {
+                DecayScore(m, now);
+                score = m.Score += ScoreOf(sev);
+            }
 
             bool kick = forceKick || (_cfg.EnforceKick && score >= _cfg.KickScore);
             var decision = kick ? GuardDecision.Kicked(kind.ToString())
@@ -105,6 +110,17 @@ namespace RakionServer.World.Security
 
             _sink.Record(new Violation(slot, userId ?? "", kind, sev, detail ?? ""), score, decision);
             return decision;
+        }
+
+        /// <summary>Decai o score pelo tempo decorrido (ScoreDecayPerMin) — chamar com o lock do monitor.</summary>
+        private void DecayScore(SessionMonitor m, long now)
+        {
+            if (_cfg.ScoreDecayPerMin <= 0) return;
+            if (m.LastDecayMs == 0) { m.LastDecayMs = now; return; }
+            long mins = (now - m.LastDecayMs) / 60_000;
+            if (mins <= 0) return;
+            m.Score = Math.Max(0, m.Score - (int)Math.Min(int.MaxValue, mins * _cfg.ScoreDecayPerMin));
+            m.LastDecayMs += mins * 60_000;
         }
 
         private static SessionMonitor NewMonitor(ushort _) => new();
@@ -121,6 +137,7 @@ namespace RakionServer.World.Security
         private sealed class SessionMonitor
         {
             public int Score;
+            public long LastDecayMs;
             public FixedWindow Opcodes;
             public FixedWindow Gameplay;
         }

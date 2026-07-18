@@ -235,6 +235,13 @@ namespace RakionServer.World.Network
         {
             if (!Connected) return;
 
+            // OpenGuard: rate-limit de opcodes no ponto UNICO de entrada TCP — cobre o login
+            // 0x0C (pre-auth, alvo de brute-force), o keepalive, a cadeia de lobby interceptada
+            // por TryHandleLobbyEntry E o dispatch generico (WorldHandlers).
+            var guard = _server.AntiCheat.OnOpcode(Slot, UserId, opcode);
+            if (guard.Kick) { Disconnect(Protocol.DiscReason.GameGuard); return; }
+            if (guard.Drop) return;
+
             if (opcode == Protocol.Op.Login)
             {
                 _clientSeq = 0; // login zera o contador (user+0x146e=0)
