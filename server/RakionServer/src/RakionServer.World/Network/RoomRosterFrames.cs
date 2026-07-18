@@ -5,6 +5,8 @@ namespace RakionServer.World.Network
 {
     public static class RoomRosterFrames
     {
+        private const int SyntheticBotPort = 1183;
+
         public static byte[] SnapshotBody(Field field)
         {
             using var writer = new PacketWriter();
@@ -60,7 +62,7 @@ namespace RakionServer.World.Network
 
         /// <summary>
         /// Registro do bot no roster, no MESMO layout de <c>WriteRoomPlayerRecord</c>: nome, buddy vazio,
-        /// sem tunneling, endpoint zerado (bot não tem rota P2P — o servidor sintetiza o movimento),
+        /// sem tunneling, endpoint loopback marcado (a DLL reconhece a entidade sintética pela porta),
         /// classe/level e quickslots vazios.
         /// </summary>
         private static void WriteBotRecord(PacketWriter writer, BotPlayer bot)
@@ -69,9 +71,9 @@ namespace RakionServer.World.Network
                 .WriteCString("")
                 .WriteByte(0)          // usesTunneling
                 .WriteInt32(0);        // groupId
-            NetworkEndpointCodec.WritePort(writer, 0);
-            writer.WriteBytes(new byte[4]);   // endpoint observado 0.0.0.0
-            NetworkEndpointCodec.WritePort(writer, 0);  // endpoint anunciado
+            NetworkEndpointCodec.WritePort(writer, SyntheticBotPort);
+            writer.WriteBytes(new byte[] { 127, 0, 0, 1 });
+            NetworkEndpointCodec.WritePort(writer, SyntheticBotPort);
             writer.WriteByte(bot.CharClass)
                 .WriteByte(bot.Level)
                 .WriteByte(0);

@@ -353,6 +353,11 @@ namespace RakionServer.World.Network
             using var w = new PacketWriter();
             w.WriteByte((byte)rec.Slot).WriteWord(len).WriteBytes(blob);
             field.BroadcastFieldPlaying(0x4b, w.ToArray(), except: u); // EXCLUI o proprio sender
+            if (u.BotInitialStateMatchId != field.MatchId)
+            {
+                u.BotInitialStateMatchId = field.MatchId;
+                ctx.World.Bots.SendInitialStateTo(u, field, blob);
+            }
             Log.Debug("field", "[{0}] move relay len={1} (slot {2})", u.Slot, len, rec.Slot);
         }
 

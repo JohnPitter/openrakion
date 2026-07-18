@@ -77,6 +77,8 @@ void EmitJump(std::vector<BYTE>& code, uintptr_t source, uintptr_t target)
 void LoadLifecycleSnapshot()
 {
     std::ifstream input(LifecyclePath);
+    LONG nextSequence[MaxPlayerSeats]{};
+    LONG nextDeadState[MaxPlayerSeats]{};
     int seat{};
     int generation{};
     unsigned long sequence{};
@@ -84,8 +86,13 @@ void LoadLifecycleSnapshot()
     while (input >> seat >> generation >> sequence >> dead)
     {
         if (seat < 0 || seat >= MaxPlayerSeats || generation < 0 || sequence == 0) continue;
-        InterlockedExchange(&DesiredDeadState[seat], dead == 0 ? 0 : 1);
-        InterlockedExchange(&DesiredLifecycleSequence[seat], static_cast<LONG>(sequence));
+        nextDeadState[seat] = dead == 0 ? 0 : 1;
+        nextSequence[seat] = static_cast<LONG>(sequence);
+    }
+    for (int index = 0; index < MaxPlayerSeats; ++index)
+    {
+        InterlockedExchange(&DesiredDeadState[index], nextDeadState[index]);
+        InterlockedExchange(&DesiredLifecycleSequence[index], nextSequence[index]);
     }
 }
 

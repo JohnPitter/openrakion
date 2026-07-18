@@ -88,6 +88,7 @@ namespace RakionServer.World.Network
         public int ActiveCharId { get; set; } = 0;           // user+0x14a4: zero até o 0x14 selecionar personagem
         public int GameInfoId { get; set; } = -1;            // user+0x1460: usergameinfo.id autenticado
         public volatile bool ShopBuyInProgress;              // espelha user+0x144c==2 (anti-duplo-clique)
+        public Guid BotInitialStateMatchId;
         private bool InventoryMutationInProgress =>
             ShopBuyInProgress || System.Threading.Volatile.Read(ref _inventoryMutationInProgress) != 0;
         private bool TryStartInventoryMutation() =>

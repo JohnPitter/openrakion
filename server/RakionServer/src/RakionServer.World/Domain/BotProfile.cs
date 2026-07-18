@@ -9,7 +9,7 @@ namespace RakionServer.World.Domain
     /// antecipação (EMA da velocidade do alvo). Consumido por <see cref="BotSteering"/>.
     /// </summary>
     public readonly record struct BotProfile(
-        float MoveSpeed,        // unidades/segundo de deslocamento máximo
+        float MoveSpeed,        // unidades wire/segundo de deslocamento máximo (100 wire = 1 unidade do mapa)
         float Acceleration,     // suavização da velocidade (0..1 por tick; 1 = instantâneo)
         float MeleeRange,       // distância na qual passa a orbitar em vez de avançar
         float StrafeSpeed,      // velocidade angular da orbita (rad/s) no melee
@@ -19,13 +19,13 @@ namespace RakionServer.World.Domain
         public static BotProfile For(BotDifficulty difficulty) => difficulty switch
         {
             BotDifficulty.Easy => new BotProfile(
-                MoveSpeed: 3.0f, Acceleration: 0.25f, MeleeRange: 2.5f,
+                MoveSpeed: 300f, Acceleration: 0.25f, MeleeRange: 250f,
                 StrafeSpeed: 0.8f, Anticipation: 0.0f, ReactionSeconds: 0.45f),
             BotDifficulty.Hard => new BotProfile(
-                MoveSpeed: 6.0f, Acceleration: 0.6f, MeleeRange: 2.0f,
+                MoveSpeed: 600f, Acceleration: 0.6f, MeleeRange: 200f,
                 StrafeSpeed: 2.2f, Anticipation: 0.5f, ReactionSeconds: 0.08f),
             _ => new BotProfile(
-                MoveSpeed: 4.5f, Acceleration: 0.4f, MeleeRange: 2.2f,
+                MoveSpeed: 450f, Acceleration: 0.4f, MeleeRange: 220f,
                 StrafeSpeed: 1.4f, Anticipation: 0.25f, ReactionSeconds: 0.20f),
         };
 

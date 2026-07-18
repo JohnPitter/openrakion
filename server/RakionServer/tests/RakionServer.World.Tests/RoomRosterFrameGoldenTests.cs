@@ -68,5 +68,16 @@ namespace RakionServer.World.Tests
             Assert.Equal("38000004032A00004100420001",
                 Convert.ToHexString(body[..13]));
         }
+
+        [Fact]
+        public void PlayerJoined_Bot_UsesCompatibilityEndpointMarker()
+        {
+            var bot = new BotPlayer { Name = "Rok", CharClass = 2, Level = 40 };
+            var record = new PlayerRec { Slot = 10, State = 3, Bot = bot };
+
+            string hex = Convert.ToHexString(RoomRosterFrames.PlayerJoined(record));
+
+            Assert.Contains("049F7F000001049F", hex);
+        }
     }
 }

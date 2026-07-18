@@ -428,6 +428,7 @@ namespace RakionServer.World
                     Log.Debug("bot", "humano seat {0} acertou bot seat {1}: hp={2}/{3}",
                         attackerRec.Slot, botSeat, bot.Health, bot.MaxHealth);
                     if (!hit.Died) continue;
+                    Bots.PublishBotLifecycles(field);
                     if (hit.Bot.State != 4) hit.Bot.State = 4;   // vítima válida do 0x4f
                     var death = field.ApplyReportedDeath(botSeat, attackerRec.Slot, 0);
                     if (death.Processed)

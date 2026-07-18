@@ -12,7 +12,7 @@ namespace RakionServer.World.Tests
         public void Step_OutOfMelee_MovesTowardTarget()
         {
             var pos = new BotVector(0, 0, 0);
-            var target = new BotVector(0, 0, 10);
+            var target = new BotVector(0, 0, 1000);
 
             BotStep step = BotSteering.Step(pos, BotVector.Zero, Normal, target, BotVector.Zero, 0.1f);
 
@@ -26,7 +26,7 @@ namespace RakionServer.World.Tests
         public void Step_WithinMeleeRange_OrbitsInsteadOfColliding()
         {
             var target = new BotVector(0, 0, 0);
-            var pos = new BotVector(1.0f, 0, 0); // dentro do MeleeRange (2.2)
+            var pos = new BotVector(100f, 0, 0); // dentro do MeleeRange wire (220)
 
             BotStep step = BotSteering.Step(pos, BotVector.Zero, Normal, target, BotVector.Zero, 0.1f);
 
@@ -39,7 +39,7 @@ namespace RakionServer.World.Tests
         public void Step_AccelerationSmoothsVelocity_NoTeleport()
         {
             var pos = new BotVector(0, 0, 0);
-            var target = new BotVector(0, 0, 100);
+            var target = new BotVector(0, 0, 1000);
 
             BotStep step = BotSteering.Step(pos, BotVector.Zero, Normal, target, BotVector.Zero, 0.1f);
 
@@ -62,8 +62,8 @@ namespace RakionServer.World.Tests
         public void Anticipation_LeadsAMovingTarget()
         {
             var pos = new BotVector(0, 0, 0);
-            var target = new BotVector(0, 0, 10);
-            var targetVel = new BotVector(5, 0, 0); // alvo se movendo em X
+            var target = new BotVector(0, 0, 1000);
+            var targetVel = new BotVector(500, 0, 0); // alvo se movendo em X na escala wire
 
             BotStep hard = BotSteering.Step(pos, BotVector.Zero, BotProfile.For(BotDifficulty.Hard),
                 target, targetVel, 0.1f);
@@ -78,12 +78,29 @@ namespace RakionServer.World.Tests
         public void BotPlayer_Tick_AdvancesAndTracksTarget()
         {
             var bot = new BotPlayer { Name = "Rok", Profile = BotProfile.Normal, Position = new BotVector(0, 0, 0) };
-            var target = new BotVector(0, 0, 20);
+            var target = new BotVector(0, 0, 2000);
 
             for (int i = 0; i < 10; i++) bot.Tick(target, 0.1f);
 
             Assert.True(bot.Position.Z > 0, "bot deve ter avançado em direção ao alvo");
-            Assert.True(bot.Position.HorizontalDistanceTo(target) < 20f);
+            Assert.True(bot.Position.HorizontalDistanceTo(target) < 2000f);
+        }
+
+        [Fact]
+        public void BotPlayer_Tick_ReachesCapturedMapScaleWithinTenSeconds()
+        {
+            var bot = new BotPlayer
+            {
+                Name = "Rok",
+                Profile = BotProfile.Normal,
+                Position = BotVector.Zero
+            };
+            var target = new BotVector(0, 0, 3000);
+
+            for (int i = 0; i < 100; i++) bot.Tick(target, 0.1f);
+
+            Assert.True(bot.Position.HorizontalDistanceTo(target) <= BotCombat.MeleeRangeWire,
+                "o bot precisa alcançar a hitbox em escala wire durante uma rodada real");
         }
 
         [Fact]

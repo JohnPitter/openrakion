@@ -9,8 +9,8 @@ World pelo envelope `0xB07A`, sem duplicar o pacote entregue aos peers e sem exi
 
 ## Veredito do RE (respeitado, não contornado)
 
-O bot server-side entrega um oponente **FUNCIONAL** — aparece no roster, anda na tela do humano,
-leva dano, reage visualmente ao golpe e morre com placar server-side. Ele **não** produz o número
+O bot server-side entrega um oponente **FUNCIONAL** — aparece no roster e no stage, recebe os
+ataques do humano e possui HP/morte autoritativos. Ele **não** produz o número
 cosmético **HIT×N** nativo: o
 gate `ReceiveDamage@0x3518ce40` exige `[vítima+0x394]!=0`, que só é setado numa entidade **simulada
 em combate localmente** = um peer de sessão real sincronizado (limite type-7, confirmado e não
@@ -36,7 +36,11 @@ re-tentado). Regras invioláveis herdadas do RE:
 1. **Add** (`BotManager.AddBotToField`): só o host, só antes da partida, só em sala competitiva
    (mode != 0). O bot entra no **time oposto** ao host, num assento livre do bloco 0..9 / 10..19,
    já READY (não trava o start). Sincroniza o roster do cliente com um **member-join 0x38** cujo
-   registro é o do bot (`RoomRosterFrames.WriteBotRecord`, endpoint zerado).
+   registro é o do bot (`RoomRosterFrames.WriteBotRecord`, endpoint sintético marcado).
+   No cliente v258, o botão **Add Bot** envia o chat de sala `0x47` com
+   `<nome> : /addbot`; o handler aceita esse comando ainda em `FieldLobby`, sem desconectar a sessão.
+   O endpoint loopback com porta-marcador `1183` identifica o peer sintético para a DLL, e o primeiro
+   snapshot `0x4B` do humano é replicado com o seat do bot para o engine criar sua entidade no stage.
 2. **Em jogo** (`BotManager.TickField`, chamado pelo game-clock a 150 ms quando `Field.State==2`):
    para cada bot, mira o **humano inimigo vivo mais próximo** (posição rastreada do `0x030A` dele,
    lida em `UdpGameplay.RelayToField`), avança a IA (`BotSteering`) e **sintetiza o `0x030A` do
@@ -54,7 +58,7 @@ entregue e o que é teto:
   o `UdpGameplay` chama `WorldServer.ResolveBotMeleeAttack` → `BotCombat.ResolveMeleeAttack` aplica
   dano aos bots inimigos vivos no alcance (posições rastreadas). A cada acerto, o servidor devolve
   um `0x0311 kind=Damage` estendido com o assento do bot e segura a IA por 300 ms, tornando a reação
-  visível no cliente. Ao zerar o HP, a morte é liquidada
+  publicada ao cliente. Ao zerar o HP, a morte é liquidada
   pelo **`Field.ApplyReportedDeath`** do modo e transmitida com **`0x4f`** aos humanos: o atacante
   recebe o kill/pontos. A detecção autoritativa é por ataque, time, estado e proximidade no servidor;
   o cliente apresenta a reação, mas não computa o número cosmético HIT×N (gate `[+0x394]`, limite
@@ -66,12 +70,14 @@ entregue e o que é teto:
 
 ## Cobertura de testes
 
-- `BotSteeringTests` (7): perseguição, orbita no melee, aceleração (sem teleporte), antecipação por
-  dificuldade, tick do `BotPlayer`.
+- `BotSteeringTests` (8): perseguição, orbita no melee, aceleração, antecipação, tick e convergência
+  em até dez segundos na escala wire real (100 unidades wire = 1 unidade de mapa).
 - `BotManagerTests` (6): add pelo host no time oposto, gates (não-host / em-jogo / solo), limpeza,
   time cheio.
-- `BotMovementSynthTests` (4): formato do 0x030A, assento na origem, roundtrip da posição e reação
+- `BotMovementSynthTests` (4): formato do 0x030A, assento/`sourceEcho`, roundtrip da posição e reação
   estendida `0x0311 kind=Damage`.
+- `E2E/AddBotButtonCommandE2ETests` (1): envia exatamente `GoHeroi : /addbot` pelo `0x47` capturado
+  do botão e confirma bot no time oposto sem derrubar o host da sala.
 - `E2E/BotMovementE2ETests` (1): no fio, um humano recebe o `0x030A` sintetizado do bot com a
   partida em jogo.
 - `E2E/BotStageValidationTests`: o primeiro golpe reduz HP e retorna `0x0311 kind=Damage` ao humano;
@@ -79,8 +85,10 @@ entregue e o que é teto:
 
 ## Fronteira (o teto do RE, não um bug)
 
-Entregue e provado headless: roster, movimento, reação de dano, HP/morte, dificuldade/IA e ponte
-P2P→World da DLL. A apresentação no cliente gráfico ainda exige smoke visual. **Não** entregue por limite
-arquitetural: o número cosmético HIT×N nativo (exige peer de sessão real). Extensões possíveis
+Entregue e provado no cliente gráfico em 18/07/2026: botão Add Bot, roster, criação da entidade
+`Rok` no stage Mammoth, captura do primeiro ataque pela DLL, HP `500→0` no World e aplicação nativa
+dos lifecycles `alive seq=1` e `dead seq=2`. Ainda não foi aprovada visualmente a animação de dano,
+o respawn, nem o HUD de kill (a captura permaneceu em `0 Kills`); esses itens continuam no Smoke 3.
+**Não** entregue por limite arquitetural: o número cosmético HIT×N nativo (exige peer de sessão real). Extensões possíveis
 (hitbox mais precisa, projéteis e dano bot→humano) seguem o mesmo teto sem um peer simulado pelo
 engine. Ver o cluster HIT×N na memória do projeto.

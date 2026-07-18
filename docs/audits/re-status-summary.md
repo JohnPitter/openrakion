@@ -83,7 +83,7 @@ A validação **dinâmica** dirige o `WorldServer` real por clientes headless no
 - **bots server-side**: movimento, perseguição, convivência com dois humanos, datagrama de reação
   ao dano e morte no field, provados headless inclusive pela ponte DLL P2P→World; smoke visual pendente.
 
-São **28 testes E2E** e **828 testes World verdes**. Detalhe em
+São **29 testes E2E** e **830 testes World verdes**. Detalhe em
 [`dynamic-validation.md`](dynamic-validation.md).
 
 Não resta alvo headless conhecido nessa matriz. A próxima etapa é a auditoria final global e,

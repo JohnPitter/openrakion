@@ -212,6 +212,13 @@ namespace RakionServer.World.Tests.E2E
             Send(0x22, w.ToArray());
         }
 
+        public void SendFieldChat(string text)
+        {
+            using var writer = new PacketWriter();
+            writer.WriteCString(text);
+            Send(0x47, writer.ToArray());
+        }
+
         /// <summary>Master inicia a partida (0x43): sem payload.</summary>
         public void StartMatch() => Send(0x43, Array.Empty<byte>());
 

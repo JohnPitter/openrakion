@@ -24,7 +24,7 @@ namespace RakionServer.World.Network
             BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(2), sequence);
             p[6] = seat;
             BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(7), deltaMs);
-            p[9] = 0;   // state Normal + echo 0
+            p[9] = seat;   // state Normal + source echo no low 5 bits
             p[10] = 0;  // actionCode
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(11), ToWire(position.X));
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(13), ToWire(position.Y));
@@ -49,7 +49,7 @@ namespace RakionServer.World.Network
             BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(0), AttackType);
             BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(2), sequence);
             p[6] = seat;
-            p[7] = 0;   // sourceEcho
+            p[7] = seat;
             p[8] = 1;   // kind = Attack
             p[9] = 0;   // arg0
             return p;
@@ -62,7 +62,7 @@ namespace RakionServer.World.Network
             BinaryPrimitives.WriteUInt16LittleEndian(packet.AsSpan(0), AttackType);
             BinaryPrimitives.WriteUInt32LittleEndian(packet.AsSpan(2), sequence);
             packet[6] = seat;
-            packet[7] = 0;
+            packet[7] = seat;
             packet[8] = (byte)PlayerAnimationKind.Damage;
             packet[9] = 1;
             return packet;

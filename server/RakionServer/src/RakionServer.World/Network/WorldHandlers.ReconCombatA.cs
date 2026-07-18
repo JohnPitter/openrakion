@@ -121,6 +121,7 @@ namespace RakionServer.World.Network
 
             // LAB_00407b16 cVar4==0: broadcast 0x43 [0] a TODOS (FUN_004061f0); reset de match.
             field.BroadcastField(0x43, new byte[] { 0x00 });
+            ctx.World.Bots.PublishMatchSpawns(field);
             field.Phase = MatchPhase.Pre;
             field.DeadlineMs = Environment.TickCount64 + 40000;
             field.Warned30 = 0;
@@ -147,6 +148,7 @@ namespace RakionServer.World.Network
 
             Log.Info("combat", "[{0}] 0x45 spawn (field {1} seat {2})", u.Slot, field.Id, rec.Slot);
             Combat_0x45_SpawnInto(field, rec.Slot);
+            ctx.World.Bots.SendMatchSpawnsTo(u, field);
         }
 
         /// <summary>

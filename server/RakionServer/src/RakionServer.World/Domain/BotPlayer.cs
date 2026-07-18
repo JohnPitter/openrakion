@@ -24,6 +24,7 @@ namespace RakionServer.World.Domain
         public bool Alive = true;
         public byte TargetSeat = Field.NoSeat;
         public uint MoveSeq;    // sequência crescente do 0x030A sintetizado (o cliente ecoa/ordena)
+        public uint LifecycleSequence { get; private set; }
 
         // ---- combate server-side (o servidor é a autoridade do HP do bot; teto RE: sem HIT×N nativo) ----
         public int MaxHealth { get; private set; } = 100;
@@ -36,6 +37,8 @@ namespace RakionServer.World.Domain
         {
             MaxHealth = 100 + level * 10;
             Health = MaxHealth;
+            Alive = true;
+            LifecycleSequence++;
         }
 
         /// <summary>Aplica dano server-side. Devolve true se o bot morreu neste golpe.</summary>
@@ -46,6 +49,7 @@ namespace RakionServer.World.Domain
             if (Health > 0) return false;
             Health = 0;
             Alive = false;
+            LifecycleSequence++;
             return true;
         }
 

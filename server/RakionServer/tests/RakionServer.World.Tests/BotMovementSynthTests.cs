@@ -16,6 +16,7 @@ namespace RakionServer.World.Tests
             Assert.Equal(0x0a, p[0]);
             Assert.Equal(0x03, p[1]);
             Assert.Equal(12, p[6]);   // assento de origem do bot
+            Assert.Equal(12, p[9] & 0x1f);   // eco exigido pelo parser do peer
         }
 
         [Fact]
@@ -45,6 +46,7 @@ namespace RakionServer.World.Tests
 
             Assert.True(GameplayActionDatagram.TryParseAnimation(packet, out var action));
             Assert.Equal(10, action.Header.SourceSlot);
+            Assert.Equal(10, action.SourceEcho);
             Assert.Equal(99u, action.Header.Sequence);
             Assert.Equal(PlayerAnimationKind.Damage, action.Kind);
             Assert.True(action.HasExtendedPayload);

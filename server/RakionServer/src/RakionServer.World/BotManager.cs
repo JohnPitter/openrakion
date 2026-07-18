@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Text;
 using RakionServer.Common;
 using RakionServer.World.Domain;
 using RakionServer.World.Network;
@@ -22,6 +24,8 @@ namespace RakionServer.World
             { "Rok", "Karion", "Ares", "Vyl", "Drak", "Nyx", "Zair", "Brutus", "Kael", "Thorn" };
 
         private int _nameSeq;
+        private readonly object _lifecycleFileLock = new();
+        private const string LifecyclePath = @"C:\temp\bot_lifecycle.txt";
 
         public readonly record struct AddBotResult(bool Ok, string Message, int Seat, BotPlayer? Bot);
 
@@ -64,6 +68,7 @@ namespace RakionServer.World
 
                 // Espelha no roster do cliente humano: o bot aparece no slot da sala (member-join 0x38).
                 field.BroadcastLobby(RoomRosterFrames.PlayerJoined(field.Slots[seat]));
+                PublishBotLifecycles(field);
                 return new AddBotResult(true, "bot adicionado", seat, bot);
             }
         }
@@ -75,7 +80,57 @@ namespace RakionServer.World
             {
                 if (!field.RemoveBot(seat)) return false;
                 field.BroadcastLobby(BuildLeave(seat));
+                PublishBotLifecycles(field);
                 return true;
+            }
+        }
+
+        /// <summary>Publica o spawn dos peers sintéticos quando o match entra no field.</summary>
+        public void PublishMatchSpawns(Field field)
+        {
+            lock (field.SyncRoot)
+            {
+                foreach (PlayerRec record in field.BotSlots)
+                {
+                    record.State = 4;
+                    record.Dead = false;
+                    field.BroadcastField(0x45,
+                        FieldLifecycleFrames.Spawn((byte)record.Slot));
+                }
+            }
+        }
+
+        /// <summary>Sincroniza os bots com o cliente que acabou de concluir o próprio spawn.</summary>
+        public void SendMatchSpawnsTo(ClientSession session, Field field)
+        {
+            lock (field.SyncRoot)
+            {
+                foreach (PlayerRec record in field.BotSlots)
+                {
+                    record.State = 4;
+                    record.Dead = false;
+                    session.SendMessage(0x45,
+                        FieldLifecycleFrames.Spawn((byte)record.Slot));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Replica o snapshot inicial de entrada do humano para criar os peers sintéticos no engine.
+        /// O seat fica no envelope 0x4B; o blob contém apenas o estado inicial do avatar.
+        /// </summary>
+        public void SendInitialStateTo(ClientSession session, Field field, byte[] stateBlob)
+        {
+            lock (field.SyncRoot)
+            {
+                foreach (PlayerRec record in field.BotSlots)
+                {
+                    using var writer = new PacketWriter();
+                    writer.WriteByte((byte)record.Slot)
+                        .WriteWord((ushort)stateBlob.Length)
+                        .WriteBytes(stateBlob);
+                    session.SendMessage(0x4b, writer.ToArray());
+                }
             }
         }
 
@@ -92,7 +147,40 @@ namespace RakionServer.World
                     if (field.RemoveBot(seat)) { field.BroadcastLobby(BuildLeave(seat)); removed++; }
                 }
                 if (removed > 0) Log.Info("bot", "field {0}: {1} bot(s) removido(s)", field.Id, removed);
+                if (removed > 0) PublishBotLifecycles(field);
                 return removed;
+            }
+        }
+
+        public void PublishBotLifecycles(Field field)
+        {
+            var content = new StringBuilder();
+            lock (field.SyncRoot)
+            {
+                foreach (PlayerRec record in field.BotSlots)
+                {
+                    BotPlayer bot = record.Bot!;
+                    content.Append(record.Slot).Append(' ')
+                        .Append(field.Id).Append(' ')
+                        .Append(bot.LifecycleSequence).Append(' ')
+                        .Append(bot.Alive ? 0 : 1).AppendLine();
+                }
+            }
+
+            lock (_lifecycleFileLock)
+            {
+                try
+                {
+                    string? directory = Path.GetDirectoryName(LifecyclePath);
+                    if (directory != null) Directory.CreateDirectory(directory);
+                    string temporary = LifecyclePath + ".tmp";
+                    File.WriteAllText(temporary, content.ToString(), Encoding.ASCII);
+                    File.Move(temporary, LifecyclePath, true);
+                }
+                catch (IOException ex)
+                {
+                    Log.Warn("bot", "falha ao publicar lifecycle: {0}", ex.Message);
+                }
             }
         }
 

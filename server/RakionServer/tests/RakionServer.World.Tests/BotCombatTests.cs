@@ -42,6 +42,7 @@ namespace RakionServer.World.Tests
             Assert.True(hits[0].Died);
             Assert.False(hits[0].Bot.Bot!.Alive);
             Assert.Equal(0, hits[0].Bot.Bot!.Health);
+            Assert.Equal(2u, hits[0].Bot.Bot!.LifecycleSequence);
         }
 
         [Fact]

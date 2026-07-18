@@ -34,10 +34,9 @@ namespace RakionServer.World.Network
             }
 
             // "/addbot [facil|normal|dificil] [n]" — só o host, dentro de uma sala competitiva.
-            if (colon >= 0 && text.Length >= colon + 2 + 7 &&
-                string.CompareOrdinal(text, colon + 2, "/addbot", 0, 7) == 0)
+            if (TryExtractCommand(text, "/addbot", out string addBotCommand))
             {
-                HandleAddBotCommand(ctx, text.Substring(colon + 2));
+                HandleAddBotCommand(ctx, addBotCommand);
                 return;
             }
 
@@ -85,9 +84,18 @@ namespace RakionServer.World.Network
         {
             var u = ctx.User;
             if (!(u.InField && u.FieldSecondary)) { u.Disconnect(0x7e); return; }
-            if (u.Status != 0x03) { u.Disconnect(0x7f); return; }
             string text = ctx.P.CString(0x81);
             if (text.Length >= 0x81) { u.Disconnect(0x80); return; }
+            if (TryExtractCommand(text, "/addbot", out string command))
+            {
+                HandleAddBotCommand(ctx, command);
+                return;
+            }
+            if (u.Status is not (UserStatus.FieldLobby or UserStatus.InField))
+            {
+                u.Disconnect(0x7f);
+                return;
+            }
             var field = ctx.World.GetField(u.FieldId);
             if (field == null) return;
             var sender = field.FindRec(u);
@@ -96,6 +104,19 @@ namespace RakionServer.World.Network
 
             field.BroadcastField(0x47, FieldChatFrames.Message((byte)sender.Slot, text));
             Log.Debug("chat", "[{0}] field {1} seat {2}: {3}", u.Slot, field.Id, sender.Slot, text);
+        }
+
+        private static bool TryExtractCommand(string text, string name, out string command)
+        {
+            command = "";
+            int colon = text.IndexOf(':');
+            int start = colon >= 0 ? colon + 1 : 0;
+            while (start < text.Length && char.IsWhiteSpace(text[start])) start++;
+            if (!text.AsSpan(start).StartsWith(name, StringComparison.Ordinal)) return false;
+            int end = start + name.Length;
+            if (end < text.Length && !char.IsWhiteSpace(text[end])) return false;
+            command = text[start..];
+            return true;
         }
 
         private static int ParseIntAt(string s, int start)
