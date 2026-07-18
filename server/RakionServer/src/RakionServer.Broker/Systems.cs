@@ -130,7 +130,7 @@ namespace BrokenServer
 			{
 				Systems systems = (Systems)decode.Packet;
 				systems.PacketInformation = decode;
-				Systems.PacketReader packetReader = new Systems.PacketReader(systems.PacketInformation.buffer);
+				PacketReader packetReader = new PacketReader(systems.PacketInformation.buffer);
 				LogDebug.Show("Opcode: {0}", decode.opcode);
 				ushort opcode = decode.opcode;
 				if (opcode != 0)
@@ -199,12 +199,11 @@ namespace BrokenServer
 		// Token: 0x06000026 RID: 38 RVA: 0x0000342C File Offset: 0x0000162C
 		public static byte[] ServerListPacket(int cliVersion)
 		{
-			Systems.PacketWriter packetWriter = new Systems.PacketWriter();
-			packetWriter.Create(257);
+			using var packetWriter = new Systems.PacketWriter(257);
 			Systems.SRX_Serverinfo[] online = Systems.GSList.Values
 				.Where(server => server.status == 1)
 				.ToArray();
-			packetWriter.Byte(checked((byte)online.Length));
+			packetWriter.WriteByte(checked((byte)online.Length));
 			foreach (Systems.SRX_Serverinfo server in online)
 			{
 					string[] array;
@@ -220,10 +219,10 @@ namespace BrokenServer
 					byte b2 = Convert.ToByte(int.Parse(array[1]));
 					byte b3 = Convert.ToByte(int.Parse(array[2]));
 					byte b4 = Convert.ToByte(int.Parse(array[3]));
-					packetWriter.Byte(b);
-					packetWriter.Byte(b2);
-					packetWriter.Byte(b3);
-					packetWriter.Byte(b4);
+					packetWriter.WriteByte(b);
+					packetWriter.WriteByte(b2);
+					packetWriter.WriteByte(b3);
+					packetWriter.WriteByte(b4);
 					// Layout EXATO que o client espera (igual ao CarlosX original):
 					//   [IP 4][port 2 swapped/BE][game pair][user pair]
 					// A PORTA vem LOGO APOS o IP (nao no fim!). Mover ela pro fim
@@ -232,14 +231,14 @@ namespace BrokenServer
 					// Layout EXATO do broker original (capturado byte-a-byte):
 					//   [IP 4][port swapped 2][usedSala][maxSalas][usedSlots][maxSlots]
 					byte[] pb = Program.GetBytesUInt16(server.port);
-					packetWriter.Byte(pb[1]);
-					packetWriter.Byte(pb[0]);
-					packetWriter.Word(server.usedSala);
-					packetWriter.Word(server.maxSalas);
-					packetWriter.Word(server.usedSlots);
-					packetWriter.Word(server.maxSlots);
+					packetWriter.WriteByte(pb[1]);
+					packetWriter.WriteByte(pb[0]);
+					packetWriter.WriteUInt16(server.usedSala);
+					packetWriter.WriteUInt16(server.maxSalas);
+					packetWriter.WriteUInt16(server.usedSlots);
+					packetWriter.WriteUInt16(server.maxSlots);
 			}
-			return packetWriter.GetBytes();
+			return packetWriter.ToArray();
 		}
 
 		// Token: 0x0400000F RID: 15

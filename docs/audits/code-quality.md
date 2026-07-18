@@ -1,6 +1,6 @@
 # Auditoria de qualidade de código — OpenRakion
 
-> 2026-07-16. Auditoria estrutural do servidor .NET (`server/RakionServer/`) + scripts.
+> Auditoria iniciada em 2026-07-16 e reconciliada com o código atual em 2026-07-18.
 > Contexto respeitado: comentários `FUN_xxxx`/offsets/MITM são **documentação de RE** (manter);
 > AES-128-ECB é a cifra **intencional** do jogo; credenciais de amostra (`root/123456`, `test/test`)
 > são abertas de propósito (servidor pessoal offline). Esses itens **não** são apontados como defeito.
@@ -11,12 +11,11 @@
 
 | Arquivo | Linhas | Excesso | Natureza |
 |---|---:|---:|---|
-| `Broker/Systems.cs` | 1797 | 4.5x | god-file decompilado; 790 ln são framework `Ini`/`Profile` |
-| `World/Network/ClientSession.cs` | 1032 | 2.6x | socket + replay + handlers de shop/PU + god-object de estado |
-| `World/Database/WorldDatabase.cs` | 669 | 1.7x | repositório monolítico, mas **coeso e limpo** |
-| `World/WorldServer.cs` | 607 | 1.5x | host de infra **+ motor de partida** misturados |
-| `World/Network/WorldHandlers.ReconCombatB.cs` | 516 | 1.3x | seat + relay de combate |
-| `World/Domain/Field.cs` | 506 | 1.3x | domínio **+ wire-codec** misturados |
+| `World/WorldServer.cs` | 1304 | 3.3x | host de infra **+ casos de uso + motor de partida** misturados |
+| `World/Database/WorldDatabase.cs` | 976 | 2.4x | núcleo do repositório ainda grande, apesar dos partials por domínio |
+| `World/Domain/Field.cs` | 614 | 1.5x | domínio **+ wire-codec** misturados |
+| `World/Network/ClientSession.cs` | 445 | 1.1x | socket, dispatch e estado de sessão ainda acoplados |
+| `World/Network/WorldHandlers.ReconCombatB.cs` | 420 | 1.1x | seat + relay de combate |
 
 ## Plano priorizado
 
@@ -27,22 +26,28 @@
   removidos. `WorldHandlers.cs` aponta diretamente para os delegates finais.
 - ✅ **Aliases privados sem chamador**: removidos após auditoria cruzada da tabela canônica e dos
   interceptores por estado; nenhum método `Op_*` privado permanece com apenas a própria declaração.
-- **`ClientSession.cs`**: `public SendInventoryList()` (632-675) sem call-site; `const DiagEmptyInventory=false` + seus blocos (diagnóstico já concluído).
-- **`WorldDatabase.cs`**: `LoadCharactersAsync`, `LoadClanAsync`, `InsertUserItemAsync` — zero chamadores (~74 ln).
-- **Broker**: `ServerListener.cs` inteiro (96 ln, não referenciado por `Main`); `Systems.CheckServerExpired` (corpo vazio); branch `extip` em `Program.cs:47` (descarta o resultado); overloads-fantasma de `PacketWriter` (`Word`/`WordInt`, `DWord`/`DWordInt`, `String`/`HexString` idênticos).
-- **`web/launcher_web.py`** — **morto**: o README já diz que o `.LauncherWeb` (.NET) "aposentou" este arquivo; é reimplementação byte-a-byte do `LauncherWeb/Program.cs`. Mover para `legacy/` ou deletar.
-- **`tools/difftest.py`** — provavelmente superseded pelo `RakionServer.OracleDiff` (.NET). Confirmar e remover.
+- ✅ `SendInventoryList`, `DiagEmptyInventory`, `LoadClanAsync` e `InsertUserItemAsync` foram
+  removidos. `LoadCharactersAsync` é a consulta canônica usada na montagem do login `0x0C`.
+- ✅ `ServerListener`, `CheckServerExpired`, a branch `extip` inerte e `web/launcher_web.py` foram
+  removidos. O Broker usa `Common.IniFile` cross-platform.
+- ✅ O reader duplicado do Broker foi eliminado; IPC/login usa `Common.PacketReader`. O writer da
+  lista de mundos expõe somente byte, `ushort` e finalização do frame, protegidos por goldens.
+- `tools/difftest.py` permanece intencional: dirige um World nativo ou .NET já em execução; o
+  `OracleDiff` compara oráculos/capturas por outro fluxo. Ambos estão documentados em `tools/README.md`.
 
 ### P1 — Quebrar os god-files (estrutura)
 - ✅ O antigo `WorldHandlers.Generated.cs` foi dividido em partials por domínio e eliminado; a
   tabela canônica fica em `WorldHandlers.cs`.
-- **`Broker/Systems.cs`** → split físico (preservando bytes do wire): `ServerRegistry`, `ServerInfo`, `Network/FrameDecoder`, `Network/TcpServer`, `Network/ClientSession`, `Network/PacketReader|Writer`. **Apagar o framework `Ini`/`Profile` (790 ln)**: é Windows-only (`WritePrivateProfileString` via P/Invoke → quebra o Docker/Linux que o README anuncia) e **duplica `Common/IniFile.cs`** — usar o `Common.IniFile`.
+- ✅ **Broker split e cross-platform**: `Systems.cs` caiu para 260 linhas; client, decode, server,
+  server-info e codec estão separados. `Ini/Profile` via P/Invoke foi substituído por
+  `Common.IniFile`, e o parser do Broker usa o reader comum seguro.
 - **`ClientSession.cs`** → ✅ **replay eliminado** (2026-06-17): os `_rNN` da cadeia lobby→canal→sala→stage viraram síntese pura em `LobbyFrames` (golden-testada byte-a-byte); `OracleReplay.cs`→`LobbyFlow.cs` (só fluxo/dispatch); o `oracle_*.bin` do login já fora p/ `LoginCharListWriter`. Resta extrair `InventoryProtocol`/`ShopSession` e agrupar o god-object de estado em `CharProgress`/`FieldState`/`Wallet`.
 
 ### P2 — Separar domínio de infra (regra de negócio fora de I/O/rede)
 - **Economia**: compra/venda de storage, Power User e Stage/PvE usam casos de uso no
-  `WorldServer` e transações idempotentes no `WorldDatabase`. O prêmio-base de Stage ainda é
-  reportado pelo cliente sob os limites originais; falta torná-lo server-calculated.
+  `WorldServer` e transações idempotentes no `WorldDatabase`. Stage é calculado pelo backend a
+  partir do catálogo, rank e melhor rank anterior. PvP preserva o reporte legado limitado pelo
+  `GamePointRules`; torná-lo server-calculated seria uma extensão de autoridade.
 - **Motor de partida** (`MatchTick`/`SettleMatch`/`GrantExp`/clocks) em `WorldServer` → extrair `MatchEngine`.
 - **Wire-codec em entidade de domínio**: `Field.Build0x48/49/4a`/`BuildMatchEnd`/`SerializeListEntry` → mover para um `FieldWireCodec`/camada Network; `Combat_*` de `ReconCombatA` viram métodos de `Field`/`PlayerRec`.
 
@@ -78,9 +83,10 @@
   UDP abaixo do frame IPC mínimo ou sem CRC antes de criar o reader, e gameplay UDP usa parser
   por `ReadOnlySpan` com tamanho fixo.
 - **Senhas de conta em texto puro** no DB (`LauncherWeb/Program.cs:38`, `AdminDb.CreateAccount/SetPassword`). **Imposto pela fidelidade ao cliente** (o launcher manda `pass` como hex de latin1, comparação direta) — não corrigível sem mexer no cliente. **Registrar como risco conhecido**: um dump do DB expõe todas as senhas. **[MÉDIA, aceito]**
-- **Crédito de gold/exp a partir de input do cliente**: `GamePointRules` replica `FUN_0041CF80`
-  (`1500/500` stage, `115/160` Deathmatch/Boss, `90/70` Team Death e limites de Golem por
-  rodada), mas os valores continuam reportados pelo cliente como no original. **[MÉDIA, legado]**
+- **Crédito PvP de gold/exp a partir de input do cliente**: `GamePointRules` replica
+  `FUN_0041CF80` (`115/160` Deathmatch/Boss, `90/70` Team Death e limites de Golem por rodada),
+  mas valores dentro do teto continuam reportados pelo cliente como no original. Stage não usa
+  esse caminho: recompensa e Cell EXP são calculados/validados pelo backend. **[MÉDIA, legado]**
 - ✅ **Credencial redigida no log**: `ClientSession.ReceiveLoopAsync` registra somente o tamanho do
   receive em `Debug`; o payload decifrado do opcode de login `0x0C` é substituído por
   `<nB redacted>`. Outros opcodes permanecem disponíveis em hex apenas com debug habilitado.
@@ -95,6 +101,6 @@ Código novo, idiomático e limpo — usar como padrão ao refatorar o resto:
 - **`World/Network/UdpGameplay.Process`** — bounds-check exemplar (modelo a replicar no `PacketReader`/`BrokerLink`).
 - **`Handlers/LoginHandler`** — early-return, parse capado, loga o fluxo de auth.
 
-> Padrão recorrente: a **fundação certa já existe no repo** (`Common.IniFile`, classes de constantes
-> em `Protocol.cs`, parse seguro em `UdpGameplay`). O débito estrutural maior está no Broker e nos
-> partials antigos de combate/`ClientSession` crescidos durante a iteração de RE.
+> Padrão recorrente: a **fundação certa já existe no repo** (`Common.IniFile`, `PacketReader`,
+> classes de constantes em `Protocol.cs`, parse seguro em `UdpGameplay`). O débito estrutural maior
+> está hoje em `WorldServer`, `WorldDatabase`, `Field` e nos partials antigos de combate.
