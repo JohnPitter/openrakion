@@ -48,7 +48,8 @@
 
 ### P3 — Dedup + segurança por construção
 - **Gate de field duplicado em ~40 handlers** (`if (!(u.InField && u.FieldSecondary)) {Disconnect} if (Status != …) {Disconnect}`) — o helper `ReconGate` já existe em `Recon.cs:86` mas não é usado uniformemente; criar `ReconGate2(ctx, discNoField, discBadStatus)` e aplicar. Padronizar `UserStatus.InField` em vez de `0x03` cru.
-- **`PacketReader` seguro por construção** — ver Segurança abaixo.
+- ✅ **`PacketReader` seguro por construção**: todas as primitivas, `Skip` e o offset inicial
+  validam os limites e convergem em `EndOfPacketException`; a comparação evita overflow de soma.
 - **`MapCharacter`/`StatColumns`/`WithConnection`** em `WorldDatabase`; `LogConsole`↔`LogDebug`
   no Broker (~70 ln copy-paste). Os settlements `0x50/0x53` já foram separados por domínio e
   compartilham apenas a projeção canônica de progressão.
@@ -57,23 +58,32 @@
 
 ## Bugs latentes (não são só estilo — corrigir)
 
-- **`PacketReader` sem bounds-check** (`Common/PacketReader.cs`): `Byte/Int16/Int32/UInt32/String/Bytes` leem sem validar `Remaining`. Vários handlers leem **sem `CanRead`** (ex.: `ReconCombatB.cs:107,418,479`). Cada `Dispatch` está em try/catch, então não derruba o processo, mas um frame curto/forjado vira `IndexOutOfRange` em vez de DISC limpo. **Tornar o reader seguro por construção** (cada primitivo valida e lança `EndOfPacket`) fecha a classe inteira de bugs. **[ALTA]**
+- ✅ **`PacketReader` com bounds-check integral** (`Common/PacketReader.cs`): primitivas, strings,
+  bytes, `Skip` e offset inicial rejeitam frames curtos/forjados com `EndOfPacketException`; o gate
+  usa `n <= Remaining`, sem overflow na soma.
 - ✅ **Opcode `0x4A` consolidado**: a decompilação confirmou `[RoundEndReason,LosingSideWire,Wins0,Wins1]`; todos os emissores usam `Field.Build0x4a()` e há golden tests do wire.
-- **`MaxPlayers = (byte)capacity`** (`WorldServer.cs:66`) trunca capacidades >255 (`capacity` é `ushort`, até 1210). **[MÉDIA]**
+- ✅ **Capacidade de sala sem truncamento**: `RoomCreationOptions.Capacity` e `Field.MaxPlayers`
+  são `byte`, limitados a 20 pelo contrato v258; não existe mais conversão de `ushort`.
 - ✅ O alias morto `Op_FieldCreateRoomEntry` foi removido; a criação canônica valida o domínio em
   `ClientSession.Rooms`.
 - **Power User**: compra, alocação e callback foram fechados com transações autoritativas; permanece validação gráfica. O protocolo legado não carrega uma chave de retry, portanto idempotência após reconexão exigiria extensão coordenada de cliente e servidor. **[BAIXA]**
-- **`EchoGameplayUdp`** lê `BitConverter.ToUInt32(pkt,19)` (precisa `Length>=23`) com guarda só `>=21` (`BrokerLink.cs:106`). **[MÉDIA]**
+- ✅ **`EchoGameplayUdp` com frame completo**: o roteamento exige
+  `GameplayUdpHandshake.PacketSize` (23 bytes), e o parser repete o mesmo limite antes de ler
+  `EchoData` em `packet[19..23]`.
 - **Resolvido — Buddy CDs**: `BuddyProtocol.cs` é a fonte única; `RET_SET_NICK=0x3101` e `RET_GROUP_GETLIST=0x3151`, sem literais divergentes no dispatcher.
 
 ## Segurança (real — fora os itens intencionais)
 
-- **Parse de input externo sem bounds-check** — ver bug `PacketReader` acima; também `BrokerLink.HandlePacketAsync` (UDP, `r.String()` com `len` do fio). **[ALTA]** (mitigado por try/catch, mas é a classe de bug a fechar).
+- ✅ **Parse externo com bounds-check**: `PacketReader` é seguro por construção; o Broker rejeita
+  UDP abaixo do frame IPC mínimo ou sem CRC antes de criar o reader, e gameplay UDP usa parser
+  por `ReadOnlySpan` com tamanho fixo.
 - **Senhas de conta em texto puro** no DB (`LauncherWeb/Program.cs:38`, `AdminDb.CreateAccount/SetPassword`). **Imposto pela fidelidade ao cliente** (o launcher manda `pass` como hex de latin1, comparação direta) — não corrigível sem mexer no cliente. **Registrar como risco conhecido**: um dump do DB expõe todas as senhas. **[MÉDIA, aceito]**
 - **Crédito de gold/exp a partir de input do cliente**: `GamePointRules` replica `FUN_0041CF80`
   (`1500/500` stage, `115/160` Deathmatch/Boss, `90/70` Team Death e limites de Golem por
   rodada), mas os valores continuam reportados pelo cliente como no original. **[MÉDIA, legado]**
-- **Vazamento de credencial em log**: `ClientSession.ReceiveLoopAsync` loga RX em hex (`:168`) e cada opcode/data (`:199`) em nível **Info** — despeja payload de login/hash no log. Rebaixar para Debug e/ou redigir o login. **[MÉDIA]**
+- ✅ **Credencial redigida no log**: `ClientSession.ReceiveLoopAsync` registra somente o tamanho do
+  receive em `Debug`; o payload decifrado do opcode de login `0x0C` é substituído por
+  `<nB redacted>`. Outros opcodes permanecem disponíveis em hex apenas com debug habilitado.
 
 ## O que está bem (referência de qualidade)
 

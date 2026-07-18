@@ -27,18 +27,20 @@ namespace RakionServer.Common
 
         public PacketReader(byte[] data, int offset = 0)
         {
-            _data = data;
+            _data = data ?? throw new ArgumentNullException(nameof(data));
+            if (offset < 0 || offset > data.Length)
+                throw new EndOfPacketException(offset, 0, data.Length);
             _pos = offset;
         }
 
         public int Position => _pos;
         public int Remaining => _data.Length - _pos;
-        public bool CanRead(int n) => n >= 0 && _pos + n <= _data.Length;
+        public bool CanRead(int n) => n >= 0 && n <= Remaining;
 
         /// <summary>Garante que ha >= n bytes a ler; senao lanca EndOfPacketException.</summary>
         private void Need(int n)
         {
-            if (n < 0 || _pos + n > _data.Length)
+            if (!CanRead(n))
                 throw new EndOfPacketException(_pos, n, _data.Length);
         }
 
@@ -80,7 +82,11 @@ namespace RakionServer.Common
             return v;
         }
 
-        public void Skip(int n) => _pos += n;
+        public void Skip(int n)
+        {
+            Need(n);
+            _pos += n;
+        }
 
         /// <summary>String prefixada por tamanho (1 byte) + ASCII.</summary>
         public string String()

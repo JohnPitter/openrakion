@@ -238,7 +238,7 @@ namespace RakionServer.World.Network
                     int n = await _sock.ReceiveAsync(
                         new ArraySegment<byte>(buffer, have, buffer.Length - have), SocketFlags.None, ct);
                     if (n <= 0) { Log.Warn("client", "[{0}] recv retornou {1} (peer fechou)", Slot, n); break; }
-                    Log.Info("client", "[{0}] RX {1} bytes: {2}", Slot, n, Convert.ToHexString(buffer, have, n));
+                    Log.Debug("client", "[{0}] RX {1} bytes", Slot, n);
                     have += n;
 
                     int consumed = 0;
@@ -269,7 +269,8 @@ namespace RakionServer.World.Network
                         byte[] data = new byte[content.Length - 4];
                         Array.Copy(content, 4, data, 0, data.Length);
 
-                        Log.Debug("client", "[{0}] <- opcode={1:X4} seq={2} data={3}", Slot, opcode, seq, Convert.ToHexString(data));
+                        Log.Debug("client", "[{0}] <- opcode={1:X4} seq={2} data={3}",
+                            Slot, opcode, seq, FormatPayloadForLog(opcode, data));
                         await DispatchAsync(opcode, seq, data);
                     }
 
@@ -290,6 +291,9 @@ namespace RakionServer.World.Network
             catch (Exception ex) { Log.Error("client", "[{0}] recv: {1}", Slot, ex.Message); }
             finally { await CloseAsync(); }
         }
+
+        internal static string FormatPayloadForLog(ushort opcode, byte[] data) =>
+            opcode == Protocol.Op.Login ? $"<{data.Length}B redacted>" : Convert.ToHexString(data);
 
         /// <summary>Replica FUN_0042bd70: checagem de seq + roteamento por opcode.</summary>
         private async Task DispatchAsync(ushort opcode, ushort seq, byte[] data)
