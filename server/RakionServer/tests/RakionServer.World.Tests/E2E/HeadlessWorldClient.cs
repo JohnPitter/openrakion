@@ -154,6 +154,9 @@ namespace RakionServer.World.Tests.E2E
         /// <summary>Master inicia a partida (0x43): sem payload.</summary>
         public void StartMatch() => Send(0x43, Array.Empty<byte>());
 
+        /// <summary>Entrada no field (0x45), incluindo publicação da rota direta/tunnel.</summary>
+        public void EnterField() => Send(0x45, Array.Empty<byte>());
+
         /// <summary>Spawn no stage (0x4b): primeiro 0x4b da entrada inicia o relógio da partida.
         /// Payload real do cliente é grande; o servidor só usa o gatilho, então mandamos vazio.</summary>
         public void SpawnField() => Send(0x4b, new byte[72]);
@@ -220,6 +223,13 @@ namespace RakionServer.World.Tests.E2E
 
         /// <summary>Datagrama de movimento 0x030A (26 bytes) com o assento de origem no offset 6.</summary>
         public byte[] SendMove(int serverGamePort, byte sourceSeat, short x, short y, short z)
+            => SendMoveTo(new IPEndPoint(IPAddress.Loopback, serverGamePort), sourceSeat, x, y, z);
+
+        /// <summary>Envia movimento diretamente ao socket P2P do outro cliente, sem World.</summary>
+        public byte[] SendDirectMove(IPEndPoint target, byte sourceSeat, short x, short y, short z)
+            => SendMoveTo(target, sourceSeat, x, y, z);
+
+        private byte[] SendMoveTo(IPEndPoint target, byte sourceSeat, short x, short y, short z)
         {
             byte[] p = new byte[26];
             BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(0), 0x030a);
@@ -231,8 +241,22 @@ namespace RakionServer.World.Tests.E2E
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(11), x);
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(13), y);
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(15), z);
-            _udp!.SendTo(p, new IPEndPoint(IPAddress.Loopback, serverGamePort));
+            _udp!.SendTo(p, target);
             return p;
+        }
+
+        public void SendTunnelAll(byte[] payload)
+        {
+            using var writer = new PacketWriter();
+            writer.WriteWord(payload.Length).WriteBytes(payload);
+            Send(0x56, writer.ToArray());
+        }
+
+        public void SendTunnelOne(byte targetSeat, byte[] payload)
+        {
+            using var writer = new PacketWriter();
+            writer.WriteByte(targetSeat).WriteWord(payload.Length).WriteBytes(payload);
+            Send(0x57, writer.ToArray());
         }
 
         /// <summary>Datagrama de ANIMAÇÃO/ataque 0x0311 (10 bytes): kind 1 = Attack.</summary>

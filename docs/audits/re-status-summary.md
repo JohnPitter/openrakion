@@ -58,6 +58,8 @@ A validação **dinâmica** dirige o `WorldServer` real por clientes headless no
 - char-select, criar sala, join do 2º jogador (coabitação no mesmo field, assentos distintos);
 - ready + start da partida (armada em fase Pre, ambos os assentos promovidos a combatente);
 - handshake UDP dos dois peers + relay de movimento `0x030A` e de combate (`0x0311`/`0x030F`) byte a byte;
+- matriz P2P local: UDP direto socket-a-socket, ausência de duplicação direto/direto e fallback
+  `TunnelOne/TunnelAll` nos dois sentidos;
 - chat de canal (0x22) broadcast entre os dois clientes;
 - **settlement PvP persistido no DB real** pelo motor da partida vivo (WIN/LOSE em `characterinfo`);
 - **matriz dos 4 modos** (Golem/Deathmatch/TeamDeath/Boss) armando a partida + rejeição de fragLimit inválido;
@@ -68,12 +70,11 @@ A validação **dinâmica** dirige o `WorldServer` real por clientes headless no
   placar, fim de round `0x4A` e fim de match `0x44` pelo motor global;
 - **bots server-side**: movimento, perseguição, convivência com dois humanos e morte no field.
 
-São **20 testes E2E** e **808 testes World verdes**. Detalhe em
+São **22 testes E2E** e **810 testes World verdes**. Detalhe em
 [`dynamic-validation.md`](dynamic-validation.md).
 
 Próximos alvos headless (ainda abertos):
 
-- matriz P2P (direto/Tunnel, mesma máquina/LAN/NAT/UDP bloqueado);
 - economia/UI ao vivo: loja, inventário, enchant, presentes, Power User, ranking.
 
 ### 2. Validação gráfica com o cliente real
@@ -98,13 +99,12 @@ original.
 
 ## Ordem recomendada
 
-1. fechar a matriz **headless** de P2P;
-2. validar economia e persistência pelos frames reais;
-3. smoke **visual** da jornada básica com dois clientes;
-4. matriz PvP/P2P visual;
-5. matriz PvE/NPC visual;
-6. economia, launcher e integrações externas;
-7. extensões autorais escolhidas para o lançamento.
+1. validar economia e persistência pelos frames reais;
+2. smoke **visual** da jornada básica com dois clientes;
+3. matriz PvP/P2P visual em LAN, NAT diferente e UDP bloqueado;
+4. matriz PvE/NPC visual;
+5. economia, launcher e integrações externas;
+6. extensões autorais escolhidas para o lançamento.
 
 ## Critério de encerramento
 

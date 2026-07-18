@@ -264,13 +264,16 @@ relayava para todos; `TunnelingRelayPolicy` agora reproduz os filtros do origina
 - modo fiel (`RelayCompatibilityEnabled=0`) mantém handshake/roster e não retransmite gameplay;
 - sequência `0x43 → 0x45 → 0x4B`, TunnelAll/One direto-direto sem duplicação e
   direto-tunnel nos dois sentidos validados headless;
+- `TwoClientP2PMatrixTests` prova em sockets reais de loopback que o par direto/direto troca
+  `0x030A` sem passar pelo World, não recebe fallback TCP duplicado e que o par direto/túnel
+  entrega `TunnelOne/TunnelAll` nos dois sentidos após o agregado `0x54`;
 - roster `0x38` confirma o flag de rota antes do spawn;
 - transições agregadas `0x54/0x55` cobertas por testes de domínio;
 - Ghidra reproduz o dispatcher restrito do World e o reliable do engine.
 
 ## Pendências reais
 
-- captura PCAP/ETL do tráfego direto `2300..2399` com dois clientes gráficos;
+- captura PCAP/ETL do tráfego direto `2300..2399` produzido pelo engine de dois clientes gráficos;
 - observar conexão direta e retransmissão em dois clientes gráficos na LAN;
 - repetir em NAT diferente e com UDP bloqueado;
 - decidir, após essas provas, se produção usa relay compatível ou modo fiel.
