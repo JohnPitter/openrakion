@@ -61,6 +61,11 @@ dotnet RakionLauncher.dll --update-only C:\Rakion
 O passo a passo de servidor, publicação, rollout e rollback está em
 [`docs/protocol/launcher-auth-update.md`](../../docs/protocol/launcher-auth-update.md).
 
+O arquivo versionado `launcher.settings.json` mantém updates desabilitados por segurança. O recurso
+só fica ativo depois de configurar a URL, distribuir `update-public.pem` e definir
+`updatesEnabled: true`. Ele atualiza o conteúdo do cliente, inclusive `version.dll` e
+`RakionClientPatch.dll`; atualizar o próprio launcher em execução exige um bootstrapper externo.
+
 ## Assets
 
 Os assets de UI (`Assets/*.ico|png|bmp`) são de domínio público e ficam **versionados** — ver

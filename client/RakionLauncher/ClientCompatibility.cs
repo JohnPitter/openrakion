@@ -16,6 +16,13 @@ internal static class ClientCompatibility
         if (File.Exists(legacyForwarder)) File.Delete(legacyForwarder);
     }
 
+    internal static void ValidateInstalled(string binDir)
+    {
+        foreach (DeploymentFile file in Files)
+            if (!File.Exists(Path.Combine(binDir, file.FileName)))
+                throw new FileNotFoundException($"DLL de compatibilidade ausente: {file.FileName}");
+    }
+
     private static void InstallFile(string binDir, DeploymentFile file)
     {
         using Stream source = typeof(ClientCompatibility).Assembly.GetManifestResourceStream(file.ResourceName)

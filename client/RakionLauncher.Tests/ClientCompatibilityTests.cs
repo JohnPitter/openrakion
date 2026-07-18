@@ -29,4 +29,23 @@ public sealed class ClientCompatibilityTests
             Directory.Delete(root, true);
         }
     }
+
+    [Fact]
+    public void ValidateInstalled_RejectsReleaseThatRemovedClientPatch()
+    {
+        string root = Path.Combine(
+            Path.GetTempPath(), "rakion-compat-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            ClientCompatibility.Install(root);
+            File.Delete(Path.Combine(root, "RakionClientPatch.dll"));
+
+            Assert.Throws<FileNotFoundException>(() => ClientCompatibility.ValidateInstalled(root));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
 }

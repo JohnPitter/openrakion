@@ -137,6 +137,7 @@ internal sealed class MainForm : Form
             if (_user.Text.Trim() == "") { Status("informe o usuário", true); return; }
             if (_pass.Text == "") { Status("informe a senha", true); return; }
 
+            ClientCompatibility.Install(_binDir);
             int clientVersion = UpdateClient.GetInstalledVersion(
                 _clientDir, _launcherConfig.BaseVersion);
             if (_clients == 0 && _launcherConfig.UpdatesEnabled)
@@ -149,12 +150,12 @@ internal sealed class MainForm : Form
                 if (!File.Exists(Path.Combine(_binDir, GameLauncher.GameProcess)))
                     throw new FileNotFoundException("O update não contém rakion.exe.");
             }
+            ClientCompatibility.ValidateInstalled(_binDir);
 
             _settings.Save(_iniPath, _modeFile);   // garante o m_bActiveFullScreen certo no INI antes de lançar
-            ClientCompatibility.Install(_binDir);
             string mode = _settings.DisplayMode;
-            // A DLL proxy version.dll aplica os patches antes do entry point; o launcher mantém o processo
-            // suspenso apenas até terminar o bootstrap e então cuida do framing da janela.
+            // version.dll carrega RakionClientPatch.dll antes do entry point; o launcher mantém o processo
+            // suspenso até terminar o bootstrap e então cuida do framing da janela.
             string user = _user.Text.Trim();
             string credential = await new LaunchAuthenticator().GetCredentialAsync(
                 _launcherConfig, clientVersion, user, _pass.Text);

@@ -116,6 +116,11 @@ Paths absolutos, `..`, backslash, `:`, NUL, reparse points e a raiz reservada `.
 recusados. O updater também recusa substituir o próprio launcher em execução; self-update requer
 um bootstrapper externo e não faz parte deste contrato.
 
+No fluxo de PLAY, o launcher instala primeiro o baseline embutido de `version.dll` e
+`RakionClientPatch.dll`; depois, a release assinada pode substituir essas duas DLLs. Antes de abrir
+o jogo, o launcher confirma que ambas continuam presentes. Assim o baseline garante a primeira
+instalação sem impedir atualizações posteriores dos patches.
+
 ## Como ativar
 
 ### 1. Gerar as chaves
@@ -215,12 +220,15 @@ dotnet RakionLauncher.dll --update-only C:\Rakion
 ## Evidência de validação
 
 - 382 testes .NET do servidor, incluindo formato, migração e vínculo app/build do ticket;
-- 11 testes do launcher, incluindo assinatura, hash, traversal, rollback e auth sem downgrade;
+- 13 testes do launcher, incluindo assinatura, hash, traversal, rollback, DLLs e auth sem downgrade;
 - smoke MariaDB real: conta/build vinculados, uso único, replay recusado e expiração recusada;
 - smoke HTTP real: endpoint em loopback emitiu ticket de 20 caracteres e persistiu app `11001`,
   build `259` e somente o hash de 32 bytes;
 - smoke de rede do updater: manifesto/arquivo via LauncherWeb, replace/delete e versão `259` sem
-  resíduos de staging/backup.
+  resíduos de staging/backup;
+- smoke repetido em 18/07/2026 após a separação das DLLs: update HTTP assinado `258 -> 259`
+  substituiu `Bin/version.dll` e `Bin/RakionClientPatch.dll`, conferiu os dois SHA-256 e terminou
+  sem staging/backup da release.
 
 ## Pendências delimitadas
 
