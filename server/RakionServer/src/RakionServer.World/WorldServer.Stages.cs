@@ -24,6 +24,11 @@ public sealed partial class WorldServer
             ? content.TimeLimitSeconds
             : null;
 
+    internal StageReward? CalculateStageReward(byte stageId, byte rank, byte previousBestRank) =>
+        _stageCatalog.TryGetContent(stageId, out StageContentDefinition? content)
+            ? StageRewardPolicy.Calculate(content, rank, previousBestRank)
+            : null;
+
     public bool BeginStageRun(ClientSession session, Field field)
     {
         if (field.Mode != 0 || field.MatchId == Guid.Empty) return false;

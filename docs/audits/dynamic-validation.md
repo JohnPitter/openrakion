@@ -42,11 +42,12 @@ Seed usado (banco `rakion`): conta `test` → personagem `GoHeroi` (`#1`); conta
 | Settlement PvP persistido | `TwoClientSettlementTests.PvpMatchEnd_PersistsWinLoseToDatabase` | TeamDeath com times opostos; ao encerrar (time 0 vencedor) o **motor da partida vivo** grava WIN em `characterinfo` do master e LOSE do joiner no MySQL real (delta antes/depois) |
 | Matriz de modos PvP | `TwoClientModeMatrixTests` | Golem/Deathmatch/TeamDeath/Boss criam+entram+armam com 2 clientes; fragLimit fora da faixa do Deathmatch é rejeitado (disconnect `0xCC`) |
 | Entrada em stage PvE solo | `SoloStageEntryTests.SoloStage_SpawnStartsStageRun` | Sala solo (stage 1) → start → spawn `0x4b` abre a execução de stage (`BeginStageRun`): `StageRunId`=`MatchId`, `ActiveStageId`=1 |
+| Clear e settlement PvE | `SoloStageSettlementE2ETests.ExactReward_AppliesOnceAndIdenticalReplayOnlyAcknowledges` | Stage 1 → clear `0x4A` → rank 5 diferencial → `0x53` exato; EXP, gold, rank e ledger confirmados no MySQL. Replay idêntico recebe novo ACK sem crédito ou ledger duplicado |
 | Chat de canal | `TwoClientChatTests.ChannelChat_BroadcastsToOtherClientInSameChannel` | Um cliente envia chat de canal (`0x22`); o outro no mesmo canal-lobby recebe o broadcast com o texto — e o remetente recebe o próprio eco |
 | Ciclo vivo de partida | `TwoClientLiveMatchLifecycleTests.DeadlineAndDeathFrame_AdvanceRoundAndEndMatch` | Golem com times opostos: primeiro spawn `0x4B`, `Pre→Playing` pelo deadline no motor global, entrada tardia do segundo jogador, morte própria `0x4F` no fio, broadcasts `0x4F/0x4A`, vitória do round e fim do match `0x44` pelo próximo tick |
 | Bot no fio | `BotMovementE2ETests` e `BotStageValidationTests` | Movimento sintético recebido por humanos; perseguição converge; dois humanos recebem o bot sem sequestro do P2P; ataque humano mata o bot e publica a morte pelo field |
 
-Todos verdes: **807 testes World**, dos quais **19 são E2E** no fio. Descobertas de RE confirmadas em runtime:
+Todos verdes: **808 testes World**, dos quais **20 são E2E** no fio. Descobertas de RE confirmadas em runtime:
 
 - o transporte do cliente e do servidor é simétrico na cifra (AES-128 do canal lobby) mas
   **assimétrico no envelope**: cliente→servidor carrega `[opcode][seq]`, servidor→cliente carrega
@@ -66,10 +67,9 @@ Todos verdes: **807 testes World**, dos quais **19 são E2E** no fio. Descoberta
   global inicia o round se houver ao menos um jogador carregado e mantém os demais em `state=3`.
   Um spawn tardio promove o segundo jogador, e sua morte `0x4F` atravessa dispatch, placar,
   `RoundEnd`, `0x4A` e encerramento `0x44` sem chamar a regra de domínio pelo teste;
-- o `0x53` de stage PvE é **anti-cheat**: `CanSettleStage` exige `Phase==RoundEnd`, stage cleared e
-  exp/gold **exatamente** iguais ao reward calculado (`StageRewardPolicy`) — por isso a validação
-  headless cobre a ENTRADA da run (`BeginStageRun`); a liquidação com reward exato fica nos testes
-  de domínio/DB.
+- o `0x53` de stage PvE é **anti-cheat**: `CanSettleStage` exige `Phase==RoundEnd`, stage cleared,
+  reward diferencial exato e Cell EXP coerente com equipamento/Power User. O E2E fecha
+  `0x4A→0x53→ACK`, persistência e replay idempotente pelo mesmo socket e banco real;
 
 ## Como rodar
 
@@ -87,10 +87,9 @@ Sem banco, os testes fazem skip suave (não quebram o CI). Para apontar outro ba
 Coberto no backend: login → char-select → sala → join → ready → start → engage pelo tick real →
 spawn tardio → morte `0x4F` → placar/fim de round/fim de match → handshake UDP → relay de
 movimento **e combate** (`0x030A`/`0x0311`/`0x030F`) → settlement PvP persistido no DB → matriz
-dos 4 modos → entrada em stage PvE solo → bot server-side no fio. Ainda **não** exercitado
-headless (próximos alvos):
+dos 4 modos → entrada, clear e settlement de stage PvE solo → bot server-side no fio. Ainda
+**não** exercitado headless (próximos alvos):
 
-- **liquidação 0x53 com reward exato** (anti-cheat): coberta por `StageSettlementDatabaseSmokeTests`;
 - **matriz P2P** (direto/TunnelOne/TunnelAll, mesma máquina/LAN/NAT/UDP bloqueado);
 - **economia/UI ao vivo**: loja, inventário, enchant, presentes, Power User e ranking pelos frames
   reais.

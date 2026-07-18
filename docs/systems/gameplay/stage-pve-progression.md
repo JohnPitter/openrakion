@@ -316,6 +316,16 @@ snapshot/restauração da fixture ou use uma conta descartável.
   ativo e restaurou a fixture após verificar ledger, progressão e rank `4`;
 - fórmula de primeiro rank, melhoria, repetição e EXP de Cell com/sem Power User coberta em teste.
 
+## Validação E2E executada em 2026-07-18
+
+`SoloStageSettlementE2ETests` sobe o `WorldServer` real e fecha pelo socket:
+
+- login, seleção, sala do stage 1, start e spawn `0x4B`;
+- clear `0x4A` e abertura da janela válida de settlement;
+- reward diferencial do rank 5, Cell EXP e bônus Power User enviados por `0x53`;
+- ACK `53 00 00 01 05 00` e persistência de EXP, gold, rank e ledger no MySQL;
+- replay byte a byte idêntico com novo ACK, um único ledger e nenhum segundo crédito.
+
 ## Cobertura e lacunas restantes
 
 | Área | Estado |

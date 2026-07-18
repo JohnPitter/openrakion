@@ -162,19 +162,29 @@ namespace RakionServer.World.Tests.E2E
         public void ReportDeath(byte cause, byte killerSeat) =>
             Send(0x4f, new[] { cause, killerSeat });
 
+        public readonly record struct StageRewardPayload(uint Exp, uint Gold);
+
+        public readonly record struct StageResultSpec(
+            byte Stage, byte Rank, StageRewardPayload Reward, IReadOnlyList<uint> CellExp);
+
         /// <summary>Resultado de stage solo (0x53). Layout:
         /// `[u8 stage][u8 rank][u8 count][count×u16 slots][u32 exp][u32 gold][u32 cell0..2]`.</summary>
-        public void SendStageResult(byte stage, byte rank, uint exp, uint gold)
+        public void SendStageResult(StageResultSpec result)
         {
+            if (result.CellExp == null || result.CellExp.Count != 3)
+                throw new ArgumentException("O resultado deve conter os três valores de Cell EXP.", nameof(result));
             using var w = new PacketWriter();
-            w.WriteByte(stage);
-            w.WriteByte(rank);
+            w.WriteByte(result.Stage);
+            w.WriteByte(result.Rank);
             w.WriteByte(0);          // count de cells = 0
-            w.WriteUInt32(exp);
-            w.WriteUInt32(gold);
-            w.WriteUInt32(0).WriteUInt32(0).WriteUInt32(0); // cell exp 0..2
+            w.WriteUInt32(result.Reward.Exp);
+            w.WriteUInt32(result.Reward.Gold);
+            foreach (uint cellExp in result.CellExp) w.WriteUInt32(cellExp);
             Send(0x53, w.ToArray());
         }
+
+        /// <summary>Clear de stage (0x4A subtype 2), que abre a janela válida do resultado 0x53.</summary>
+        public void ClearStage() => Send(0x4a, new byte[] { 2 });
 
         // ---- UDP de gameplay ------------------------------------------------
 
@@ -294,6 +304,11 @@ namespace RakionServer.World.Tests.E2E
                 foreach (byte[] earlier in _receivedLog)
                     if (predicate(earlier)) return earlier;
 
+            return WaitForNext(predicate, timeout);
+        }
+
+        public byte[] WaitForNext(Func<byte[], bool> predicate, TimeSpan timeout)
+        {
             var deadline = DateTime.UtcNow + timeout;
             while (DateTime.UtcNow < deadline)
             {

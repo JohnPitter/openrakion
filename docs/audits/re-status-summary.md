@@ -62,16 +62,17 @@ A validação **dinâmica** dirige o `WorldServer` real por clientes headless no
 - **settlement PvP persistido no DB real** pelo motor da partida vivo (WIN/LOSE em `characterinfo`);
 - **matriz dos 4 modos** (Golem/Deathmatch/TeamDeath/Boss) armando a partida + rejeição de fragLimit inválido;
 - **entrada em stage PvE solo** (`BeginStageRun` via `0x4b`);
+- **clear e liquidação PvE**: `0x4A→0x53`, reward/Cell EXP exatos, persistência e replay
+  idempotente no banco real;
 - **ciclo vivo da partida**: engage `Pre→Playing` pelo deadline, spawn tardio, morte `0x4F`,
   placar, fim de round `0x4A` e fim de match `0x44` pelo motor global;
 - **bots server-side**: movimento, perseguição, convivência com dois humanos e morte no field.
 
-São **19 testes E2E** e **807 testes World verdes**. Detalhe em
+São **20 testes E2E** e **808 testes World verdes**. Detalhe em
 [`dynamic-validation.md`](dynamic-validation.md).
 
 Próximos alvos headless (ainda abertos):
 
-- liquidação `0x53` com reward exato (coberta hoje por testes de domínio/DB);
 - matriz P2P (direto/Tunnel, mesma máquina/LAN/NAT/UDP bloqueado);
 - economia/UI ao vivo: loja, inventário, enchant, presentes, Power User, ranking.
 
@@ -97,7 +98,7 @@ original.
 
 ## Ordem recomendada
 
-1. fechar a liquidação PvE `0x53` no E2E e a matriz **headless** de P2P;
+1. fechar a matriz **headless** de P2P;
 2. validar economia e persistência pelos frames reais;
 3. smoke **visual** da jornada básica com dois clientes;
 4. matriz PvP/P2P visual;

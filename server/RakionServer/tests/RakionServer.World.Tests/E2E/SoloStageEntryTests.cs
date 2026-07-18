@@ -11,7 +11,7 @@ namespace RakionServer.World.Tests.E2E
     /// char-select → criar sala solo (mode 0, stage 1) → start → spawn 0x4b, que dispara
     /// `BeginStageRun`. Prova que o servidor abre a execução de stage (identidade + stage
     /// ativo) para uma sessão de rede real. A liquidação 0x53 (com reward exato anti-cheat)
-    /// permanece coberta por `StageSettlementDatabaseSmokeTests`.
+    /// é validada ponta a ponta por `SoloStageSettlementE2ETests`.
     /// </summary>
     [Collection("E2E")]
     public sealed class SoloStageEntryTests
