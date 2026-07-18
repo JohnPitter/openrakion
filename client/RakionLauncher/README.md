@@ -9,16 +9,18 @@ Launcher .NET (WinForms, `net9.0-windows`, x64) do cliente Rakion offline — su
 A Serious Engine só guarda um bit de fullscreen (`m_bActiveFullScreen`); "modo janela" de verdade são
 três coisas (ver [`WindowMode.cs`](WindowMode.cs)):
 
-1. **Patch de 1 byte** no `rakion.exe` (sem ASLR, ImageBase `0x400000`): em `0x40D46D` há
+1. **Patch de 1 byte pela `version.dll`** no `rakion.exe` (sem ASLR, ImageBase `0x400000`): em `0x40D46D` há
    `85C0`(TEST EAX,EAX) `7452`(JZ) `FF15…`(CALL = setup de fullscreen + troca de resolução). Trocar o
    `0x74` (JZ) por `0xEB` (JMP) força o salto e **pula** o CALL → o engine roda windowed sem trocar a
-   resolução do desktop. Aplicado com o jogo lançado **suspenso** (`GameLauncher.LaunchSuspended` →
-   `WindowMode.PatchWindowedMode` → `Resume`), antes de o engine inicializar o display. É o mesmo patch
+   resolução do desktop. Aplicado pelo proxy antes do entry point e antes de o engine inicializar o display. É o mesmo patch
    que o "Window Mode" do NyxLauncher fazia (descoberto por RE do `load.bin`/`RakionLauncher.Loader`).
 2. **Reformatar a janela** "Rakion" via Win32 (título + centralizar/preencher), re-achando a janela a
    cada recriação do engine (troca de cena login → char select → sala) e **tirando o título enquanto
    minimizada** — senão a engine encolhe o backbuffer pela borda a cada restore (faixa preta crescente).
-3. **Destravar o Alt+Tab** com um patch em memória no `keyhook.dll` (`WindowMode.PatchKeyHook`).
+3. **Destravar o Alt+Tab** com um patch da DLL em `keyhook.dll`.
+
+O launcher grava opções e enquadra a janela, mas não escreve mais bytes no processo do jogo. Consulte
+[`client-compatibility-dll.md`](../../docs/guides/client-compatibility-dll.md).
 
 ## Build / publish
 

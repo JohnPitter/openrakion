@@ -14,6 +14,7 @@ TARGETS = {
         0x00411760,  # dispatcher externo de mensagens P2P
     ),
     "entitiesmp_dump.bin": (
+        0x35136502,  # produtor que envia a animacao 0x0311
         0x3513A200,  # CPlayer::GetSyncData
         0x3514CA80,  # CPlayer::ApplySyncData
         0x35152990,  # CPlayer::DoAnimPacket

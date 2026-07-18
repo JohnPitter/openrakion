@@ -30,9 +30,9 @@ internal static class GameLauncher
 
     private const uint CREATE_SUSPENDED = 0x00000004;
 
-    /// <summary>Lança rakion.exe SUSPENSO (argv[0]=user) pra dar tempo de aplicar o patch do modo janela
-    /// (ver <see cref="WindowMode.PatchWindowedMode"/>) ANTES do engine inicializar o display e trocar a
-    /// resolução. Devolve o PID e o handle da thread primária — chame <see cref="Resume"/> depois de patchar.</summary>
+    /// <summary>Lança rakion.exe SUSPENSO (argv[0]=user) enquanto o launcher conclui o bootstrap.
+    /// A version.dll de compatibilidade é carregada pelo loader antes do entry point e aplica os patches.
+    /// Devolve o PID e o handle da thread primária — chame <see cref="Resume"/> ao terminar.</summary>
     public static (int pid, IntPtr hThread) LaunchSuspended(string binDir, string user, string hexPass, string serverId)
     {
         string exe = Path.Combine(binDir, GameProcess);

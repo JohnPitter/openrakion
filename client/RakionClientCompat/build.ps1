@@ -1,4 +1,20 @@
+param(
+    [string]$PatchedExe = $env:RAKION_PATCHED_EXE,
+    [string]$OriginalExe = $env:RAKION_ORIGINAL_EXE
+)
 $ErrorActionPreference = 'Stop'
+$patchHeader = Join-Path $PSScriptRoot 'baked_patches.h'
+if ($PatchedExe -and $OriginalExe) {
+    if (-not (Test-Path -LiteralPath $PatchedExe)) { throw "rakion-final patcheado não encontrado: $PatchedExe" }
+    if (-not (Test-Path -LiteralPath $OriginalExe)) { throw "rakion.exe.orig não encontrado: $OriginalExe" }
+    python (Join-Path $PSScriptRoot 'gen_patch_table.py') $PatchedExe $OriginalExe $patchHeader
+    if ($LASTEXITCODE -ne 0) { throw "geração da tabela de patches falhou: $LASTEXITCODE" }
+    $engine = Join-Path (Split-Path -Parent $PatchedExe) 'engine.dll'
+    if (-not (Test-Path -LiteralPath $engine)) { throw "engine.dll golden não encontrada: $engine" }
+    python (Join-Path $PSScriptRoot 'verify_engine.py') $engine
+    if ($LASTEXITCODE -ne 0) { throw "validação da engine.dll falhou: $LASTEXITCODE" }
+}
+if (-not (Test-Path -LiteralPath $patchHeader)) { throw 'baked_patches.h ausente' }
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 if (-not $vs) { throw 'Visual Studio Build Tools com C++ x86 não encontrado' }

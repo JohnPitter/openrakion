@@ -153,26 +153,19 @@ internal sealed class MainForm : Form
             _settings.Save(_iniPath, _modeFile);   // garante o m_bActiveFullScreen certo no INI antes de lançar
             ClientCompatibility.Install(_binDir);
             string mode = _settings.DisplayMode;
-            // Lança SUSPENSO, aplica o patch do modo janela (se não for fullscreen) ANTES de o engine trocar a
-            // resolução do desktop, e só então resume — senão a "janela" cobre a tela na resolução do INI.
+            // A DLL proxy version.dll aplica os patches antes do entry point; o launcher mantém o processo
+            // suspenso apenas até terminar o bootstrap e então cuida do framing da janela.
             string user = _user.Text.Trim();
             string credential = await new LaunchAuthenticator().GetCredentialAsync(
                 _launcherConfig, clientVersion, user, _pass.Text);
             var (pid, hThread) = GameLauncher.LaunchSuspended(
                 _binDir, user, GameLauncher.HexPass(credential), ServerId);
             WindowMode.Log($"launch cliente #{_clients + 1}: user='{user}' pid={pid}");   // diagnóstico: que conta foi lançada
-            WindowMode.PatchMultiInstance(pid);         // libera abrir mais de um cliente (neutraliza o mutex)
-            if (mode != WindowMode.Fullscreen)
-            {
-                WindowMode.PatchWindowedMode(pid);      // windowed real (não troca a resolução do desktop)
-                WindowMode.PatchNoDisplayReset(pid);    // não re-inicializa o display ao restaurar de minimizado
-            }
             GameLauncher.Resume(hThread);
 
             uint upid = (uint)pid;   // frama/patcha por PID -> cada cliente cuida da SUA janela (suporta vários)
             int w = _settings.ScreenWidth, h = _settings.ScreenHeight;   // alvo do framing = resolução escolhida
             new Thread(() => WindowMode.FrameGameWindow(upid, mode, w, h)) { IsBackground = true }.Start();
-            new Thread(() => WindowMode.PatchKeyHook(upid)) { IsBackground = true }.Start();
             new Thread(() => WindowMode.InjectDiagDll(pid)) { IsBackground = true }.Start();   // dev-only (opt-in RAKION_DIAG_DLL): hook de RE pós-loader
 
             _clients++;

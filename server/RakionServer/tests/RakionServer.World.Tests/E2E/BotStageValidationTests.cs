@@ -90,7 +90,7 @@ namespace RakionServer.World.Tests.E2E
             human.SendMove(fixture.UdpPort2, hs.FieldSeat, (short)spot.X, 0, (short)spot.Z);
 
             int healthBefore = bot.Health;
-            human.SendAttack(fixture.UdpPort2, hs.FieldSeat, kind: 1);
+            human.SendBotTelemetryAttack(fixture.UdpPort2, hs.FieldSeat, kind: 1);
             byte[] hitReaction = human.WaitForUdp(
                 packet => IsBotDamage(packet, bot.Seat), JourneyHelper.Timeout);
             Assert.Equal((byte)bot.Seat, hitReaction[6]);
@@ -100,7 +100,7 @@ namespace RakionServer.World.Tests.E2E
             byte[]? death = null;
             for (int i = 1; i < 20 && death == null; i++)
             {
-                human.SendAttack(fixture.UdpPort2, hs.FieldSeat, kind: 1);
+                human.SendBotTelemetryAttack(fixture.UdpPort2, hs.FieldSeat, kind: 1);
                 try { death = human.WaitFor(Frame4f, TimeSpan.FromMilliseconds(400)); }
                 catch (TimeoutException) { }
             }

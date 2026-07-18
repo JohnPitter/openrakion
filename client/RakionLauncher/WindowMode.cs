@@ -272,7 +272,7 @@ internal static class WindowMode
     private static void FocusWindow(IntPtr hwnd) { BringWindowToTop(hwnd); SetForegroundWindow(hwnd); }
 
     /// <summary>Roda a sessão toda só impedindo que o jogo fique always-on-top (pro Alt+Tab raisar outras
-    /// janelas). A trava real do Alt+Tab é removida por <see cref="PatchKeyHook"/>.</summary>
+    /// janelas). A trava real do Alt+Tab é removida pela DLL de compatibilidade.</summary>
     private static void KeepWindowAccessible(uint pid)
     {
         while (IsAlive(pid))   // re-acha a janela deste pid (o engine recria ao trocar de cena)
@@ -283,18 +283,15 @@ internal static class WindowMode
         }
     }
 
-    // ---- destravar o Alt+Tab (patch em keyhook.dll) ----
+    // ---- helpers de processo ----
     [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool CloseHandle(IntPtr h);
-    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool ReadProcessMemory(IntPtr h, IntPtr addr, byte[] buf, int size, out IntPtr read);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool WriteProcessMemory(IntPtr h, IntPtr addr, byte[] buf, int size, out IntPtr written);
-    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool VirtualProtectEx(IntPtr h, IntPtr addr, int size, uint prot, out uint old);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr CreateToolhelp32Snapshot(uint flags, uint pid);
     [DllImport("kernel32.dll", CharSet = CharSet.Auto)] private static extern bool Module32First(IntPtr snap, ref MODULEENTRY32 me);
     [DllImport("kernel32.dll", CharSet = CharSet.Auto)] private static extern bool Module32Next(IntPtr snap, ref MODULEENTRY32 me);
 
     private const uint PROCESS_VM_OPERATION = 0x0008, PROCESS_VM_READ = 0x0010, PROCESS_VM_WRITE = 0x0020;
-    private const uint PAGE_EXECUTE_READWRITE = 0x40;
     private const uint TH32CS_SNAPMODULE = 0x08, TH32CS_SNAPMODULE32 = 0x10;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
@@ -304,85 +301,6 @@ internal static class WindowMode
         public IntPtr modBaseAddr; public uint modBaseSize; public IntPtr hModule;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string szModule;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string szExePath;
-    }
-
-    // Patches no rakion.exe (sem ASLR, ImageBase 0x400000) — cada um troca 1 byte, validando o original.
-    // Aplicados com o jogo suspenso. Descobertos por RE (Ghidra do rakion.bin) / RE do RakionLauncher.Loader.
-    //
-    // MODO JANELA — 0x40D46D: em [85 C0 (TEST EAX,EAX) / 74 52 (JZ) / FF15.. (CALL [0x4D0468])] o CALL é o setup
-    // de fullscreen + troca de resolução; trocar o JZ por JMP pula ele -> windowed real.
-    private static readonly (int addr, byte from, byte to)[] WindowedPatch = { (0x40D46D, 0x74, 0xEB) };
-    //
-    // SEM RESET DE DISPLAY AO MINIMIZAR — no WndProc (0x40DB10) o engine re-inicializa o display ao restaurar de
-    // minimizado (tela preta de ~4s: recria o device D3D9). Em WINDOWED o device não é perdido. Os 3 JZ guardam:
-    // 0x40DBC2 (SC_RESTORE -> FUN_0040d7b0 "Start new display mode"), 0x40DC1E/0x40DC4F (WM_ACTIVATEAPP
-    // resume/pause -> FUN_0040bc10). Forçando JMP, o engine ignora a minimização no display -> sem tela preta.
-    private static readonly (int addr, byte from, byte to)[] NoDisplayResetPatches =
-        { (0x40DBC2, 0x74, 0xEB), (0x40DC1E, 0x74, 0xEB), (0x40DC4F, 0x74, 0xEB) };
-    //
-    // MÚLTIPLAS INSTÂNCIAS — FUN_00402c80 cria o mutex "Rakion" e retorna (GetLastError()==0xB7 ERROR_ALREADY_
-    // EXISTS); o jogo aborta a 2ª instância. Em 0x402C95 há CMP EAX,0xB7; trocar o imediato 0xB7->0xFF faz o
-    // check nunca bater -> o jogo não detecta instância anterior -> abre N clientes.
-    private static readonly (int addr, byte from, byte to)[] MultiInstancePatch = { (0x402C96, 0xB7, 0xFF) };
-
-    /// <summary>Patch do modo janela (pula o setup de fullscreen/troca-de-resolução). Jogo deve estar suspenso.</summary>
-    public static void PatchWindowedMode(int pid) => ApplyBytePatches(pid, WindowedPatch, "windowed");
-
-    /// <summary>Patch que impede o engine de re-inicializar o display ao restaurar de minimizado (corta a tela
-    /// preta). Só faz sentido em windowed/borderless. Jogo deve estar suspenso.</summary>
-    public static void PatchNoDisplayReset(int pid) => ApplyBytePatches(pid, NoDisplayResetPatches, "no-reset-display");
-
-    /// <summary>Patch que permite abrir mais de um cliente (neutraliza o check do mutex "Rakion"). Jogo suspenso.</summary>
-    public static void PatchMultiInstance(int pid) => ApplyBytePatches(pid, MultiInstancePatch, "multi-instance");
-
-    /// <summary>Troca 1 byte em cada endereço, validando o original — build diferente (byte != esperado) é pulado.</summary>
-    private static void ApplyBytePatches(int pid, (int addr, byte from, byte to)[] patches, string tag)
-    {
-        IntPtr h = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, false, (uint)pid);
-        if (h == IntPtr.Zero) { Log($"patch {tag}: OpenProcess falhou pid={pid} err={Marshal.GetLastWin32Error()}"); return; }
-        try
-        {
-            foreach (var (a, from, to) in patches)
-            {
-                IntPtr addr = new(a);
-                byte[] cur = new byte[1];
-                if (!ReadProcessMemory(h, addr, cur, 1, out _)) { Log($"patch {tag}: read falhou @0x{a:X}"); continue; }
-                if (cur[0] == to) { Log($"patch {tag}: 0x{a:X} já aplicado"); continue; }
-                if (cur[0] != from) { Log($"patch {tag}: 0x{a:X} byte inesperado 0x{cur[0]:X2} (esperava 0x{from:X2}) — não toca"); continue; }
-                if (!VirtualProtectEx(h, addr, 1, PAGE_EXECUTE_READWRITE, out uint old)) continue;
-                bool ok = WriteProcessMemory(h, addr, new[] { to }, 1, out _);
-                VirtualProtectEx(h, addr, 1, old, out _);
-                Log($"patch {tag}: 0x{a:X} 0x{from:X2} -> 0x{to:X2} {(ok ? "OK" : "FALHOU")}");
-            }
-        }
-        finally { CloseHandle(h); }
-    }
-
-    /// <summary>O cliente embute keyhook.dll, que instala 2 hooks WH_KEYBOARD_LL que ENGOLEM Alt+Tab/Alt+Esc
-    /// /tecla Windows (retornam 1). Os 2 sites de bloqueio são `mov eax,1` (B8 01 00 00 00) nos RVA 0x106D/0x10A2;
-    /// o imediato "1" fica em 0x106E/0x10A3. Trocamos por 0 -> o hook retorna 0 e a tecla passa. Patchar a
-    /// PROCEDURE (não o install) torna o timing irrelevante. Seguro com o GameGuard morto (offline).</summary>
-    public static void PatchKeyHook(uint pid)
-    {
-        IntPtr baseAddr = IntPtr.Zero;
-        for (int i = 0; i < 240 && IsAlive(pid); i++) { baseAddr = ModuleBase(pid, "keyhook.dll"); if (baseAddr != IntPtr.Zero) break; Thread.Sleep(250); }
-        if (baseAddr == IntPtr.Zero) return;
-
-        IntPtr h = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, false, pid);
-        if (h == IntPtr.Zero) return;
-        try { foreach (int rva in new[] { 0x106E, 0x10A3 }) PatchByteToZero(h, baseAddr + rva); }
-        finally { CloseHandle(h); }
-    }
-
-    private static void PatchByteToZero(IntPtr h, IntPtr addr)
-    {
-        byte[] cur = new byte[1];
-        if (!ReadProcessMemory(h, addr, cur, 1, out _)) return;
-        if (cur[0] == 0x00) return;     // já patchado
-        if (cur[0] != 0x01) return;     // byte inesperado (build diferente) — não toca
-        if (!VirtualProtectEx(h, addr, 1, PAGE_EXECUTE_READWRITE, out uint old)) return;
-        WriteProcessMemory(h, addr, new byte[] { 0x00 }, 1, out _);
-        VirtualProtectEx(h, addr, 1, old, out _);
     }
 
     // ---- injeção de DLL de DIAGNÓSTICO (dev-only, RE de interoperabilidade) ----

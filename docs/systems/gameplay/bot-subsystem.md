@@ -3,9 +3,9 @@
 Bot **funcional** reconstruído do zero sobre o motor de partida do golden, ancorado no RE. A
 implementação antiga (do master pré-golden) foi descartada. O bot é um **peer sintético
 server-side**: entra no roster como um jogador, é movido pela IA e tem o movimento sintetizado no
-fio. Nos testes headless, o ataque chega pela extensão UDP do World; no cliente gráfico com P2P
-direto, a DLL de compatibilidade precisa espelhar essa telemetria ao World sem duplicar o pacote
-entregue aos peers.
+fio. Nos testes headless, o ataque chega pela extensão UDP do World; no cliente gráfico, a DLL de
+compatibilidade captura movimento e ataque na entrada de `CNet::SendToOtherClient` e os espelha ao
+World pelo envelope `0xB07A`, sem duplicar o pacote entregue aos peers e sem exigir um peer humano.
 
 ## Veredito do RE (respeitado, não contornado)
 
@@ -79,9 +79,8 @@ entregue e o que é teto:
 
 ## Fronteira (o teto do RE, não um bug)
 
-Entregue e provado headless: roster, movimento, reação de dano, HP/morte e dificuldade/IA. A rota
-do ataque no cliente gráfico P2P depende da ponte da DLL de compatibilidade e ainda exige smoke
-visual. **Não** entregue por limite
+Entregue e provado headless: roster, movimento, reação de dano, HP/morte, dificuldade/IA e ponte
+P2P→World da DLL. A apresentação no cliente gráfico ainda exige smoke visual. **Não** entregue por limite
 arquitetural: o número cosmético HIT×N nativo (exige peer de sessão real). Extensões possíveis
 (hitbox mais precisa, projéteis e dano bot→humano) seguem o mesmo teto sem um peer simulado pelo
 engine. Ver o cluster HIT×N na memória do projeto.

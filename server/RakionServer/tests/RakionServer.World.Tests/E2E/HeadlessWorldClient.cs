@@ -7,6 +7,7 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using RakionServer.Common;
+using RakionServer.World.Network;
 
 namespace RakionServer.World.Tests.E2E
 {
@@ -273,6 +274,22 @@ namespace RakionServer.World.Tests.E2E
         /// <summary>Datagrama de ANIMAÇÃO/ataque 0x0311 (10 bytes): kind 1 = Attack.</summary>
         public byte[] SendAttack(int serverGamePort, byte sourceSeat, byte kind = 1, byte arg0 = 0)
         {
+            byte[] p = BuildAttack(sourceSeat, kind, arg0);
+            _udp!.SendTo(p, new IPEndPoint(IPAddress.Loopback, serverGamePort));
+            return p;
+        }
+
+        public byte[] SendBotTelemetryAttack(
+            int serverGamePort, byte sourceSeat, byte kind = 1, byte arg0 = 0)
+        {
+            byte[] p = BuildAttack(sourceSeat, kind, arg0);
+            _udp!.SendTo(BotTelemetryDatagram.Wrap(p),
+                new IPEndPoint(IPAddress.Loopback, serverGamePort));
+            return p;
+        }
+
+        private static byte[] BuildAttack(byte sourceSeat, byte kind, byte arg0)
+        {
             byte[] p = new byte[10];
             BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(0), 0x0311);
             BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(2), 2); // sequence
@@ -280,7 +297,6 @@ namespace RakionServer.World.Tests.E2E
             p[7] = 0;      // sourceEcho
             p[8] = kind;   // 0=Normal, 1=Attack, 2=Damage(precisa estendido)
             p[9] = arg0;
-            _udp!.SendTo(p, new IPEndPoint(IPAddress.Loopback, serverGamePort));
             return p;
         }
 

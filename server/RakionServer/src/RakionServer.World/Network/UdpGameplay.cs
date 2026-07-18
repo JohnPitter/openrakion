@@ -122,6 +122,12 @@ namespace RakionServer.World.Network
                 return;
             }
 
+            if (BotTelemetryDatagram.TryUnwrap(pkt, out ReadOnlySpan<byte> telemetry))
+            {
+                ProcessBotTelemetry(from, telemetry);
+                return;
+            }
+
             // O World v258 ignora os tipos 0x03xx/0x83xx nesta porta: eles pertencem ao
             // socket P2P direto do engine. O relay abaixo é uma extensão de compatibilidade
             // para ambientes onde os peers não conseguem abrir o canal direto.
@@ -195,7 +201,55 @@ namespace RakionServer.World.Network
                 return;
             }
 
-            // Rastreia a posição do humano (do 0x030A) p/ a IA do bot mirar. Só leitura; não altera o relay.
+            ApplyBotInput(sender, type, packet);
+
+            int relayed = 0;
+            foreach (var session in _world.Sessions)
+            {
+                if (!session.InField || session.UdpEndpoint == null) continue;
+                if (session == sender || session.FieldId != sender.FieldId) continue;
+                try { _sock!.SendTo(packet, session.UdpEndpoint); relayed++; }
+                catch (SocketException ex) { Log.Debug("udp", "relay 0x{0:X4} para {1}: {2}", type, session.UdpEndpoint, ex.Message); }
+            }
+            Log.Debug("udp", "datagrama 0x{0:X4} relay p/ {1} peer(s) do field {2}", type, relayed, sender.FieldId);
+        }
+
+        private void ProcessBotTelemetry(IPEndPoint from, ReadOnlySpan<byte> packet)
+        {
+            ClientSession? sender = ResolveSender(from);
+            if (sender == null || !sender.InField ||
+                !TryValidateBotTelemetry(packet, sender.FieldSeat, out ushort type))
+            {
+                Log.Warn("udp", "telemetria de bot inválida ou não autenticada de {0}", from);
+                return;
+            }
+            if (!_relayLimits.TryConsume(sender.Slot, sender.UdpKey, Environment.TickCount64)) return;
+            ApplyBotInput(sender, type, packet);
+        }
+
+        private static bool TryValidateBotTelemetry(
+            ReadOnlySpan<byte> packet, byte senderSeat, out ushort type)
+        {
+            type = 0;
+            if (GameplayActionDatagram.TryParseMove(packet, out var move) &&
+                move.Header.SourceSlot == senderSeat && move.SourceEcho == senderSeat)
+            {
+                type = move.Header.Type;
+                return true;
+            }
+            if (GameplayActionDatagram.TryParseAnimation(packet, out var animation) &&
+                animation.Header.SourceSlot == senderSeat && animation.SourceEcho == senderSeat &&
+                animation.Kind == PlayerAnimationKind.Attack)
+            {
+                type = animation.Header.Type;
+                return true;
+            }
+            return false;
+        }
+
+        private void ApplyBotInput(ClientSession sender, ushort type, ReadOnlySpan<byte> packet)
+        {
+            // Rastreia a posição do humano (do 0x030A) p/ a IA do bot mirar.
             if (type == BotMovement.MoveType && BotMovement.TryReadPosition(packet, out var humanPos))
             {
                 var field = _world.GetField(sender.FieldId);
@@ -208,16 +262,6 @@ namespace RakionServer.World.Network
                 _world.ResolveBotMeleeAttack(sender,
                     feedback => BroadcastBotFeedback(sender.FieldId, feedback));
             }
-
-            int relayed = 0;
-            foreach (var session in _world.Sessions)
-            {
-                if (!session.InField || session.UdpEndpoint == null) continue;
-                if (session == sender || session.FieldId != sender.FieldId) continue;
-                try { _sock!.SendTo(packet, session.UdpEndpoint); relayed++; }
-                catch (SocketException ex) { Log.Debug("udp", "relay 0x{0:X4} para {1}: {2}", type, session.UdpEndpoint, ex.Message); }
-            }
-            Log.Debug("udp", "datagrama 0x{0:X4} relay p/ {1} peer(s) do field {2}", type, relayed, sender.FieldId);
         }
 
         private void BroadcastBotFeedback(int fieldId, byte[] datagram)

@@ -23,6 +23,13 @@ Para "fazer o GameGuard funcionar" seria necessário **emular o protocolo do ser
 ## Alternativas para jogar
 
 1. **Fluxo do launcher** — em alguns builds o `rakion.bin` lançado pelo `NyxLauncher` conecta ao broker/world **mesmo com o GameGuard falhando de forma não-fatal**. Foi o caminho que funcionou nos nossos testes.
-2. **Patch no-GG no client** — neutralizar o lançamento do GameMon no `rakion.bin` (engenharia reversa). O "gate" fica na função de init do GG, na chamada que lança o GameMon: substituir a `call` por `xor eax,eax; add esp,4` (resultado = 0/sucesso, pilha balanceada) faz o jogo rodar sem GameGuard. Lado servidor, pode ser necessário neutralizar a checagem de GG (auth) do world.
+2. **DLL de compatibilidade v258 (método atual)** — o proxy `version.dll` reproduz em memória o
+   diff no-GG do `rakion-final`; não é necessário alterar manualmente o executável instalado. Veja
+   [`client-compatibility-dll.md`](client-compatibility-dll.md). O patch manual abaixo permanece
+   apenas como evidência histórica do RE.
+
+O gate histórico fica na função de inicialização do GG, na chamada que lança o GameMon: substituir
+a `call` por `xor eax,eax; add esp,4` produz resultado de sucesso com a pilha balanceada. Esses
+bytes não devem ser aplicados manualmente no fluxo atual.
 
 > Nota: patches no client mudam o MD5/sha1; se o servidor (`file.php`) impuser a checagem, atualize os hashes esperados. No build v258 testado, a checagem não era imposta.
