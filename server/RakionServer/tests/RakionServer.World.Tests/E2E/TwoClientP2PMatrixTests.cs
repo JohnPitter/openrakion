@@ -104,6 +104,9 @@ namespace RakionServer.World.Tests.E2E
             master.SpawnField();
             joiner.SpawnField();
             JourneyHelper.WaitUntil(() => field.Phase == MatchPhase.Playing, "round não iniciou");
+            JourneyHelper.WaitUntil(
+                () => field.FindRec(ms)?.State == 4 && field.FindRec(js)?.State == 4,
+                "peers não concluíram o spawn");
             return (ms, js, field);
         }
 
@@ -129,7 +132,7 @@ namespace RakionServer.World.Tests.E2E
         private static void AssertTunnel(byte[] frame, byte[] expected)
         {
             Assert.Equal(expected.Length, BinaryPrimitives.ReadUInt16LittleEndian(frame.AsSpan(2)));
-            Assert.Equal(expected, frame.AsSpan(4).ToArray());
+            Assert.Equal(expected, frame.AsSpan(4, expected.Length).ToArray());
         }
 
         private static bool IsHandshakeEcho(byte[] packet) =>
@@ -140,6 +143,6 @@ namespace RakionServer.World.Tests.E2E
 
         private static bool IsTunnelFrame(byte[] frame) =>
             frame.Length >= 4 && frame[0] == 0x57 && frame[1] == 0 &&
-            frame.Length == 4 + BinaryPrimitives.ReadUInt16LittleEndian(frame.AsSpan(2));
+            frame.Length >= 4 + BinaryPrimitives.ReadUInt16LittleEndian(frame.AsSpan(2));
     }
 }

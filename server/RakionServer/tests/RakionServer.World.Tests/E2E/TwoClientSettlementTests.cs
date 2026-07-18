@@ -1,6 +1,5 @@
 using System;
 using System.Threading.Tasks;
-using MySqlConnector;
 using RakionServer.World.Domain;
 using RakionServer.World.Network;
 using Xunit;
@@ -56,38 +55,38 @@ namespace RakionServer.World.Tests.E2E
             master.StartMatch();
             JourneyHelper.WaitUntil(() => field.MatchId != Guid.Empty, "partida não foi armada");
 
-            (int win1, int lose1) = await ReadWinLoseAsync(fixture.DbConnectionString, 1);
-            (int win2, int lose2) = await ReadWinLoseAsync(fixture.DbConnectionString, 9001);
+            MatchRecordSnapshot masterBefore = await MatchRecordFixture.ReadAsync(
+                fixture.DbConnectionString, 1);
+            MatchRecordSnapshot joinerBefore = await MatchRecordFixture.ReadAsync(
+                fixture.DbConnectionString, 9001);
 
-            // Encerra a partida com o time 0 (master) vencedor; o motor da partida vivo liquida.
-            lock (field.SyncRoot)
+            try
             {
-                field.Wins0 = 1;
-                field.Wins1 = 0;
-                field.EndMatch(0);
+                // Encerra a partida com o time 0 (master) vencedor; o motor da partida vivo liquida.
+                lock (field.SyncRoot)
+                {
+                    field.Wins0 = 1;
+                    field.Wins1 = 0;
+                    field.EndMatch(0);
+                }
+                JourneyHelper.WaitUntil(() => field.Settled, "settlement não concluiu");
+                await Task.Delay(300); // deixa o UPDATE do DB confirmar
+
+                MatchRecordSnapshot masterAfter = await MatchRecordFixture.ReadAsync(
+                    fixture.DbConnectionString, 1);
+                MatchRecordSnapshot joinerAfter = await MatchRecordFixture.ReadAsync(
+                    fixture.DbConnectionString, 9001);
+
+                Assert.Equal(masterBefore.Win + 1, masterAfter.Win);
+                Assert.Equal(masterBefore.Lose, masterAfter.Lose);
+                Assert.Equal(joinerBefore.Lose + 1, joinerAfter.Lose);
+                Assert.Equal(joinerBefore.Win, joinerAfter.Win);
             }
-            JourneyHelper.WaitUntil(() => field.Settled, "settlement não concluiu");
-            await Task.Delay(300); // deixa o UPDATE do DB confirmar
-
-            (int win1b, int lose1b) = await ReadWinLoseAsync(fixture.DbConnectionString, 1);
-            (int win2b, int lose2b) = await ReadWinLoseAsync(fixture.DbConnectionString, 9001);
-
-            Assert.Equal(win1 + 1, win1b);   // GoHeroi (time 0) venceu
-            Assert.Equal(lose1, lose1b);
-            Assert.Equal(lose2 + 1, lose2b); // ProbeTwo (time 1) perdeu
-            Assert.Equal(win2, win2b);
-        }
-
-        private static async Task<(int win, int lose)> ReadWinLoseAsync(string conn, int characterId)
-        {
-            await using var connection = new MySqlConnection(conn);
-            await connection.OpenAsync();
-            await using var cmd = connection.CreateCommand();
-            cmd.CommandText = "SELECT win, lose FROM characterinfo WHERE id=@id";
-            cmd.Parameters.AddWithValue("@id", characterId);
-            await using var reader = await cmd.ExecuteReaderAsync();
-            Assert.True(await reader.ReadAsync(), $"characterinfo id={characterId} ausente");
-            return (reader.GetInt32(0), reader.GetInt32(1));
+            finally
+            {
+                await MatchRecordFixture.RestoreAsync(
+                    fixture.DbConnectionString, masterBefore, joinerBefore);
+            }
         }
     }
 }

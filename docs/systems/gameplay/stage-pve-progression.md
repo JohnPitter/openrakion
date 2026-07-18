@@ -325,6 +325,8 @@ snapshot/restauração da fixture ou use uma conta descartável.
 - reward diferencial do rank 5, Cell EXP e bônus Power User enviados por `0x53`;
 - ACK `53 00 00 01 05 00` e persistência de EXP, gold, rank e ledger no MySQL;
 - replay byte a byte idêntico com novo ACK, um único ledger e nenhum segundo crédito.
+- restauração transacional de EXP/nível/pontos, Gold, rank, Cells e ledgers ao final, inclusive
+  quando uma asserção falha depois do commit.
 
 ## Cobertura e lacunas restantes
 

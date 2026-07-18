@@ -94,6 +94,17 @@ namespace RakionServer.World.Tests.E2E
             Send(0x14, payload);
         }
 
+        public void OpenInventory() => Send(0x2c, Array.Empty<byte>());
+
+        public void BuyStorageItem(ushort itemId, byte currency)
+        {
+            using var writer = new PacketWriter();
+            writer.WriteWord(itemId).WriteByte(currency).WriteByte(0);
+            Send(0x2e, writer.ToArray());
+        }
+
+        public void SellStorageItem(byte slot) => Send(0x2f, new[] { slot });
+
         /// <summary>Parâmetros de criação de sala (0x3b).</summary>
         public readonly record struct RoomSpec(
             string Name, byte Map, byte Mode, byte Rounds, ushort DurationSec,

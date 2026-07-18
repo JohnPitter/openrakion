@@ -147,9 +147,12 @@ Implementado:
 6. capacidade física, serial original por ledger e expiração no login e online;
 7. bundle type-10 expandido antes da persistência e migração segura de rows legadas.
 
-Próximo passo de validação: observar no cliente real compra Gold/Cash, cupom, set com seis peças,
-venda e expiração online. Um journal idempotente só pode ser extensão do servidor, com uma chave
-nova fora do wire v258; não é requisito para fidelidade ao original.
+O E2E `StoragePurchasePersistenceE2ETests` cobre no World vivo a compra Gold do item `1001`, os
+callbacks `0x14/0x31/0x2E`, reconnect com a mesma row/serial e saldo, venda `0x2F→0x15`, wallet e
+os dois ledgers. Próximo passo headless: variantes Cash, cupom e bundle. No cliente real ainda é
+necessário observar a apresentação de compra/venda, cupom, set com seis peças e expiração online.
+Um journal idempotente só pode ser extensão do servidor, com uma chave nova fora do wire v258; não
+é requisito para fidelidade ao original.
 
 O caminho transacional está ativo para gold e cash. Rollback de código deve desabilitar novas
 operações, nunca tentar compensar automaticamente transações já comprometidas.
@@ -164,6 +167,11 @@ operações, nunca tentar compensar automaticamente transações já comprometid
 - saldo e item convergentes após reconnect;
 - ledger totalizando exatamente a variação da wallet;
 - golden frames de sucesso/erro e atualização visual.
+
+Em 2026-07-18, a jornada E2E abriu o inventário pelo `0x2C`, comprou `1001` pelo request `0x2E`,
+confirmou débito `2700`, row/serial, callbacks e ledger, encerrou a conexão, relogou e reencontrou o
+mesmo item e saldo. A venda pela célula retornou `0x15`, removeu a row, creditou `1080` e gravou o
+segundo ledger. Gold, inventário e ledgers foram restaurados após a prova.
 
 Em 2026-07-14, a integração MariaDB comprou o item `1001` por `2700` Gold, criou a linha física e
 o ledger `kind=0`; a venda da mesma célula removeu o row ID, creditou `1080` Gold e criou

@@ -66,16 +66,18 @@ A validação **dinâmica** dirige o `WorldServer` real por clientes headless no
 - **entrada em stage PvE solo** (`BeginStageRun` via `0x4b`);
 - **clear e liquidação PvE**: `0x4A→0x53`, reward/Cell EXP exatos, persistência e replay
   idempotente no banco real;
+- **compra/venda Gold persistida**: inventário `0x2C`, compra `0x2E`, callbacks de item/saldo,
+  reconnect, venda `0x2F` e ledgers no banco real;
 - **ciclo vivo da partida**: engage `Pre→Playing` pelo deadline, spawn tardio, morte `0x4F`,
   placar, fim de round `0x4A` e fim de match `0x44` pelo motor global;
 - **bots server-side**: movimento, perseguição, convivência com dois humanos e morte no field.
 
-São **22 testes E2E** e **810 testes World verdes**. Detalhe em
+São **23 testes E2E** e **811 testes World verdes**. Detalhe em
 [`dynamic-validation.md`](dynamic-validation.md).
 
 Próximos alvos headless (ainda abertos):
 
-- economia/UI ao vivo: loja, inventário, enchant, presentes, Power User, ranking.
+- economia/UI ao vivo: Cash/cupom/bundle, enchant, presentes, Power User e ranking.
 
 ### 2. Validação gráfica com o cliente real
 
@@ -99,7 +101,7 @@ original.
 
 ## Ordem recomendada
 
-1. validar economia e persistência pelos frames reais;
+1. completar as variantes de economia e persistência pelos frames reais;
 2. smoke **visual** da jornada básica com dois clientes;
 3. matriz PvP/P2P visual em LAN, NAT diferente e UDP bloqueado;
 4. matriz PvE/NPC visual;

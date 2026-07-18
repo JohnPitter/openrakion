@@ -40,15 +40,16 @@ Seed usado (banco `rakion`): conta `test` → personagem `GoHeroi` (`#1`); conta
 | Gameplay UDP + relay de movimento | `TwoClientGameplayUdpTests.TwoHeadlessClients_UdpHandshakeAndMoveRelay_...` | Ambos autenticam o endpoint UDP (handshake `0x0202`, validação de slot+IP+chave); echo `0x0201` retorna; um movimento `0x030A` do master é relayado **byte a byte** ao outro peer do mesmo field, com o assento de origem preservado |
 | Matriz P2P local | `TwoClientP2PMatrixTests` | Direto/direto troca `0x030A` socket-a-socket sem World e rejeita duplicação TCP; direto/túnel ativa `0x54` e entrega `TunnelOne/TunnelAll` somente ao par que exige fallback, nos dois sentidos |
 | Relay de combate (ataque + sync) | `TwoClientCombatRelayTests.AttackAndSyncDatagrams_RelayToOtherPeer` | Ataque `0x0311` (kind Attack) e sync `0x030F` do master chegam byte a byte ao joiner — combate no fio, não só movimento |
-| Settlement PvP persistido | `TwoClientSettlementTests.PvpMatchEnd_PersistsWinLoseToDatabase` | TeamDeath com times opostos; ao encerrar (time 0 vencedor) o **motor da partida vivo** grava WIN em `characterinfo` do master e LOSE do joiner no MySQL real (delta antes/depois) |
+| Settlement PvP persistido | `TwoClientSettlementTests.PvpMatchEnd_PersistsWinLoseToDatabase` | TeamDeath com times opostos; ao encerrar (time 0 vencedor) o **motor da partida vivo** grava WIN em `characterinfo` do master e LOSE do joiner no MySQL real (delta antes/depois); W/L/D são restaurados no final |
 | Matriz de modos PvP | `TwoClientModeMatrixTests` | Golem/Deathmatch/TeamDeath/Boss criam+entram+armam com 2 clientes; fragLimit fora da faixa do Deathmatch é rejeitado (disconnect `0xCC`) |
 | Entrada em stage PvE solo | `SoloStageEntryTests.SoloStage_SpawnStartsStageRun` | Sala solo (stage 1) → start → spawn `0x4b` abre a execução de stage (`BeginStageRun`): `StageRunId`=`MatchId`, `ActiveStageId`=1 |
-| Clear e settlement PvE | `SoloStageSettlementE2ETests.ExactReward_AppliesOnceAndIdenticalReplayOnlyAcknowledges` | Stage 1 → clear `0x4A` → rank 5 diferencial → `0x53` exato; EXP, gold, rank e ledger confirmados no MySQL. Replay idêntico recebe novo ACK sem crédito ou ledger duplicado |
+| Clear e settlement PvE | `SoloStageSettlementE2ETests.ExactReward_AppliesOnceAndIdenticalReplayOnlyAcknowledges` | Stage 1 → clear `0x4A` → rank 5 diferencial → `0x53` exato; EXP, gold, rank e ledger confirmados no MySQL. Replay idêntico recebe novo ACK sem crédito ou ledger duplicado; progressão, Cells, rank e ledgers são restaurados |
+| Compra, reconnect e venda | `StoragePurchasePersistenceE2ETests.GoldPurchase_ReconnectsAndSellsWithExactPersistentDeltas` | Abre inventário `0x2C`, compra `1001` por Gold via `0x2E`, valida callbacks `0x14/0x31/0x2E`, reloga, reencontra a mesma row e saldo, vende pela célula via `0x2F` e confirma callback `0x15`, wallet e dois ledgers no MySQL; fixture restaurada |
 | Chat de canal | `TwoClientChatTests.ChannelChat_BroadcastsToOtherClientInSameChannel` | Um cliente envia chat de canal (`0x22`); o outro no mesmo canal-lobby recebe o broadcast com o texto — e o remetente recebe o próprio eco |
 | Ciclo vivo de partida | `TwoClientLiveMatchLifecycleTests.DeadlineAndDeathFrame_AdvanceRoundAndEndMatch` | Golem com times opostos: primeiro spawn `0x4B`, `Pre→Playing` pelo deadline no motor global, entrada tardia do segundo jogador, morte própria `0x4F` no fio, broadcasts `0x4F/0x4A`, vitória do round e fim do match `0x44` pelo próximo tick |
 | Bot no fio | `BotMovementE2ETests` e `BotStageValidationTests` | Movimento sintético recebido por humanos; perseguição converge; dois humanos recebem o bot sem sequestro do P2P; ataque humano mata o bot e publica a morte pelo field |
 
-Todos verdes: **810 testes World**, dos quais **22 são E2E** no fio. Descobertas de RE confirmadas em runtime:
+Todos verdes: **811 testes World**, dos quais **23 são E2E** no fio. Descobertas de RE confirmadas em runtime:
 
 - o transporte do cliente e do servidor é simétrico na cifra (AES-128 do canal lobby) mas
   **assimétrico no envelope**: cliente→servidor carrega `[opcode][seq]`, servidor→cliente carrega
@@ -74,6 +75,9 @@ Todos verdes: **810 testes World**, dos quais **22 são E2E** no fio. Descoberta
 - o `0x53` de stage PvE é **anti-cheat**: `CanSettleStage` exige `Phase==RoundEnd`, stage cleared,
   reward diferencial exato e Cell EXP coerente com equipamento/Power User. O E2E fecha
   `0x4A→0x53→ACK`, persistência e replay idempotente pelo mesmo socket e banco real;
+- a compra Gold percorre a UI de inventário e o dispatch reais (`0x2C→0x2E`), só publica os
+  callbacks `0x14/0x31/0x2E` depois do commit e reaparece no reconnect com a mesma row/serial. A
+  venda `0x2F→0x15` remove essa instância, credita a fórmula `40%` e fecha o segundo ledger;
 
 ## Como rodar
 
@@ -91,12 +95,12 @@ Sem banco, os testes fazem skip suave (não quebram o CI). Para apontar outro ba
 Coberto no backend: login → char-select → sala → join → ready → start → engage pelo tick real →
 spawn tardio → morte `0x4F` → placar/fim de round/fim de match → handshake UDP → relay de
 movimento **e combate** (`0x030A`/`0x0311`/`0x030F`) → settlement PvP persistido no DB → matriz
-dos 4 modos → entrada, clear e settlement de stage PvE solo → matriz P2P local
-direto/TunnelOne/TunnelAll → bot server-side no fio. Ainda **não** exercitado headless
-(próximos alvos):
+dos 4 modos → entrada, clear e settlement de stage PvE solo → compra/venda Gold com reconnect →
+matriz P2P local direto/TunnelOne/TunnelAll → bot server-side no fio. Ainda **não** exercitado
+headless (próximos alvos):
 
-- **economia/UI ao vivo**: loja, inventário, enchant, presentes, Power User e ranking pelos frames
-  reais.
+- **economia/UI ao vivo**: variantes Cash/cupom/bundle, enchant, presentes, Power User e ranking
+  pelos frames reais.
 
 E a camada que **exige cliente gráfico** (fora do escopo backend): animação, frames de ataque,
 hitbox, colisão, trajetória de projétil, efeitos, render de HUD/ranking e a topologia P2P do engine
