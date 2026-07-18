@@ -23,6 +23,17 @@ O diff golden contém 317 bytes. A DLL valida **todos** os bytes antes de aplica
 desconhecida é rejeitada sem patch parcial. O `rakion-tutorial` documenta somente a retirada do
 GameGuard em outra build e não é fonte de bytes para o cliente final.
 
+O artefato auxiliar `RakionClientPatch.dll` recuperado do trabalho guardado não substitui o
+golden. Ele não exporta o contrato de `version.dll` e não contém os hooks de rede/bot, mas sua
+tabela compilada confirma as mesmas **317 tuplas `{RVA, byte novo, byte original}`** do manifesto
+atual. A comparação é reproduzível sem carregar a DLL:
+
+```powershell
+python client\RakionClientCompat\verify_legacy_client_patch.py `
+  client\RakionClientPatch\build\RakionClientPatch.dll `
+  client\RakionClientCompat\baked_patches.h
+```
+
 ## Responsabilidades
 
 - reproduzir em memória os 317 bytes do `rakion-final`, incluindo retirada do GameGuard e code
