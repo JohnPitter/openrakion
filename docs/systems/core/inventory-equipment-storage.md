@@ -567,6 +567,8 @@ troca de flag; compensação de economia precisa de log e ferramenta administrat
   `0x2F→0x15` remove a instância exata, credita `1080` e grava o ledger de venda;
 - `StorageCashCouponBundleE2ETests` fecha Cash, cupom e set `9012`: oito grants físicos recebem
   seriais de ledger, o cupom desaparece e o reconnect recarrega as seis peças do bundle;
+- `EnchantPersistenceE2ETests` fecha preview/commit no fio, seriais de row, consumo dos inputs,
+  nível persistido, replay sem ledger duplicado e reconnect;
 - a fixture restaura Gold, item e ledgers mesmo se a jornada falhar depois do commit.
 
 ## Pontos não resolvidos

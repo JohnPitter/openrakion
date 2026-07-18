@@ -108,6 +108,28 @@ namespace RakionServer.World.Tests.E2E
 
         public void SellStorageItem(byte slot) => Send(0x2f, new[] { slot });
 
+        public void PreviewEnchant(byte target, byte catalyst, params byte[] materials)
+        {
+            if (materials.Length > 3) throw new ArgumentOutOfRangeException(nameof(materials));
+            using var writer = new PacketWriter();
+            writer.WriteByte(target).WriteByte(catalyst).WriteByte((byte)materials.Length);
+            foreach (byte material in materials) writer.WriteByte(material);
+            Send(0x74, writer.ToArray());
+        }
+
+        public void CommitEnchant(
+            byte target, byte catalyst, byte clientResult, params byte[] materials)
+        {
+            if (materials.Length > 3) throw new ArgumentOutOfRangeException(nameof(materials));
+            byte[] payload = new byte[8];
+            payload[1] = target;
+            payload[2] = catalyst;
+            payload[3] = (byte)materials.Length;
+            materials.CopyTo(payload, 4);
+            payload[7] = clientResult;
+            Send(0x28, payload);
+        }
+
         /// <summary>Parâmetros de criação de sala (0x3b).</summary>
         public readonly record struct RoomSpec(
             string Name, byte Map, byte Mode, byte Rounds, ushort DurationSec,

@@ -146,6 +146,23 @@ operações pendentes mantêm a instância e `config_version` que existiam no pr
 - a migração registrou `original_outcomes=1` e os cinco pares exatos de base/decay;
 - itens e ledger temporários foram removidos após a prova.
 
+## Evidência automatizada em 2026-07-18
+
+`EnchantPersistenceE2ETests` transformou o probe manual em gate obrigatório reproduzível. Contra o
+World vivo e MariaDB real, o cliente headless:
+
+1. carregou alvo `1001 +4`, catalisador `13001` e material `14001` por row/célula;
+2. criou uma sala, enviou `0x74` e validou os três descritores com `item_sn` no preview `0x28`;
+3. confirmou pelo `0x28` com `clientResult=5` deliberadamente falso;
+4. recebeu apenas o result autoritativo do backend, confirmou nível/consumo e `logenchant`;
+5. repetiu o commit byte a byte e recebeu o mesmo frame sem segundo ledger;
+6. reconectou e reencontrou o alvo no novo nível, sem catalisador/material;
+7. removeu rows e ledger temporários ao final.
+
+A matriz obrigatória ficou em 25/25 E2E no fio e a suíte World em 818/818 testes Release, sem
+skip. O padding AES de 12 bytes é aceito pelo harness, mas os 40 bytes úteis do preview e os sete
+bytes úteis do resultado continuam protegidos pelos asserts.
+
 ## Validações adicionais
 
 - falha injetada entre update, cada delete e journal para provar rollback;

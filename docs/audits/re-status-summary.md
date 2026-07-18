@@ -70,17 +70,19 @@ A validação **dinâmica** dirige o `WorldServer` real por clientes headless no
   reconnect, venda `0x2F` e ledgers no banco real;
 - **Cash/cupom/bundle persistidos**: três compras pelo `0x2E`, desconto e consumo do cupom,
   seis grants do set, oito seriais/ledgers, reconnect e rollback da fixture;
+- **enchant persistido**: preview `0x74→0x28`, commit autoritativo `0x28→0x74`, consumo dos
+  insumos, ledger único, replay e reconnect pelo socket real;
 - **ciclo vivo da partida**: engage `Pre→Playing` pelo deadline, spawn tardio, morte `0x4F`,
   placar, fim de round `0x4A` e fim de match `0x44` pelo motor global;
 - **bots server-side**: movimento, perseguição, convivência com dois humanos, datagrama de reação
   ao dano e morte no field, provados headless inclusive pela ponte DLL P2P→World; smoke visual pendente.
 
-São **24 testes E2E** e **817 testes World verdes**. Detalhe em
+São **25 testes E2E** e **818 testes World verdes**. Detalhe em
 [`dynamic-validation.md`](dynamic-validation.md).
 
 Próximos alvos headless (ainda abertos):
 
-- economia/UI ao vivo: enchant, presentes, Power User e ranking.
+- economia/UI ao vivo: presentes, Power User e ranking.
 
 ### 2. Validação gráfica com o cliente real
 
