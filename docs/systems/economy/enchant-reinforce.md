@@ -159,7 +159,7 @@ World vivo e MariaDB real, o cliente headless:
 6. reconectou e reencontrou o alvo no novo nível, sem catalisador/material;
 7. removeu rows e ledger temporários ao final.
 
-A matriz obrigatória atual ficou em 27/27 E2E no fio e a suíte World em 820/820 testes Release, sem
+A matriz obrigatória atual ficou em 28/28 E2E no fio e a suíte World em 822/822 testes Release, sem
 skip. O padding AES de 12 bytes é aceito pelo harness, mas os 40 bytes úteis do preview e os sete
 bytes úteis do resultado continuam protegidos pelos asserts.
 

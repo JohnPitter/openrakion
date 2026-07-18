@@ -11,7 +11,8 @@ public static class LoginCharListWriter
     private const int TrailerSize = 20;
     private const int NamePrefix = 5;
     private const int FieldsSize = 359;
-    private const int Win = 0, Lose = 4, Draw = 8, Class = 22, Level = 23;
+    private const int Win = 0, Lose = 4, Draw = 8, ClassRank = 12, Auth = 13;
+    private const int TotalRank = 17, RankGrade = 21, Class = 22, Level = 23;
     private const int Exp = 24, LevelPoint = 28, Stats = 30, Equip = 50;
     private const int Quickslot = 76, Enhance = 88, Ranks = 260;
 
@@ -104,6 +105,10 @@ public static class LoginCharListWriter
         BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(fields + Win), character.Win);
         BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(fields + Lose), character.Lose);
         BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(fields + Draw), character.Draw);
+        buffer[fields + ClassRank] = unchecked((byte)character.ClassRank);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(fields + Auth), character.Auth);
+        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(fields + TotalRank), character.TotalRank);
+        buffer[fields + RankGrade] = character.RankGrade;
         buffer[fields + Class] = character.Class;
         buffer[fields + Level] = character.Level;
         BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(fields + Exp), character.Exp);

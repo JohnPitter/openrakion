@@ -4,7 +4,8 @@
 
 O ranking original não nasce do resultado de uma partida e não concede prêmio. Ele é recalculado
 por um executável one-shot separado, `RankUpdate.exe`, usando EXP, `clanpoint` e pontos do clã já
-persistidos. O World apenas carrega `totalrank`, `classrank` e `rankgrade` no login.
+persistidos. O World carrega `totalrank`, `classrank` e `rankgrade` no login e os serializa no
+registro de personagem do `0x0C`.
 
 A reimplementação está em
 [`RakionServer.Ranking`](../../../server/RakionServer/src/RakionServer.Ranking). Ela reproduz o job
@@ -175,6 +176,20 @@ Antes de produção, execute o job contra uma cópia do banco e confira:
 O smoke test local em banco temporário cobriu dois países, duas classes, dois clãs, empates e a troca
 dos sete snapshots. O resultado confirmou total rank `1, 1, 3`, reinício por país/clã, classe global
 e grades fixa/proporcional sem alterar o banco de desenvolvimento.
+
+### E2E job→login — 2026-07-18
+
+`RankingJobWireE2ETests` executa o `RankingJob` contra o MariaDB do harness, preserva os campos
+canônicos e faz backup físico dos sete snapshots antes da jornada. O teste confirma grade fixa,
+rank total por país, rank global de classe, `lastrank` total/classe, troca dos sete snapshots e
+ausência de tabelas `_next/_previous`. Em seguida conecta um cliente headless e valida os mesmos
+valores no DTO e no frame `0x0C` real.
+
+Essa jornada encontrou uma lacuna na projeção: `WorldDatabase` lia `totalrank/classrank`, mas não
+lia `rankgrade`, e `LoginCharListWriter` descartava todos os três. A borda foi alinhada à
+decompilação do produtor original: no bloco de campos após `name\0`, `classrank` ocupa `+12` em um
+byte, `auth` ocupa `+13` em quatro bytes, `totalrank` ocupa `+17` em quatro bytes e `rankgrade`
+ocupa `+21`. Goldens preservam os registros anteriores e um teste dedicado fixa esses offsets.
 
 ## O que não pertence a este sistema
 

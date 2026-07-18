@@ -658,7 +658,8 @@ namespace RakionServer.World.Database
         // Colunas do char p/ o char-select (0x0C) — UMA fonte (ordem = índices em MapCharacter).
         private const string CharSelectColumns =
             "id,userid,name,used,auth,Class,level,win,lose,draw,exp,levelpoint,slot," +
-            "hit1,hit2,hit3,hit4,chit,hp,ap,attackspeed,speed,maxcp,totalrank,classrank,potionslot";
+            "hit1,hit2,hit3,hit4,chit,hp,ap,attackspeed,speed,maxcp,rankgrade," +
+            "totalrank,classrank,potionslot";
 
         private static CharacterInfo MapCharacter(System.Data.Common.DbDataReader r) => new CharacterInfo
         {
@@ -685,9 +686,10 @@ namespace RakionServer.World.Database
             AttackSpeed = (byte)r.GetInt32(20),
             Speed = (byte)r.GetInt32(21),
             Maxcp = (byte)r.GetInt32(22),
-            TotalRank = r.GetInt32(23),
-            ClassRank = r.GetInt32(24),
-            PotionSlots = checked((byte)r.GetInt32(25)),
+            RankGrade = checked((byte)r.GetInt32(23)),
+            TotalRank = r.GetInt32(24),
+            ClassRank = r.GetInt32(25),
+            PotionSlots = checked((byte)r.GetInt32(26)),
         };
 
         /// <summary>Char selecionado em usergameinfo.charname; fallback pelo menor slot habilitado.</summary>

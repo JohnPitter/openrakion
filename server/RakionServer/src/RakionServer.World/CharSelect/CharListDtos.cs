@@ -14,6 +14,10 @@ namespace RakionServer.World.CharSelect
         public int CharacterId { get; init; }
         public string Name { get; init; } = "";
         public byte Slot { get; init; }
+        public byte Auth { get; init; }
+        public byte RankGrade { get; init; }
+        public int TotalRank { get; init; }
+        public int ClassRank { get; init; }
         public byte Class { get; init; }            // fieldsStart+22, confirmado por captura-diff
         public byte Level { get; init; } = 1;
         public uint Exp { get; init; }

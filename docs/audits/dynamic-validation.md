@@ -50,11 +50,12 @@ Seed usado (banco `rakion`): conta `test` → personagem `GoHeroi` (`#1`); conta
 | Enchant em duas fases | `EnchantPersistenceE2ETests.PreviewCommitReplayAndReconnect_PersistExactlyOnceOnRealWire` | Cria sala, envia preview `0x74`, valida descritores/seriais do `0x28`, confirma com `clientResult=5` falso, recebe o resultado autoritativo `0x74`, verifica consumo, nível, ledger único, replay idêntico, reconnect e restauração |
 | Presentes FIFO | `PresentPersistenceE2ETests.OwnershipFifoAcceptDisposeAndReconnect_PersistOnRealWire` | Pelo wire `0x6B`–`0x6D`, rejeita acesso de outra conta e descarte fora de ordem, aceita o primeiro presente em célula livre, preserva o segundo diante de célula ocupada, descarta-o, confirma fila vazia, item/serial, `accept_time`/`dispose_time`, reconnect e restauração |
 | Power User | `PowerUserPersistenceE2ETests.InitialRenewalCouponReconnectAndExpiration_PersistOnRealWire` | Compra inicial `0x34`, renova com cupom de 50%, valida callbacks, Cash `100000→92000→89000`, pontos `0→5→10`, marcadores/ledgers, consumo do cupom, reconnect, EXP `×1,5`, Gold neutro, expiração online e restauração |
+| Ranking job→login | `RankingJobWireE2ETests.JobPublishesSevenSnapshotsAndLoginCarriesCanonicalRanks` | Executa `RankingJob` no MariaDB real, atualiza canônicos, troca os sete snapshots sem staging residual, preserva `lastrank` e confirma `classrank/totalrank/rankgrade` no DTO e nos offsets do `0x0C`; restaura todas as tabelas |
 | Chat de canal | `TwoClientChatTests.ChannelChat_BroadcastsToOtherClientInSameChannel` | Um cliente envia chat de canal (`0x22`); o outro no mesmo canal-lobby recebe o broadcast com o texto — e o remetente recebe o próprio eco |
 | Ciclo vivo de partida | `TwoClientLiveMatchLifecycleTests.DeadlineAndDeathFrame_AdvanceRoundAndEndMatch` | Golem com times opostos: primeiro spawn `0x4B`, `Pre→Playing` pelo deadline no motor global, entrada tardia do segundo jogador, morte própria `0x4F` no fio, broadcasts `0x4F/0x4A`, vitória do round e fim do match `0x44` pelo próximo tick |
 | Bot no fio | `BotMovementE2ETests` e `BotStageValidationTests` | Movimento sintético recebido; perseguição converge; dois humanos recebem o bot; o envelope DLL `0xB07A` entrega ataque sem relay duplicado; primeiro ataque reduz HP e devolve `0x0311 kind=Damage`; golpes seguintes matam o bot e publicam `0x4F`. Smoke gráfico permanece separado |
 
-Todos verdes: **820 testes World**, dos quais **27 são E2E** no fio. Descobertas de RE confirmadas em runtime:
+Todos verdes: **822 testes World**, dos quais **28 são E2E** no fio. Descobertas de RE confirmadas em runtime:
 
 - o transporte do cliente e do servidor é simétrico na cifra (AES-128 do canal lobby) mas
   **assimétrico no envelope**: cliente→servidor carrega `[opcode][seq]`, servidor→cliente carrega
@@ -98,6 +99,10 @@ Todos verdes: **820 testes World**, dos quais **27 são E2E** no fio. Descoberta
   desativa o bônus após expiração; o settlement de stage exige e prova EXP `×1,5` e Gold bruto.
   O gate revelou que `powertime_cur` repetia o marcador anterior; o ledger agora concilia com o
   marcador novo entregue ao cliente;
+- ranking fecha a cadeia batch→World: o job publica conjuntamente `totalrankp`, cinco snapshots de
+  classe e `clanrankp`, atualiza os campos canônicos e remove staging/previous. O World agora
+  serializa no registro do `0x0C` `classrank @+12`, `auth @+13`, `totalrank @+17` e
+  `rankgrade @+21`; antes ele carregava os três ranks do banco, mas os descartava no DTO;
 
 ## Como rodar
 
@@ -120,10 +125,8 @@ movimento **e combate** (`0x030A`/`0x0311`/`0x030F`) → settlement PvP persisti
 dos 4 modos → entrada, clear e settlement de stage PvE solo → compra/venda Gold com reconnect →
 Cash/cupom/bundle → enchant → presentes FIFO com reconnect → matriz P2P local
 direto/TunnelOne/TunnelAll → bot server-side no fio. Ainda **não** exercitado
-headless (próximos alvos):
-
-- **economia/UI ao vivo**: ranking
-  pelos frames reais.
+headless. Não resta alvo conhecido nessa matriz backend; novos gaps precisam surgir da auditoria
+final ou de uma captura gráfica contraditória.
 
 E a camada que **exige cliente gráfico** (fora do escopo backend): animação, frames de ataque,
 hitbox, colisão, trajetória de projétil, efeitos, render de HUD/ranking e a topologia P2P do engine

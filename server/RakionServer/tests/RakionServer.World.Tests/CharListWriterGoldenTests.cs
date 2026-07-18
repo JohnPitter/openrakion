@@ -22,16 +22,30 @@ namespace RakionServer.World.Tests
 
         private static CharSummary Abcdef() => new()
         {
-            CharacterId = 1, Name = "ABCDEF", Slot = 0, Level = 119, LevelPoint = 86,
-            Win = 0x0A0B0C0D, Lose = 0x1A1B1C1D, Draw = 0x2A2B2C2D, Exp = 0x11223344,
+            CharacterId = 1,
+            Name = "ABCDEF",
+            Slot = 0,
+            Level = 119,
+            LevelPoint = 86,
+            Win = 0x0A0B0C0D,
+            Lose = 0x1A1B1C1D,
+            Draw = 0x2A2B2C2D,
+            Exp = 0x11223344,
             Stats = new ushort[] { 101, 102, 103, 104, 105, 106, 107, 108, 109, 110 },
             StageRanks = new byte[] { 0, 5, 4, 3, 2, 1 },   // indexado por stage (índice 0 não usado): stage1=5..stage5=1
         };
 
         private static CharSummary Ghijklmn() => new()
         {
-            CharacterId = 2, Name = "GHIJKLMN", Slot = 1, Level = 85, LevelPoint = 99,
-            Win = 0x4A4B4C4D, Lose = 0x5A5B5C5D, Draw = 0x6A6B6C6D, Exp = 0x7A7B7C7D,
+            CharacterId = 2,
+            Name = "GHIJKLMN",
+            Slot = 1,
+            Level = 85,
+            LevelPoint = 99,
+            Win = 0x4A4B4C4D,
+            Lose = 0x5A5B5C5D,
+            Draw = 0x6A6B6C6D,
+            Exp = 0x7A7B7C7D,
             Stats = new ushort[] { 121, 122, 123, 124, 125, 126, 127, 120, 119, 118 },
             StageRanks = new byte[] { 0, 1, 2, 3, 4, 5 },   // indexado por stage (índice 0 não usado)
         };
@@ -41,7 +55,9 @@ namespace RakionServer.World.Tests
         {
             var list = new CharList
             {
-                DisplayName = "JP", Gold = 0x3A3B3C3D, PowerLevelPoint = 0x4A4B,
+                DisplayName = "JP",
+                Gold = 0x3A3B3C3D,
+                PowerLevelPoint = 0x4A4B,
                 SessionHandle = new byte[] { 0xa0, 0x0d, 0x87, 0x3f },
                 Chars = new List<CharSummary> { Abcdef() },
             };
@@ -53,7 +69,9 @@ namespace RakionServer.World.Tests
         {
             var list = new CharList
             {
-                DisplayName = "JP", Gold = 0x3A3B3C3D, PowerLevelPoint = 0x4A4B,
+                DisplayName = "JP",
+                Gold = 0x3A3B3C3D,
+                PowerLevelPoint = 0x4A4B,
                 SessionHandle = new byte[] { 0xa9, 0x0d, 0x87, 0x3f },
                 Chars = new List<CharSummary> { Abcdef(), Ghijklmn() },
             };
@@ -65,7 +83,9 @@ namespace RakionServer.World.Tests
         {
             var list = new CharList
             {
-                DisplayName = "JP", Gold = 0x3A3B3C3D, PowerLevelPoint = 0x4A4B,
+                DisplayName = "JP",
+                Gold = 0x3A3B3C3D,
+                PowerLevelPoint = 0x4A4B,
                 SessionHandle = new byte[] { 0xd7, 0x0d, 0x87, 0x3f },
                 Chars = new List<CharSummary> { Abcdef() with { Class = 3 }, Ghijklmn() with { Class = 4 } },
             };
@@ -81,6 +101,32 @@ namespace RakionServer.World.Tests
 
             Assert.Equal((ushort)12, BinaryPrimitives.ReadUInt16LittleEndian(frame.AsSpan(7)));
             Assert.Equal(0x12345678u, BinaryPrimitives.ReadUInt32LittleEndian(frame.AsSpan(9)));
+        }
+
+        [Fact]
+        public void CharacterRecordCarriesCanonicalRankingFields()
+        {
+            var list = new CharList
+            {
+                DisplayName = "JP",
+                Chars = new[]
+                {
+                    Abcdef() with
+                    {
+                        Auth = 7, RankGrade = 9, TotalRank = 0x10203040,
+                        ClassRank = 0x123
+                    }
+                }
+            };
+
+            byte[] frame = LoginCharListWriter.Build(list);
+            int fields = HeaderSize + 5 + "ABCDEF".Length + 1;
+
+            Assert.Equal((byte)0x23, frame[fields + 12]);
+            Assert.Equal(7u, BinaryPrimitives.ReadUInt32LittleEndian(frame.AsSpan(fields + 13)));
+            Assert.Equal(0x10203040,
+                BinaryPrimitives.ReadInt32LittleEndian(frame.AsSpan(fields + 17)));
+            Assert.Equal((byte)9, frame[fields + 21]);
         }
 
         [Fact]

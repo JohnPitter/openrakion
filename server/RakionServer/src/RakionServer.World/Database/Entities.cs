@@ -180,6 +180,7 @@ namespace RakionServer.World.Database
         // stats alocados (characterinfo): hit1..maxcp = Basic/Range/Special/Grip attack, Cell destruction,
         // Max energy, Max armor, Attack speed, Move speed, Max cell point. Indice 0..9 da alocacao 0x33.
         public byte Hit1, Hit2, Hit3, Hit4, Chit, Hp, Ap, AttackSpeed, Speed, Maxcp;
+        public byte RankGrade;
         public int TotalRank, ClassRank;
     }
 

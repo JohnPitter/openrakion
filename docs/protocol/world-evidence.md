@@ -1480,6 +1480,17 @@ não carrega NUL. Os offsets confirmados são ID `+0`, state `+8`, creator `+9`,
 `+0x3F`, níveis/basic `+0x111..113`, map/mode `+0x118/119`, master `+0x121`, tunneling `+0x2CC`,
 voto `+0x2D0..2D2` e records `+0x124`, stride `0x14`.
 
+### Ranking no registro do login `0x0C` — 2026-07-18
+
+O consumidor do SELECT original (`FUN_004107D0`) lê `rankgrade`, `totalrank` e `classrank` e os
+insere no mesmo registro de 359 bytes já fechado pelos goldens do char-select. Relativo ao início
+dos campos após `name\0`, a serialização usa `classrank:u8 @+12`, `auth:u32 @+13`,
+`totalrank:i32 @+17` e `rankgrade:u8 @+21`; classe, level e EXP continuam em `+22/+23/+24`.
+
+O E2E `RankingJobWireE2ETests` executa o job one-shot real, publica os sete snapshots, conecta pelo
+transporte AES e confirma os quatro campos nesses offsets do `0x0C`. A fixture restaura canônicos e
+as sete tabelas depois do teste.
+
 ## Variações que não podem ser copiadas
 
 - handles/ponteiros vistos em `0x0E` e `0x2C` pertencem à sessão; `0x14` leva apenas o personagem,

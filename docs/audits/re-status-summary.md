@@ -76,17 +76,18 @@ A validação **dinâmica** dirige o `WorldServer` real por clientes headless no
   célula ocupada sem consumo, item/serial, timestamps, fila vazia e reconnect pelo socket real;
 - **Power User persistido**: compra/renovação `0x34`, cupom, Cash, pontos, validade, ledgers,
   reconnect, expiração online e bônus exato de stage comprovados no World real;
+- **ranking job→login**: sete snapshots, campos canônicos, ranks anteriores e projeção dos três
+  campos no `0x0C` comprovados pelo job e socket reais;
 - **ciclo vivo da partida**: engage `Pre→Playing` pelo deadline, spawn tardio, morte `0x4F`,
   placar, fim de round `0x4A` e fim de match `0x44` pelo motor global;
 - **bots server-side**: movimento, perseguição, convivência com dois humanos, datagrama de reação
   ao dano e morte no field, provados headless inclusive pela ponte DLL P2P→World; smoke visual pendente.
 
-São **27 testes E2E** e **820 testes World verdes**. Detalhe em
+São **28 testes E2E** e **822 testes World verdes**. Detalhe em
 [`dynamic-validation.md`](dynamic-validation.md).
 
-Próximos alvos headless (ainda abertos):
-
-- economia/UI ao vivo: ranking.
+Não resta alvo headless conhecido nessa matriz. A próxima etapa é a auditoria final global e,
+se ela não revelar outra lacuna backend, a validação gráfica.
 
 ### 2. Validação gráfica com o cliente real
 
