@@ -39,7 +39,7 @@ golden source; este diretório é somente o ambiente de execução.
 | Auto-update de conteúdo | aprovado | smoke HTTP assinado `258→259` atualizou `version.dll` e `RakionClientPatch.dll`, sem resíduos |
 | Abertura sem elevação | aprovado | launcher `asInvoker`; processo legado recebeu `RunAsInvoker`; nenhum processo `consent.exe` foi aberto |
 | Login e render inicial | aprovado | cliente pristine exibiu servidor e `GoHeroi` lvl 40; login `test`, TCP World `40708`, Buddy `8500`, `SuccessUDP`, canal e lista de salas confirmados |
-| Messenger F9 | parcial | painel abriu em `GoHeroi` e `ProbeTwo`; Buddy autenticou ambos, `RET_LOGIN` levou `friendCount=1` e presença online chegou, mas a lista permaneceu visualmente vazia |
+| Messenger F9 | parcial | backend completo passou em E2E headless; no cliente gráfico o painel abriu, callback deixou `modelCount=1`, mas a lista permaneceu visualmente vazia |
 | Add Bot | aprovado | botão enviou `0x47` `GoHeroi : /addbot`; `Rok` apareceu no time azul da sala e dentro do stage Mammoth |
 | Ataque humano→bot | aprovado no transporte e lifecycle | DLL registrou o primeiro ataque; World reduziu `500→0`; cliente aplicou `alive seq=1` e `dead seq=2` |
 | HUD/animação final do bot | pendente | captura ainda mostrou `0 Kills`; reação de dano, queda visível próxima, respawn e placar exigem novo smoke |
@@ -68,9 +68,10 @@ do canal, e trechos correspondentes dos dois logs temporários.
 ## Smoke 2 — dois clientes e social
 
 Parcial executado em 18/07/2026. Duas instâncias pristine chegaram juntas ao lobby; F9 abriu nos
-dois lados e o trace do `Buddy2.dll` confirmou login, relação e presença. A lista de amigos não foi
-renderizada, então Buddy, mensagem direta e SMS continuam reprovados no gate gráfico até o painel
-exibir a relação e uma mensagem ser observada de ponta a ponta.
+dois lados e os traces confirmaram login, relação, presença, registro interno de `0x116` bytes e
+`modelCount=1` depois do callback do `rakion.exe`. Separadamente, o E2E headless aprovou presença e
+SMS completo com ACK. A lista não foi renderizada, então o gate gráfico continua parcial até o
+painel exibir a relação e uma mensagem ser observada pela interface.
 
 - abrir `test` e `test2` simultaneamente pelo mesmo launcher;
 - confirmar presença, cor de clã, Buddy, whisper e chat de canal nos dois lados;

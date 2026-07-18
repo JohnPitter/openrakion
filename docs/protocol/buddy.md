@@ -3,8 +3,9 @@
 ## Estado atual
 
 O contrato estático do `Buddy2.dll`, a persistência de amigos e grupos, o registro UDP, a presença
-autorizada e o fallback por túnel TCP estão implementados e cobertos por testes headless. O SMS
-central, sua fila offline, moderação e ACK já estavam implementados.
+autorizada e o fallback por túnel TCP estão implementados. Um E2E headless com dois clientes e
+sockets reais agora fecha também handshake original, lista inicial, presença UDP, SMS cifrado,
+entrega, ACK e persistência no MySQL.
 
 A validação gráfica de 18/07/2026 aprovou o login simultâneo de `test` e `test2`, o registro UDP e
 a abertura do painel Messenger pelo F9 nos dois clientes pristine. O painel, porém, permaneceu
@@ -18,12 +19,12 @@ modera o tráfego direto.
 
 | Camada | Estado |
 |---|---|
-| Framing, handshake e login AES | Implementado e testado |
-| Lista inicial de amigos | Wire confirmado no cliente real; renderização no F9 ainda vazia |
+| Framing, handshake e login AES | Implementado e validado no fio |
+| Lista inicial de amigos | Validada headless e no callback real; renderização no F9 ainda vazia |
 | Amigos e grupos | Persistência InnoDB e mutações principais implementadas |
-| Registro UDP e presença | Confirmados em localhost; validação LAN/NAT pendente |
+| Registro UDP e presença | E2E de dois clientes em localhost; validação LAN/NAT pendente |
 | Túnel TCP `0x2020/0x2021` | Implementado, autorizado e limitado |
-| SMS central/offline | Implementado e testado |
+| SMS central/offline | Envio, entrega cifrada, ACK e banco validados no fio |
 | P2P UDP direto | Nativo no cliente; validação visual/rede pendente |
 | `GROUP_DEL/CHG` | ABI dormente: há consumers de resposta, mas nenhum builder de request localizado |
 
@@ -51,10 +52,12 @@ O passe atual encontra 18 funções para 18 constantes, incluindo os builders de
 do consumer comum de respostas/notificações. Não foram localizados builders de `0x3154` ou
 `0x3156`; por isso o servidor não inventa esses payloads.
 
-Os traces Frida [`buddy_login_trace.js`](../../tools/frida/buddy_login_trace.js) e
-[`buddy_friend_trace.js`](../../tools/frida/buddy_friend_trace.js) reproduzem, respectivamente, a
-derivação criptográfica do login e a inspeção de `RET_LOGIN`/`NTF_USER_STATE` no `Buddy2.dll` vivo.
-O segundo também registra os callbacks do `rakion.exe` sem alterar pacotes nem estado do jogo.
+Os traces Frida [`buddy_login_trace.js`](../../tools/frida/buddy_login_trace.js),
+[`buddy_friend_trace.js`](../../tools/frida/buddy_friend_trace.js) e
+[`buddy_ui_model_trace.js`](../../tools/frida/buddy_ui_model_trace.js) reproduzem a derivação do
+login, inspecionam `RET_LOGIN`/`NTF_USER_STATE` e auditam a passagem para o modelo do `rakion.exe`.
+O último confirmou um registro interno de `0x116` bytes e `modelCount=1` depois do callback, sem
+alterar pacotes ou estado. Assim, a pendência observada no F9 está depois da inserção no modelo.
 
 ## Arquitetura
 
@@ -382,6 +385,9 @@ Testes automatizados cobrem:
 - IP/porta em network order e estados online/offline;
 - request variável e notification do túnel;
 - migração, amizade simétrica, extensões, grupos e remoção em smoke MySQL opcional.
+- E2E com dois sockets TCP, dois endpoints UDP, handshake/crypto originais, lista bilateral,
+  presença nos dois sentidos, SMS cifrado, `RET_SMS_SEND`, `NTF_SAVE_PACKET`, ACK e timestamps de
+  entrega/confirmação no MySQL.
 
 O smoke MySQL só executa quando `RAKION_MYSQL_SMOKE_CONNECTION` está definido. Sem essa variável,
 ele retorna sem alterar banco local.
@@ -391,7 +397,7 @@ Comandos:
 ```powershell
 & 'C:\Users\joaop\.dotnet\dotnet.exe' test `
   server\RakionServer\tests\RakionServer.World.Tests\RakionServer.World.Tests.csproj `
-  --filter 'FullyQualifiedName~BuddyFriend'
+  --filter 'FullyQualifiedName~Buddy'
 
 & 'C:\Users\joaop\.dotnet\dotnet.exe' build `
   server\RakionServer\src\RakionServer.Buddy\RakionServer.Buddy.csproj `
@@ -425,3 +431,5 @@ Build verde não substitui essa validação gráfica. Até executá-la, o estado
 - [`BuddyDatabase.Friends.cs`](../../server/RakionServer/src/RakionServer.Buddy/BuddyDatabase.Friends.cs)
 - [`BuddyFriendProtocolTests.cs`](../../server/RakionServer/tests/RakionServer.World.Tests/BuddyFriendProtocolTests.cs)
 - [`BuddyFriendDatabaseSmokeTests.cs`](../../server/RakionServer/tests/RakionServer.World.Tests/BuddyFriendDatabaseSmokeTests.cs)
+- [`BuddyHeadlessClient.cs`](../../server/RakionServer/tests/RakionServer.World.Tests/BuddyHeadlessClient.cs)
+- [`BuddyHeadlessE2ETests.cs`](../../server/RakionServer/tests/RakionServer.World.Tests/BuddyHeadlessE2ETests.cs)

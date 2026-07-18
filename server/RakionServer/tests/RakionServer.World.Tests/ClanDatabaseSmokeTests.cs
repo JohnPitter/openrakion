@@ -57,19 +57,20 @@ public sealed class ClanDatabaseSmokeTests
             "CREATE TABLE claninfo(id INT PRIMARY KEY,masterid INT,name VARCHAR(12)," +
             "point INT,members SMALLINT,rank INT UNSIGNED);" +
             "CREATE TABLE usergameinfo(id INT PRIMARY KEY,name VARCHAR(16),charname VARCHAR(20)," +
-            "clanid INT,clanpoint INT,clanrank INT,treeuppername VARCHAR(16),treerank INT);" +
+            "buddyname VARCHAR(20),clanid INT,clanpoint INT,clanrank INT,clangrade INT," +
+            "treeuppername VARCHAR(16),treerank INT);" +
             "INSERT INTO claninfo VALUES(7,2,'ProbeClan',100,9,3);" +
             "INSERT INTO usergameinfo VALUES" +
-            "(1,'alice','Alice',7,50,4,'parent',5)," +
-            "(2,'master','MasterZZ',7,0,0,'',0)," +
-            "(3,'parent','ParentChar',7,0,0,'',0)," + ChildrenSql());
+            "(1,'alice','Alice','AliceBuddy',7,50,4,2,'parent',5)," +
+            "(2,'master','MasterZZ','MasterBuddy',7,0,0,0,'',0)," +
+            "(3,'parent','ParentChar','ParentBuddy',7,0,0,0,'',0)," + ChildrenSql());
     }
 
     private static string ChildrenSql()
     {
         var rows = new string[8];
         for (int i = 0; i < rows.Length; i++)
-            rows[i] = $"({10 + i},'kid{i + 1}','Kid{i + 1}',7,0,0,'alice',0)";
+            rows[i] = $"({10 + i},'kid{i + 1}','Kid{i + 1}','KidBuddy{i + 1}',7,0,0,0,'alice',0)";
         return string.Join(',', rows);
     }
 

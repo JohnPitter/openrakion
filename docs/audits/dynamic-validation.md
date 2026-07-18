@@ -3,8 +3,8 @@
 Este documento registra a validação **dinâmica** (comportamento em runtime, não só contrato
 estático) executada contra o servidor .NET real, dirigida por clientes **headless** que falam o
 protocolo no fio. Diferente dos testes de domínio/golden — que exercitam regras e serializam
-frames em memória — os testes E2E aqui sobem um `WorldServer` vivo (TCP + AES + dispatch + motor
-de partida + banco) e conectam dois clientes por sockets reais.
+frames em memória — os testes E2E aqui sobem servidores World e Buddy vivos (TCP/UDP + AES +
+dispatch + banco) e conectam dois clientes por sockets reais.
 
 Isso ataca a maior pendência registrada em [`re-status-summary.md`](re-status-summary.md): a
 fronteira dinâmica. Não substitui a validação **gráfica** com o cliente v258 (animação, hitbox,
@@ -54,8 +54,9 @@ Seed usado (banco `rakion`): conta `test` → personagem `GoHeroi` (`#1`); conta
 | Chat de canal | `TwoClientChatTests.ChannelChat_BroadcastsToOtherClientInSameChannel` | Um cliente envia chat de canal (`0x22`); o outro no mesmo canal-lobby recebe o broadcast com o texto — e o remetente recebe o próprio eco |
 | Ciclo vivo de partida | `TwoClientLiveMatchLifecycleTests.DeadlineAndDeathFrame_AdvanceRoundAndEndMatch` | Golem com times opostos: primeiro spawn `0x4B`, `Pre→Playing` pelo deadline no motor global, entrada tardia do segundo jogador, morte própria `0x4F` no fio, broadcasts `0x4F/0x4A`, vitória do round e fim do match `0x44` pelo próximo tick |
 | Bot no fio | `AddBotButtonCommandE2ETests`, `BotMovementE2ETests` e `BotStageValidationTests` | O `0x47` exato do botão adiciona o bot sem disconnect; movimento sintético recebido; perseguição converge; dois humanos recebem o bot; o envelope DLL `0xB07A` entrega ataque sem relay duplicado; primeiro ataque reduz HP e devolve `0x0311 kind=Damage`; golpes seguintes matam o bot e publicam `0x4F` |
+| Buddy completo | `BuddyHeadlessE2ETests.TwoOriginalProtocolClientsExchangePresenceAndAcknowledgedSms` | Sobe `BuddyServer` TCP/UDP em porta isolada e MySQL temporário; dois clientes executam `0x1000/0x1001`, login AES original, recebem relação bilateral, registram tokens UDP, observam presença recíproca, trocam SMS cifrado e confirmam `delivered_at`/`acked_at` |
 
-Todos verdes: **830 testes World**, dos quais **29 são E2E** no fio. Descobertas de RE confirmadas em runtime:
+Todos verdes: **832 testes World**, dos quais **30 são E2E** no fio. Descobertas de RE confirmadas em runtime:
 
 - o transporte do cliente e do servidor é simétrico na cifra (AES-128 do canal lobby) mas
   **assimétrico no envelope**: cliente→servidor carrega `[opcode][seq]`, servidor→cliente carrega
@@ -124,9 +125,9 @@ spawn tardio → morte `0x4F` → placar/fim de round/fim de match → handshake
 movimento **e combate** (`0x030A`/`0x0311`/`0x030F`) → settlement PvP persistido no DB → matriz
 dos 4 modos → entrada, clear e settlement de stage PvE solo → compra/venda Gold com reconnect →
 Cash/cupom/bundle → enchant → presentes FIFO com reconnect → matriz P2P local
-direto/TunnelOne/TunnelAll → bot server-side no fio. Ainda **não** exercitado
-headless. Não resta alvo conhecido nessa matriz backend; novos gaps precisam surgir da auditoria
-final ou de uma captura gráfica contraditória.
+direto/TunnelOne/TunnelAll → bot server-side no fio → Buddy TCP/UDP, presença e SMS com ACK. Não
+resta alvo conhecido nessa matriz backend; novos gaps precisam surgir da auditoria final ou de uma
+captura gráfica contraditória.
 
 E a camada que **exige cliente gráfico** (fora do escopo backend): animação, frames de ataque,
 hitbox, colisão, trajetória de projétil, efeitos, render de HUD/ranking e a topologia P2P do engine
