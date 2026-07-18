@@ -108,6 +108,23 @@ namespace RakionServer.World.Tests.E2E
 
         public void SellStorageItem(byte slot) => Send(0x2f, new[] { slot });
 
+        public void PeekPresent() => Send(0x6b, Array.Empty<byte>());
+
+        public void AcceptPresent(int pendingId, ushort slot)
+        {
+            byte[] payload = new byte[6];
+            BinaryPrimitives.WriteInt32LittleEndian(payload, pendingId);
+            BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(4), slot);
+            Send(0x6c, payload);
+        }
+
+        public void DisposePresent(int pendingId)
+        {
+            byte[] payload = new byte[4];
+            BinaryPrimitives.WriteInt32LittleEndian(payload, pendingId);
+            Send(0x6d, payload);
+        }
+
         public void PreviewEnchant(byte target, byte catalyst, params byte[] materials)
         {
             if (materials.Length > 3) throw new ArgumentOutOfRangeException(nameof(materials));

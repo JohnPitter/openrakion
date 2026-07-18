@@ -48,11 +48,12 @@ Seed usado (banco `rakion`): conta `test` → personagem `GoHeroi` (`#1`); conta
 | Compra, reconnect e venda | `StoragePurchasePersistenceE2ETests.GoldPurchase_ReconnectsAndSellsWithExactPersistentDeltas` | Abre inventário `0x2C`, compra `1001` por Gold via `0x2E`, valida callbacks `0x14/0x31/0x2E`, reloga, reencontra a mesma row e saldo, vende pela célula via `0x2F` e confirma callback `0x15`, wallet e dois ledgers no MySQL; fixture restaurada |
 | Cash, cupom e bundle | `StorageCashCouponBundleE2ETests.CashCouponAndBundle_PersistWireWalletRowsAndLegacyLedgers` | Compra `1009` por Cash, repete com cupom Cash de 50% selecionado pela célula e compra o set `9012`; valida `100000→95200→92800→83500`, consumo/log do cupom, seis grants, oito rows/seriais/ledgers, random presents, reconnect e restauração integral |
 | Enchant em duas fases | `EnchantPersistenceE2ETests.PreviewCommitReplayAndReconnect_PersistExactlyOnceOnRealWire` | Cria sala, envia preview `0x74`, valida descritores/seriais do `0x28`, confirma com `clientResult=5` falso, recebe o resultado autoritativo `0x74`, verifica consumo, nível, ledger único, replay idêntico, reconnect e restauração |
+| Presentes FIFO | `PresentPersistenceE2ETests.OwnershipFifoAcceptDisposeAndReconnect_PersistOnRealWire` | Pelo wire `0x6B`–`0x6D`, rejeita acesso de outra conta e descarte fora de ordem, aceita o primeiro presente em célula livre, preserva o segundo diante de célula ocupada, descarta-o, confirma fila vazia, item/serial, `accept_time`/`dispose_time`, reconnect e restauração |
 | Chat de canal | `TwoClientChatTests.ChannelChat_BroadcastsToOtherClientInSameChannel` | Um cliente envia chat de canal (`0x22`); o outro no mesmo canal-lobby recebe o broadcast com o texto — e o remetente recebe o próprio eco |
 | Ciclo vivo de partida | `TwoClientLiveMatchLifecycleTests.DeadlineAndDeathFrame_AdvanceRoundAndEndMatch` | Golem com times opostos: primeiro spawn `0x4B`, `Pre→Playing` pelo deadline no motor global, entrada tardia do segundo jogador, morte própria `0x4F` no fio, broadcasts `0x4F/0x4A`, vitória do round e fim do match `0x44` pelo próximo tick |
 | Bot no fio | `BotMovementE2ETests` e `BotStageValidationTests` | Movimento sintético recebido; perseguição converge; dois humanos recebem o bot; o envelope DLL `0xB07A` entrega ataque sem relay duplicado; primeiro ataque reduz HP e devolve `0x0311 kind=Damage`; golpes seguintes matam o bot e publicam `0x4F`. Smoke gráfico permanece separado |
 
-Todos verdes: **818 testes World**, dos quais **25 são E2E** no fio. Descobertas de RE confirmadas em runtime:
+Todos verdes: **819 testes World**, dos quais **26 são E2E** no fio. Descobertas de RE confirmadas em runtime:
 
 - o transporte do cliente e do servidor é simétrico na cifra (AES-128 do canal lobby) mas
   **assimétrico no envelope**: cliente→servidor carrega `[opcode][seq]`, servidor→cliente carrega
@@ -87,6 +88,10 @@ Todos verdes: **818 testes World**, dos quais **25 são E2E** no fio. Descoberta
 - enchant percorre as duas fases reais: o preview publica os seriais das rows selecionadas, o
   commit ignora o resultado proposto pelo cliente, persiste o roll do backend e consome os inputs.
   Replay em 30 segundos devolve o mesmo frame sem novo `logenchant`; reconnect preserva o nível;
+- presentes percorrem o dispatch real `0x6B→0x6C/0x6D`: ownership e FIFO são gates negativos,
+  célula ocupada não consome a fila, o aceite cria uma row física com serial local e o descarte
+  não cria item. Os timestamps legados usam data-zero como “não processado”; `NOW()` distingue a
+  ação persistida, e o item aceito reaparece após reconnect;
 
 ## Como rodar
 
@@ -107,10 +112,11 @@ Coberto no backend: login → char-select → sala → join → ready → start 
 spawn tardio → morte `0x4F` → placar/fim de round/fim de match → handshake UDP → relay de
 movimento **e combate** (`0x030A`/`0x0311`/`0x030F`) → settlement PvP persistido no DB → matriz
 dos 4 modos → entrada, clear e settlement de stage PvE solo → compra/venda Gold com reconnect →
-matriz P2P local direto/TunnelOne/TunnelAll → bot server-side no fio. Ainda **não** exercitado
+Cash/cupom/bundle → enchant → presentes FIFO com reconnect → matriz P2P local
+direto/TunnelOne/TunnelAll → bot server-side no fio. Ainda **não** exercitado
 headless (próximos alvos):
 
-- **economia/UI ao vivo**: presentes, Power User e ranking
+- **economia/UI ao vivo**: Power User e ranking
   pelos frames reais.
 
 E a camada que **exige cliente gráfico** (fora do escopo backend): animação, frames de ataque,

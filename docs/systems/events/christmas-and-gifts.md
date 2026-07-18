@@ -483,6 +483,16 @@ Não há procedimento de ativação fiel para o evento de stage nesta build. Par
 
 ## Testes obrigatórios
 
+### Evidência automatizada atual
+
+`PresentPersistenceE2ETests` sobe o World real contra MariaDB e atravessa AES, sequência e
+dispatch do cliente. A jornada prova que outra conta e um ID fora da ordem FIFO são rejeitados;
+aceita o primeiro presente em célula livre; recebe status `3` sem consumir o segundo ao reutilizar
+a célula ocupada; descarta o segundo; recebe Peek vazio; valida row, serial `sn_type=3`,
+`accept_time`/`dispose_time` e reencontra o item após reconnect. A fixture remove somente suas rows
+e restaura a conta de teste. `PresentDatabaseSmokeTests` permanece como gate isolado de lock,
+concorrência, replay e atomicidade.
+
 | Área | Cenário |
 |---|---|
 | Protocolo | tamanhos exatos 2/8/6 e endianess dos requests |

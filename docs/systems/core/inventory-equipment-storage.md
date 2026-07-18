@@ -569,6 +569,8 @@ troca de flag; compensação de economia precisa de log e ferramenta administrat
   seriais de ledger, o cupom desaparece e o reconnect recarrega as seis peças do bundle;
 - `EnchantPersistenceE2ETests` fecha preview/commit no fio, seriais de row, consumo dos inputs,
   nível persistido, replay sem ledger duplicado e reconnect;
+- `PresentPersistenceE2ETests` fecha ownership/FIFO, célula ocupada, aceite/descarte, serial,
+  timestamps e reconnect da célula pelo wire `0x6B`–`0x6D`;
 - a fixture restaura Gold, item e ledgers mesmo se a jornada falhar depois do commit.
 
 ## Pontos não resolvidos
