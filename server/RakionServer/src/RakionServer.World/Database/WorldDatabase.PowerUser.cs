@@ -100,8 +100,10 @@ namespace RakionServer.World.Database
                 nextCash, nextPoints);
             DateTime expiresAt = await ReadPowerUserExpirationAsync(
                 connection, transaction, request.UserId);
-            await InsertPowerUserLogAsync(connection, transaction, request, payment,
-                previous, nextPoints, expiresAt, couponLogId);
+            var ledger = new PowerUserLogEntry(request.UserId, request.Mode, payment.Cost,
+                previous.PowerTime, powerTimeMarker, previous.Points, nextPoints,
+                expiresAt, couponLogId);
+            await InsertPowerUserLogAsync(connection, transaction, ledger);
             await transaction.CommitAsync();
             return new PowerUserPurchaseResult(PowerUserPurchaseStatus.Success,
                 previous.Gold, nextCash, powerTimeMarker, nextPoints, expiresAt,
@@ -164,20 +166,22 @@ namespace RakionServer.World.Database
             return Convert.ToDateTime(value);
         }
 
+        private sealed record PowerUserLogEntry(
+            int UserId, byte Mode, int Cost, long PreviousMarker, uint CurrentMarker,
+            int PreviousPoints, int CurrentPoints, DateTime ExpiresAt, long? CouponLogId);
+
         private static Task InsertPowerUserLogAsync(
-            MySqlConnection connection, MySqlTransaction transaction,
-            PowerUserPurchaseCommand request, PaymentResolution payment,
-            PowerUserState previous, int points, DateTime expiresAt, long? couponLogId) =>
+            MySqlConnection connection, MySqlTransaction transaction, PowerUserLogEntry entry) =>
             ExecuteAsync(connection, transaction,
                 "INSERT INTO logbuypoweruser(userid,extend,buycash,powertime_prev," +
                 "powertime_cur,buytime,powertime,powerlevelpoint_prev," +
                 "powerlevelpoint_cur,coupon_log_id) VALUES(@u,@extend,@cash,@timePrev," +
                 "@timeCur,NOW(),@expires,@pointsPrev,@pointsCur,@coupon)",
-                ("@u", request.UserId), ("@extend", request.Mode),
-                ("@cash", payment.Cost), ("@timePrev", previous.PowerTime),
-                ("@timeCur", Math.Max(previous.PowerTime, 1)), ("@expires", expiresAt),
-                ("@pointsPrev", previous.Points), ("@pointsCur", points),
-                ("@coupon", couponLogId?.ToString() ?? ""));
+                ("@u", entry.UserId), ("@extend", entry.Mode),
+                ("@cash", entry.Cost), ("@timePrev", entry.PreviousMarker),
+                ("@timeCur", entry.CurrentMarker), ("@expires", entry.ExpiresAt),
+                ("@pointsPrev", entry.PreviousPoints), ("@pointsCur", entry.CurrentPoints),
+                ("@coupon", entry.CouponLogId?.ToString() ?? ""));
 
         public async Task<StatAllocationResult> AllocateStatTransactionalAsync(
             int userId, int characterId, byte statIndex)

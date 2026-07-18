@@ -18,15 +18,17 @@ namespace RakionServer.World.Tests.E2E
             await using var fixture = await WorldServerFixture.CreateAsync();
             if (!fixture.Available) return;
             StageFixtureSnapshot baseline = await ReadSnapshotAsync(fixture.DbConnectionString);
-
-            await using var player = await HeadlessWorldClient.ConnectAsync(
-                WorldServerFixture.Host, fixture.TcpPort, "stage-settlement");
-            ClientSession session = DriveToStageOne(fixture.Server!, player);
-            Guid runId = session.StageRunId;
-            IReadOnlyList<EquippedCellState> cells = session.GetEquippedCellStates();
-
+            await ActivatePowerUserAsync(fixture.DbConnectionString);
+            Guid runId = Guid.Empty;
+            IReadOnlyList<EquippedCellState> cells = Array.Empty<EquippedCellState>();
             try
             {
+                await using var player = await HeadlessWorldClient.ConnectAsync(
+                    WorldServerFixture.Host, fixture.TcpPort, "stage-settlement");
+                ClientSession session = DriveToStageOne(fixture.Server!, player);
+                Assert.True(session.PuActive);
+                runId = session.StageRunId;
+                cells = session.GetEquippedCellStates();
                 StageReward reward = fixture.Server!.CalculateStageReward(
                     1, 5, session.StageRunPreviousBestRank)
                     ?? throw new InvalidOperationException("Reward do stage 1 ausente.");
@@ -34,8 +36,8 @@ namespace RakionServer.World.Tests.E2E
                 var result = new HeadlessWorldClient.StageResultSpec(
                     1, 5, new HeadlessWorldClient.StageRewardPayload(reward.Exp, reward.Gold), cellExp);
                 var expected = new ExpectedProgression(
-                    session.CharExp + session.BonusExp(reward.Exp),
-                    session.Gold + session.BonusGold(reward.Gold));
+                    session.CharExp + reward.Exp + reward.Exp / 2,
+                    session.Gold + reward.Gold);
 
                 player.ClearStage();
                 player.WaitFor(IsStageClearFrame, JourneyHelper.Timeout);
@@ -114,13 +116,25 @@ namespace RakionServer.World.Tests.E2E
             await using var connection = new MySqlConnection(connectionString);
             await connection.OpenAsync();
             await using var command = new MySqlCommand(
-                "SELECT c.exp,c.level,c.levelpoint,g.gold," +
+                "SELECT c.exp,c.level,c.levelpoint,g.gold,g.powerlevelpoint,g.powertime," +
+                "CAST(g.powertimedate AS CHAR)," +
                 "(SELECT `rank` FROM userstageinfo WHERE characterid=9001 AND stage=1) " +
                 "FROM characterinfo c JOIN usergameinfo g ON g.id=c.userid WHERE c.id=9001", connection);
             await using var reader = await command.ExecuteReaderAsync();
             Assert.True(await reader.ReadAsync(), "fixture stage test2/9001 ausente");
             return new StageFixtureSnapshot(reader.GetInt64(0), reader.GetByte(1), reader.GetByte(2),
-                Convert.ToUInt32(reader.GetValue(3)), reader.IsDBNull(4) ? null : reader.GetByte(4));
+                Convert.ToUInt32(reader.GetValue(3)), reader.GetInt32(4), reader.GetInt64(5),
+                reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetByte(7));
+        }
+
+        private static async Task ActivatePowerUserAsync(string connectionString)
+        {
+            await using var connection = new MySqlConnection(connectionString);
+            await connection.OpenAsync();
+            await using var command = new MySqlCommand(
+                "UPDATE usergameinfo SET powertime=GREATEST(powertime,1)," +
+                "powertimedate=DATE_ADD(NOW(),INTERVAL 30 DAY) WHERE id=9001", connection);
+            await command.ExecuteNonQueryAsync();
         }
 
         private static async Task RestoreSnapshotAsync(
@@ -142,12 +156,17 @@ namespace RakionServer.World.Tests.E2E
         {
             await using var command = new MySqlCommand(
                 "UPDATE characterinfo c JOIN usergameinfo g ON g.id=c.userid " +
-                "SET c.exp=@exp,c.level=@level,c.levelpoint=@point,g.gold=@gold WHERE c.id=9001",
+                "SET c.exp=@exp,c.level=@level,c.levelpoint=@point,g.gold=@gold," +
+                "g.powerlevelpoint=@puPoints,g.powertime=@puMarker,g.powertimedate=@puExpires " +
+                "WHERE c.id=9001",
                 connection, transaction);
             command.Parameters.AddWithValue("@exp", snapshot.Exp);
             command.Parameters.AddWithValue("@level", snapshot.Level);
             command.Parameters.AddWithValue("@point", snapshot.LevelPoint);
             command.Parameters.AddWithValue("@gold", snapshot.Gold);
+            command.Parameters.AddWithValue("@puPoints", snapshot.PowerLevelPoints);
+            command.Parameters.AddWithValue("@puMarker", snapshot.PowerTimeMarker);
+            command.Parameters.AddWithValue("@puExpires", snapshot.PowerTimeExpires);
             await command.ExecuteNonQueryAsync();
         }
 
@@ -206,6 +225,7 @@ namespace RakionServer.World.Tests.E2E
 
         private readonly record struct ExpectedProgression(long Exp, uint Gold);
         private readonly record struct StageFixtureSnapshot(
-            long Exp, byte Level, byte LevelPoint, uint Gold, byte? Rank);
+            long Exp, byte Level, byte LevelPoint, uint Gold, int PowerLevelPoints,
+            long PowerTimeMarker, string PowerTimeExpires, byte? Rank);
     }
 }

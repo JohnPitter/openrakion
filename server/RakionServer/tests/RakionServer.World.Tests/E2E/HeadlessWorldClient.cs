@@ -108,6 +108,14 @@ namespace RakionServer.World.Tests.E2E
 
         public void SellStorageItem(byte slot) => Send(0x2f, new[] { slot });
 
+        public void BuyPowerUser(byte mode, ushort? couponSlot = null)
+        {
+            using var writer = new PacketWriter();
+            writer.WriteByte(mode).WriteByte(couponSlot.HasValue ? (byte)1 : (byte)0);
+            if (couponSlot.HasValue) writer.WriteWord(couponSlot.Value);
+            Send(0x34, writer.ToArray());
+        }
+
         public void PeekPresent() => Send(0x6b, Array.Empty<byte>());
 
         public void AcceptPresent(int pendingId, ushort slot)

@@ -164,3 +164,16 @@ headless; a única fronteira ainda aberta é observar popup, saldos e validade n
   registrou a expiração sem desconectar;
 - 299/299 testes .NET, quatro testes Python, probe transacional e build sem warnings aprovados;
 - fixture financeira, stat e ledger foram restaurados ao final.
+
+## Evidência automatizada no fio — 2026-07-18
+
+`PowerUserPersistenceE2ETests` sobe o World real contra MariaDB, compra pelo `0x34`, renova com
+cupom Cash de 50% e valida o callback externo após cada commit. A jornada prova Cash
+`100000→92000→89000`, pontos `0→5→10`, extensão exata de 30 dias, consumo/log do cupom, dois
+ledgers conciliados, reconnect ativo e expiração recarregada durante a sessão. O teste revelou que
+`logbuypoweruser.powertime_cur` repetia o marcador anterior; a persistência foi corrigida para o
+marcador novo que o mesmo callback entrega ao cliente.
+
+`SoloStageSettlementE2ETests` agora ativa PU explicitamente antes do login e exige EXP
+`exp + exp/2`, Gold sem multiplicação, Cell EXP compatível, persistência e replay idempotente no
+wire `0x4A→0x53`. Ambas as fixtures restauram wallet, validade, pontos, progressão e ledgers.
