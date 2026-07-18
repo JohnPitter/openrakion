@@ -92,15 +92,31 @@ namespace RakionServer.Buddy
 
         private async Task LoginAsync(BuddyConnection connection, byte[] payload)
         {
-            if (connection.CredentialSeed == 0 ||
-                !BuddyCrypto.TryReadCredential(payload, out BuddyCredential credential) ||
-                credential.Seed != connection.CredentialSeed)
+            if (connection.CredentialSeed == 0)
             {
-                await RejectLoginAsync(connection, 1, "credencial inválida");
+                await RejectLoginAsync(connection, 1, "precredential ausente");
+                return;
+            }
+            if (!BuddyCrypto.TryReadCredential(payload, out BuddyCredential credential))
+            {
+                await RejectLoginAsync(connection, 1,
+                    $"credencial ilegível ({payload.Length} bytes)");
+                return;
+            }
+            if (credential.Seed != connection.CredentialSeed)
+            {
+                await RejectLoginAsync(connection, 1,
+                    $"seed inválida para account='{credential.AccountId}' " +
+                    $"esperada=0x{connection.CredentialSeed:x8} recebida=0x{credential.Seed:x8}");
                 return;
             }
             BuddyAccount? account = await _database.LoadAccountAsync(credential.AccountId);
-            if (account == null || !BuddyCrypto.TryOpenLogin(payload, account.Password,
+            if (account == null)
+            {
+                await RejectLoginAsync(connection, 2, "autenticação inválida");
+                return;
+            }
+            if (!BuddyCrypto.TryOpenLogin(payload,
                     connection.CredentialSeed, out _, out var crypto, out _))
             {
                 await RejectLoginAsync(connection, 2, "autenticação inválida");
@@ -157,7 +173,7 @@ namespace RakionServer.Buddy
                 return;
             }
 
-            var senderAccount = new BuddyAccount(sender.AccountId, "", sender.DisplayName);
+            var senderAccount = new BuddyAccount(sender.AccountId, sender.DisplayName);
             BuddySmsMessage? message = await _database.QueueSmsAsync(
                 senderAccount, targetAccount, decision.Text);
             if (message == null)

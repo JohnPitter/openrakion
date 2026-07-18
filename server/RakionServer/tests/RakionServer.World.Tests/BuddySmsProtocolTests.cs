@@ -10,12 +10,12 @@ namespace RakionServer.World.Tests
     public sealed class BuddySmsProtocolTests
     {
         [Fact]
-        public void Credential_UsesZeroKeyAesAndCarriesAccountAndSeed()
+        public void Credential_UsesOriginalFixedAesKeyAndCarriesAccountAndSeed()
         {
             byte[] encrypted = BuddyCrypto.CreateCredential("test", 0x11223344);
 
             Assert.Equal(
-                "F016E588FEA1B726F92999D1ED904D56F574CD1436CDC3A12E0D9747200AE64B",
+                "66FEE9AF8C228355D618BB7BDB6DCC07AEEABFE3340C929434AE98C2E9E27177",
                 Convert.ToHexString(encrypted));
             byte[] login = new byte[BuddyCrypto.LoginPayloadLength];
             encrypted.CopyTo(login, 0);
@@ -25,23 +25,30 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
-        public void LoginEnvelope_OpensWithDerivedSha1SessionKey()
+        public void LoginEnvelope_OpensWithDerivedSha0SessionKey()
         {
             const uint seed = 0x11223344;
             byte[] clear = new byte[0x84];
             BinaryPrimitives.WriteUInt32LittleEndian(clear, 0x1B);
             var crypto = new PacketCrypto();
-            crypto.Enable(BuddyCrypto.DeriveSessionKey("test", "test", seed),
+            crypto.Enable(BuddyCrypto.DeriveSessionKey("test", seed),
                 BuddyCrypto.SessionMarker);
             byte[] payload = new byte[BuddyCrypto.LoginPayloadLength];
             BuddyCrypto.CreateCredential("test", seed).CopyTo(payload, 0);
             crypto.Encrypt(clear).CopyTo(payload, BuddyCrypto.CredentialLength);
 
-            Assert.True(BuddyCrypto.TryOpenLogin(payload, "test", seed,
+            Assert.True(BuddyCrypto.TryOpenLogin(payload, seed,
                 out BuddyCredential credential, out PacketCrypto opened, out byte[] result));
             Assert.Equal("test", credential.AccountId);
             Assert.True(opened.Enabled);
             Assert.Equal(clear, result);
+        }
+
+        [Fact]
+        public void SessionKey_UsesOriginalSha0RawWordOrder()
+        {
+            Assert.Equal("06E70DC8B4BC29C6BD011DF8ECD97993",
+                Convert.ToHexString(BuddyCrypto.DeriveSessionKey("test", 0x93d30a20)));
         }
 
         [Fact]

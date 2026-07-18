@@ -13,7 +13,8 @@ namespace RakionServer.Buddy
         public const int LoginPayloadLength = 0xD0;
         public const int CredentialLength = 32;
         public const uint SessionMarker = 0x2DBABE65;
-        private static readonly byte[] CredentialKey = new byte[16];
+        private static readonly byte[] CredentialKey =
+            Convert.FromHexString("2C45926CF3396642B670D006A1FA8182");
 
         public static bool TryReadCredential(
             ReadOnlySpan<byte> payload, out BuddyCredential credential)
@@ -30,27 +31,25 @@ namespace RakionServer.Buddy
             return true;
         }
 
-        public static byte[] DeriveSessionKey(string accountId, string password, uint seed)
+        public static byte[] DeriveSessionKey(string accountId, uint seed)
         {
             byte[] account = Encoding.Latin1.GetBytes(accountId);
-            byte[] secret = Encoding.Latin1.GetBytes(password);
             int accountLength = Math.Min(20, account.Length);
-            byte[] material = new byte[accountLength + secret.Length + 4];
+            byte[] material = new byte[accountLength + 4];
             account.AsSpan(0, accountLength).CopyTo(material);
-            secret.CopyTo(material, accountLength);
             BinaryPrimitives.WriteUInt32LittleEndian(material.AsSpan(material.Length - 4), seed);
-            return SHA1.HashData(material)[..16];
+            return BuddySha0.ComputeRawState(material)[..16];
         }
 
         public static bool TryOpenLogin(
-            ReadOnlySpan<byte> payload, string password, uint expectedSeed,
+            ReadOnlySpan<byte> payload, uint expectedSeed,
             out BuddyCredential credential, out PacketCrypto crypto, out byte[] clear)
         {
             crypto = new PacketCrypto();
             clear = Array.Empty<byte>();
             if (!TryReadCredential(payload, out credential) || credential.Seed != expectedSeed)
                 return false;
-            crypto.Enable(DeriveSessionKey(credential.AccountId, password, credential.Seed), SessionMarker);
+            crypto.Enable(DeriveSessionKey(credential.AccountId, credential.Seed), SessionMarker);
             if (!crypto.TryDecrypt(payload[CredentialLength..], out clear) ||
                 clear.Length != 0x84 || BinaryPrimitives.ReadUInt32LittleEndian(clear) != 0x1B)
             {

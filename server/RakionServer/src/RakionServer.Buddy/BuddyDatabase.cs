@@ -8,7 +8,7 @@ using RakionServer.Common;
 
 namespace RakionServer.Buddy
 {
-    public sealed record BuddyAccount(string AccountId, string Password, string DisplayName);
+    public sealed record BuddyAccount(string AccountId, string DisplayName);
     public sealed record BuddyChatState(DateTime MutedUntilUtc, IReadOnlyList<string> BlockedAccounts);
 
     public sealed partial class BuddyDatabase
@@ -51,12 +51,12 @@ namespace RakionServer.Buddy
         {
             await using MySqlConnection connection = await OpenAsync();
             await using var command = new MySqlCommand(
-                "SELECT u.password,COALESCE(NULLIF(g.buddyname,''),NULLIF(g.charname,''),u.id) " +
+                "SELECT COALESCE(NULLIF(g.buddyname,''),NULLIF(g.charname,''),u.id) " +
                 "FROM user u LEFT JOIN usergameinfo g ON g.name=u.id WHERE u.id=@id LIMIT 1", connection);
             command.Parameters.AddWithValue("@id", accountId);
             await using MySqlDataReader reader = await command.ExecuteReaderAsync();
             return await reader.ReadAsync()
-                ? new BuddyAccount(accountId, reader.GetString(0), reader.GetString(1))
+                ? new BuddyAccount(accountId, reader.GetString(0))
                 : null;
         }
 

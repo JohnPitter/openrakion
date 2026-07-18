@@ -6,16 +6,22 @@ O contrato estático do `Buddy2.dll`, a persistência de amigos e grupos, o regi
 autorizada e o fallback por túnel TCP estão implementados e cobertos por testes headless. O SMS
 central, sua fila offline, moderação e ACK já estavam implementados.
 
-O que ainda não está encerrado é a validação visual com dois clientes e a matriz de rede
-mesma máquina/LAN/NAT. O P2P UDP direto continua sendo executado pelo `Buddy2.dll`; o servidor
-fornece descoberta de endpoint e fallback TCP, mas não interpreta nem modera o tráfego direto.
+A validação gráfica de 18/07/2026 aprovou o login simultâneo de `test` e `test2`, o registro UDP e
+a abertura do painel Messenger pelo F9 nos dois clientes pristine. O painel, porém, permaneceu
+visualmente vazio mesmo com uma relação bilateral no banco. O trace no consumer original confirmou
+`RET_LOGIN friendCount=1` e `NTF_USER_STATE` online nos dois sentidos; portanto, a renderização da
+lista continua aberta e o Messenger ainda não deve ser classificado como funcional completo.
+
+A matriz LAN/NAT também permanece pendente. O P2P UDP direto continua sendo executado pelo
+`Buddy2.dll`; o servidor fornece descoberta de endpoint e fallback TCP, mas não interpreta nem
+modera o tráfego direto.
 
 | Camada | Estado |
 |---|---|
 | Framing, handshake e login AES | Implementado e testado |
-| Lista inicial de amigos | Implementada com registros de 148 bytes |
+| Lista inicial de amigos | Wire confirmado no cliente real; renderização no F9 ainda vazia |
 | Amigos e grupos | Persistência InnoDB e mutações principais implementadas |
-| Registro UDP e presença | Implementados; validação LAN/NAT pendente |
+| Registro UDP e presença | Confirmados em localhost; validação LAN/NAT pendente |
 | Túnel TCP `0x2020/0x2021` | Implementado, autorizado e limitado |
 | SMS central/offline | Implementado e testado |
 | P2P UDP direto | Nativo no cliente; validação visual/rede pendente |
@@ -44,6 +50,11 @@ O passe atual encontra 18 funções para 18 constantes, incluindo os builders de
 `0x3000`, `0x3002`, `0x3004`, `0x3006`, `0x3100`, `0x3102`, `0x3104`, `0x3110` e `0x3152`, além
 do consumer comum de respostas/notificações. Não foram localizados builders de `0x3154` ou
 `0x3156`; por isso o servidor não inventa esses payloads.
+
+Os traces Frida [`buddy_login_trace.js`](../../tools/frida/buddy_login_trace.js) e
+[`buddy_friend_trace.js`](../../tools/frida/buddy_friend_trace.js) reproduzem, respectivamente, a
+derivação criptográfica do login e a inspeção de `RET_LOGIN`/`NTF_USER_STATE` no `Buddy2.dll` vivo.
+O segundo também registra os callbacks do `rakion.exe` sem alterar pacotes nem estado do jogo.
 
 ## Arquitetura
 
@@ -97,10 +108,17 @@ O servidor gera ambos com CSPRNG por conexão.
 
 ### `SVC_LOGIN 0x1010`
 
-O cliente deriva `sessionKey = SHA1(accountId || password || seedLE32)[0..15]`. A credencial de
-32 bytes usa AES-128-ECB com chave zero; os 176 bytes seguintes são blocos de 16 bytes no formato
-`[u32 0x2DBABE65][12 bytes cifrados]`. O servidor valida identidade, seed, senha, marcadores e o
+O cliente deriva `sessionKey = SHA0(accountId || seedLE32)` e usa os primeiros quatro words do
+estado final em little-endian (16 bytes). O segundo secure-string lido pelo `Buddy2.dll` está vazio
+no cliente v258 e, portanto, senha não participa dessa derivação. A credencial de
+32 bytes usa AES-128-ECB com a chave fixa original `2C45926CF3396642B670D006A1FA8182`;
+os 176 bytes seguintes são blocos de 16 bytes no formato
+`[u32 0x2DBABE65][12 bytes cifrados]`. O servidor valida identidade, seed, marcadores e o
 header lógico `0x1B` antes de autenticar a sessão.
+
+Esse handshake legado não prova conhecimento da senha. Em exposição pública, as portas Buddy
+devem permanecer protegidas por firewall/rede confiável até existir um token adicional emitido pelo
+World e consumido pela DLL de compatibilidade.
 
 ### `RET_LOGIN 0x1011`
 

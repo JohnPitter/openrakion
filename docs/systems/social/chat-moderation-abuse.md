@@ -112,9 +112,11 @@ py tools/ghidra/FindBuddySmsKey.py
 de 12, prefixa cada bloco com o marcador `0x2DBABE65` e cifra AES-128-ECB para enviar
 `SVC_SMS_SEND 0x2030`. `RET_SMS_SEND 0x2031` contém um `u16` de resultado.
 
-O login `0x1010` possui 32 bytes de credencial AES com chave zero, seguidos por 176 bytes da sessão.
-A credencial revela `accountId[20]` e o seed do `RET_PRECREDENTIAL`; a chave da sessão é
-`SHA1(accountId || password || seedLE32)[0..15]`. Marcador e header lógico `0x1B` são validados antes
+O login `0x1010` possui 32 bytes de credencial AES com a chave fixa original
+`2C45926CF3396642B670D006A1FA8182`, seguidos por 176 bytes da sessão.
+A credencial revela `accountId[20]` e o seed do `RET_PRECREDENTIAL`; a chave da sessão usa SHA-0
+sobre `accountId || seedLE32` e os quatro primeiros words em little-endian. Marcador e header lógico
+`0x1B` são validados antes
 de autenticar a sessão.
 
 A entrega central usa o registro exato consumido por `NTF_SAVE_PACKET`:
