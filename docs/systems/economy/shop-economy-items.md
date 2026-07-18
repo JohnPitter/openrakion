@@ -55,6 +55,11 @@ mesma vinculação dentro da transação: `1=Gold`, `2=Cash`. Seriais de fontes 
 continuam no namespace local `3`, como `8000000 + useriteminfo.id`. A unicidade é composta por
 `(sn_type,item_sn)`, pois os IDs dos dois ledgers pertencem a namespaces distintos.
 
+No bundle, o assembly `FUN_00419A40 @ 0x0041A5DA..0x0041A712` mantém o preço resolvido em um
+slot de stack constante durante o loop. Cada peça recebe um `LogBuyCashItem` próprio repetindo o
+preço total e o mesmo `cash_prev/cash_cur`; somente a wallet é debitada uma vez. Essa semântica
+legada não permite somar os preços das linhas do bundle como se fossem débitos independentes.
+
 Cupons Cash e Gold são aceitos somente quando `couponinfo.for_cash` corresponde à moeda. O desconto
 usa o arredondamento original, `logcoupon` é ligado ao ledger por `coupon_log_id`, e o callback
 `0x14` devolve row ID, item, desconto e célula. A compra Cash sem cupom também participa do sorteio
@@ -149,8 +154,10 @@ Implementado:
 
 O E2E `StoragePurchasePersistenceE2ETests` cobre no World vivo a compra Gold do item `1001`, os
 callbacks `0x14/0x31/0x2E`, reconnect com a mesma row/serial e saldo, venda `0x2F→0x15`, wallet e
-os dois ledgers. Próximo passo headless: variantes Cash, cupom e bundle. No cliente real ainda é
-necessário observar a apresentação de compra/venda, cupom, set com seis peças e expiração online.
+os dois ledgers. `StorageCashCouponBundleE2ETests` cobre Cash direto, cupom Cash de 50%, o set
+`9012`, oito rows/seriais/ledgers, random presents, reconnect e restauração da fixture. No cliente
+real ainda é necessário observar a apresentação de compra/venda, cupom, set com seis peças e
+expiração online.
 Um journal idempotente só pode ser extensão do servidor, com uma chave nova fora do wire v258; não
 é requisito para fidelidade ao original.
 
@@ -165,7 +172,8 @@ operações, nunca tentar compensar automaticamente transações já comprometid
 - venda por instância correta entre duplicatas com nível/duração diferentes;
 - expiração antes/depois de login e compra;
 - saldo e item convergentes após reconnect;
-- ledger totalizando exatamente a variação da wallet;
+- wallet com um único débito exato e ledger por grant; bundles preservam a repetição legada do
+  preço total por peça;
 - golden frames de sucesso/erro e atualização visual.
 
 Em 2026-07-18, a jornada E2E abriu o inventário pelo `0x2C`, comprou `1001` pelo request `0x2E`,

@@ -993,6 +993,12 @@ Uma segunda prova MariaDB criou um cupom Gold temporário `11000` de 50% na cél
 `logcoupon.discount_amount=1400`, vinculou o ID no `loguseritem.kind=0` e colocou o item na célula
 17. A definição, item, logs e saldo temporários foram removidos/restaurados ao final.
 
+Em 2026-07-18, o assembly completo de `FUN_00419A40` fechou o ledger de sets: o preço permanece
+no mesmo slot de stack antes e durante o loop `0x0041A340→0x0041A690`. Cada membro passa por um
+insert de ledger separado em `0x0041A5DA..0x0041A712`, repetindo preço total e saldos da operação.
+O E2E obrigatório comprou `1009`, o mesmo item com cupom Cash de 50% e o bundle `9012`: confirmou
+`100000→95200→92800→83500`, seis grants, oito rows/seriais/ledgers, reconnect e rollback.
+
 Para expiração online, `world_character_probe.py hold 22` manteve o personagem selecionado após o
 login. Um item `1001` já carregado no box teve `limittime` alterado para `agora-1`; na varredura
 seguinte o World removeu exatamente uma linha e enviou `31 00` com item/count zerados para a célula

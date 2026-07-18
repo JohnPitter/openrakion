@@ -74,12 +74,14 @@ namespace RakionServer.World.Tests.E2E
                 if (!await db.PingAsync())
                 {
                     fixture.Reason = "PingAsync=false";
+                    ThrowWhenRequired(fixture.Reason);
                     return fixture;
                 }
             }
             catch (Exception ex)
             {
                 fixture.Reason = "DB inacessível: " + ex.Message;
+                ThrowWhenRequired(fixture.Reason);
                 return fixture;
             }
 
@@ -92,12 +94,20 @@ namespace RakionServer.World.Tests.E2E
             {
                 fixture.Reason = "StartAsync falhou: " + ex.Message;
                 try { server.Stop(); } catch { }
+                ThrowWhenRequired(fixture.Reason);
                 return fixture;
             }
 
             fixture.Server = server;
             fixture.Available = true;
             return fixture;
+        }
+
+        private static void ThrowWhenRequired(string reason)
+        {
+            if (string.Equals(Environment.GetEnvironmentVariable("RAKION_E2E_REQUIRED"),
+                    "1", StringComparison.Ordinal))
+                throw new InvalidOperationException("E2E World obrigatório indisponível: " + reason);
         }
 
         public ValueTask DisposeAsync()

@@ -97,10 +97,12 @@ namespace RakionServer.World.Tests.E2E
 
         public void OpenInventory() => Send(0x2c, Array.Empty<byte>());
 
-        public void BuyStorageItem(ushort itemId, byte currency)
+        public void BuyStorageItem(ushort itemId, byte currency, ushort? couponSlot = null)
         {
             using var writer = new PacketWriter();
-            writer.WriteWord(itemId).WriteByte(currency).WriteByte(0);
+            writer.WriteWord(itemId).WriteByte(currency)
+                .WriteByte(couponSlot.HasValue ? (byte)1 : (byte)0);
+            if (couponSlot.HasValue) writer.WriteWord(couponSlot.Value);
             Send(0x2e, writer.ToArray());
         }
 

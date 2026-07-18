@@ -23,7 +23,8 @@ render), mas prova que o servidor porta a jornada multi-cliente ponta a ponta no
 - **`WorldServerFixture`** — sobe um `WorldServer` real em loopback (portas próprias
   41708/41709/41706, sem colidir com o stack de produção). Gate suave: sem banco acessível a suíte
   faz *skip* (igual aos `*DatabaseSmokeTests`). Conexão via `RAKION_E2E_CONNECTION` ou o padrão do
-  stack de dev (`root/123456 @ localhost:3306`, base `rakion`, seed `test`/`test2`).
+  stack de dev (`root/123456 @ localhost:3306`, base `rakion`, seed `test`/`test2`). Para gates de
+  release, `RAKION_E2E_REQUIRED=1` transforma banco/boot indisponível em falha explícita.
 - **`E2ECollection`** — serializa os testes (portas fixas compartilhadas, sem paralelismo).
 
 Seed usado (banco `rakion`): conta `test` → personagem `GoHeroi` (`#1`); conta `test2` →
@@ -45,11 +46,12 @@ Seed usado (banco `rakion`): conta `test` → personagem `GoHeroi` (`#1`); conta
 | Entrada em stage PvE solo | `SoloStageEntryTests.SoloStage_SpawnStartsStageRun` | Sala solo (stage 1) → start → spawn `0x4b` abre a execução de stage (`BeginStageRun`): `StageRunId`=`MatchId`, `ActiveStageId`=1 |
 | Clear e settlement PvE | `SoloStageSettlementE2ETests.ExactReward_AppliesOnceAndIdenticalReplayOnlyAcknowledges` | Stage 1 → clear `0x4A` → rank 5 diferencial → `0x53` exato; EXP, gold, rank e ledger confirmados no MySQL. Replay idêntico recebe novo ACK sem crédito ou ledger duplicado; progressão, Cells, rank e ledgers são restaurados |
 | Compra, reconnect e venda | `StoragePurchasePersistenceE2ETests.GoldPurchase_ReconnectsAndSellsWithExactPersistentDeltas` | Abre inventário `0x2C`, compra `1001` por Gold via `0x2E`, valida callbacks `0x14/0x31/0x2E`, reloga, reencontra a mesma row e saldo, vende pela célula via `0x2F` e confirma callback `0x15`, wallet e dois ledgers no MySQL; fixture restaurada |
+| Cash, cupom e bundle | `StorageCashCouponBundleE2ETests.CashCouponAndBundle_PersistWireWalletRowsAndLegacyLedgers` | Compra `1009` por Cash, repete com cupom Cash de 50% selecionado pela célula e compra o set `9012`; valida `100000→95200→92800→83500`, consumo/log do cupom, seis grants, oito rows/seriais/ledgers, random presents, reconnect e restauração integral |
 | Chat de canal | `TwoClientChatTests.ChannelChat_BroadcastsToOtherClientInSameChannel` | Um cliente envia chat de canal (`0x22`); o outro no mesmo canal-lobby recebe o broadcast com o texto — e o remetente recebe o próprio eco |
 | Ciclo vivo de partida | `TwoClientLiveMatchLifecycleTests.DeadlineAndDeathFrame_AdvanceRoundAndEndMatch` | Golem com times opostos: primeiro spawn `0x4B`, `Pre→Playing` pelo deadline no motor global, entrada tardia do segundo jogador, morte própria `0x4F` no fio, broadcasts `0x4F/0x4A`, vitória do round e fim do match `0x44` pelo próximo tick |
 | Bot no fio | `BotMovementE2ETests` e `BotStageValidationTests` | Movimento sintético recebido; perseguição converge; dois humanos recebem o bot; o envelope DLL `0xB07A` entrega ataque sem relay duplicado; primeiro ataque reduz HP e devolve `0x0311 kind=Damage`; golpes seguintes matam o bot e publicam `0x4F`. Smoke gráfico permanece separado |
 
-Todos verdes: **816 testes World**, dos quais **23 são E2E** no fio. Descobertas de RE confirmadas em runtime:
+Todos verdes: **817 testes World**, dos quais **24 são E2E** no fio. Descobertas de RE confirmadas em runtime:
 
 - o transporte do cliente e do servidor é simétrico na cifra (AES-128 do canal lobby) mas
   **assimétrico no envelope**: cliente→servidor carrega `[opcode][seq]`, servidor→cliente carrega
@@ -78,17 +80,22 @@ Todos verdes: **816 testes World**, dos quais **23 são E2E** no fio. Descoberta
 - a compra Gold percorre a UI de inventário e o dispatch reais (`0x2C→0x2E`), só publica os
   callbacks `0x14/0x31/0x2E` depois do commit e reaparece no reconnect com a mesma row/serial. A
   venda `0x2F→0x15` remove essa instância, credita a fórmula `40%` e fecha o segundo ledger;
+- Cash/cupom/bundle percorrem o mesmo wire real. O cupom `11999` de 50% é consumido e ligado ao
+  ledger; `9012` concede as seis peças. Como no assembly original, cada peça ganha ledger/serial
+  próprio repetindo preço total e o mesmo par `cash_prev/cash_cur`; a wallet é debitada uma vez;
 
 ## Como rodar
 
 ```powershell
 # com o stack de dev de pé (container rakion-db em 3306, base rakion seed test/test2)
+$env:RAKION_E2E_REQUIRED = '1'
 dotnet test server/RakionServer/tests/RakionServer.World.Tests -c Release `
   --filter "FullyQualifiedName~E2E"
 ```
 
-Sem banco, os testes fazem skip suave (não quebram o CI). Para apontar outro banco, exporte
-`RAKION_E2E_CONNECTION`.
+Sem `RAKION_E2E_REQUIRED=1`, a indisponibilidade mantém o skip suave para desenvolvimento. Uma
+execução que sustente evidência E2E deve sempre usar o gate obrigatório. Para apontar outro banco,
+exporte `RAKION_E2E_CONNECTION`.
 
 ## Fronteira dinâmica restante
 
@@ -99,7 +106,7 @@ dos 4 modos → entrada, clear e settlement de stage PvE solo → compra/venda G
 matriz P2P local direto/TunnelOne/TunnelAll → bot server-side no fio. Ainda **não** exercitado
 headless (próximos alvos):
 
-- **economia/UI ao vivo**: variantes Cash/cupom/bundle, enchant, presentes, Power User e ranking
+- **economia/UI ao vivo**: enchant, presentes, Power User e ranking
   pelos frames reais.
 
 E a camada que **exige cliente gráfico** (fora do escopo backend): animação, frames de ataque,
