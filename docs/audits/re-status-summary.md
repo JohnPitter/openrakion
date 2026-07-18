@@ -83,7 +83,7 @@ A validação **dinâmica** dirige o `WorldServer` real por clientes headless no
 - **bots server-side**: movimento, perseguição, convivência com dois humanos, datagrama de reação
   ao dano e morte no field, provados headless inclusive pela ponte DLL P2P→World; smoke visual pendente.
 
-São **28 testes E2E** e **822 testes World verdes**. Detalhe em
+São **28 testes E2E** e **828 testes World verdes**. Detalhe em
 [`dynamic-validation.md`](dynamic-validation.md).
 
 Não resta alvo headless conhecido nessa matriz. A próxima etapa é a auditoria final global e,
@@ -104,8 +104,9 @@ resultado observado. Build verde não substitui a prova visual.
 A instalação usada para o próximo smoke já é reproduzível por
 [`client-compatibility-dll.md`](../guides/client-compatibility-dll.md): executável pristine v258,
 engine golden, proxy com 17 exports, launcher atual e manifesto de 14 arquivos passaram na
-verificação estática. O jogo ainda não foi iniciado; portanto nenhum item visual acima muda de
-estado com base somente nessa preparação.
+verificação estática. A execução e as evidências devem ser registradas em
+[`visual-validation.md`](visual-validation.md); logs de carga sem observação da tela não mudam o
+estado visual.
 
 ### 3. Decidir as extensões restantes que não pertencem ao v258 original
 

@@ -14,6 +14,7 @@ arquivos em `archive/` somente para contexto histórico.
 | ver cobertura e próxima prioridade | [`audits/re-coverage.md`](audits/re-coverage.md) |
 | ver o censo/veredito de todas as classes de entidade | [`audits/entity-class-census.md`](audits/entity-class-census.md) |
 | ver a validação dinâmica headless (2 clientes no fio) | [`audits/dynamic-validation.md`](audits/dynamic-validation.md) |
+| executar e registrar a validação visual do cliente | [`audits/visual-validation.md`](audits/visual-validation.md) |
 | revisar qualidade estrutural | [`audits/code-quality.md`](audits/code-quality.md) |
 | configurar o cliente | [`guides/config-xfs.md`](guides/config-xfs.md) |
 | instalar e ativar a DLL do cliente | [`guides/client-compatibility-dll.md`](guides/client-compatibility-dll.md) |
