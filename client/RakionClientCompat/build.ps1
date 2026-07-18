@@ -21,24 +21,30 @@ if (-not $vs) { throw 'Visual Studio Build Tools com C++ x86 não encontrado' }
 
 $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars32.bat'
 $out = Join-Path $PSScriptRoot 'bin'
-$systemVersion = Join-Path $env:WINDIR 'SysWOW64\version.dll'
 New-Item -ItemType Directory -Path $out -Force | Out-Null
-Copy-Item -LiteralPath $systemVersion -Destination (Join-Path $out 'verorig.dll') -Force
+$legacyForwarder = Join-Path $out 'verorig.dll'
+if (Test-Path -LiteralPath $legacyForwarder -PathType Leaf) {
+    Remove-Item -LiteralPath $legacyForwarder -Force
+}
 
-$proxySources = @(
-    'version_proxy.cpp',
+$patchSources = @(
+    'rakion_client_patch.cpp',
     'client_patches.cpp',
     'bot_telemetry.cpp',
     'compat_log.cpp'
 ) | ForEach-Object { '"{0}"' -f (Join-Path $PSScriptRoot $_) }
-$proxy = 'call "{0}" >nul && cl /nologo /std:c++20 /O2 /MT /EHsc /LD /W4 /WX {1} /link /Brepro /DEF:"{2}" /OUT:"{3}"' -f `
-    $vcvars, ($proxySources -join ' '), (Join-Path $PSScriptRoot 'version_proxy.def'), (Join-Path $out 'version.dll')
+$patch = 'call "{0}" >nul && cl /nologo /std:c++20 /O2 /MT /EHsc /LD /W4 /WX {1} /link /Brepro /OUT:"{2}"' -f `
+    $vcvars, ($patchSources -join ' '), (Join-Path $out 'RakionClientPatch.dll')
+$proxy = 'call "{0}" >nul && cl /nologo /std:c++20 /O2 /MT /EHsc /LD /W4 /WX "{1}" /link /Brepro /DEF:"{2}" /OUT:"{3}"' -f `
+    $vcvars, (Join-Path $PSScriptRoot 'version_proxy.cpp'), (Join-Path $PSScriptRoot 'version_proxy.def'), (Join-Path $out 'version.dll')
 $smoke = 'call "{0}" >nul && cl /nologo /std:c++20 /O2 /MT /EHsc /W4 /WX "{1}" /link /Brepro /OUT:"{2}"' -f `
     $vcvars, (Join-Path $PSScriptRoot 'proxy_smoke.cpp'), (Join-Path $out 'proxy_smoke.exe')
 
 Push-Location $out
 try
 {
+    cmd.exe /d /c $patch
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     cmd.exe /d /c $proxy
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     cmd.exe /d /c $smoke

@@ -29,7 +29,7 @@
          README.md). O glob tolera a ausência: quem clona sem os assets ainda compila (UI degrada sem eles). -->
     <EmbeddedResource Include="Assets\*.ico;Assets\*.png;Assets\*.bmp" />
     <EmbeddedResource Include="..\RakionClientCompat\bin\version.dll" LogicalName="RakionLauncher.Native.version.dll" />
-    <EmbeddedResource Include="..\RakionClientCompat\bin\verorig.dll" LogicalName="RakionLauncher.Native.verorig.dll" />
+    <EmbeddedResource Include="..\RakionClientCompat\bin\RakionClientPatch.dll" LogicalName="RakionLauncher.Native.RakionClientPatch.dll" />
   </ItemGroup>
 
   <ItemGroup>

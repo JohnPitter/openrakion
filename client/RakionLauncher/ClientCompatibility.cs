@@ -5,13 +5,15 @@ internal static class ClientCompatibility
     private static readonly DeploymentFile[] Files =
     {
         new("RakionLauncher.Native.version.dll", "version.dll"),
-        new("RakionLauncher.Native.verorig.dll", "verorig.dll")
+        new("RakionLauncher.Native.RakionClientPatch.dll", "RakionClientPatch.dll")
     };
 
     internal static void Install(string binDir)
     {
         foreach (DeploymentFile file in Files)
             InstallFile(binDir, file);
+        string legacyForwarder = Path.Combine(binDir, "verorig.dll");
+        if (File.Exists(legacyForwarder)) File.Delete(legacyForwarder);
     }
 
     private static void InstallFile(string binDir, DeploymentFile file)

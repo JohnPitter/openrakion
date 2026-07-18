@@ -52,13 +52,9 @@ function Test-SameFile([string]$Source, [string]$Destination)
         (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash
 }
 
-function Assert-FileInstallable([string]$Source, [string]$RelativePath)
+function Assert-DestinationWritable([string]$RelativePath)
 {
-    if (-not (Test-Path -LiteralPath $Source -PathType Leaf)) {
-        throw "artefato de origem ausente: $Source"
-    }
     $destination = Join-Path $script:Target $RelativePath
-    if (Test-SameFile $Source $destination) { return }
     if (-not (Test-Path -LiteralPath $destination -PathType Leaf)) { return }
 
     try {
@@ -71,6 +67,16 @@ function Assert-FileInstallable([string]$Source, [string]$RelativePath)
     } catch {
         throw "destino em uso ou sem permissão: $destination"
     }
+}
+
+function Assert-FileInstallable([string]$Source, [string]$RelativePath)
+{
+    if (-not (Test-Path -LiteralPath $Source -PathType Leaf)) {
+        throw "artefato de origem ausente: $Source"
+    }
+    $destination = Join-Path $script:Target $RelativePath
+    if (Test-SameFile $Source $destination) { return }
+    Assert-DestinationWritable $RelativePath
 }
 
 function Prepare-Destination([string]$Destination, [string]$RelativePath)
@@ -113,6 +119,14 @@ function Install-Text([string]$Content, [string]$RelativePath)
     Prepare-Destination $destination $RelativePath
     [System.IO.File]::WriteAllText($destination, $expected, [System.Text.UTF8Encoding]::new($false))
     $script:Installed[$RelativePath] = (Get-FileHash $destination -Algorithm SHA256).Hash
+}
+
+function Remove-InstalledFile([string]$RelativePath)
+{
+    $destination = Join-Path $script:Target $RelativePath
+    if (-not (Test-Path -LiteralPath $destination -PathType Leaf)) { return }
+    Prepare-Destination $destination $RelativePath
+    Remove-Item -LiteralPath $destination -Force
 }
 
 function Restore-TouchedFiles()
@@ -181,7 +195,7 @@ $filePlan.Add([pscustomobject]@{ Source = (Join-Path $golden 'Data\SeriousSam.gm
 $filePlan.Add([pscustomobject]@{ Source = (Join-Path $goldenBin 'engine.dll'); RelativePath = 'Bin\engine.dll' })
 $filePlan.Add([pscustomobject]@{ Source = $pristineExe; RelativePath = 'Bin\rakion.exe' })
 $filePlan.Add([pscustomobject]@{ Source = (Join-Path $compatRoot 'bin\version.dll'); RelativePath = 'Bin\version.dll' })
-$filePlan.Add([pscustomobject]@{ Source = (Join-Path $compatRoot 'bin\verorig.dll'); RelativePath = 'Bin\verorig.dll' })
+$filePlan.Add([pscustomobject]@{ Source = (Join-Path $compatRoot 'bin\RakionClientPatch.dll'); RelativePath = 'Bin\RakionClientPatch.dll' })
 Get-ChildItem $publishDir -File | Where-Object { $_.Extension -ne '.pdb' } | ForEach-Object {
     $filePlan.Add([pscustomobject]@{ Source = $_.FullName; RelativePath = $_.Name })
 }
@@ -189,6 +203,7 @@ Get-ChildItem $publishDir -File | Where-Object { $_.Extension -ne '.pdb' } | For
 foreach ($entry in $filePlan) {
     Assert-FileInstallable $entry.Source $entry.RelativePath
 }
+Assert-DestinationWritable 'Bin\verorig.dll'
 
 $manifestPath = Join-Path $script:Target 'validation-install.json'
 try {
@@ -197,6 +212,7 @@ try {
     }
     Install-Text $ServerHost 'server.host'
     Install-Text $DisplayMode 'display.mode'
+    Remove-InstalledFile 'Bin\verorig.dll'
 
     $manifest = [ordered]@{
         schema = 1

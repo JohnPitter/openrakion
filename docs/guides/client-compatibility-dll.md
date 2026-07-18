@@ -2,9 +2,11 @@
 
 ## Objetivo
 
-`RakionClientCompat` é a única camada nativa de compatibilidade do cliente. O proxy x86
+`RakionClientCompat` é a única camada nativa de compatibilidade do cliente. O bootstrap x86
 `version.dll` é carregado pelo próprio import do `rakion.exe`, antes do entry point, encaminha as
-17 exportações oficiais para `verorig.dll` e aplica os patches sem alterar o executável em disco.
+17 exportações oficiais para a `version.dll` do diretório do sistema e carrega
+`RakionClientPatch.dll`. A segunda DLL concentra todos os patches, sem alterar o executável em
+disco; `version.dll` não contém regra de compatibilidade do jogo.
 
 O `rakion-final` é o **golden source**. O pacote
 `C:\Users\joaop\Downloads\Rakion-Original\Rakion` serve somente como exemplo de instalação e
@@ -23,10 +25,11 @@ O diff golden contém 317 bytes. A DLL valida **todos** os bytes antes de aplica
 desconhecida é rejeitada sem patch parcial. O `rakion-tutorial` documenta somente a retirada do
 GameGuard em outra build e não é fonte de bytes para o cliente final.
 
-O artefato auxiliar `RakionClientPatch.dll` recuperado do trabalho guardado não substitui o
-golden. Ele não exporta o contrato de `version.dll` e não contém os hooks de rede/bot, mas sua
-tabela compilada confirma as mesmas **317 tuplas `{RVA, byte novo, byte original}`** do manifesto
-atual. A comparação é reproduzível sem carregar a DLL:
+O binário legado `client/RakionClientPatch/build/RakionClientPatch.dll`, recuperado do trabalho
+guardado, não substitui o golden. Ele não contém os hooks de rede/bot, mas sua tabela compilada
+confirma as mesmas **317 tuplas `{RVA, byte novo, byte original}`** do manifesto atual. O artefato
+final com o mesmo nome é sempre recompilado dos fontes de `RakionClientCompat`. A comparação do
+legado é reproduzível sem carregar a DLL:
 
 ```powershell
 python client\RakionClientCompat\verify_legacy_client_patch.py `
@@ -67,9 +70,11 @@ valida também o hash e o prólogo de `CNet::SendToOtherClient` na `engine.dll`,
 
 O linker usa `/Brepro`: duas compilações consecutivas com o mesmo toolchain e as mesmas entradas
 devem produzir o mesmo SHA-256. A build validada em 18/07/2026 gerou
-`2DA526C8DA13A8F499DDCD6E6BA7568D6D41D71E6466550A2DBA825D9857D7FE` nas duas execuções. O build de
-`client/RakionLauncher` chama esse script, embute `version.dll` e `verorig.dll` e os instala em
-`Bin` antes de iniciar o jogo.
+`13C1D0CC022D0000FA2E7ED03ABD0107AD41D894E0AF302D74CF3D42B0F33263` para `version.dll` e
+`7302A9EBD1366BFAF518A1D5225AEE5CDE3FCF811215DF6E0B322FE6BA620F83` para
+`RakionClientPatch.dll` nas duas execuções. O build de
+`client/RakionLauncher` chama esse script, embute `version.dll` e `RakionClientPatch.dll` e instala
+as duas em `Bin` antes de iniciar o jogo.
 
 ## Instalação e ativação
 
@@ -81,7 +86,7 @@ devem produzir o mesmo SHA-256. A build validada em 18/07/2026 gerou
 5. Clique em START GAME. O launcher instala o proxy em `Bin`; a carga é automática pelo Windows.
 
 O nosso launcher é o método oficial porque instala os artefatos e grava as configurações. Depois
-de `version.dll`, `verorig.dll`, `server.host` e a build v258 estarem no lugar, iniciar
+de `version.dll`, `RakionClientPatch.dll`, `server.host` e a build v258 estarem no lugar, iniciar
 `Bin/rakion.exe` diretamente também carrega a DLL. O launcher antigo não injeta a DLL e só é
 compatível se não restaurar arquivos, iniciar o GameGuard ou sobrescrever a configuração.
 
@@ -130,7 +135,7 @@ O smoke gráfico é o único gate que não deve ser inferido do teste headless.
 ## Rollback
 
 Para voltar ao cliente anteriormente patcheado, feche o jogo, desative a instalação automática no
-launcher usado para rollback, remova `Bin/version.dll` e `Bin/verorig.dll` e restaure o
+launcher usado para rollback, remova `Bin/version.dll` e `Bin/RakionClientPatch.dll` e restaure o
 `rakion-final/Bin/rakion.exe` golden. Não combine o executável já patcheado com uma DLL de outra
 versão; embora a aplicação seja idempotente na build correta, misturar builds invalida o gate.
 

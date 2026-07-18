@@ -108,12 +108,18 @@ def main() -> None:
     executable = root / "Bin" / "rakion.exe"
     engine = root / "Bin" / "engine.dll"
     proxy = root / "Bin" / "version.dll"
+    client_patch = root / "Bin" / "RakionClientPatch.dll"
+    legacy_forwarder = root / "Bin" / "verorig.dll"
     if sha256(executable) != manifest["baseline"]["rakionExeOriginalSha256"]:
         failures.append("rakion.exe não é o baseline pristine")
     if sha256(engine) != manifest["baseline"]["engineSha256"]:
         failures.append("engine.dll não é a golden v258")
     if "VERSION.DLL" not in imports(executable):
         failures.append("rakion.exe não importa version.dll")
+    if legacy_forwarder.exists():
+        failures.append("verorig.dll legado ainda está instalado")
+    if not client_patch.is_file():
+        failures.append("RakionClientPatch.dll ausente")
     missing_exports = VERSION_EXPORTS - exports(proxy)
     if missing_exports:
         failures.append("exports ausentes no proxy: " + ", ".join(sorted(missing_exports)))

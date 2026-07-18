@@ -17,8 +17,9 @@ do contrato.
 | Cliente de validação | `C:\Users\joaop\Downloads\Rakion-Original\Rakion` |
 | Executável pristine v258 | `Bin/rakion.exe`, SHA-256 `88E177F243FA4C43769CD323FB4D73E106AE833070F9BCE7B2DC05B8DDFD6AF8` |
 | Engine golden | SHA-256 `83B20D6C32CD66B95C8F8E41AD6DE13A58E8F5F948CD21CBD118D42EF8CF88F2` |
-| Proxy golden determinístico | `Bin/version.dll`, SHA-256 `2DA526C8DA13A8F499DDCD6E6BA7568D6D41D71E6466550A2DBA825D9857D7FE` |
-| Forwarder oficial | `Bin/verorig.dll`, SHA-256 `4F66B88731E84BE8E1545EEFC589A79E701CCA426CE916E4AC9322E60EA9680B` |
+| Proxy determinístico | `Bin/version.dll`, SHA-256 `13C1D0CC022D0000FA2E7ED03ABD0107AD41D894E0AF302D74CF3D42B0F33263` |
+| Forwarder oficial | carregado de `%SystemRoot%\SysWOW64\version.dll`; não é distribuído |
+| Patches golden | `Bin/RakionClientPatch.dll`, SHA-256 `7302A9EBD1366BFAF518A1D5225AEE5CDE3FCF811215DF6E0B322FE6BA620F83` |
 | Destino | `server.host=127.0.0.1`, `display.mode=windowed` |
 | Verificação estática | baseline anterior aprovada; refresh do manifesto para o proxy determinístico pendente |
 
