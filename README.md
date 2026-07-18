@@ -32,6 +32,7 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
 | **Stack roda nativo em Windows/Linux/Mac** (.NET 9, sem Wine/P-Invoke) | ✅ |
 | Modos PvP/deathmatch completos | 🟡 motor de round server-side implementado (timer, fim de round por placar, win/lose/draw persistido); falta validar com 2 clientes |
 | **GameGuard** original | ❌ morto (servidor nProtect offline desde ~2007) — exige client no-GG |
+| **OpenGuard** — anti-cheat server-side próprio (integridade do client, anomalia de protocolo, flood, auditoria + painel) | ✅ modo observação por padrão |
 | Navegação inventário/loja ↔ lista de salas (botão **Previous**) | ✅ |
 
 > O único ❌ é o **GameGuard** — não é limitação do nosso servidor, e sim de um serviço externo da nProtect offline há anos ([detalhe](#gameguard-veredito-honesto)).
@@ -111,7 +112,9 @@ O OpenRakion **não distribui** o cliente. Você precisa de uma cópia legítima
 
 ## GameGuard (veredito honesto)
 
-O GameGuard (nProtect, 2007) **não inicializa mais**: o GameMon requisita o servidor de update/auth do nProtect, que está **offline** há anos (*"Game guard error : 0"*). **Não** é problema de Windows 11/driver; VM Win7/10 **não resolve**. Saídas: jogar pelo fluxo do launcher (em alguns builds o `rakion.bin` conecta com o GG falhando de forma não-fatal) ou aplicar um patch *no-GG* no client. Detalhes em [docs/gameguard.md](docs/gameguard.md).
+O GameGuard (nProtect, 2007) **não inicializa mais**: o GameMon requisita o servidor de update/auth do nProtect, que está **offline** há anos (*"Game guard error : 0"*). **Não** é problema de Windows 11/driver; VM Win7/10 **não resolve**. Saídas: jogar pelo fluxo do launcher (em alguns builds o `rakion.bin` conecta com o GG falhando de forma não-fatal) ou aplicar um patch *no-GG* no client.
+
+No lugar dele, o servidor traz o **OpenGuard** — anti-cheat **100% server-side** (nenhuma DLL no cliente): atestação de hash do binário, anomalias de protocolo (seq/frame/opcode), rate-limit TCP/UDP, score com decaimento e auditoria em log + DB com painel admin (`/openguard`). Por padrão roda em **modo observação** (detecta e audita, sem kick). Detalhes dos dois em [docs/gameguard.md](docs/gameguard.md).
 
 ## Tools
 

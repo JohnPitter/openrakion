@@ -48,10 +48,10 @@ ANTES de adicionar mais código. Auditoria viva e dívida priorizada em
   (1797→270 + tipos aninhados em arquivos próprios), `ClientSession.cs` (1032→357 + LobbyFlow
   + LobbyFrames + Inventory). O domínio Field foi ainda fatiado em lifecycle (`.Field.cs` 459) × combate
   (`.FieldCombat.cs` 401).
-- Dívida de tamanho **REMANESCENTE** (sinalizada, fatiar antes de 800): `WorldDatabase.cs` (702) e
-  `WorldServer.cs` (~710, bootstrap + progressão/`GrantExp`/`ApplyStageResult` + fields) seguem **acima de 600** —
-  não eram god-files do slice, são os núcleos DB e servidor. Depois vêm `WorldHandlers.ReconCombatB.cs` (515) e
-  `WorldHandlers.Generated.Room.cs` (514).
+- Dívida dos núcleos **QUITADA** (2026-07-18): `WorldDatabase.cs` (907→243 + `.Schema`/`.Inventory`/`.Progress`)
+  e `WorldServer.cs` (841→473 + `.Match` motor-de-partida/progressão + `.Items` refino/catálogo) fatiados em
+  `partial` por domínio. Maior arquivo do repo agora = `WorldHandlers.ReconCombatB.cs` (515) e
+  `WorldHandlers.Generated.Room.cs` (505) — dentro do sinal, observar antes de crescer.
 - DOMÍNIO ≠ rede: regra de progressão/motor-de-partida (ex.: resultado de stage = exp/gold/rank) mora em
   serviço de domínio (`WorldServer.ApplyStageResult`/`GrantExp`), **não** no handler de rede nem em partial de
   outro domínio (ex.: o 0x53 NÃO mora em `ClientSession.Inventory.cs`; o handler só traduz bytes↔chamada).

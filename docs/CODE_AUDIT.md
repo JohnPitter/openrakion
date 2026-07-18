@@ -8,16 +8,16 @@
 
 | Arquivo | Linhas | Status |
 |---|---:|---|
-| `World/Database/WorldDatabase.cs` | **907** | 🔴 **cruzou o gate de ~800** — split obrigatório antes de crescer |
-| `World/WorldServer.cs` | **841** | 🔴 **cruzou o gate de ~800** — split obrigatório antes de crescer |
-| `World/Security/*` (OpenGuard, 5 arquivos) | 40–159 | ✅ dentro do alvo |
+| `World/Database/WorldDatabase.cs` | ~~907~~ **243** | ✅ **split EXECUTADO** (2026-07-18): + `.Schema` (166) / `.Inventory` (288) / `.Progress` (247) |
+| `World/WorldServer.cs` | ~~841~~ **474** | ✅ **split EXECUTADO** (2026-07-18): + `.Match` (257, motor de partida/progressão) / `.Items` (135, refino/catálogo) |
+| `World/Security/*` (OpenGuard, 6 arquivos) | 40–159 | ✅ dentro do alvo |
 
-**Plano de split proposto (P1 atual):**
-- `WorldDatabase.cs` → `partial class` por domínio, como os handlers: `WorldDatabase.Schema.cs`
-  (EnsureSchema/provisionamento), `WorldDatabase.Inventory.cs` (itembox/useriteminfo/quickslot),
-  `WorldDatabase.Progress.cs` (exp/stats/stage-ranks), núcleo (auth/conexão) fica no arquivo raiz.
-- `WorldServer.cs` → extrair o **motor de partida** (`GrantExp`/`ApplyStageResult`/clocks) para
-  `Services/MatchEngine` (já era o P2 de 06-14; agora o tamanho força), bootstrap/sessões ficam.
+Split feito por movimento mecânico em `partial class` (convenção do repo), zero mudança de
+comportamento — build limpo + 48 testes verdes. Maiores arquivos do repo após o split:
+`ReconCombatB.cs` (515) e `Generated.Room.cs` (505), dentro do sinal (<600). A extração do
+motor de partida para um serviço `MatchEngine` próprio (separação domínio×infra, P2 de 06-14)
+continua válida como evolução — o `partial .Match` já isola o código; o passo seguinte é
+mover o estado (`_fieldStatusBeat`/`_levelCurve`) junto.
 
 **OpenGuard (slice `World/Security/`, auditado no ship 2026-07-18):** 3 achados corrigidos no
 mesmo dia — (1) rate-limit de opcodes movido para o ponto único `ClientSession.DispatchAsync`
