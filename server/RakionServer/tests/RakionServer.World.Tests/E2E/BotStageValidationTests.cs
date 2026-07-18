@@ -94,20 +94,19 @@ namespace RakionServer.World.Tests.E2E
             for (int i = 0; i < 20 && death == null; i++)
             {
                 human.SendAttack(fixture.UdpPort2, hs.FieldSeat, kind: 1);
-                try { death = human.WaitForUdp(p => p.Length >= 5 && Frame4f(p), TimeSpan.FromMilliseconds(400)); }
+                try { death = human.WaitFor(Frame4f, TimeSpan.FromMilliseconds(400)); }
                 catch (TimeoutException) { }
             }
 
             Assert.False(bot.Alive, "bot deve estar morto após os golpes");
-            // O servidor transmitiu a morte do bot (0x4f) — o assento do bot como vítima.
-            // (o frame chega como msg de campo; validamos o estado do domínio como âncora)
-            Assert.True(field.Slots[bot.Seat].Dead || !bot.Alive);
+            Assert.NotNull(death);
+            Assert.Equal((byte)bot.Seat, death![2]);
         }
 
         private static bool Frame4f(byte[] frame)
         {
             // frame de campo do servidor: conteúdo decifrado começa por [u16 msgType=0x4f]...
-            return frame.Length >= 2 && frame[0] == 0x4f && frame[1] == 0x00;
+            return frame.Length >= 7 && frame[0] == 0x4f && frame[1] == 0x00;
         }
 
         private static async Task<(ClientSession hs, Field field, BotPlayer bot)> SetupBotMatchAsync(
@@ -130,7 +129,12 @@ namespace RakionServer.World.Tests.E2E
             JourneyHelper.WaitUntil(() => hs.UdpEndpoint != null, "endpoint UDP não autenticado");
             human.WaitForUdp(p => p.Length == 12 && p[0] == 0x01 && p[1] == 0x02, JourneyHelper.Timeout);
 
-            lock (field.SyncRoot) { field.State = 2; field.Phase = MatchPhase.Playing; }
+            lock (field.SyncRoot)
+            {
+                field.State = 2;
+                field.Phase = MatchPhase.Playing;
+                field.Slots[hs.FieldSeat].State = 4;
+            }
             await Task.CompletedTask;
             return (hs, field, field.Slots[add.Seat].Bot!);
         }

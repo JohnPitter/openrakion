@@ -80,6 +80,35 @@ namespace RakionServer.World.Tests.E2E
             WorldServer server, HeadlessWorldClient master, HeadlessWorldClient joiner,
             HeadlessWorldClient.RoomSpec spec)
         {
+            var journey = DriveToJoinedRoom(server, master, joiner, spec);
+            joiner.SetReady(true);
+            WaitUntil(() => journey.field.FindRec(journey.joiner)?.LobbyReady == true,
+                "joiner não ficou ready");
+            master.StartMatch();
+            WaitUntil(() => journey.field.MatchId != Guid.Empty, "partida não foi armada");
+            return journey;
+        }
+
+        /// <summary>Leva dois jogadores em times opostos até uma partida armada.</summary>
+        public static (ClientSession master, ClientSession joiner, Field field) DriveToArmedOpposingTeamsMatch(
+            WorldServer server, HeadlessWorldClient master, HeadlessWorldClient joiner,
+            HeadlessWorldClient.RoomSpec spec)
+        {
+            var journey = DriveToJoinedRoom(server, master, joiner, spec);
+            joiner.ChangeTeam();
+            WaitUntil(() => journey.joiner.FieldSeat >= 10, "joiner não trocou de time");
+            joiner.SetReady(true);
+            WaitUntil(() => journey.field.FindRec(journey.joiner)?.LobbyReady == true,
+                "joiner não ficou ready");
+            master.StartMatch();
+            WaitUntil(() => journey.field.MatchId != Guid.Empty, "partida não foi armada");
+            return journey;
+        }
+
+        private static (ClientSession master, ClientSession joiner, Field field) DriveToJoinedRoom(
+            WorldServer server, HeadlessWorldClient master, HeadlessWorldClient joiner,
+            HeadlessWorldClient.RoomSpec spec)
+        {
             master.Login("test", "test");
             joiner.Login("test2", "test2");
             master.WaitForFirstByte(0x0C, Timeout);
@@ -99,12 +128,6 @@ namespace RakionServer.World.Tests.E2E
 
             joiner.JoinRoom((ushort)fieldId);
             WaitUntil(() => js.FieldId == fieldId, "joiner não entrou");
-
-            joiner.SetReady(true);
-            WaitUntil(() => field.FindRec(js)?.LobbyReady == true, "joiner não ficou ready");
-            master.StartMatch();
-            WaitUntil(() => field.MatchId != System.Guid.Empty, "partida não foi armada");
-
             return (ms, js, field);
         }
     }

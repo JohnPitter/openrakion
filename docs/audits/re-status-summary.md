@@ -1,6 +1,6 @@
 # Resumo do RE completo — estado e objetivos restantes
 
-Atualizado em 17 de julho de 2026. Este é o resumo executivo; a matriz detalhada e as evidências
+Atualizado em 18 de julho de 2026. Este é o resumo executivo; a matriz detalhada e as evidências
 continuam em [`re-coverage.md`](re-coverage.md).
 
 ## Objetivo geral
@@ -61,13 +61,16 @@ A validação **dinâmica** dirige o `WorldServer` real por clientes headless no
 - chat de canal (0x22) broadcast entre os dois clientes;
 - **settlement PvP persistido no DB real** pelo motor da partida vivo (WIN/LOSE em `characterinfo`);
 - **matriz dos 4 modos** (Golem/Deathmatch/TeamDeath/Boss) armando a partida + rejeição de fragLimit inválido;
-- **entrada em stage PvE solo** (`BeginStageRun` via `0x4b`).
+- **entrada em stage PvE solo** (`BeginStageRun` via `0x4b`);
+- **ciclo vivo da partida**: engage `Pre→Playing` pelo deadline, spawn tardio, morte `0x4F`,
+  placar, fim de round `0x4A` e fim de match `0x44` pelo motor global;
+- **bots server-side**: movimento, perseguição, convivência com dois humanos e morte no field.
 
-São 14 testes E2E, **782 verdes**. Detalhe em [`dynamic-validation.md`](dynamic-validation.md).
+São **19 testes E2E** e **807 testes World verdes**. Detalhe em
+[`dynamic-validation.md`](dynamic-validation.md).
 
 Próximos alvos headless (ainda abertos):
 
-- ciclo de partida ao vivo pelo tick real (engage por deadline, rounds, morte `0x4f` no fio, placar);
 - liquidação `0x53` com reward exato (coberta hoje por testes de domínio/DB);
 - matriz P2P (direto/Tunnel, mesma máquina/LAN/NAT/UDP bloqueado);
 - economia/UI ao vivo: loja, inventário, enchant, presentes, Power User, ranking.
@@ -84,21 +87,23 @@ Camada que **exige o cliente v258** e não é atingível só pelo backend:
 Cada validação precisa registrar build/hash, configuração, captura ou log, resultado esperado e
 resultado observado. Build verde não substitui a prova visual.
 
-### 3. Decidir extensões que não pertencem ao v258 original
+### 3. Decidir as extensões restantes que não pertencem ao v258 original
 
-Somente depois do fechamento compatível devem ser priorizadas features autorais: servidor de combate
-autoritativo, bots/puppets, checkout/recarga, liquidação de loteria, política moderna de PC Bang,
-SMTP e eventual evento de Natal novo. Elas não devem ser contabilizadas como lacunas do RE original.
+O bot peer sintético server-side já foi entregue e está documentado em
+[`bot-subsystem.md`](../systems/gameplay/bot-subsystem.md). Permanecem como decisões autorais:
+puppet com segundo cliente real, checkout/recarga, liquidação de loteria, política moderna de PC
+Bang, SMTP e eventual evento de Natal novo. Elas não devem ser contabilizadas como lacunas do RE
+original.
 
 ## Ordem recomendada
 
-1. estender a validação **headless** (2 clientes no fio): gameplay UDP → ciclo de partida →
-   settlement → PvE stage → matrizes de modo/P2P → economia/UI;
-2. smoke **visual** da jornada básica com dois clientes;
-3. matriz PvP/P2P visual;
-4. matriz PvE/NPC visual;
-5. economia, launcher e integrações externas;
-6. extensões autorais escolhidas para o lançamento.
+1. fechar a liquidação PvE `0x53` no E2E e a matriz **headless** de P2P;
+2. validar economia e persistência pelos frames reais;
+3. smoke **visual** da jornada básica com dois clientes;
+4. matriz PvP/P2P visual;
+5. matriz PvE/NPC visual;
+6. economia, launcher e integrações externas;
+7. extensões autorais escolhidas para o lançamento.
 
 ## Critério de encerramento
 

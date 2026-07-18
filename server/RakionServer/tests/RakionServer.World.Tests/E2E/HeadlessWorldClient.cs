@@ -158,6 +158,10 @@ namespace RakionServer.World.Tests.E2E
         /// Payload real do cliente é grande; o servidor só usa o gatilho, então mandamos vazio.</summary>
         public void SpawnField() => Send(0x4b, new byte[72]);
 
+        /// <summary>Reporta a própria morte no field (0x4F): `[u8 cause][u8 killerSeat]`.</summary>
+        public void ReportDeath(byte cause, byte killerSeat) =>
+            Send(0x4f, new[] { cause, killerSeat });
+
         /// <summary>Resultado de stage solo (0x53). Layout:
         /// `[u8 stage][u8 rank][u8 count][count×u16 slots][u32 exp][u32 gold][u32 cell0..2]`.</summary>
         public void SendStageResult(byte stage, byte rank, uint exp, uint gold)

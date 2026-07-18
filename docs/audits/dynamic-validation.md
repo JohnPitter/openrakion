@@ -2,7 +2,7 @@
 
 Este documento registra a validação **dinâmica** (comportamento em runtime, não só contrato
 estático) executada contra o servidor .NET real, dirigida por clientes **headless** que falam o
-protocolo no fio. Diferente dos 768 testes de domínio/golden — que exercitam regras e serializam
+protocolo no fio. Diferente dos testes de domínio/golden — que exercitam regras e serializam
 frames em memória — os testes E2E aqui sobem um `WorldServer` vivo (TCP + AES + dispatch + motor
 de partida + banco) e conectam dois clientes por sockets reais.
 
@@ -18,7 +18,8 @@ render), mas prova que o servidor porta a jornada multi-cliente ponta a ponta no
   `[u16 size][AES-128(content)]` com a chave/IV do canal lobby/field
   (`PacketCrypto.EnableWorldDefault`), plaintext cliente→servidor `[u16 opcode][u16 seq][data]` e
   a checagem de sequência. Decodifica os frames servidor→cliente e expõe uma fila para asserts.
-  Cobre login, char-select (0x14), criar sala (0x3b), entrar (0x38), ready (0x3d) e start (0x43).
+  Cobre login, char-select (`0x14`), criar sala (`0x3B`), entrar (`0x38`), ready (`0x3D`),
+  start (`0x43`), spawn (`0x4B`) e morte (`0x4F`).
 - **`WorldServerFixture`** — sobe um `WorldServer` real em loopback (portas próprias
   41708/41709/41706, sem colidir com o stack de produção). Gate suave: sem banco acessível a suíte
   faz *skip* (igual aos `*DatabaseSmokeTests`). Conexão via `RAKION_E2E_CONNECTION` ou o padrão do
@@ -42,8 +43,10 @@ Seed usado (banco `rakion`): conta `test` → personagem `GoHeroi` (`#1`); conta
 | Matriz de modos PvP | `TwoClientModeMatrixTests` | Golem/Deathmatch/TeamDeath/Boss criam+entram+armam com 2 clientes; fragLimit fora da faixa do Deathmatch é rejeitado (disconnect `0xCC`) |
 | Entrada em stage PvE solo | `SoloStageEntryTests.SoloStage_SpawnStartsStageRun` | Sala solo (stage 1) → start → spawn `0x4b` abre a execução de stage (`BeginStageRun`): `StageRunId`=`MatchId`, `ActiveStageId`=1 |
 | Chat de canal | `TwoClientChatTests.ChannelChat_BroadcastsToOtherClientInSameChannel` | Um cliente envia chat de canal (`0x22`); o outro no mesmo canal-lobby recebe o broadcast com o texto — e o remetente recebe o próprio eco |
+| Ciclo vivo de partida | `TwoClientLiveMatchLifecycleTests.DeadlineAndDeathFrame_AdvanceRoundAndEndMatch` | Golem com times opostos: primeiro spawn `0x4B`, `Pre→Playing` pelo deadline no motor global, entrada tardia do segundo jogador, morte própria `0x4F` no fio, broadcasts `0x4F/0x4A`, vitória do round e fim do match `0x44` pelo próximo tick |
+| Bot no fio | `BotMovementE2ETests` e `BotStageValidationTests` | Movimento sintético recebido por humanos; perseguição converge; dois humanos recebem o bot sem sequestro do P2P; ataque humano mata o bot e publica a morte pelo field |
 
-Todos verdes junto dos 768 de domínio (**782 total**, 14 testes E2E). Descobertas de RE confirmadas em runtime:
+Todos verdes: **807 testes World**, dos quais **19 são E2E** no fio. Descobertas de RE confirmadas em runtime:
 
 - o transporte do cliente e do servidor é simétrico na cifra (AES-128 do canal lobby) mas
   **assimétrico no envelope**: cliente→servidor carrega `[opcode][seq]`, servidor→cliente carrega
@@ -59,6 +62,10 @@ Todos verdes junto dos 768 de domínio (**782 total**, 14 testes E2E). Descobert
   isso);
 - o enum de domínio é `Golem=1, Deathmatch=2, TeamDeath=3, Boss=4` — **não** confundir com rótulos
   intuitivos; o fragLimit valida por modo do wire (Deathmatch 13..30, TeamDeath 20..50);
+- o primeiro spawn `0x4B` marca apenas quem carregou como `state=4`; vencido o deadline, o motor
+  global inicia o round se houver ao menos um jogador carregado e mantém os demais em `state=3`.
+  Um spawn tardio promove o segundo jogador, e sua morte `0x4F` atravessa dispatch, placar,
+  `RoundEnd`, `0x4A` e encerramento `0x44` sem chamar a regra de domínio pelo teste;
 - o `0x53` de stage PvE é **anti-cheat**: `CanSettleStage` exige `Phase==RoundEnd`, stage cleared e
   exp/gold **exatamente** iguais ao reward calculado (`StageRewardPolicy`) — por isso a validação
   headless cobre a ENTRADA da run (`BeginStageRun`); a liquidação com reward exato fica nos testes
@@ -77,13 +84,12 @@ Sem banco, os testes fazem skip suave (não quebram o CI). Para apontar outro ba
 
 ## Fronteira dinâmica restante
 
-Coberto no backend: login → char-select → sala → join → ready → start (armada) → handshake UDP →
-relay de movimento **e combate** (`0x030A`/`0x0311`/`0x030F`) → settlement PvP persistido no DB →
-matriz dos 4 modos → entrada em stage PvE solo. Ainda **não** exercitado headless (próximos alvos):
+Coberto no backend: login → char-select → sala → join → ready → start → engage pelo tick real →
+spawn tardio → morte `0x4F` → placar/fim de round/fim de match → handshake UDP → relay de
+movimento **e combate** (`0x030A`/`0x0311`/`0x030F`) → settlement PvP persistido no DB → matriz
+dos 4 modos → entrada em stage PvE solo → bot server-side no fio. Ainda **não** exercitado
+headless (próximos alvos):
 
-- **ciclo de partida ao vivo pelo tick real**: engage por deadline (Pre→Playing), rounds,
-  morte/respawn dirigidos por `0x4f` no fio e placar (hoje o settlement é validado forçando o
-  fim-de-partida; a cadeia de morte→round é coberta por testes de domínio);
 - **liquidação 0x53 com reward exato** (anti-cheat): coberta por `StageSettlementDatabaseSmokeTests`;
 - **matriz P2P** (direto/TunnelOne/TunnelAll, mesma máquina/LAN/NAT/UDP bloqueado);
 - **economia/UI ao vivo**: loja, inventário, enchant, presentes, Power User e ranking pelos frames
