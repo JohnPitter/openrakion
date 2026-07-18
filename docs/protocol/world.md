@@ -238,7 +238,7 @@ string terminada em zero; `blob(n)` contém exatamente `n` bytes.
 | `05` | `SendAdminNotice` | `[u8 scope][cstr target][cstr text]` | Escopos `0/2/3`, alvo opcional e retorno confirmados |
 | `09` | comando GM interno | `[u16 fieldId]` | `FUN_0041F5C0`; status `0/1/2`, ID ecoado e duas C-strings no sucesso |
 | `0C` | `SendLogin` | `[u8 verifyMode][cstr md5][cstr account][cstr password][u16 tail]` | Confirmado em `FUN_0041F6C0` |
-| `0E` | `SendSuccessUDP` | `[u8 result]` | Builder confirmado; nas capturas `result=0` e os sete zeros seguintes são padding AES |
+| `0E` | `SendSuccessUDP` | `[u8 result]` | Builder confirmado; o bloco decifrado pode expor sete bytes residuais do transporte, ignorados pelo handler original |
 | `0F` | `SendAlive` | vazio | Builder `engine.dll:0x36190C70`; isento de seq, gate de conta, sem resposta |
 | `10` | `SendGameGuard` | report de compatibilidade após challenge S→C; challenge pode chegar antes do `0E` | Fechado para a política no-GG desta build; ver `client-integrity.md` |
 | `12` | `SendCharacterCreate` | `[cstr name][u8 class][u8 slot]` | Confirmado por diff de slot e INSERT |

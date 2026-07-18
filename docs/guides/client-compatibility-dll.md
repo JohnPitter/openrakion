@@ -41,6 +41,8 @@ python client\RakionClientCompat\verify_legacy_client_patch.py `
 
 - reproduzir em memória os 317 bytes do `rakion-final`, incluindo retirada do GameGuard e code
   caves já presentes no golden;
+- neutralizar em memória a URL residual do GameGuard `http://218.145.66.176:10200`, evitando a
+  espera de SYN mesmo após o fluxo legado já ter sido neutralizado;
 - aplicar multi-instância sempre e, conforme `display.mode`, janela e bloqueio do reset de display;
 - neutralizar o bloqueio de Alt+Tab em `keyhook.dll`;
 - manter HIT/SHOT, lifecycle e ground-snap visual dos bots;
@@ -71,7 +73,7 @@ valida também o hash e o prólogo de `CNet::SendToOtherClient` na `engine.dll`,
 O linker usa `/Brepro`: duas compilações consecutivas com o mesmo toolchain e as mesmas entradas
 devem produzir o mesmo SHA-256. A build validada em 18/07/2026 gerou
 `13C1D0CC022D0000FA2E7ED03ABD0107AD41D894E0AF302D74CF3D42B0F33263` para `version.dll` e
-`7302A9EBD1366BFAF518A1D5225AEE5CDE3FCF811215DF6E0B322FE6BA620F83` para
+`1B8CEEF60AF6E440C678693C5C90F926200D8A486B9926E42640A5E739A1329A` para
 `RakionClientPatch.dll` nas duas execuções. O build de
 `client/RakionLauncher` chama esse script, embute `version.dll` e `RakionClientPatch.dll` e instala
 as duas em `Bin` antes de iniciar o jogo.

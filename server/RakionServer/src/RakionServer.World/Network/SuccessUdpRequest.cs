@@ -8,10 +8,6 @@ namespace RakionServer.World.Network
         {
             request = default;
             if (payload.IsEmpty) return false;
-
-            for (int index = 1; index < payload.Length; index++)
-                if (payload[index] != 0) return false;
-
             request = new SuccessUdpRequest(payload[0]);
             return true;
         }

@@ -9,7 +9,7 @@ Launcher .NET (WinForms, `net9.0-windows`, x64) do cliente Rakion offline — su
 A Serious Engine só guarda um bit de fullscreen (`m_bActiveFullScreen`); "modo janela" de verdade são
 três coisas (ver [`WindowMode.cs`](WindowMode.cs)):
 
-1. **Patch de 1 byte pela `version.dll`** no `rakion.exe` (sem ASLR, ImageBase `0x400000`): em `0x40D46D` há
+1. **Patch de 1 byte pela `RakionClientPatch.dll`** no `rakion.exe` (sem ASLR, ImageBase `0x400000`): em `0x40D46D` há
    `85C0`(TEST EAX,EAX) `7452`(JZ) `FF15…`(CALL = setup de fullscreen + troca de resolução). Trocar o
    `0x74` (JZ) por `0xEB` (JMP) força o salto e **pula** o CALL → o engine roda windowed sem trocar a
    resolução do desktop. Aplicado pelo proxy antes do entry point e antes de o engine inicializar o display. É o mesmo patch
@@ -31,7 +31,9 @@ dotnet publish -c Release -r win-x64 --self-contained true \
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
 ```
 
-Roda elevado (o `rakion.exe` exige admin; `CreateProcess` sem elevar = erro 740) — ver `app.manifest`.
+O launcher roda como usuário normal. Para o `rakion.exe` legado, ele cria um bloco de ambiente
+dedicado com `__COMPAT_LAYER=RunAsInvoker`; assim preserva a linha de comando especial
+`argv[0]=user` e evita o prompt UAC sem alterar o executável pristine.
 
 ## Login por ticket e update assinado
 

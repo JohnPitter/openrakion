@@ -19,9 +19,9 @@ do contrato.
 | Engine golden | SHA-256 `83B20D6C32CD66B95C8F8E41AD6DE13A58E8F5F948CD21CBD118D42EF8CF88F2` |
 | Proxy determinístico | `Bin/version.dll`, SHA-256 `13C1D0CC022D0000FA2E7ED03ABD0107AD41D894E0AF302D74CF3D42B0F33263` |
 | Forwarder oficial | carregado de `%SystemRoot%\SysWOW64\version.dll`; não é distribuído |
-| Patches golden | `Bin/RakionClientPatch.dll`, SHA-256 `7302A9EBD1366BFAF518A1D5225AEE5CDE3FCF811215DF6E0B322FE6BA620F83` |
+| Patches golden | `Bin/RakionClientPatch.dll`, SHA-256 `1B8CEEF60AF6E440C678693C5C90F926200D8A486B9926E42640A5E739A1329A` |
 | Destino | `server.host=127.0.0.1`, `display.mode=windowed` |
-| Verificação estática | baseline anterior aprovada; refresh do manifesto para o proxy determinístico pendente |
+| Verificação estática | `validation-install.json` atualizado e 14/14 arquivos aprovados em 18/07/2026 |
 
 O `validation-install.json` é a fonte reproduzível desses hashes. O `rakion-final` continua sendo o
 golden source; este diretório é somente o ambiente de execução.
@@ -34,14 +34,16 @@ golden source; este diretório é somente o ambiente de execução.
 | Broker | aprovado | TCP/UDP `40706` ouvindo |
 | World | aprovado | TCP `40708` e UDP `40708/40709` ouvindo |
 | Buddy | aprovado | TCP/UDP `8500/8504` ouvindo |
-| Build do cliente/DLL | aprovado | solução 0 warnings/erros; launcher 11/11; DLL x86 `/W4 /WX`, 317 patches, 17 exports e duas builds com hash idêntico |
-| Instalação do cliente | pendente | o UAC bloqueou `RakionLauncher.exe`; preflight atômico aprovado, mas o refresh final precisa ser repetido após fechar o prompt |
-| Elevação e abertura do launcher | pendente | prompt UAC aberto; exige confirmação interativa do usuário |
-| Login e render inicial | pendente | nenhuma observação visual registrada nesta rodada |
+| Build do cliente/DLL | aprovado | solução 0 warnings/erros; launcher 14/14; DLLs x86 `/W4 /WX`, 317 patches, 17 exports e duas builds com hashes idênticos |
+| Instalação do cliente | aprovado | refresh transacional concluído; 14/14 arquivos íntegros, `verorig.dll` removida e `originalBackupRoot` preservado |
+| Auto-update de conteúdo | aprovado | smoke HTTP assinado `258→259` atualizou `version.dll` e `RakionClientPatch.dll`, sem resíduos |
+| Abertura sem elevação | aprovado | launcher `asInvoker`; processo legado recebeu `RunAsInvoker`; nenhum processo `consent.exe` foi aberto |
+| Login e render inicial | aprovado | cliente pristine exibiu servidor e `GoHeroi` lvl 40; login `test`, TCP World `40708`, Buddy `8500`, `SuccessUDP`, canal e lista de salas confirmados |
 
-Logs antigos em `%TEMP%\rakion_launcher.log` e `%TEMP%\rakion_client_compat.log` comprovam que a
-DLL já carregou, aplicou patches e recebeu lifecycle em execuções anteriores. Eles não registram o
-conteúdo desenhado e, portanto, não fecham nenhum gate visual.
+Na captura de 18/07/2026, o primeiro uso da porta UDP exibiu o diálogo do Windows Firewall. Ele
+não é UAC nem falha do launcher; permitir acesso é necessário para P2P fora de localhost. A janela
+ao fundo confirmou o char-select. O World registrou também a sequência real `0x0E`, entrada no
+canal, inventário e `0x36 FieldList` sem disconnect.
 
 ## Smoke 1 — launcher, login e lobby
 

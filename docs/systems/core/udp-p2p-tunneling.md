@@ -130,8 +130,10 @@ sessão e responde com 15 bytes lógicos:
 [advertised IPv4:u32][advertised port:u16]
 ```
 
-IPv4 e porta usam network byte order. Os nove zeros que completavam a captura cifrada não fazem
-parte do payload: são padding do transporte AES. O `.NET` agora mantém uma única rota canônica em
+IPv4 e porta usam network byte order. Os bytes que completam o bloco cifrado não fazem parte do
+corpo lógico; a captura gráfica de 2026-07-18 mostrou que eles podem conter resíduos não nulos
+(`00 DF 19 00 68 DD 19 00`). O handler original não os lê, portanto o `.NET` consome somente o
+primeiro byte. Ele mantém uma única rota canônica em
 `Op_SuccessUdp`; o antigo alias `Op_LeaveField` era incompatível com `FUN_0041FA40` e foi removido.
 
 O Port1 original também enfileira o comando DB interno `5` após migrar o endereço. Ele não é uma

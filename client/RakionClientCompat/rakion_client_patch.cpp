@@ -273,11 +273,12 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID)
     if (!IsRakionProcess()) return TRUE;
     if (!ApplyFinalClientPatches()) return FALSE;
     ApplyLauncherPatches();
-    OutputDebugStringA(LoadServerAddress()
-        ? "RakionClientCompat: server.host carregado\n"
-        : "RakionClientCompat: server.host inválido ou ausente\n");
-    if (!InstallInitialServerRedirect())
-        OutputDebugStringA("RakionClientCompat: redirect TCP inicial indisponível\n");
+    CompatLog(LoadServerAddress()
+        ? "server.host carregado"
+        : "server.host inválido ou ausente");
+    CompatLog(InstallInitialServerRedirect()
+        ? "redirect TCP inicial instalado"
+        : "redirect TCP inicial indisponível");
     DisableThreadLibraryCalls(instance);
     HANDLE thread = CreateThread(nullptr, 0, InstallCompatibility, nullptr, 0, nullptr);
     if (thread) CloseHandle(thread);

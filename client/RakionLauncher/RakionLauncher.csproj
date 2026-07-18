@@ -15,7 +15,7 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>RakionLauncher</AssemblyName>
     <RootNamespace>RakionLauncher</RootNamespace>
-    <!-- rakion.exe exige admin (CreateProcess sem elevar = err 740); o launcher eleva. -->
+    <!-- O launcher roda sem elevação e aplica RunAsInvoker somente ao processo legado. -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Ícone do exe (extraído do rakion.exe) — Explorer / taskbar / titlebar. Condicional: os assets são
          derivados do cliente (proprietários, fora do git — ver Assets\README.md); sem eles o launcher compila. -->

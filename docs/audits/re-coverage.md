@@ -203,7 +203,7 @@ Portanto, são ABI legado/dormente desta build e não autorizam criar regra de e
 | `0x04` | AdminBan | `Op_AdminBanEcho` | fechado: o original apenas ecoa flag/texto e não persiste ban |
 | `0x05` | AdminNotice | `Op_AdminNotice` | fechado: escopo, field, nome case-sensitive, broadcast/ack fiéis |
 | `0x09` | GmQueryEntry | `Op_GmQueryEntry` | fechado: gate `Status=5/DISC 11`, `fieldId:u16`, status `0/1/2`, ID ecoado e `roomName/creatorCharacter` no sucesso |
-| `0x0E` | SuccessUDP | `Op_SuccessUdp` canônico | fechado: rota única, request `u8`, gate sem personagem ativo e resposta lógica de 15 bytes com dois endpoints; alias incompatível removido, validação gráfica continua pendente |
+| `0x0E` | SuccessUDP | `Op_SuccessUdp` canônico | fechado: rota única, request lógico `u8`, resíduos do bloco AES ignorados como no original e resposta de 15 bytes com dois endpoints; cliente pristine validado graficamente em 18/07/2026 |
 | `0x0F` | KeepAlive | `Op_KeepAlive` canônico | fechado: request vazio e sem seq, gate apenas de conta (`DISC 1A`), intervalo e alerta estrito acima de 90 s; sem resposta |
 | `0x12`–`0x1A` | ciclo de personagem, busca e tutorial | handlers `Op_Character*` canônicos; busca/whisper dedicados | fechado: aliases de field removidos, create 3/7 bytes, delete com snapshot de clã, buddy variável, tutorial sem ack, seleção/buscas/layouts/gates com golden source; validação visual continua pendente |
 | `0x19` | CharacterGetUserName | `Op_CharacterGetUserName` canônico | rota única; o lookup DB sintético foi removido: original só valida `<13`, envia C-string em msgType `0x0D` e usa `DISC 28/29` |

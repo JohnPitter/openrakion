@@ -20,6 +20,12 @@ TCP  10.0.2.15:49708  ->  61.78.35.29:6060   SYN_SENT   (GameMon.des)
 
 Para "fazer o GameGuard funcionar" seria necessário **emular o protocolo do servidor nProtect** (proprietário, não documentado) — inviável na prática.
 
+No cliente v258 pristine, a inicialização ainda referencia `http://218.145.66.176:10200`. Os
+patches golden tornam a falha não fatal, mas uma tentativa TCP residual pode aguardar timeout e
+manter a tela preta. `RakionClientPatch.dll` substitui essa URL em memória por um endpoint loopback
+fechado antes do entry point, fazendo a falha ocorrer imediatamente; o restante das conexões
+continua seguindo `server.host`.
+
 ## Alternativas para jogar
 
 1. **Fluxo do launcher** — em alguns builds o `rakion.bin` lançado pelo `NyxLauncher` conecta ao broker/world **mesmo com o GameGuard falhando de forma não-fatal**. Foi o caminho que funcionou nos nossos testes.

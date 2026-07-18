@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -28,7 +29,10 @@ internal static class GameLauncher
     [DllImport("kernel32.dll", SetLastError = true)] private static extern uint ResumeThread(IntPtr hThread);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool CloseHandle(IntPtr h);
 
-    private const uint CREATE_SUSPENDED = 0x00000004;
+    private const uint CreateSuspended = 0x00000004;
+    private const uint CreateUnicodeEnvironment = 0x00000400;
+    private const string CompatibilityLayer = "__COMPAT_LAYER";
+    private const string RunAsInvoker = "RunAsInvoker";
 
     /// <summary>Lança rakion.exe SUSPENSO (argv[0]=user) enquanto o launcher conclui o bootstrap.
     /// A version.dll de compatibilidade é carregada pelo loader antes do entry point e aplica os patches.
@@ -37,13 +41,42 @@ internal static class GameLauncher
     {
         string exe = Path.Combine(binDir, GameProcess);
         if (!File.Exists(exe)) throw new FileNotFoundException("rakion.exe não encontrado", exe);
+        ValidateToken(user, nameof(user));
+        ValidateToken(hexPass, nameof(hexPass));
+        ValidateToken(serverId, nameof(serverId));
 
-        var cmd = new StringBuilder($"{user} {hexPass} {serverId}");   // argv[0]=user (sem o exe)
+        var cmd = new StringBuilder($"{user} {hexPass} {serverId}");
         var si = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>() };
-        if (!CreateProcess(exe, cmd, IntPtr.Zero, IntPtr.Zero, false, CREATE_SUSPENDED, IntPtr.Zero, binDir, ref si, out var pi))
-            throw new InvalidOperationException($"CreateProcess falhou (err {Marshal.GetLastWin32Error()})");
-        CloseHandle(pi.hProcess);
-        return (pi.dwProcessId, pi.hThread);
+        IntPtr environment = Marshal.StringToHGlobalUni(BuildEnvironmentBlock());
+        try
+        {
+            uint flags = CreateSuspended | CreateUnicodeEnvironment;
+            if (!CreateProcess(exe, cmd, IntPtr.Zero, IntPtr.Zero, false, flags,
+                               environment, binDir, ref si, out var pi))
+                throw new InvalidOperationException(
+                    $"CreateProcess falhou (err {Marshal.GetLastWin32Error()})");
+            CloseHandle(pi.hProcess);
+            return (pi.dwProcessId, pi.hThread);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(environment);
+        }
+    }
+
+    internal static string BuildEnvironmentBlock()
+    {
+        var values = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (DictionaryEntry entry in Environment.GetEnvironmentVariables())
+            values[(string)entry.Key] = (string?)entry.Value ?? string.Empty;
+        values[CompatibilityLayer] = RunAsInvoker;
+        return string.Join('\0', values.Select(pair => $"{pair.Key}={pair.Value}")) + "\0";
+    }
+
+    private static void ValidateToken(string value, string parameter)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Any(char.IsWhiteSpace))
+            throw new ArgumentException("Argumento do cliente deve ser um token sem espaços", parameter);
     }
 
     /// <summary>Resume a thread primária do jogo (depois de aplicado o patch) e fecha o handle.</summary>

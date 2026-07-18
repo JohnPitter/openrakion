@@ -14,6 +14,9 @@ namespace
 constexpr uint32_t WindowedRva = 0x00d46d;
 constexpr uint32_t NoDisplayResetRvas[] = { 0x00dbc2, 0x00dc1e, 0x00dc4f };
 constexpr uint32_t MultiInstanceRva = 0x002c96;
+constexpr uint32_t LegacyGameGuardUrlRva = 0x000d4028;
+constexpr char LegacyGameGuardUrl[] = "http://218.145.66.176:10200";
+constexpr char DisabledGameGuardUrl[] = "http://127.0.0.1:1";
 
 bool ApplyBytePatch(BYTE* image, uint32_t rva, BYTE expected, BYTE replacement)
 {
@@ -25,6 +28,22 @@ bool ApplyBytePatch(BYTE* image, uint32_t rva, BYTE expected, BYTE replacement)
     *address = replacement;
     VirtualProtect(address, 1, oldProtection, &oldProtection);
     FlushInstructionCache(GetCurrentProcess(), address, 1);
+    return true;
+}
+
+bool DisableLegacyGameGuardUrl(BYTE* image)
+{
+    char* address = reinterpret_cast<char*>(image + LegacyGameGuardUrlRva);
+    if (std::memcmp(address, DisabledGameGuardUrl, sizeof(DisabledGameGuardUrl)) == 0)
+        return true;
+    if (std::memcmp(address, LegacyGameGuardUrl, sizeof(LegacyGameGuardUrl)) != 0)
+        return false;
+    DWORD oldProtection{};
+    if (!VirtualProtect(address, sizeof(LegacyGameGuardUrl), PAGE_READWRITE, &oldProtection))
+        return false;
+    std::memset(address, 0, sizeof(LegacyGameGuardUrl));
+    std::memcpy(address, DisabledGameGuardUrl, sizeof(DisabledGameGuardUrl));
+    VirtualProtect(address, sizeof(LegacyGameGuardUrl), oldProtection, &oldProtection);
     return true;
 }
 
@@ -80,7 +99,10 @@ bool ApplyFinalClientPatches()
 bool ApplyLauncherPatches()
 {
     auto* image = reinterpret_cast<BYTE*>(GetModuleHandleW(nullptr));
-    if (!image || !ApplyBytePatch(image, MultiInstanceRva, 0xb7, 0xff)) return false;
+    if (!image || !ApplyBytePatch(image, MultiInstanceRva, 0xb7, 0xff) ||
+        !DisableLegacyGameGuardUrl(image))
+        return false;
+    CompatLog("URL residual do GameGuard neutralizada");
     if (!UsesWindowedDisplayMode()) return true;
     if (!ApplyBytePatch(image, WindowedRva, 0x74, 0xeb)) return false;
     for (uint32_t rva : NoDisplayResetRvas)

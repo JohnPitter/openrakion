@@ -6,6 +6,15 @@ namespace RakionLauncher.Tests;
 public sealed class ClientCompatibilityTests
 {
     [Fact]
+    public void GameEnvironment_RunsLegacyClientWithoutElevation()
+    {
+        string block = GameLauncher.BuildEnvironmentBlock();
+
+        Assert.Contains("__COMPAT_LAYER=RunAsInvoker\0", block, StringComparison.OrdinalIgnoreCase);
+        Assert.EndsWith("\0", block);
+    }
+
+    [Fact]
     public void Install_DeploysProxyAndClientPatchAndRemovesLegacyForwarder()
     {
         string root = Path.Combine(

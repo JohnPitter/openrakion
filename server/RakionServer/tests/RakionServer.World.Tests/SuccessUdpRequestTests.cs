@@ -9,10 +9,15 @@ namespace RakionServer.World.Tests
         [InlineData((byte)0)]
         [InlineData((byte)1)]
         [InlineData((byte)255)]
-        public void ParsesBuilderResultAndCipherPadding(byte result)
+        public void ParsesBuilderResultAndTransportTail(byte result)
         {
             byte[] payload = new byte[8];
             payload[0] = result;
+            payload[1] = 0xdf;
+            payload[2] = 0x19;
+            payload[4] = 0x68;
+            payload[5] = 0xdd;
+            payload[6] = 0x19;
 
             Assert.True(SuccessUdpRequest.TryParse(payload, out SuccessUdpRequest request));
             Assert.Equal(result, request.Result);
@@ -22,10 +27,8 @@ namespace RakionServer.World.Tests
         public void AcceptsExactLogicalBody() =>
             Assert.True(SuccessUdpRequest.TryParse(new byte[] { 1 }, out _));
 
-        [Theory]
-        [InlineData(new byte[0])]
-        [InlineData(new byte[] { 0, 1 })]
-        public void RejectsMissingResultOrNonZeroPadding(byte[] payload) =>
-            Assert.False(SuccessUdpRequest.TryParse(payload, out _));
+        [Fact]
+        public void RejectsMissingResult() =>
+            Assert.False(SuccessUdpRequest.TryParse(new byte[0], out _));
     }
 }

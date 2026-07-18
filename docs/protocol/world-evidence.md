@@ -598,8 +598,10 @@ escreve `[observed port BE][observed IP][advertised port BE]`. O probe protege e
 handshake real `010201000000000400144300007f00000108fdeb54ea1b` confirma IPv4/porta em network byte order.
 
 O passe reproduzível `tools/ghidra/DecompileSuccessUdp.py` fechou também o handshake TCP. O builder
-`engine.dll:0x36190C20` monta exatamente `[0x0E:u16][result:u8]`; os sete zeros adicionais vistos
-depois do seq nas capturas pertencem ao bloco AES. `FUN_0041FA40` não lê esse byte: exige conta
+`engine.dll:0x36190C20` monta exatamente `[0x0E:u16][result:u8]`; os sete bytes adicionais vistos
+depois do seq pertencem ao bloco do transporte AES e não são confiavelmente zerados. A validação
+gráfica de 2026-07-18 capturou `00 DF 19 00 68 DD 19 00`; somente o primeiro byte é lógico.
+`FUN_0041FA40` não lê esse byte: exige conta
 autenticada sem personagem ativo, chama `FUN_0040ABE0`, zera `user+0x1478` e envia exatamente
 `0x0F` bytes lógicos. O parser `engine.dll:0x36192DA0` consome status e dois pares IPv4/porta.
 O callback `rakion.bin:0x00477200` persiste ambos os endpoints nos status `0/1/2`; status `3` abre

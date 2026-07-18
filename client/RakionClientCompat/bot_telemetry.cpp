@@ -36,6 +36,27 @@ bool IsRakionServerPort(u_short networkPort)
     return port == 40706 || port == 40708 || port == 40709;
 }
 
+void LogConnectEndpoint(const sockaddr* original, const sockaddr* destination, int targetLength)
+{
+    if (!original || !destination || targetLength < static_cast<int>(sizeof(sockaddr_in)) ||
+        original->sa_family != AF_INET || destination->sa_family != AF_INET)
+        return;
+    const auto& source = *reinterpret_cast<const sockaddr_in*>(original);
+    const auto& target = *reinterpret_cast<const sockaddr_in*>(destination);
+    const auto* sourceAddress = reinterpret_cast<const BYTE*>(&source.sin_addr.s_addr);
+    const auto* targetAddress = reinterpret_cast<const BYTE*>(&target.sin_addr.s_addr);
+    const auto* sourcePort = reinterpret_cast<const BYTE*>(&source.sin_port);
+    const auto* targetPort = reinterpret_cast<const BYTE*>(&target.sin_port);
+    char message[160]{};
+    _snprintf_s(message, _countof(message), _TRUNCATE,
+        "connect %u.%u.%u.%u:%u -> %u.%u.%u.%u:%u",
+        sourceAddress[0], sourceAddress[1], sourceAddress[2], sourceAddress[3],
+        static_cast<unsigned>(sourcePort[0] << 8 | sourcePort[1]),
+        targetAddress[0], targetAddress[1], targetAddress[2], targetAddress[3],
+        static_cast<unsigned>(targetPort[0] << 8 | targetPort[1]));
+    CompatLog(message);
+}
+
 const sockaddr* RedirectServerEndpoint(
     const sockaddr* target, int targetLength, sockaddr_in& redirected)
 {
@@ -56,6 +77,7 @@ int WSAAPI ConnectHook(SOCKET socket, const sockaddr* target, int targetLength)
 {
     sockaddr_in redirected{};
     const sockaddr* destination = RedirectServerEndpoint(target, targetLength, redirected);
+    LogConnectEndpoint(target, destination, targetLength);
     return SystemConnect(socket, destination, targetLength);
 }
 
@@ -316,7 +338,11 @@ bool InstallInitialServerRedirect()
 {
     HMODULE ws2 = GetModuleHandleW(L"ws2_32.dll");
     if (ws2) SystemConnect = reinterpret_cast<ConnectFn>(GetProcAddress(ws2, "connect"));
-    return SystemConnect && InstallConnectHook(GetModuleHandleW(nullptr), "ws2_32.dll");
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    const bool executableInstalled = SystemConnect &&
+        InstallConnectHook(GetModuleHandleW(nullptr), "ws2_32.dll");
+    const bool engineInstalled = engine && InstallConnectHook(engine, "wsock32.dll");
+    return executableInstalled && engineInstalled;
 }
 
 bool InstallBotTelemetryHook()
