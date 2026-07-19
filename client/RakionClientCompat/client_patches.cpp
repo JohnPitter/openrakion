@@ -15,11 +15,8 @@ constexpr uint32_t WindowedRva = 0x00d46d;
 constexpr uint32_t NoDisplayResetRvas[] = { 0x00dbc2, 0x00dc1e, 0x00dc4f };
 constexpr uint32_t MultiInstanceRva = 0x002c96;
 constexpr uint32_t LegacyGameGuardUrlRva = 0x000d4028;
-constexpr uint32_t CharacterCreationCleanupRva = 0x000685b8;
 constexpr char LegacyGameGuardUrl[] = "http://218.145.66.176:10200";
 constexpr char DisabledGameGuardUrl[] = "http://127.0.0.1:1";
-constexpr BYTE CharacterCreationCleanupExpected[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
-constexpr BYTE CharacterCreationCleanupPatch[] = { 0x8b, 0x01, 0xff, 0x50, 0x0c, 0x90, 0x90 };
 
 bool ApplyBytePatch(BYTE* image, uint32_t rva, BYTE expected, BYTE replacement)
 {
@@ -31,20 +28,6 @@ bool ApplyBytePatch(BYTE* image, uint32_t rva, BYTE expected, BYTE replacement)
     *address = replacement;
     VirtualProtect(address, 1, oldProtection, &oldProtection);
     FlushInstructionCache(GetCurrentProcess(), address, 1);
-    return true;
-}
-
-bool ApplyBlockPatch(BYTE* image, uint32_t rva, const BYTE* expected,
-                     const BYTE* replacement, SIZE_T length)
-{
-    BYTE* address = image + rva;
-    if (std::memcmp(address, replacement, length) == 0) return true;
-    if (std::memcmp(address, expected, length) != 0) return false;
-    DWORD oldProtection{};
-    if (!VirtualProtect(address, length, PAGE_EXECUTE_READWRITE, &oldProtection)) return false;
-    std::memcpy(address, replacement, length);
-    VirtualProtect(address, length, oldProtection, &oldProtection);
-    FlushInstructionCache(GetCurrentProcess(), address, length);
     return true;
 }
 
@@ -111,19 +94,6 @@ bool ApplyFinalClientPatches()
     FlushInstructionCache(GetCurrentProcess(), nullptr, 0);
     OutputDebugStringA("RakionClientCompat: patches do rakion-final aplicados\n");
     return true;
-}
-
-bool ApplyCharacterCreationUiFix()
-{
-    auto* image = reinterpret_cast<BYTE*>(GetModuleHandleW(nullptr));
-    if (!image) return false;
-    const bool applied = ApplyBlockPatch(
-        image, CharacterCreationCleanupRva, CharacterCreationCleanupExpected,
-        CharacterCreationCleanupPatch, sizeof(CharacterCreationCleanupPatch));
-    CompatLog(applied
-        ? "fechamento da criacao apos criar personagem instalado"
-        : "fechamento da criacao indisponivel para esta build");
-    return applied;
 }
 
 bool ApplyLauncherPatches()

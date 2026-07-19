@@ -4,8 +4,7 @@ Bootstrap x86 `version.dll`, carregado pelo fluxo normal antes do entry point. E
 17 exportações para a DLL oficial de 32 bits carregada diretamente do diretório do sistema e chama
 `RakionClientPatch.dll`, que centraliza os patches do cliente: diff golden do `rakion-final`,
 no-GameGuard, janela/multi-instância/Alt+Tab, IP do servidor, HIT/SHOT, lifecycle, ground-snap e
-telemetria de ataque humano contra bot. A DLL também fecha a janela de criação depois do ACK de
-personagem, inclusive quando o tutorial é recusado, e corrige a sincronização do Messenger após a
+telemetria de ataque humano contra bot. A DLL também corrige a sincronização do Messenger após a
 seleção de um personagem novo, disparando o `SetNick` já existente do `Buddy2.dll` depois que o
 World confirma a troca de `buddyname` em `0x15`.
 

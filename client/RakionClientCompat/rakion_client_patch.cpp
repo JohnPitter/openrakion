@@ -282,7 +282,7 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID)
 {
     if (reason != DLL_PROCESS_ATTACH) return TRUE;
     if (!IsRakionProcess()) return TRUE;
-    if (!ApplyFinalClientPatches() || !ApplyCharacterCreationUiFix()) return FALSE;
+    if (!ApplyFinalClientPatches()) return FALSE;
     ApplyLauncherPatches();
     CompatLog(LoadServerAddress()
         ? "server.host carregado"

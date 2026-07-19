@@ -19,7 +19,7 @@ do contrato.
 | Engine golden | SHA-256 `83B20D6C32CD66B95C8F8E41AD6DE13A58E8F5F948CD21CBD118D42EF8CF88F2` |
 | Proxy determinístico | `Bin/version.dll`, SHA-256 `13C1D0CC022D0000FA2E7ED03ABD0107AD41D894E0AF302D74CF3D42B0F33263` |
 | Forwarder oficial | carregado de `%SystemRoot%\SysWOW64\version.dll`; não é distribuído |
-| Patches golden | `Bin/RakionClientPatch.dll`, SHA-256 `5199B9F6616D128766930AFE93EC58A9F3EA33F939FE064C6B87750DF3E51A29` |
+| Patches golden | `Bin/RakionClientPatch.dll`, SHA-256 `7711BE128CF4E6134BA53BAE11C0AD8152F70FF526F85E531B67745C5437CFEA` |
 | Destino | `server.host=127.0.0.1`, `display.mode=windowed` |
 | Verificação estática | `validation-install.json` atualizado e 14/14 arquivos aprovados em 18/07/2026 |
 

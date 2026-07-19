@@ -437,7 +437,7 @@ a 11 bytes porque usa outro contrato.
 | lista `0x0C` | implementada | consumer decompilado, conta variável, ID real + goldens e teste diferencial |
 | classe/stats/ranks | implementados na lista | `BuildCharSummary` |
 | equip no preview | implementado com filtro | matriz das cinco classes, nível, expiração e incompatibilidade |
-| criar `0x12` | implementado, reteste visual pendente | slot, nome de 12 bytes, INSERT, ACK e lista na mesma sessão confirmados; DLL fecha a janela de criação antes da decisão do tutorial |
+| criar `0x12` | backend implementado; transição visual aberta | slot, nome de 12 bytes, INSERT, ACK e lista na mesma sessão confirmados; recusar tutorial deixa a janela de criação presa |
 | excluir `0x13` | implementado e validado headless/SQL; visual pendente | hard-delete `<15`, gate `used/7 dias`, chave com uma hora, compensação de falha do pickup, soft-delete `auth=10`, audit log e statuses ativos |
 | selecionar `0x14` | implementado, não validado visualmente | ownership, `auth<>10`, estado sem char ativo, lock por conta, update de `charname` e reload antes do ack |
 | buddy name `0x15` | implementado, não validado com dois clientes | SQL e ack confirmados por probe; unicidade e commit protegidos no backend |
@@ -450,7 +450,7 @@ a 11 bytes porque usa outro contrato.
 O bug funcional de entrar no lobby com o personagem anterior foi corrigido no backend. Falta a
 prova visual com uma conta de dois personagens e relog para classificar o fluxo como encerrado.
 
-### Transição após criar e recusar o tutorial
+### Falha aberta ao criar e recusar o tutorial
 
 No sucesso de `0x12`, `rakion.exe:0x0047C4D0` adiciona o ID retornado ao slot, reconstrói a tela por
 `0x00468540` e abre o diálogo tipo `9` que oferece o tutorial. A rotina de reconstrução zerava
@@ -458,10 +458,11 @@ No sucesso de `0x12`, `rakion.exe:0x0047C4D0` adiciona o ID retornado ao slot, r
 “Não”, a janela permanecia órfã: `Create` reenviava o slot já ocupado e `Cancel` não alcançava mais
 o owner.
 
-`RakionClientPatch.dll` valida os sete `NOP` de `rakion.exe+0x685B8` e os substitui por uma chamada
-ao método virtual `+0x0C` da janela antes de zerar o ponteiro. A correção é específica da build v258
-e falha fechada se os bytes não coincidirem. Ela não marca o tutorial como concluído nem altera o
-fluxo “Sim”; apenas garante que, em ambas as escolhas, a tela de seleção já esteja consistente.
+Uma tentativa de chamar diretamente o método virtual `+0x0C` da janela em
+`rakion.exe+0x685B8` foi descartada: durante o callback de rede ela causa reentrância na árvore de
+componentes e acesso inválido em `engine.dll+0x37F31`. A build estável não aplica esse patch. A
+correção definitiva precisa reproduzir o evento/transição normal da UI depois que o diálogo tipo
+`9` termina, sem destruir o componente durante a reconstrução.
 
 ## Arquitetura de implementação
 
