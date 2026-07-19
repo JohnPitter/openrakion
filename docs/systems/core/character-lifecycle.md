@@ -460,27 +460,22 @@ o owner.
 
 Uma tentativa de chamar diretamente o método virtual `+0x0C` da janela em
 `rakion.exe+0x685B8` foi descartada: durante o callback de rede ela causa reentrância na árvore de
-componentes e acesso inválido em `engine.dll+0x37F31`. A build estável não aplica esse patch. A
-correção definitiva precisa reproduzir o evento/transição normal da UI depois que o diálogo tipo
-`9` termina, sem destruir o componente durante a reconstrução.
+componentes e acesso inválido em `engine.dll+0x37F31`. Preservar o owner até o Cancel evitou a queda,
+mas deixou o viewport escurecido e sem o preview 3D. Esses hooks experimentais não fazem parte da
+build estável.
 
-A recuperação segura preserva o owner em `CharacterSelect+0xA00`, neutralizando apenas o reset em
-`rakion.exe+0x685BF`. Nenhum método da engine é chamado no callback. Com o ponteiro ainda válido, o
-evento `0x10C` do Cancel volta a usar o fechamento original em `0x00468B45`. Esta etapa recupera a
-saída manual da tela e serve como limite de validação antes de automatizar o mesmo evento ao
-responder “Não”.
+O RE do `worldserv.exe` original fecha o limite do backend. `FUN_0041C3D0` atualiza o registro do
+slot mantido em memória e envia somente o ACK lógico de sete bytes
+`[12 00][status:u8][characterId:u32]`; não existe refresh, seleção, tutorial ou comando de fechamento
+adicional emitido pelo servidor. No cliente, a resposta “Não” do diálogo tipo `9` é o evento local
+`0x11B`, que apenas remove o diálogo em `FUN_0044C030`. Nenhum pacote C→S é produzido, portanto o
+servidor não consegue observar a recusa nem decidir quando deve fechar ou reconstruir essa UI.
 
-O primeiro teste visual dessa recuperação não caiu e retornou à lista, mas deixou o viewport central
-escurecido e sem o preview 3D. A janela de criação mede `0x276 × 0x1D6`, enquanto a região residual
-corresponde ao viewport do character-select: a evidência aponta para seleção/preview não reaplicados
-depois que o modal perde foco, e não para outra instância da janela de criação. A próxima validação é
-trocar manualmente o personagem selecionado; se isso redesenhar o modelo, o fechamento final deve
-reutilizar `FUN_00466FA0` no evento de UI, nunca no callback de rede.
-
-O hook do Cancel em `0x00468B45` agora reproduz o fechamento original, preserva antes dele o slot
-da janela em `+0x22C` e chama `FUN_00466FA0(CharacterSelect, slot)` no mesmo evento de UI. A chamada
-ocorre depois da remoção segura do modal e reaplica foco, modelo 3D e viewport; os destinos de saída
-originais `0x00468E10/0x00468E1C` são mantidos. O callback de rede continua sem chamadas à engine.
+Logo, não existe correção **server-side fiel ao original** para essa transição. Forçar reconnect após
+todo ACK de criação ou enviar uma lista não solicitada depois de um atraso seriam workarounds novos,
+com perda de sessão ou corrida com a escolha “Sim”; não devem ser ativados sem uma decisão explícita
+de produto. A correção fiel permanece no evento da UI do cliente, depois da resposta ao diálogo, e
+precisa ser validada visualmente antes de voltar à DLL.
 
 ## Arquitetura de implementação
 

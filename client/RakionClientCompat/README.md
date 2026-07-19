@@ -6,8 +6,7 @@ Bootstrap x86 `version.dll`, carregado pelo fluxo normal antes do entry point. E
 no-GameGuard, janela/multi-instância/Alt+Tab, IP do servidor, HIT/SHOT, lifecycle, ground-snap e
 telemetria de ataque humano contra bot. A DLL também corrige a sincronização do Messenger após a
 seleção de um personagem novo, disparando o `SetNick` já existente do `Buddy2.dll` depois que o
-World confirma a troca de `buddyname` em `0x15`, e preserva o owner da criação para o Cancel
-original continuar funcional depois do ACK `0x12`.
+World confirma a troca de `buddyname` em `0x15`.
 
 O código está separado em bootstrap/forwarding (`version_proxy.cpp`), lifecycle e HIT/SHOT
 (`rakion_client_patch.cpp`), patches do cliente (`client_patches.cpp`), IP e telemetria
