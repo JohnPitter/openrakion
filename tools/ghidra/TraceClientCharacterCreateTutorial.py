@@ -22,6 +22,9 @@ MESSAGE_BOX_REMOVE = 0x00471580
 MESSAGE_BOX_DESTROY = 0x0043D0A0
 MESSAGE_BOX_UNLINK = 0x0043D1A0
 MAIN_UI_MESSAGE_LOOP = 0x0044C030
+CHARACTER_CREATION_CONSTRUCTOR = 0x00444F60
+CHARACTER_CREATION_CLOSE = 0x004133F0
+CHARACTER_CREATION_DESTRUCTOR = 0x004448F0
 
 
 def decompile(function, decompiler, monitor):
@@ -61,6 +64,9 @@ targets = (
     (MESSAGE_BOX_DESTROY, "destrutor de message box"),
     (MESSAGE_BOX_UNLINK, "desvinculo de message box"),
     (MAIN_UI_MESSAGE_LOOP, "loop principal de resposta dos message boxes"),
+    (CHARACTER_CREATION_CONSTRUCTOR, "construtor da janela de criacao"),
+    (CHARACTER_CREATION_CLOSE, "fechamento virtual +0x0C da criacao"),
+    (CHARACTER_CREATION_DESTRUCTOR, "destrutor interno da criacao"),
 )
 
 with open(OUTPUT, "w") as output:
@@ -165,5 +171,10 @@ with open(OUTPUT, "w") as output:
         while instruction and instruction.getAddress().getOffset() < address + length:
             output.write("%s  %s\n" % (instruction.getAddress(), instruction))
             instruction = instruction.getNext()
+    output.write("\n===== epilogo do handler de personagens =====\n")
+    instruction = listing.getInstructionAfter(toAddr(0x00468DCF))
+    while instruction and instruction.getAddress().getOffset() < 0x00468E30:
+        output.write("%s  %s\n" % (instruction.getAddress(), instruction))
+        instruction = instruction.getNext()
 
 print("Fluxo create/tutorial extraido: %s" % OUTPUT)

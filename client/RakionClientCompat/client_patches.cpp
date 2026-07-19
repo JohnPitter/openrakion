@@ -16,10 +16,34 @@ constexpr uint32_t NoDisplayResetRvas[] = { 0x00dbc2, 0x00dc1e, 0x00dc4f };
 constexpr uint32_t MultiInstanceRva = 0x002c96;
 constexpr uint32_t LegacyGameGuardUrlRva = 0x000d4028;
 constexpr uint32_t CharacterCreationOwnerResetRva = 0x000685bf;
+constexpr uintptr_t CharacterCreationCancelAddress = 0x00468b45;
 constexpr char LegacyGameGuardUrl[] = "http://218.145.66.176:10200";
 constexpr char DisabledGameGuardUrl[] = "http://127.0.0.1:1";
 constexpr BYTE CharacterCreationOwnerReset[] = { 0x89, 0xae, 0x00, 0x0a, 0x00, 0x00 };
 constexpr BYTE PreserveCharacterCreationOwner[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
+constexpr BYTE CharacterCreationCancelExpected[] = { 0x8b, 0x8e, 0x00, 0x0a, 0x00, 0x00 };
+
+__declspec(naked) void CharacterCreationCancelHook()
+{
+    __asm
+    {
+        mov ecx, dword ptr [esi + 0a00h]
+        test ecx, ecx
+        jz no_owner
+        movzx ebx, byte ptr [ecx + 022ch]
+        mov edx, dword ptr [ecx]
+        push 1
+        call dword ptr [edx + 0ch]
+        mov dword ptr [esi + 0a00h], 0
+        push ebx
+        mov ecx, esi
+        mov eax, 00466fa0h
+        call eax
+    no_owner:
+        mov eax, 00468e10h
+        jmp eax
+    }
+}
 
 bool ApplyBytePatch(BYTE* image, uint32_t rva, BYTE expected, BYTE replacement)
 {
@@ -46,6 +70,17 @@ bool ApplyBlockPatch(BYTE* image, uint32_t rva, const BYTE* expected,
     VirtualProtect(address, length, oldProtection, &oldProtection);
     FlushInstructionCache(GetCurrentProcess(), address, length);
     return true;
+}
+
+bool ApplyRelativeJump(BYTE* address, const BYTE* expected, SIZE_T length, uintptr_t target)
+{
+    if (length < 5) return false;
+    BYTE replacement[6]{ 0xe9 };
+    const auto source = reinterpret_cast<uintptr_t>(address);
+    const auto displacement = static_cast<uint32_t>(target - (source + 5));
+    std::memcpy(replacement + 1, &displacement, sizeof(displacement));
+    replacement[5] = 0x90;
+    return ApplyBlockPatch(address, 0, expected, replacement, length);
 }
 
 bool DisableLegacyGameGuardUrl(BYTE* image)
@@ -117,11 +152,16 @@ bool ApplyCharacterCreationCancelRecovery()
 {
     auto* image = reinterpret_cast<BYTE*>(GetModuleHandleW(nullptr));
     if (!image) return false;
-    const bool applied = ApplyBlockPatch(
+    const bool ownerPreserved = ApplyBlockPatch(
         image, CharacterCreationOwnerResetRva, CharacterCreationOwnerReset,
         PreserveCharacterCreationOwner, sizeof(PreserveCharacterCreationOwner));
+    const bool previewRestored = ApplyRelativeJump(
+        reinterpret_cast<BYTE*>(CharacterCreationCancelAddress),
+        CharacterCreationCancelExpected, sizeof(CharacterCreationCancelExpected),
+        reinterpret_cast<uintptr_t>(&CharacterCreationCancelHook));
+    const bool applied = ownerPreserved && previewRestored;
     CompatLog(applied
-        ? "owner da criacao preservado ate Cancel"
+        ? "Cancel da criacao e restauracao do preview instalados"
         : "recuperacao do Cancel indisponivel para esta build");
     return applied;
 }
