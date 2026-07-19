@@ -86,9 +86,10 @@ O primeiro probe enviava slot `0`, já ocupado, e por isso parava após a consul
 slot e atualizou `usergameinfo.charname` somente quando vazio. Status observados: `0` sucesso, `2`
 slot ocupado e `4` nome duplicado. `FUN_0041C3D0` envia exatamente
 `[12 00][00][characterId:u32]` com comprimento lógico 7; `engine.dll:0x36192E30` lê somente status
-e id. Os bytes antes interpretados como slot/flag eram cauda alheia ao contrato. O parser C→S aceita
-o limite original de 12 bytes, deixa a regra de identidade de 11 caracteres no domínio e ignora o
-padding criptográfico. A rota atual é exclusivamente `Op_CharacterCreate`.
+e id. Os bytes antes interpretados como slot/flag eram cauda alheia ao contrato. O parser C→S e a
+identidade de personagem aceitam o limite original de 12 bytes; o `buddyname` mantém seu contrato
+separado de 11 bytes. O padding criptográfico é ignorado. A rota atual é exclusivamente
+`Op_CharacterCreate`.
 
 O backend usa transação serializable, índice único global de nome, lock por conta e lock global de
 identidade. A listagem passou a seguir o original (`auth<>10`): a linha recém-criada tem `used=0`,
@@ -436,7 +437,7 @@ a 11 bytes porque usa outro contrato.
 | lista `0x0C` | implementada | consumer decompilado, conta variável, ID real + goldens e teste diferencial |
 | classe/stats/ranks | implementados na lista | `BuildCharSummary` |
 | equip no preview | implementado com filtro | matriz das cinco classes, nível, expiração e incompatibilidade |
-| criar `0x12` | implementado, não validado visualmente | slot, nome, INSERT, statuses e relog confirmados por probes |
+| criar `0x12` | implementado, reteste visual pendente | slot, nome de 12 bytes, INSERT, ACK e lista na mesma sessão confirmados; DLL fecha a janela de criação antes da decisão do tutorial |
 | excluir `0x13` | implementado e validado headless/SQL; visual pendente | hard-delete `<15`, gate `used/7 dias`, chave com uma hora, compensação de falha do pickup, soft-delete `auth=10`, audit log e statuses ativos |
 | selecionar `0x14` | implementado, não validado visualmente | ownership, `auth<>10`, estado sem char ativo, lock por conta, update de `charname` e reload antes do ack |
 | buddy name `0x15` | implementado, não validado com dois clientes | SQL e ack confirmados por probe; unicidade e commit protegidos no backend |
@@ -448,6 +449,19 @@ a 11 bytes porque usa outro contrato.
 
 O bug funcional de entrar no lobby com o personagem anterior foi corrigido no backend. Falta a
 prova visual com uma conta de dois personagens e relog para classificar o fluxo como encerrado.
+
+### Transição após criar e recusar o tutorial
+
+No sucesso de `0x12`, `rakion.exe:0x0047C4D0` adiciona o ID retornado ao slot, reconstrói a tela por
+`0x00468540` e abre o diálogo tipo `9` que oferece o tutorial. A rotina de reconstrução zerava
+`CharacterSelect+0xA00` sem chamar o fechamento virtual da janela de criação. Assim, ao responder
+“Não”, a janela permanecia órfã: `Create` reenviava o slot já ocupado e `Cancel` não alcançava mais
+o owner.
+
+`RakionClientPatch.dll` valida os sete `NOP` de `rakion.exe+0x685B8` e os substitui por uma chamada
+ao método virtual `+0x0C` da janela antes de zerar o ponteiro. A correção é específica da build v258
+e falha fechada se os bytes não coincidirem. Ela não marca o tutorial como concluído nem altera o
+fluxo “Sim”; apenas garante que, em ambas as escolhas, a tela de seleção já esteja consistente.
 
 ## Arquitetura de implementação
 
