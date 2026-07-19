@@ -84,12 +84,22 @@ public sealed partial class BuddyServer
 
     private async Task SetNickAsync(BuddyConnection connection, byte[] payload)
     {
-        string displayName = "";
+        string requestedName = "";
         bool valid = connection.Authenticated &&
-            BuddyFriendCodec.TryParseWideName(payload, out displayName);
-        if (valid) connection.DisplayName = displayName;
+            BuddyFriendCodec.TryParseWideName(payload, out requestedName);
+        BuddyAccount? account = valid
+            ? await _database.LoadAccountAsync(connection.AccountId)
+            : null;
+        valid = account != null;
+        bool changed = valid && !string.Equals(
+            connection.DisplayName, account!.DisplayName, System.StringComparison.Ordinal);
+        if (valid) connection.DisplayName = account!.DisplayName;
         await ReplyResultAsync(connection, BuddyProtocol.RET_SET_NICK,
             valid ? (ushort)0 : (ushort)1);
+        if (!changed) return;
+        await SendLoginOkAsync(connection);
+        Log.Info("buddy", "account='{0}' sincronizou nick '{1}' -> '{2}' e lista de amigos",
+            connection.AccountId, requestedName, connection.DisplayName);
     }
 
     private async Task SetGuildAsync(BuddyConnection connection, byte[] payload)

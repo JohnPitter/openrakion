@@ -31,7 +31,9 @@ namespace RakionServer.World.Tests.E2E
                 client.SelectCharacter(selectedId);
                 client.WaitForFirstByte(0x14, Timeout);
                 client.ReturnToCharacterSelect();
-                client.CreateCharacter(name, 0, 1);
+                byte slot = await FindFreeCharacterSlotAsync(
+                    fixture.DbConnectionString, "test");
+                client.CreateCharacter(name, 0, slot);
                 byte[] response = client.WaitForFirstByte(0x12, Timeout);
 
                 Assert.Equal(0, response[2]);
@@ -56,6 +58,27 @@ namespace RakionServer.World.Tests.E2E
                 "SELECT id FROM characterinfo WHERE name=@name LIMIT 1", connection);
             command.Parameters.AddWithValue("@name", name);
             return Convert.ToInt32(await command.ExecuteScalarAsync());
+        }
+
+        private static async Task<byte> FindFreeCharacterSlotAsync(
+            string connectionString, string accountId)
+        {
+            await using var connection = new MySqlConnection(connectionString);
+            await connection.OpenAsync();
+            await using var command = new MySqlCommand(
+                "SELECT c.slot FROM characterinfo c JOIN usergameinfo g ON g.id=c.userid " +
+                "WHERE g.name=@account AND c.auth<>10", connection);
+            command.Parameters.AddWithValue("@account", accountId);
+            var occupied = new bool[6];
+            await using MySqlDataReader reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                int slot = reader.GetInt32(0);
+                if (slot >= 0 && slot < occupied.Length) occupied[slot] = true;
+            }
+            for (byte slot = 0; slot < occupied.Length; slot++)
+                if (!occupied[slot]) return slot;
+            throw new InvalidOperationException("conta E2E sem slot de personagem livre");
         }
 
         private static async Task DeleteCharacterAsync(string connectionString, string name)

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "bot_telemetry.h"
+#include "buddy_refresh.h"
 #include "client_patches.h"
 #include "compat_log.h"
 
@@ -221,6 +222,9 @@ DWORD WINAPI InstallCompatibility(void*)
     CompatLog(InstallBotTelemetryHook()
         ? "ponte P2P->World para hit de bot instalada"
         : "ponte P2P->World indisponível");
+    CompatLog(InstallBuddyRefreshHooks()
+        ? "refresh do Messenger apos selecao instalado"
+        : "refresh do Messenger indisponivel para esta build");
     PatchKeyHook();
     auto* patch = reinterpret_cast<BYTE*>(PatchAddress);
     for (int attempt = 0; attempt < 1200; ++attempt)

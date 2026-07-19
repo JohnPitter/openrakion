@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text;
 using RakionServer.Buddy;
 using RakionServer.Common;
 
@@ -45,6 +46,13 @@ internal sealed class BuddyHeadlessClient : IAsyncDisposable
         byte[] payload = new byte[4];
         BinaryPrimitives.WriteUInt32LittleEndian(payload, token);
         await _udp.SendAsync(payload, new IPEndPoint(IPAddress.Loopback, port));
+    }
+
+    public Task SetNicknameAsync(string nickname)
+    {
+        byte[] payload = new byte[40];
+        Encoding.Unicode.GetBytes(nickname.AsSpan(), payload);
+        return SendAsync(BuddyProtocol.SVC_SET_NICK, payload);
     }
 
     public async Task SendAsync(ushort command, byte[] payload)

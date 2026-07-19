@@ -37,9 +37,18 @@ public sealed class BuddyHeadlessE2ETests
             await alice.ConnectAndLoginAsync("alice", port);
             BuddyFrame aliceLogin = await alice.ReadUntilAsync(BuddyProtocol.RET_LOGIN);
             AssertLogin(aliceLogin.Payload, "bob", "Bob");
+            uint firstToken = ReadUdpToken(aliceLogin.Payload);
+            await ExecuteAsync(scoped.ConnectionString,
+                "UPDATE usergameinfo SET buddyname='AliceNova' WHERE name='alice'");
+            await alice.SetNicknameAsync("Alice");
+            BuddyFrame nickResult = await alice.ReadUntilAsync(BuddyProtocol.RET_SET_NICK);
+            Assert.Equal(0, BinaryPrimitives.ReadUInt16LittleEndian(nickResult.Payload));
+            aliceLogin = await alice.ReadUntilAsync(BuddyProtocol.RET_LOGIN);
+            AssertLogin(aliceLogin.Payload, "bob", "Bob");
+            Assert.NotEqual(firstToken, ReadUdpToken(aliceLogin.Payload));
             await bob.ConnectAndLoginAsync("bob", port);
             BuddyFrame bobLogin = await bob.ReadUntilAsync(BuddyProtocol.RET_LOGIN);
-            AssertLogin(bobLogin.Payload, "alice", "Alice");
+            AssertLogin(bobLogin.Payload, "alice", "AliceNova");
 
             await alice.RegisterUdpAsync(ReadUdpToken(aliceLogin.Payload), port);
             AssertVip(await alice.ReadUntilAsync(BuddyProtocol.NTF_VIP_IPPORT));
@@ -56,7 +65,7 @@ public sealed class BuddyHeadlessE2ETests
 
             BuddyFrame saved = await bob.ReadUntilAsync(BuddyProtocol.NTF_SAVE_PACKET);
             byte[] clear = bob.Crypto.Decrypt(saved.Payload);
-            uint messageId = AssertSavedSms(clear, "alice", "Alice", text);
+            uint messageId = AssertSavedSms(clear, "alice", "AliceNova", text);
             byte[] acknowledgement = new byte[6];
             BinaryPrimitives.WriteUInt16LittleEndian(acknowledgement, 1);
             BinaryPrimitives.WriteUInt32LittleEndian(acknowledgement.AsSpan(2), messageId);
