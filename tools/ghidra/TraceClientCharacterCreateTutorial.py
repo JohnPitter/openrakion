@@ -130,5 +130,40 @@ with open(OUTPUT, "w") as output:
         emitted.add(function.getEntryPoint())
         output.write("%s @ %s via %s\n" % (
             function.getName(), function.getEntryPoint(), instruction.getAddress()))
+    output.write("\n===== comparacoes de eventos relevantes =====\n")
+    event_values = (0x11a, 0x11b, 0x10c)
+    for instruction in listing.getInstructions(True):
+        scalars = []
+        for operand_index in range(instruction.getNumOperands()):
+            scalar = instruction.getScalar(operand_index)
+            if scalar:
+                scalars.append(scalar.getUnsignedValue())
+        if not any(value in scalars for value in event_values):
+            continue
+        function = manager.getFunctionContaining(instruction.getAddress())
+        if not function or function.getEntryPoint().getOffset() not in (
+                MAIN_UI_MESSAGE_LOOP, CHARACTER_UI_MESSAGE):
+            continue
+        cursor = instruction
+        for unused in range(8):
+            previous = cursor.getPrevious()
+            if not previous:
+                break
+            cursor = previous
+        output.write("\n--- contexto %s em %s ---\n" % (
+            instruction.getAddress(), function.getName()))
+        for unused in range(24):
+            if not cursor:
+                break
+            output.write("%s  %s\n" % (cursor.getAddress(), cursor))
+            cursor = cursor.getNext()
+    for address, label, length in (
+            (MAIN_UI_MESSAGE_LOOP, "dispatch inicial dos dialogs", 0x300),
+            (CHARACTER_UI_MESSAGE, "dispatch da tela de personagens", 0x220)):
+        output.write("\n===== %s =====\n" % label)
+        instruction = listing.getInstructionAt(toAddr(address))
+        while instruction and instruction.getAddress().getOffset() < address + length:
+            output.write("%s  %s\n" % (instruction.getAddress(), instruction))
+            instruction = instruction.getNext()
 
 print("Fluxo create/tutorial extraido: %s" % OUTPUT)

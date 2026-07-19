@@ -464,6 +464,12 @@ componentes e acesso inválido em `engine.dll+0x37F31`. A build estável não ap
 correção definitiva precisa reproduzir o evento/transição normal da UI depois que o diálogo tipo
 `9` termina, sem destruir o componente durante a reconstrução.
 
+A recuperação segura preserva o owner em `CharacterSelect+0xA00`, neutralizando apenas o reset em
+`rakion.exe+0x685BF`. Nenhum método da engine é chamado no callback. Com o ponteiro ainda válido, o
+evento `0x10C` do Cancel volta a usar o fechamento original em `0x00468B45`. Esta etapa recupera a
+saída manual da tela e serve como limite de validação antes de automatizar o mesmo evento ao
+responder “Não”.
+
 ## Arquitetura de implementação
 
 Aplicar vertical slices no World:

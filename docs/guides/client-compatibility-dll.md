@@ -46,6 +46,8 @@ python client\RakionClientCompat\verify_legacy_client_patch.py `
 - aplicar multi-instância sempre e, conforme `display.mode`, janela e bloqueio do reset de display;
 - neutralizar o bloqueio de Alt+Tab em `keyhook.dll`;
 - manter HIT/SHOT, lifecycle e ground-snap visual dos bots;
+- preservar o owner da janela de criação após o ACK `0x12`, recuperando o Cancel original sem
+  destruir componentes durante o callback de rede;
 - ler o IPv4 de `server.host` e redirecionar somente `40706`, `40708` e `40709`, em TCP/UDP;
 - espelhar movimento e ataque P2P humano ao World pelo envelope `0xB07A`, sem reenviar esse pacote
   aos peers. Movimento e ataque são capturados na entrada de `CNet::SendToOtherClient`, antes do
@@ -73,7 +75,7 @@ valida também o hash e o prólogo de `CNet::SendToOtherClient` na `engine.dll`,
 O linker usa `/Brepro`: duas compilações consecutivas com o mesmo toolchain e as mesmas entradas
 devem produzir o mesmo SHA-256. A build de recuperação validada em 19/07/2026 gerou
 `13C1D0CC022D0000FA2E7ED03ABD0107AD41D894E0AF302D74CF3D42B0F33263` para `version.dll` e
-`7711BE128CF4E6134BA53BAE11C0AD8152F70FF526F85E531B67745C5437CFEA` para
+`C32074C0B88FA2A16AE58B662D64E04F3A48C8A81597538258D7E8E52308EFB6` para
 `RakionClientPatch.dll` nas duas execuções. O build de
 `client/RakionLauncher` chama esse script, embute `version.dll` e `RakionClientPatch.dll` e instala
 as duas em `Bin` antes de iniciar o jogo.
