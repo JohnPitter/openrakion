@@ -32,10 +32,11 @@ namespace RakionServer.World.Network
                 u.Status = UserStatus.Connected;        // volta a 1
             }
             ctx.World.LeaveField(u);                    // FUN_0040bf30/af40 (cleanup do field)
+            u.ActiveCharId = 0;                         // user+0x14a4: volta ao char-select
             u.InField = false;
             u.FieldSecondary = false;
             u.FieldId = -1;
-            Log.Debug("channel", "[{0}] session cleanup", u.Slot);
+            Log.Debug("channel", "[{0}] session cleanup; personagem desmarcado", u.Slot);
         }
 
         /// <summary>FUN_00420c20/00406240: solicita ping ao master de um field listado.</summary>

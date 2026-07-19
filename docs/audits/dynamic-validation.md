@@ -55,8 +55,9 @@ Seed usado (banco `rakion`): conta `test` → personagem `GoHeroi` (`#1`); conta
 | Ciclo vivo de partida | `TwoClientLiveMatchLifecycleTests.DeadlineAndDeathFrame_AdvanceRoundAndEndMatch` | Golem com times opostos: primeiro spawn `0x4B`, `Pre→Playing` pelo deadline no motor global, entrada tardia do segundo jogador, morte própria `0x4F` no fio, broadcasts `0x4F/0x4A`, vitória do round e fim do match `0x44` pelo próximo tick |
 | Bot no fio | `AddBotButtonCommandE2ETests`, `BotMovementE2ETests` e `BotStageValidationTests` | O `0x47` exato do botão adiciona o bot sem disconnect; movimento sintético recebido; perseguição converge; dois humanos recebem o bot; o envelope DLL `0xB07A` entrega ataque sem relay duplicado; primeiro ataque reduz HP e devolve `0x0311 kind=Damage`; golpes seguintes matam o bot e publicam `0x4F` |
 | Buddy completo | `BuddyHeadlessE2ETests.TwoOriginalProtocolClientsExchangePresenceAndAcknowledgedSms` | Sobe `BuddyServer` TCP/UDP em porta isolada e MySQL temporário; dois clientes executam `0x1000/0x1001`, login AES original, recebem relação bilateral, registram tokens UDP, observam presença recíproca, trocam SMS cifrado e confirmam `delivered_at`/`acked_at` |
+| Retorno ao char-select e criação | `CharacterCreateE2ETests.ReturnFromLobbyThenCreateCharacterKeepsSessionConnected` | Cliente seleciona `GoHeroi`, entra no lobby, envia o `0x20` real, cria outro personagem por `0x12`, recebe status/ID, confirma a row e permanece conectado; regressão protege o reset de `ActiveCharId` |
 
-Todos verdes: **832 testes World**, dos quais **30 são E2E** no fio. Descobertas de RE confirmadas em runtime:
+Todos verdes: **833 testes World**, dos quais **31 são E2E** no fio. Descobertas de RE confirmadas em runtime:
 
 - o transporte do cliente e do servidor é simétrico na cifra (AES-128 do canal lobby) mas
   **assimétrico no envelope**: cliente→servidor carrega `[opcode][seq]`, servidor→cliente carrega
@@ -126,8 +127,9 @@ movimento **e combate** (`0x030A`/`0x0311`/`0x030F`) → settlement PvP persisti
 dos 4 modos → entrada, clear e settlement de stage PvE solo → compra/venda Gold com reconnect →
 Cash/cupom/bundle → enchant → presentes FIFO com reconnect → matriz P2P local
 direto/TunnelOne/TunnelAll → bot server-side no fio → Buddy TCP/UDP, presença e SMS com ACK. Não
-resta alvo conhecido nessa matriz backend; novos gaps precisam surgir da auditoria final ou de uma
-captura gráfica contraditória.
+resta alvo conhecido nessa matriz backend; o ciclo de personagem cobre também
+`selecionar → 0x20 → criar`. Novos gaps precisam surgir da auditoria final ou de uma captura
+gráfica contraditória.
 
 E a camada que **exige cliente gráfico** (fora do escopo backend): animação, frames de ataque,
 hitbox, colisão, trajetória de projétil, efeitos, render de HUD/ranking e a topologia P2P do engine

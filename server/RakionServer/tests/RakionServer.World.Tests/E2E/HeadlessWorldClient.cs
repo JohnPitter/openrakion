@@ -95,6 +95,20 @@ namespace RakionServer.World.Tests.E2E
             Send(0x14, payload);
         }
 
+        public void CreateCharacter(string name, byte characterClass, byte slot)
+        {
+            using var writer = new PacketWriter();
+            writer.WriteCString(name).WriteByte(characterClass).WriteByte(slot);
+            Send(0x12, writer.ToArray());
+        }
+
+        public void ReturnToCharacterSelect()
+        {
+            byte[] payload = new byte[8];
+            BinaryPrimitives.WriteUInt32LittleEndian(payload, uint.MaxValue);
+            Send(0x20, payload);
+        }
+
         public void OpenInventory() => Send(0x2c, Array.Empty<byte>());
 
         public void BuyStorageItem(ushort itemId, byte currency, ushort? couponSlot = null)

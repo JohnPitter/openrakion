@@ -51,6 +51,12 @@ flowchart LR
 O servidor deve serializar mutações por conta. Criar, excluir, selecionar, resetar e renomear
 não podem correr em paralelo ou confiar no estado enviado pelo cliente.
 
+Ao sair do lobby para criar outro personagem, o cliente envia `0x20 SessionCleanup`. Essa
+transição deve remover o usuário do canal/field e zerar o personagem selecionado
+(`user+0x14A4`/`ActiveCharId`), preservando apenas o preview. Sem esse reset, o `0x12` seguinte cai
+corretamente no gate original `DISC 0x19`. O E2E cobre a sequência real
+`login → selecionar → 0x20 → criar` e exige que a sessão permaneça conectada.
+
 ## Contratos C→S
 
 ### `0x12` — criar personagem
@@ -87,7 +93,8 @@ padding criptográfico. A rota atual é exclusivamente `Op_CharacterCreate`.
 O backend usa transação serializable, índice único global de nome, lock por conta e lock global de
 identidade. A listagem passou a seguir o original (`auth<>10`): a linha recém-criada tem `used=0`,
 mas apareceu no `0x0C` do relog. A integração local validou sucesso, os dois erros, relog e remoção
-da fixture.
+da fixture. O teste `CharacterCreateE2ETests` valida também o retorno do lobby pelo `0x20`, criação
+em slot livre, ACK com ID, persistência e conexão mantida.
 
 ### `0x13` — excluir personagem
 
