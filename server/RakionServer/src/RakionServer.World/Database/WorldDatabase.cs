@@ -59,6 +59,7 @@ namespace RakionServer.World.Database
                 await Exec(c, "ALTER TABLE itembox ADD COLUMN IF NOT EXISTS level TINYINT NOT NULL DEFAULT 0");
                 await Exec(c, "ALTER TABLE itembox ADD COLUMN IF NOT EXISTS boxslot SMALLINT NULL");
                 await Exec(c, "ALTER TABLE usergameinfo MODIFY stagelevelfree BIGINT NOT NULL DEFAULT 0");
+                await Exec(c, "ALTER TABLE characterinfo MODIFY name VARCHAR(12) NOT NULL");
                 await EnsureInnoDbAsync(c, "characterinfo");
                 await EnsureInnoDbAsync(c, "usergameinfo");
                 await EnsureInnoDbAsync(c, "useriteminfo");
@@ -83,6 +84,7 @@ namespace RakionServer.World.Database
                     "INDEX ix_logdeletecharacter_user(userid,deletetime)) ENGINE=InnoDB");
                 await Exec(c, "ALTER TABLE logdeletecharacter ADD COLUMN IF NOT EXISTS " +
                     "mode TINYINT UNSIGNED NOT NULL DEFAULT 0");
+                await Exec(c, "ALTER TABLE logdeletecharacter MODIFY charname VARCHAR(12) NOT NULL");
                 await Exec(c, "ALTER TABLE logdeletecharacter ADD INDEX IF NOT EXISTS " +
                     "ix_logdeletecharacter_user (userid,deletetime)");
                 await EnsureInnoDbAsync(c, "logdeletecharacter");
@@ -94,6 +96,7 @@ namespace RakionServer.World.Database
                 await EnsureLogIdentityAsync(c, "logcoupon");
                 await EnsureLogIdentityAsync(c, "logcharstateclear");
                 await EnsureLogIdentityAsync(c, "logchangecharname");
+                await Exec(c, "ALTER TABLE logchangecharname MODIFY charname_prev VARCHAR(12) NOT NULL");
                 await EnsureLogIdentityAsync(c, "logbuycashitem");
                 await EnsureLogIdentityAsync(c, "logbuypoweruser");
                 await EnsureLogIdentityAsync(c, "loguseritem");

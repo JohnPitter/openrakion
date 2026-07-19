@@ -411,6 +411,12 @@ Problemas estruturais do schema legado:
 Na implementação definitiva, as invariantes devem ser garantidas por InnoDB, índices únicos e
 transação. Não basta reproduzir as fragilidades do dump.
 
+O cliente v258 aceita e transmite nomes de personagem com até 12 bytes, e o registro `0x0C`
+também reserva esse limite. O bootstrap do World amplia `characterinfo.name` e as colunas de
+auditoria relacionadas para `VARCHAR(12)`; manter o `VARCHAR(11)` do dump fazia um nome válido no
+cliente retornar genericamente `Character Created System Error`. O `buddyname` permanece limitado
+a 11 bytes porque usa outro contrato.
+
 ### Relações
 
 - `characterinfo.userid -> usergameinfo.id`;

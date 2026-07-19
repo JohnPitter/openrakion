@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using System.Text;
 using System.Threading.Tasks;
 using MySqlConnector;
 using Xunit;
@@ -17,7 +18,7 @@ namespace RakionServer.World.Tests.E2E
             await using var fixture = await WorldServerFixture.CreateAsync();
             if (!fixture.Available) return;
 
-            string name = "E2E" + Guid.NewGuid().ToString("N")[..7];
+            string name = "E2E" + Guid.NewGuid().ToString("N")[..9];
             try
             {
                 await using var client = await HeadlessWorldClient.ConnectAsync(
@@ -29,12 +30,13 @@ namespace RakionServer.World.Tests.E2E
                 int selectedId = await LoadCharacterIdAsync(
                     fixture.DbConnectionString, "GoHeroi");
                 client.SelectCharacter(selectedId);
-                client.WaitForFirstByte(0x14, Timeout);
+                client.WaitForNextFirstByte(0x14, Timeout);
+                client.WaitForNextFirstByte(0x1E, Timeout);
                 client.ReturnToCharacterSelect();
                 byte slot = await FindFreeCharacterSlotAsync(
                     fixture.DbConnectionString, "test");
                 client.CreateCharacter(name, 0, slot);
-                byte[] response = client.WaitForFirstByte(0x12, Timeout);
+                byte[] response = client.WaitForNextFirstByte(0x12, Timeout);
 
                 Assert.Equal(0, response[2]);
                 int characterId = BinaryPrimitives.ReadInt32LittleEndian(response.AsSpan(3));
@@ -43,6 +45,12 @@ namespace RakionServer.World.Tests.E2E
                     session => session.Connected && session.UserId == "test");
                 Assert.Equal(characterId,
                     await LoadCharacterIdAsync(fixture.DbConnectionString, name));
+
+                client.SelectCharacter(characterId);
+                Assert.Equal(0, client.WaitForNextFirstByte(0x14, Timeout)[2]);
+                byte[] channelSnapshot = client.WaitForNextFirstByte(0x1E, Timeout);
+                Assert.True(channelSnapshot.AsSpan().IndexOf(Encoding.ASCII.GetBytes(name)) >= 0,
+                    $"snapshot 0x1E não contém '{name}': {Convert.ToHexString(channelSnapshot)}");
             }
             finally
             {

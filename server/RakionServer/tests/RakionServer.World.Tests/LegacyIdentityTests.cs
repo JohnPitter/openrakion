@@ -18,10 +18,11 @@ namespace RakionServer.World.Tests
         [Theory]
         [InlineData("ProbeB", true)]
         [InlineData("12345678901", true)]
+        [InlineData("123456789012", true)]
         [InlineData("", false)]
-        [InlineData("123456789012", false)]
+        [InlineData("1234567890123", false)]
         [InlineData("nome com espaco", false)]
-        public void CharacterNameValidationMatchesSchemaBoundary(string value, bool expected) =>
+        public void CharacterNameValidationMatchesClientBoundary(string value, bool expected) =>
             Assert.Equal(expected, LegacyIdentity.IsValidCharacterName(value));
 
         [Fact]

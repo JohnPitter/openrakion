@@ -419,6 +419,9 @@ namespace RakionServer.World.Tests.E2E
         public byte[] WaitForFirstByte(byte firstByte, TimeSpan timeout)
             => WaitFor(f => f.Length > 0 && f[0] == firstByte, timeout);
 
+        public byte[] WaitForNextFirstByte(byte firstByte, TimeSpan timeout)
+            => WaitForNext(f => f.Length > 0 && f[0] == firstByte, timeout);
+
         public byte[] WaitFor(Func<byte[], bool> predicate, TimeSpan timeout)
         {
             lock (_receivedLog)

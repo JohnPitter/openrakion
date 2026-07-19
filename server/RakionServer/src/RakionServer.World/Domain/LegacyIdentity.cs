@@ -2,13 +2,18 @@ namespace RakionServer.World.Domain
 {
     public static class LegacyIdentity
     {
-        public static bool IsValidBuddyName(string value) => IsPrintableName(value);
+        private const int MaxBuddyNameLength = 11;
+        private const int MaxCharacterNameLength = 12;
 
-        public static bool IsValidCharacterName(string value) => IsPrintableName(value);
+        public static bool IsValidBuddyName(string value) =>
+            IsPrintableName(value, MaxBuddyNameLength);
 
-        private static bool IsPrintableName(string value)
+        public static bool IsValidCharacterName(string value) =>
+            IsPrintableName(value, MaxCharacterNameLength);
+
+        private static bool IsPrintableName(string value, int maxLength)
         {
-            if (value.Length is < 1 or > 11) return false;
+            if (value.Length < 1 || value.Length > maxLength) return false;
             foreach (char c in value)
                 if (c < 0x21 || c > 0x7e) return false;
             return true;
