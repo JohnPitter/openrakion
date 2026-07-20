@@ -41,7 +41,7 @@ constexpr CharacterUiRestore CharacterUiRestores[] = {
     { 0x0685b8, VirtualCloseViaEdx, sizeof(VirtualCloseViaEdx) },
     { 0x06861f, VirtualCloseViaEax, sizeof(VirtualCloseViaEax) },
     { 0x068738, VirtualCloseViaEax, sizeof(VirtualCloseViaEax) },
-    { 0x068776, &Enabled, 1 },
+    { 0x06876a, &Enabled, 1 },
     { 0x0687de, VirtualCloseViaEax, sizeof(VirtualCloseViaEax) },
     { 0x0688fc, VirtualCloseViaEdx, sizeof(VirtualCloseViaEdx) }
 };
