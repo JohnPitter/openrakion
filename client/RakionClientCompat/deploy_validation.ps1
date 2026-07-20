@@ -6,6 +6,7 @@ param(
     [string]$GoldenRoot,
     [string]$ServerHost = '127.0.0.1',
     [string]$CashStoreUrl,
+    [string]$LauncherBaseUrl,
     [ValidateSet('windowed', 'borderless', 'fullscreen')]
     [string]$DisplayMode = 'windowed',
     [switch]$Refresh
@@ -153,6 +154,14 @@ $cashStoreUri = [Uri]::new($CashStoreUrl, [UriKind]::Absolute)
 if ($cashStoreUri.Scheme -notin @('http', 'https')) {
     throw 'CashStoreUrl deve ser uma URL HTTP(S) absoluta'
 }
+if (-not $LauncherBaseUrl) { $LauncherBaseUrl = "http://$ServerHost/" }
+$launcherUri = [Uri]::new($LauncherBaseUrl, [UriKind]::Absolute)
+if ($launcherUri.Scheme -notin @('http', 'https')) {
+    throw 'LauncherBaseUrl deve ser uma URL HTTP(S) absoluta'
+}
+if (-not $launcherUri.IsLoopback -and $launcherUri.Scheme -ne 'https') {
+    throw 'LauncherBaseUrl remoto exige HTTPS'
+}
 
 $script:Target = Resolve-ExistingDirectory $TargetRoot 'diretório de validação'
 $golden = Resolve-ExistingDirectory $GoldenRoot 'rakion-final golden'
@@ -202,7 +211,9 @@ $filePlan.Add([pscustomobject]@{ Source = (Join-Path $goldenBin 'engine.dll'); R
 $filePlan.Add([pscustomobject]@{ Source = $pristineExe; RelativePath = 'Bin\rakion.exe' })
 $filePlan.Add([pscustomobject]@{ Source = (Join-Path $compatRoot 'bin\version.dll'); RelativePath = 'Bin\version.dll' })
 $filePlan.Add([pscustomobject]@{ Source = (Join-Path $compatRoot 'bin\RakionClientPatch.dll'); RelativePath = 'Bin\RakionClientPatch.dll' })
-Get-ChildItem $publishDir -File | Where-Object { $_.Extension -ne '.pdb' } | ForEach-Object {
+Get-ChildItem $publishDir -File | Where-Object {
+    $_.Extension -ne '.pdb' -and $_.Name -ne 'launcher.settings.json'
+} | ForEach-Object {
     $filePlan.Add([pscustomobject]@{ Source = $_.FullName; RelativePath = $_.Name })
 }
 
@@ -219,6 +230,15 @@ try {
     Install-Text $ServerHost 'server.host'
     Install-Text $cashStoreUri.AbsoluteUri.TrimEnd('/') 'cash-shop.url'
     Install-Text $DisplayMode 'display.mode'
+    $launcherSettings = [ordered]@{
+        updatesEnabled = $false
+        ticketAuthEnabled = $false
+        updateBaseUrl = $launcherUri.AbsoluteUri
+        appId = 11001
+        baseVersion = 258
+        publicKeyPemPath = 'update-public.pem'
+    } | ConvertTo-Json
+    Install-Text $launcherSettings 'launcher.settings.json'
     Remove-InstalledFile 'Bin\verorig.dll'
 
     $manifest = [ordered]@{

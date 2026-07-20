@@ -96,9 +96,10 @@ as duas em `Bin` antes de iniciar o jogo.
 
 ## Instalação e ativação
 
-1. Atualize/copie para o diretório de jogo a build v258 golden (`rakion.exe`, `engine.dll` e dados
-   correspondentes). O pacote original de 2007 sozinho não é compatível.
-2. Coloque o launcher publicado na raiz do cliente.
+1. Atualize/copie para o diretório de jogo a build v258 golden (`rakion.exe`, `engine.dll`,
+   `DataSetup.xfs` e `Data/SeriousSam.gms`). O pacote original de 2007 sozinho não é compatível.
+2. Coloque **todos** os arquivos da publicação do launcher na raiz do cliente; não copie somente o
+   executável, salvo quando ele tiver sido publicado explicitamente como single-file self-contained.
 3. Crie `server.host` na raiz com um IPv4, por exemplo `203.0.113.10`.
 4. Crie `cash-shop.url` na raiz com a URL HTTP(S) da loja, por exemplo
    `https://jogo.exemplo/cash`. O deploy de validação gera `http://<ServerHost>/cash` por padrão.
@@ -113,6 +114,12 @@ O nosso launcher é o método oficial porque instala os artefatos e grava as con
 de `version.dll`, `RakionClientPatch.dll`, `server.host`, `cash-shop.url` e a build v258 estarem no lugar, iniciar
 `Bin/rakion.exe` diretamente também carrega a DLL. O launcher antigo não injeta a DLL e só é
 compatível se não restaurar arquivos, iniciar o GameGuard ou sobrescrever a configuração.
+
+Portanto, para um cliente original arbitrário, compilar apenas o launcher e as duas DLLs e
+sobrescrevê-los **não é suficiente**. O pacote administrativo deve partir do baseline v258 acima e
+incluir os quatro artefatos golden, a publicação completa do launcher e os arquivos
+`server.host`, `cash-shop.url`, `display.mode` e `launcher.settings.json`. O script abaixo é a fonte
+reproduzível desse pacote e impede combinações de versões incompatíveis.
 
 Não renomeie `rakion.bin` antigo para `rakion.exe`: além do tamanho diferente, sua `engine.dll`
 também é incompatível. A atualização para v258 deve acontecer antes da ativação da DLL.
@@ -133,6 +140,7 @@ cd client\RakionClientCompat
   -TargetRoot "C:\Users\joaop\Downloads\Rakion-Original\Rakion" `
   -GoldenRoot "C:\Users\joaop\Desenvolvimento\Rakion\rakion-final" `
   -ServerHost "127.0.0.1" `
+  -LauncherBaseUrl "http://127.0.0.1/" `
   -DisplayMode windowed
 
 python .\verify_validation_install.py `

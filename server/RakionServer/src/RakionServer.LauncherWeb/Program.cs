@@ -30,6 +30,7 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapModernAuth();
 app.MapModernUpdates();
+app.MapServerStatus();
 
 if (config.LegacyEnabled)
 {

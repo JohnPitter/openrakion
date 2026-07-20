@@ -802,7 +802,32 @@ namespace RakionServer.World
             _ = Task.Run(() => ConfigReloadLoopAsync(_cts.Token));   // reload a quente de pu_config/enchant_* (admin sem restart)
             _ = Task.Run(() => InventoryExpirationLoopAsync(_cts.Token));
             _ = Task.Run(() => PowerUserExpirationLoopAsync(_cts.Token));
+            PublishServerStatus(true);
+            _ = Task.Run(() => ServerStatusLoopAsync(_cts.Token));
             Log.Ok("world", "World Server pronto (ServerId={0})", _cfg.ServerId);
+        }
+
+        private async Task ServerStatusLoopAsync(CancellationToken cancellationToken)
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                try { await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken); }
+                catch (OperationCanceledException) { break; }
+                PublishServerStatus(true);
+            }
+        }
+
+        private void PublishServerStatus(bool online)
+        {
+            try
+            {
+                ServerStatusSnapshotStore.Write(new ServerStatusSnapshot(
+                    online, online ? CurrentUsers : 0, MaxUser, DateTimeOffset.UtcNow));
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("world", "falha ao publicar status: {0}", ex.Message);
+            }
         }
 
         /// <summary>Reload a quente das configs editáveis pelo painel admin (pu_config + enchant_*): relê a cada 15s
@@ -912,6 +937,7 @@ namespace RakionServer.World
             _broker?.Stop();
             try { _listener?.Close(); } catch { }
             _udpGame?.Stop();
+            PublishServerStatus(false);
         }
 
 

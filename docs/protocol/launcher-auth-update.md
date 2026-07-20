@@ -95,6 +95,7 @@ CREATE TABLE launcher_ticket (
 
 Endpoints:
 
+- `GET /api/v1/server-status`: estado público do World e jogadores conectados;
 - `GET /api/v1/updates/{appId}?version=N`: envelope JSON assinado ou `204`;
 - `GET /api/v1/update-files/{appId}/{version}/{path}`: conteúdo da release.
 
@@ -111,6 +112,20 @@ O servidor publica apenas diretórios `ContentRoot/AppId/Version` que contêm `_
 4. move destinos antigos para backup e aplica Replace/Delete sob lock;
 5. grava `.update/version` dentro da transação reversível;
 6. faz rollback em ordem inversa se qualquer alvo ou commit falhar.
+
+## Status do servidor no launcher
+
+O World publica a cada dois segundos um snapshot atômico com estado, conexões autenticadas,
+capacidade e horário UTC. O LauncherWeb lê esse contrato compartilhado e responde
+`GET /api/v1/server-status`; snapshots com mais de seis segundos são tratados como offline, de
+modo que encerramentos inesperados não deixam o servidor falsamente online. O launcher consulta o
+endpoint ao abrir e a cada dez segundos, exibindo `Online`, `Offline` e `Jogadores: atual/máximo`.
+
+World e LauncherWeb devem receber o mesmo caminho absoluto em
+`RAKION_SERVER_STATUS_PATH` quando executados por contas diferentes. Se ambos forem iniciados pelo
+`start-stack.ps1` sob o mesmo usuário, o caminho temporário padrão já é compartilhado. Para
+instalações em máquinas distintas, esse snapshot local precisa ser substituído por um transporte
+compartilhado; não exponha arquivos de rede graváveis publicamente.
 
 Paths absolutos, `..`, backslash, `:`, NUL, reparse points e a raiz reservada `.update` são
 recusados. O updater também recusa substituir o próprio launcher em execução; self-update requer
@@ -219,8 +234,8 @@ dotnet RakionLauncher.dll --update-only C:\Rakion
 
 ## Evidência de validação
 
-- 382 testes .NET do servidor, incluindo formato, migração e vínculo app/build do ticket;
-- 13 testes do launcher, incluindo assinatura, hash, traversal, rollback, DLLs e auth sem downgrade;
+- 840 testes .NET do servidor, incluindo status, formato, migração e vínculo app/build do ticket;
+- 14 testes do launcher, incluindo assinatura, hash, traversal, rollback, DLLs e auth sem downgrade;
 - smoke MariaDB real: conta/build vinculados, uso único, replay recusado e expiração recusada;
 - smoke HTTP real: endpoint em loopback emitiu ticket de 20 caracteres e persistiu app `11001`,
   build `259` e somente o hash de 32 bytes;

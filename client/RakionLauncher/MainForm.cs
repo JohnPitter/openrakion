@@ -21,6 +21,9 @@ internal sealed class MainForm : Form
     private readonly Button _play = new() { Text = "START\nGAME" };
     private readonly Button _options = new() { Text = "GAME\nOPTION" };
     private readonly Label _status = new();
+    private readonly Label _serverStatus = new();
+    private readonly System.Windows.Forms.Timer _serverStatusTimer = new() { Interval = 10000 };
+    private readonly ServerStatusClient _serverStatusClient = new();
 
     private bool _drag; private Point _dragOrigin;
     private int _clients;   // nº de clientes abertos (o patch do mutex permite vários)
@@ -46,6 +49,10 @@ internal sealed class MainForm : Form
         BuildBanner();
         BuildStatus();          // antes dos botões: o status fica atrás, os botões na frente
         BuildLoginAndButtons();
+        Shown += async (_, _) => await RefreshServerStatusAsync();
+        _serverStatusTimer.Tick += async (_, _) => await RefreshServerStatusAsync();
+        _serverStatusTimer.Start();
+        FormClosed += (_, _) => _serverStatusTimer.Dispose();
     }
 
     private void BuildHeader()
@@ -89,9 +96,31 @@ internal sealed class MainForm : Form
         info.Controls.Add(new Label
         {
             Text = "Long awaited totally new game system.\nYou can not run away from the\nextreme strike sensation.",
-            AutoSize = false, Bounds = new Rectangle(18, 96, 256, 78), ForeColor = Color.Gainsboro, BackColor = Color.Transparent, Font = new Font("Segoe UI", 9f)
+            AutoSize = false, Bounds = new Rectangle(18, 96, 256, 48), ForeColor = Color.Gainsboro, BackColor = Color.Transparent, Font = new Font("Segoe UI", 9f)
         });
+        _serverStatus.Text = "Servidor: verificando…";
+        _serverStatus.AutoSize = false;
+        _serverStatus.Bounds = new Rectangle(18, 148, 256, 25);
+        _serverStatus.ForeColor = Color.Gold;
+        _serverStatus.BackColor = Color.Transparent;
+        _serverStatus.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
+        info.Controls.Add(_serverStatus);
         Controls.Add(info);
+    }
+
+    private async Task RefreshServerStatusAsync()
+    {
+        ServerStatusResponse? status = await _serverStatusClient.GetAsync(
+            _launcherConfig.UpdateBaseUrl);
+        if (IsDisposed) return;
+        if (status?.Online != true)
+        {
+            _serverStatus.Text = "Servidor: Offline";
+            _serverStatus.ForeColor = Color.IndianRed;
+            return;
+        }
+        _serverStatus.Text = $"Servidor: Online   ·   Jogadores: {status.OnlinePlayers}/{status.Capacity}";
+        _serverStatus.ForeColor = Color.LightGreen;
     }
 
     private void BuildLoginAndButtons()
