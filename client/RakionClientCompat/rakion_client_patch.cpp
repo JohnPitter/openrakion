@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "bot_telemetry.h"
+#include "buddy_refresh.h"
 #include "cash_store.h"
 #include "client_patches.h"
 #include "ui_lifecycle_patch.h"
@@ -224,6 +225,9 @@ DWORD WINAPI InstallCompatibility(void*)
     CompatLog(InstallBotTelemetryHook()
         ? "ponte P2P->World para hit de bot instalada"
         : "ponte P2P->World indisponível");
+    CompatLog(InstallBuddyRefreshHooks()
+        ? "sincronizacao inicial do Messenger instalada"
+        : "sincronizacao do Messenger indisponivel para esta build");
     CompatLog(InstallCashStoreRedirectHook()
         ? "redirect e botao nativo de recarga instalados"
         : "integracao de recarga indisponivel para esta build");

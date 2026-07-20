@@ -57,6 +57,8 @@ python client\RakionClientCompat\verify_legacy_client_patch.py `
 - adicionar o botão nativo `Buy Cash` ao lado de `Potion slot` (command `0x18B`); o hook registra
   todas as instâncias criadas pela tela, consome somente o clique desses controles e abre a mesma
   `cash-shop.url`;
+- disparar o `SetNickname` nativo do `Buddy2.dll` após o primeiro `RET_LOGIN` aceito e após cada
+  seleção de personagem, para que o cliente inicialize o próprio nome e seu modelo social;
 - manter HIT/SHOT, lifecycle e ground-snap visual dos bots;
 - ler o IPv4 de `server.host` e redirecionar somente `40706`, `40708` e `40709`, em TCP/UDP;
 - espelhar movimento e ataque P2P humano ao World pelo envelope `0xB07A`, sem reenviar esse pacote
@@ -66,9 +68,10 @@ python client\RakionClientCompat\verify_legacy_client_patch.py `
 
 Resolução, mouse, som e gamma continuam em `Scripts/PersistentSymbols.ini`; `display.mode` continua
 selecionando `windowed`, `borderless` ou `fullscreen`. São preferências do jogador, não patches.
-O refresh do Messenger também não pertence à DLL. O World fixa o primeiro personagem por slot como
-identidade inicial no char-select, e o Buddy server envia `RET_SET_NICK` antes de cada `RET_LOGIN` e
-repete esse par quando a identidade persistida muda.
+O servidor continua como autoridade do Messenger. O World fixa o primeiro personagem por slot como
+identidade inicial, e o Buddy fornece a lista no `RET_LOGIN`. A DLL cobre apenas uma limitação do
+cliente: ele precisa chamar sua API nativa `SetNickname` para inicializar o nome próprio. Esse envio
+gera `SVC_SET_NICK`; o servidor responde `RET_SET_NICK` e publica um novo `RET_LOGIN`.
 
 ## Build
 
@@ -89,7 +92,7 @@ valida também o hash e o prólogo de `CNet::SendToOtherClient` na `engine.dll`,
 O linker usa `/Brepro`: duas compilações consecutivas com o mesmo toolchain e as mesmas entradas
 devem produzir o mesmo SHA-256. A build estável validada em 20/07/2026 gerou
 `13C1D0CC022D0000FA2E7ED03ABD0107AD41D894E0AF302D74CF3D42B0F33263` para `version.dll` e
-`751CA95AE0DA5C9C54006BC2A99AE2C83DF85B4B379D46E68ECAA66D68EC9689` para
+`78BE113C1DC035D0CC8CB8029697A18FAF5E1B658C3569B392D10316FDFE7AC3` para
 `RakionClientPatch.dll` nas duas execuções. O build de
 `client/RakionLauncher` chama esse script, embute `version.dll` e `RakionClientPatch.dll` e instala
 as duas em `Bin` antes de iniciar o jogo.

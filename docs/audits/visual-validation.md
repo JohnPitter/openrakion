@@ -19,7 +19,7 @@ do contrato.
 | Engine golden | SHA-256 `83B20D6C32CD66B95C8F8E41AD6DE13A58E8F5F948CD21CBD118D42EF8CF88F2` |
 | Proxy determinístico | `Bin/version.dll`, SHA-256 `13C1D0CC022D0000FA2E7ED03ABD0107AD41D894E0AF302D74CF3D42B0F33263` |
 | Forwarder oficial | carregado de `%SystemRoot%\SysWOW64\version.dll`; não é distribuído |
-| Patches golden | `Bin/RakionClientPatch.dll`, SHA-256 `36DF8372BBB2AFFAACA2E2B98F4ADD874A217EDBDBDE0171267EB2A6E68AAE92` |
+| Patches golden | `Bin/RakionClientPatch.dll`, SHA-256 `78BE113C1DC035D0CC8CB8029697A18FAF5E1B658C3569B392D10316FDFE7AC3` |
 | Destino | `server.host=127.0.0.1`, `display.mode=windowed` |
 | Verificação estática | `validation-install.json` atualizado e 14/14 arquivos aprovados em 18/07/2026 |
 
@@ -39,7 +39,7 @@ golden source; este diretório é somente o ambiente de execução.
 | Auto-update de conteúdo | aprovado | smoke HTTP assinado `258→259` atualizou `version.dll` e `RakionClientPatch.dll`, sem resíduos |
 | Abertura sem elevação | aprovado | launcher `asInvoker`; processo legado recebeu `RunAsInvoker`; nenhum processo `consent.exe` foi aberto |
 | Login e render inicial | aprovado | cliente pristine exibiu servidor e `GoHeroi` lvl 40; login `test`, TCP World `40708`, Buddy `8500`, `SuccessUDP`, canal e lista de salas confirmados |
-| Messenger F9 | parcial | em 20/07 o backend passou a fixar o primeiro char e enviar `RET_SET_NICK` → `RET_LOGIN` já no login; E2E aprovado, reteste gráfico pendente |
+| Messenger F9 | parcial | o servidor envia a lista no `RET_LOGIN`; a DLL passou a disparar o `SetNickname` nativo no primeiro login e na seleção, reproduzindo o fluxo manual que preenchia o painel; E2E aprovado, reteste gráfico pendente |
 | Add Bot | aprovado | botão enviou `0x47` `GoHeroi : /addbot`; `Rok` apareceu no time azul da sala e dentro do stage Mammoth |
 | Ataque humano→bot | aprovado no transporte e lifecycle | DLL registrou o primeiro ataque; World reduziu `500→0`; cliente aplicou `alive seq=1` e `dead seq=2` |
 | HUD/animação final do bot | pendente | captura ainda mostrou `0 Kills`; reação de dano, queda visível próxima, respawn e placar exigem novo smoke |

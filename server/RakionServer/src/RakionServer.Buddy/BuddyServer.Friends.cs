@@ -96,7 +96,10 @@ public sealed partial class BuddyServer
             return;
         }
         connection.DisplayName = account.DisplayName;
-        await SendProfileSnapshotAsync(connection);
+        connection.ActiveCharacterName = account.ActiveCharacterName;
+        connection.PendingProfileSignature = "";
+        await ReplyResultAsync(connection, BuddyProtocol.RET_SET_NICK, 0);
+        await SendLoginOkAsync(connection);
         Log.Info("buddy", "account='{0}' solicitou nick '{1}'; perfil efetivo='{2}' e lista atualizada",
             connection.AccountId, requestedName, connection.DisplayName);
     }

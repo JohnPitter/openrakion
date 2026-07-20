@@ -35,15 +35,18 @@ public sealed class BuddyHeadlessE2ETests
             await using var alice = new BuddyHeadlessClient();
             await using var bob = new BuddyHeadlessClient();
             await alice.ConnectAndLoginAsync("alice", port);
-            BuddyFrame initialNick = await alice.ReadUntilAsync(BuddyProtocol.RET_SET_NICK);
-            Assert.Equal(0, BinaryPrimitives.ReadUInt16LittleEndian(initialNick.Payload));
             BuddyFrame aliceLogin = await alice.ReadUntilAsync(BuddyProtocol.RET_LOGIN);
             AssertLogin(aliceLogin.Payload, "bob", "Bob");
             uint firstToken = ReadUdpToken(aliceLogin.Payload);
+            await alice.SetNicknameAsync("Alice");
+            BuddyFrame nickResult = await alice.ReadUntilAsync(BuddyProtocol.RET_SET_NICK);
+            Assert.Equal(0, BinaryPrimitives.ReadUInt16LittleEndian(nickResult.Payload));
+            aliceLogin = await alice.ReadUntilAsync(BuddyProtocol.RET_LOGIN);
+            AssertLogin(aliceLogin.Payload, "bob", "Bob");
+            Assert.NotEqual(firstToken, ReadUdpToken(aliceLogin.Payload));
+            firstToken = ReadUdpToken(aliceLogin.Payload);
             await ExecuteAsync(scoped.ConnectionString,
                 "UPDATE usergameinfo SET charname='AliceNewChar' WHERE name='alice'");
-            BuddyFrame automaticNick = await alice.ReadUntilAsync(BuddyProtocol.RET_SET_NICK);
-            Assert.Equal(0, BinaryPrimitives.ReadUInt16LittleEndian(automaticNick.Payload));
             aliceLogin = await alice.ReadUntilAsync(BuddyProtocol.RET_LOGIN);
             AssertLogin(aliceLogin.Payload, "bob", "Bob");
             Assert.NotEqual(firstToken, ReadUdpToken(aliceLogin.Payload));
@@ -51,15 +54,18 @@ public sealed class BuddyHeadlessE2ETests
             await ExecuteAsync(scoped.ConnectionString,
                 "UPDATE usergameinfo SET buddyname='AliceNova' WHERE name='alice'");
             await alice.SetNicknameAsync("Alice");
-            BuddyFrame nickResult = await alice.ReadUntilAsync(BuddyProtocol.RET_SET_NICK);
+            nickResult = await alice.ReadUntilAsync(BuddyProtocol.RET_SET_NICK);
             Assert.Equal(0, BinaryPrimitives.ReadUInt16LittleEndian(nickResult.Payload));
             aliceLogin = await alice.ReadUntilAsync(BuddyProtocol.RET_LOGIN);
             AssertLogin(aliceLogin.Payload, "bob", "Bob");
             Assert.NotEqual(firstToken, ReadUdpToken(aliceLogin.Payload));
             await bob.ConnectAndLoginAsync("bob", port);
-            initialNick = await bob.ReadUntilAsync(BuddyProtocol.RET_SET_NICK);
-            Assert.Equal(0, BinaryPrimitives.ReadUInt16LittleEndian(initialNick.Payload));
             BuddyFrame bobLogin = await bob.ReadUntilAsync(BuddyProtocol.RET_LOGIN);
+            AssertLogin(bobLogin.Payload, "alice", "AliceNova");
+            await bob.SetNicknameAsync("Bob");
+            nickResult = await bob.ReadUntilAsync(BuddyProtocol.RET_SET_NICK);
+            Assert.Equal(0, BinaryPrimitives.ReadUInt16LittleEndian(nickResult.Payload));
+            bobLogin = await bob.ReadUntilAsync(BuddyProtocol.RET_LOGIN);
             AssertLogin(bobLogin.Payload, "alice", "AliceNova");
 
             await alice.RegisterUdpAsync(ReadUdpToken(aliceLogin.Payload), port);

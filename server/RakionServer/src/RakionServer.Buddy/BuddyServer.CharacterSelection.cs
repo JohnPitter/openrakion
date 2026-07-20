@@ -80,7 +80,7 @@ public sealed partial class BuddyServer
         connection.ActiveCharacterName = account.ActiveCharacterName;
         connection.DisplayName = account.DisplayName;
         connection.PendingProfileSignature = "";
-        await SendProfileSnapshotAsync(connection);
+        await SendLoginOkAsync(connection);
         Log.Info("buddy", "account='{0}' atualizou Messenger nick='{1}' char='{2}'",
             connection.AccountId, connection.DisplayName, connection.ActiveCharacterName);
     }
