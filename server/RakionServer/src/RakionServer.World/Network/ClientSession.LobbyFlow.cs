@@ -117,7 +117,8 @@ namespace RakionServer.World.Network
                                     2, fld.Name.Length > 0 ? fld.Name : "asdd"));
                             }
                         }
-                        Log.Ok("lobby", "[{0}] 0x46 saída do stage -> eco FIELD 0x46", Slot);
+                        Status = UserStatus.FieldLobby;
+                        Log.Ok("lobby", "[{0}] 0x46 saída do stage -> game room (status=2)", Slot);
                         return true;
                     }
                 case 0x4F: // FUN_004087D0 marca a vítima e publica 0x4F. FUN_004063A0 encerra

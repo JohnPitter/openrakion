@@ -284,7 +284,9 @@ namespace RakionServer.World.Network
                     _ = ctx.World.SettleEndedMatchAsync(field);
                 }
             }
-            Log.Info("combat", "[{0}] 0x46 saida/morte propria (field {1} seat {2} flag {3})", u.Slot, field.Id, rec.Slot, flag);
+            u.Status = UserStatus.FieldLobby;
+            Log.Info("combat", "[{0}] 0x46 saiu da partida para o game room " +
+                "(field {1} seat {2} flag {3}, status=2)", u.Slot, field.Id, rec.Slot, flag);
         }
 
         // ===================== helpers do grupo combate-A =====================

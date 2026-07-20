@@ -243,6 +243,10 @@ namespace RakionServer.World.Tests.E2E
         /// Payload real do cliente é grande; o servidor só usa o gatilho, então mandamos vazio.</summary>
         public void SpawnField() => Send(0x4b, new byte[72]);
 
+        public void ExitFieldGame(byte flag = 0) => Send(0x46, new[] { flag });
+
+        public void ExitRoom() => Send(0x3a, Array.Empty<byte>());
+
         /// <summary>Reporta a própria morte no field (0x4F): `[u8 cause][u8 killerSeat]`.</summary>
         public void ReportDeath(byte cause, byte killerSeat) =>
             Send(0x4f, new[] { cause, killerSeat });
