@@ -24,7 +24,7 @@ explícito do checkout. Quando falta Cash na compra de Power User (status `3`), 
 O cliente original também contém uma rota de UI para compra de créditos: o command `0x15` fecha o
 estado corrente e chamava `ShellExecuteA` com a URL histórica da Softnyx. A DLL preserva essa rota,
 troca somente o destino pela `cash-shop.url` e cria um `csButton` nativo `Buy Cash` ao lado do botão
-`Potion slot` (command `0x20`). O botão herda bitmap, fonte, posição vertical e tamanho do controle
+`Potion slot` (command `0x18B`). O botão herda bitmap, fonte, posição vertical e tamanho do controle
 original; não usa janela sobreposta nem duplica a configuração da URL.
 
 A página está pronta como entrada operacional, mas os botões permanecem desabilitados enquanto não

@@ -25,7 +25,7 @@ constexpr BYTE ExpectedButtonConstructor[] = { 0x6a, 0xff, 0x68, 0xd8, 0x68, 0x4
 constexpr BYTE ExpectedLegacyCashShellExecute[] = { 0xff, 0x15, 0x0c, 0xb7, 0x5d, 0x00 };
 constexpr char DefaultCashStoreUrl[] = "http://127.0.0.1/cash";
 constexpr char BuyCashLabel[] = "Buy Cash";
-constexpr int PotionSlotCommand = 0x20;
+constexpr int PotionSlotCommand = 0x18b;
 constexpr int BuyCashCommand = 0x15;
 constexpr long BuyCashOffsetX = 0x6d;
 uintptr_t PowerUserCallbackContinue{};
