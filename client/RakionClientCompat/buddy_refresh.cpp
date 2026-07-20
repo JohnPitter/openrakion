@@ -10,8 +10,10 @@ namespace
 {
 constexpr uintptr_t BuddyLoginCallbackAddress = 0x0048a5d0;
 constexpr uintptr_t BuddyNameCallbackAddress = 0x004785b0;
+constexpr uintptr_t CharacterSelectCallbackAddress = 0x0047cb40;
 constexpr BYTE ExpectedBuddyLoginCallback[] = { 0x6a, 0xff, 0x68, 0xc3, 0xe3, 0x4c, 0x00 };
 constexpr BYTE ExpectedBuddyNameCallback[] = { 0x6a, 0xff, 0x68, 0x84, 0xc9, 0x4c, 0x00 };
+constexpr BYTE ExpectedCharacterSelectCallback[] = { 0x64, 0xa1, 0x00, 0x00, 0x00, 0x00 };
 constexpr size_t BuddyInterfaceOffset = 0x20;
 constexpr size_t BuddyNicknameOffset = 0x13b30;
 constexpr size_t SetNicknameVtableIndex = 3;
@@ -20,6 +22,7 @@ constexpr size_t MaxNicknameLength = 20;
 void* volatile BuddyUi{};
 void* BuddyLoginTrampoline{};
 void* BuddyNameTrampoline{};
+void* CharacterSelectTrampoline{};
 
 bool IsReadable(const void* pointer, size_t length)
 {
@@ -51,7 +54,7 @@ void __stdcall CaptureBuddyUi(void* ui)
     InterlockedExchangePointer(&BuddyUi, ui);
 }
 
-void __stdcall RefreshBuddyAfterNameChange()
+void __stdcall RefreshBuddyNickname()
 {
     auto* ui = InterlockedCompareExchangePointer(&BuddyUi, nullptr, nullptr);
     if (!IsReadable(ui, BuddyInterfaceOffset + sizeof(void*))) return;
@@ -70,7 +73,7 @@ void __stdcall RefreshBuddyAfterNameChange()
     if (wcsnlen_s(nickname, MaxNicknameLength) == 0) return;
     using SetNickname = void(__thiscall*)(void*, const wchar_t*);
     reinterpret_cast<SetNickname>(method)(buddy, nickname);
-    CompatLog("buddy refresh solicitado apos troca de nome confirmada");
+    CompatLog("SetNick do Messenger solicitado");
 }
 
 __declspec(naked) void BuddyLoginCallbackHook()
@@ -106,11 +109,36 @@ __declspec(naked) void BuddyNameCallbackHook()
         jz done
         pushfd
         pushad
-        call RefreshBuddyAfterNameChange
+        call RefreshBuddyNickname
         popad
         popfd
     done:
         ret 8
+    }
+}
+
+__declspec(naked) void CharacterSelectCallbackHook()
+{
+    __asm
+    {
+        movzx eax, byte ptr [esp + 4]
+        test eax, eax
+        sete al
+        movzx eax, al
+        push eax
+        mov edx, dword ptr [esp + 8]
+        push edx
+        call dword ptr [CharacterSelectTrampoline]
+        pop eax
+        test eax, eax
+        jz done
+        pushfd
+        pushad
+        call RefreshBuddyNickname
+        popad
+        popfd
+    done:
+        ret 4
     }
 }
 
@@ -153,6 +181,10 @@ bool InstallBuddyRefreshHooks()
     if (!InstallHook(BuddyNameCallbackAddress, ExpectedBuddyNameCallback,
             sizeof(ExpectedBuddyNameCallback), reinterpret_cast<void*>(&BuddyNameCallbackHook),
             &BuddyNameTrampoline))
+        return false;
+    if (!InstallHook(CharacterSelectCallbackAddress, ExpectedCharacterSelectCallback,
+            sizeof(ExpectedCharacterSelectCallback),
+            reinterpret_cast<void*>(&CharacterSelectCallbackHook), &CharacterSelectTrampoline))
         return false;
     return true;
 }

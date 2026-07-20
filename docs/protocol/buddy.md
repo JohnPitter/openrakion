@@ -16,12 +16,12 @@ lista continua aberta e o Messenger ainda não deve ser classificado como funcio
 Em 19/07/2026 foi reproduzida outra falha: após criar e selecionar um personagem sem encerrar a
 sessão do World, o modelo social era reinicializado, mas o cliente não repetia `SVC_LOGIN` nem
 `SVC_SET_NICK`; sair e entrar no servidor recriava a conexão Buddy e restaurava a lista. A correção
-fica no `RakionClientPatch.dll`: depois do callback bem-sucedido do ack `0x15`, quando a troca já
-foi persistida pelo World, ele chama o slot original `SetNick` do `Buddy2.dll`. O Buddy compara o
-nome canônico do banco com o estado da conexão
-e, somente quando houve troca, responde `RET_SET_NICK` seguido de um novo `RET_LOGIN`. Assim a lista
-é reconstruída uma vez, sem polling, cache local de amigos ou duplicação no login normal. O fluxo
-foi coberto headless; a confirmação visual create→select→F9 permanece pendente.
+fica no `RakionClientPatch.dll`: depois de todo callback bem-sucedido do ack de seleção `0x14`, ele
+chama o slot original `SetNick` do `Buddy2.dll` com o nickname residente. O mesmo refresh permanece
+depois do ack `0x15`, quando uma troca de `buddyname` foi persistida pelo World. O Buddy compara o
+nome canônico do banco com o estado da conexão e responde `RET_SET_NICK` seguido de um novo
+`RET_LOGIN` quando precisa reconstruir o modelo. Não há polling nem cache paralelo de amigos. O
+fluxo headless continua coberto; a confirmação visual create→select→F9 permanece pendente.
 
 A matriz LAN/NAT também permanece pendente. O P2P UDP direto continua sendo executado pelo
 `Buddy2.dll`; o servidor fornece descoberta de endpoint e fallback TCP, mas não interpreta nem

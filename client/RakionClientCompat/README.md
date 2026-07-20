@@ -5,8 +5,8 @@ Bootstrap x86 `version.dll`, carregado pelo fluxo normal antes do entry point. E
 `RakionClientPatch.dll`, que centraliza os patches do cliente: diff golden do `rakion-final`,
 no-GameGuard, janela/multi-instância/Alt+Tab, IP do servidor, HIT/SHOT, lifecycle, ground-snap e
 telemetria de ataque humano contra bot. A DLL também corrige a sincronização do Messenger após a
-seleção de um personagem novo, disparando o `SetNick` já existente do `Buddy2.dll` depois que o
-World confirma a troca de `buddyname` em `0x15`. O lifecycle original da tela de personagens é
+seleção de personagem, disparando o `SetNick` já existente do `Buddy2.dll` depois de todo ACK
+bem-sucedido de `0x14` e também após a troca de `buddyname` em `0x15`. O lifecycle original da tela de personagens é
 restaurado em conjunto com o unlink seguro dos componentes do `uitoolkit.dll`.
 
 O código está separado em bootstrap/forwarding (`version_proxy.cpp`), lifecycle e HIT/SHOT

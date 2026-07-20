@@ -81,7 +81,7 @@ valida também o hash e o prólogo de `CNet::SendToOtherClient` na `engine.dll`,
 O linker usa `/Brepro`: duas compilações consecutivas com o mesmo toolchain e as mesmas entradas
 devem produzir o mesmo SHA-256. A build estável validada em 19/07/2026 gerou
 `13C1D0CC022D0000FA2E7ED03ABD0107AD41D894E0AF302D74CF3D42B0F33263` para `version.dll` e
-`6455F14820FD74AE1CAC65E490B6F8B3C186CE9D0149F8064B75FD07D439857D` para
+`4E964FF7790DD81A1998480C189CE8019DB323A3694174B6F6E71C4623483051` para
 `RakionClientPatch.dll` nas duas execuções. O build de
 `client/RakionLauncher` chama esse script, embute `version.dll` e `RakionClientPatch.dll` e instala
 as duas em `Bin` antes de iniciar o jogo.
