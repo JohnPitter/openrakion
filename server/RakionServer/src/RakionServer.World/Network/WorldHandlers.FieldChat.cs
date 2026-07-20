@@ -82,16 +82,7 @@ namespace RakionServer.World.Network
 
         private static void Op_CharacterGetUserName(HandlerContext context)
         {
-            var u = context.User;
-            if (!CharacterGetUserNameRequest.TryParse(context.Raw, out var request) ||
-                !request.IsWithinOriginalLimit)
-            {
-                u.Disconnect(0x29);
-                return;
-            }
-            using var w = new PacketWriter();
-            w.WriteCString(request.Value);
-            u.SendMessage(0x0d, w.ToArray());
+            context.User.BeginCharacterIdentityLookup(context.Raw);
         }
 
     }

@@ -94,7 +94,7 @@ Um mesmo opcode ainda pode ter comportamento condicionado ao estado da sessão. 
 | `0x16` | `SendCharacterWhisper` | whisper/localização |
 | `0x17` | `SendCharacterWhereAmI` | localização própria |
 | `0x18` | `SendCharacterWhereAreYou` | localizar jogador |
-| `0x19` | `SendCharacterGetUserName` | eco de C-string curta pelo canal de mensagem `0x0D` |
+| `0x19` | `SendCharacterGetUserName` | fila DB interna `0x0D`; lookup por personagem e retorno de account/buddy name |
 | `0x1A` | `SendCharacterTutorialClear` | tutorial concluído |
 | `0x1B` | `SendCharacterStateClear` | reset de stats |
 | `0x1C` | `SendCharacterChangeCharName` | troca de nome |
@@ -206,7 +206,7 @@ Portanto, são ABI legado/dormente desta build e não autorizam criar regra de e
 | `0x0E` | SuccessUDP | `Op_SuccessUdp` canônico | fechado: rota única, request lógico `u8`, resíduos do bloco AES ignorados como no original e resposta de 15 bytes com dois endpoints; cliente pristine validado graficamente em 18/07/2026 |
 | `0x0F` | KeepAlive | `Op_KeepAlive` canônico | fechado: request vazio e sem seq, gate apenas de conta (`DISC 1A`), intervalo e alerta estrito acima de 90 s; sem resposta |
 | `0x12`–`0x1A` | ciclo de personagem, busca e tutorial | handlers `Op_Character*` canônicos; busca/whisper dedicados | fechado: aliases de field removidos, create 3/7 bytes, delete com snapshot de clã, buddy variável, tutorial sem ack, seleção/buscas/layouts/gates com golden source; validação visual continua pendente |
-| `0x19` | CharacterGetUserName | `Op_CharacterGetUserName` canônico | rota única; o lookup DB sintético foi removido: original só valida `<13`, envia C-string em msgType `0x0D` e usa `DISC 28/29` |
+| `0x19` | CharacterGetUserName | `Op_CharacterGetUserName` canônico | rota única; `0x0D` identificado como request da fila DB interna; worker `0x00413980` e resposta account/buddy restaurados; `DISC 28/29` preservados |
 | `0x31` | InventoryMove | `Op_InventoryMove` canônico | rota única; swap puro entre box e zona ativa, limites `120/19`, estados `1..4` e resposta de 21 bytes; merge removido para `0x73` |
 | `0x14` | CharacterSelect | `Op_CharacterSelect` | fechado: rota única, DTO `u32`, status `0/1/2` e entrada no canal após sucesso |
 | `0x1B` | CharacterStateClear | `Op_CharacterStateClear` canônico | rota única, builder/parser 1/3 bytes, gate de conta, cash/coupon, callbacks e random presents fechados; UI pendente |

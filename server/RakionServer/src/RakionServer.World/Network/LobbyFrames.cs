@@ -271,6 +271,15 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
+        public static byte[] CharacterIdentityLookup(
+            CharacterIdentityLookupStatus status, string accountId, string buddyName)
+        {
+            using var writer = new PacketWriter();
+            writer.WriteWord(0x19).WriteWord(0x0d).WriteByte((byte)status)
+                .WriteCString(accountId).WriteCString(buddyName);
+            return writer.ToArray();
+        }
+
         public static byte[] ClanMembers(IReadOnlyList<ClanMemberIdentity> members)
         {
             if (members.Count > 99)

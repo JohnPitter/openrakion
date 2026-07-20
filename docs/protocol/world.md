@@ -248,7 +248,7 @@ string terminada em zero; `blob(n)` contém exatamente `n` bytes.
 | `16` | `SendCharacterWhisper` | `[cstr target][cstr text]` | Confirmado |
 | `17` | `SendCharacterWhereAmI` | vazio | Confirmado |
 | `18` | `SendCharacterWhereAreYou` | `[cstr character]` | Confirmado |
-| `19` | `SendCharacterGetUserName` | `[cstr value]`, comprimento `<13` | Builder `engine.dll:0x36191020`; World apenas ecoa em msgType `0x0D`, sem consulta DB |
+| `19` | `SendCharacterGetUserName` | `[cstr characterName]`, comprimento `<13` | Builder `engine.dll:0x36191020`; o World enfileira a consulta DB interna `0x0D`, resolve conta/buddy name e responde `0x19 [u16 0x0D][status][account\0][buddy\0]` |
 | `1A` | `SendCharacterTutorialClear` | vazio | Confirmado |
 | `1B` | `SendCharacterStateClear` | `[u8 type][u16 value se type!=0]` | Confirmado; corpo lógico 1/3 bytes |
 | `1C` | `SendCharacterChangeCharName` | `[cstr newName][u8 type][u16 item/value se type!=0]` | Confirmado |

@@ -32,6 +32,20 @@ namespace RakionServer.World.Tests
                 System.Convert.ToHexString(LobbyFrames.BuddyNameAck(0, "ProbeBuddy")));
 
         [Fact]
+        public void CharacterIdentityLookup_MatchesOriginalDbCallbackEnvelope() =>
+            Assert.Equal(
+                "19000D000074657374320050726F626554776F00",
+                System.Convert.ToHexString(LobbyFrames.CharacterIdentityLookup(
+                    Database.CharacterIdentityLookupStatus.Success, "test2", "ProbeTwo")));
+
+        [Fact]
+        public void CharacterIdentityLookup_NotFoundCarriesEmptyStrings() =>
+            Assert.Equal(
+                "19000D00020000",
+                System.Convert.ToHexString(LobbyFrames.CharacterIdentityLookup(
+                    Database.CharacterIdentityLookupStatus.NotFound, "", "")));
+
+        [Fact]
         public void CharacterCreateAck_MatchesLiveSuccessProbeWithoutStackGarbage() =>
             Assert.Equal(
                 "12000002000000",

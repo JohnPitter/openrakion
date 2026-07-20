@@ -448,6 +448,7 @@ Matriz visual ainda obrigatória:
 
 | Cenário | Resultado esperado |
 |---|---|
+| Clique em usuário | lookup World `0x19` fecha o modal e fornece account ID/buddy name |
 | Add + relogin | relação aparece nos dois lados e persiste |
 | Grupos locais diferentes | cada usuário vê seu próprio grupo |
 | Online/offline | somente amigos recebem mudança |

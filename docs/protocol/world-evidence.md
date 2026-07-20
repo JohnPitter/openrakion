@@ -1257,17 +1257,18 @@ mesmo limiar; o interceptor vazio e o gate artificial `InField` foram removidos.
 
 ### CharacterGetUserName `0x19` — 2026-07-16
 
-`tools/ghidra/DecompileCharacterGetUserName.py` comprovou que o nome do export não implica lookup
-no banco. `engine.dll:0x36191020` envia `[0x19:u16][value:cstr]`. `World:0x00420760` exige apenas
-GameInfoId (`DISC 28` na ausência), aceita `strlen(value) < 13`, copia a mesma C-string e chama
-`FUN_0041B940` com msgType interno `0x0D`; comprimento inválido causa `DISC 29`.
+`tools/ghidra/DecompileCharacterGetUserName.py` fecha as duas etapas do servidor original.
+`engine.dll:0x36191020` envia `[0x19:u16][characterName:cstr]`. `World:0x00420760` exige GameInfoId
+(`DISC 28` na ausência), aceita `strlen(value) < 13` e enfileira `[sequence:u16][0x0D:u16][name]`
+em `FUN_0041B940`; comprimento inválido causa `DISC 29`. O `0x0D` é comando da fila interna de DB,
+não uma resposta para eco direto ao cliente.
 
-O parser associado em `engine.dll:0x36193170` lê o primeiro byte como status e duas C-strings; o
-callback `rakion.bin:0x00476450` encerra a espera e trata status `0/1/2`. Essa cadeia é uma ponte
-cliente dirigida pelo buffer de entrada, não `characterinfo JOIN usergameinfo`. A rota .NET antiga
-consultava o DB e fabricava `[0x19][0x0D][status][account][buddy]`, envelope que não existe no
-handler original. Ela foi removida junto com o DTO/repositório exclusivos dessa hipótese; a rota
-canônica agora preserva o eco no canal de mensagem.
+O worker `World:0x00413980` executa a consulta de `UserGameInfo.name,buddyname` ligada a
+`CharacterInfo.name` e produz status `0`, `1` ou `2`, seguido de account ID e buddy name. O parser
+`engine.dll:0x36193170` lê exatamente esse status e as duas C-strings; o callback
+`rakion.bin:0x00476450` encerra a espera modal. No transporte .NET, o equivalente validado é
+`[0x19:u16][0x0D:u16][status:u8][accountId\0][buddyName\0]`. O eco direto anterior começava pelo
+primeiro caractere do nome no lugar do status e deixava a UI presa em “Waiting for ID Information”.
 
 ### InventoryMove `0x31` — 2026-07-16
 

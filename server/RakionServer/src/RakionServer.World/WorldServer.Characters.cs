@@ -7,6 +7,9 @@ namespace RakionServer.World
 {
     public sealed partial class WorldServer
     {
+        public Task<CharacterIdentityLookupResult> FindCharacterIdentityAsync(string characterName) =>
+            _db.FindCharacterIdentityAsync(characterName);
+
         public async Task<CharacterCreateResult> CreateCharacterAsync(
             ClientSession session, string name, byte charClass, byte slot)
         {

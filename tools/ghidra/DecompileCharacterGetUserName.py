@@ -11,7 +11,8 @@ from ghidra.util.task import ConsoleTaskMonitor
 TARGETS = {
     "worldserv.exe": (
         (0x00420760, "handler C->S 0x19 CharacterGetUserName"),
-        (0x0041B940, "envio pelo canal de mensagem"),
+        (0x0041B940, "enqueue da requisicao interna 0x0D"),
+        (0x00413980, "worker DB de CharacterGetUserName"),
     ),
     "engine.dll": (
         (0x36191020, "builder C->S 0x19 CharacterGetUserName"),

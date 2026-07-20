@@ -354,6 +354,26 @@ namespace RakionServer.World.Network
             _ = _server.MarkTutorialClearAsync(this);
         }
 
+        internal void BeginCharacterIdentityLookup(byte[] data) =>
+            _ = HandleCharacterIdentityLookupAsync(data);
+
+        private async Task HandleCharacterIdentityLookupAsync(byte[] data)
+        {
+            if (!CharacterGetUserNameRequest.TryParse(data, out var request) ||
+                !request.IsWithinOriginalLimit)
+            {
+                Disconnect(0x29);
+                return;
+            }
+
+            Database.CharacterIdentityLookupResult result =
+                await _server.FindCharacterIdentityAsync(request.Value);
+            SendEncryptedFrame(LobbyFrames.CharacterIdentityLookup(
+                result.Status, result.Identity?.AccountId ?? "", result.Identity?.BuddyName ?? ""));
+            Log.Info("character", "[{0}] identidade de '{1}': status={2} account='{3}'",
+                Slot, request.Value, result.Status, result.Identity?.AccountId ?? "");
+        }
+
         /// <summary>LoginComplete (msgType 2) — sucesso de FUN_0041f6c0.</summary>
         public void SendLoginComplete(string field2, string field3, ushort tail)
         {
