@@ -19,7 +19,7 @@ do contrato.
 | Engine golden | SHA-256 `83B20D6C32CD66B95C8F8E41AD6DE13A58E8F5F948CD21CBD118D42EF8CF88F2` |
 | Proxy determinístico | `Bin/version.dll`, SHA-256 `13C1D0CC022D0000FA2E7ED03ABD0107AD41D894E0AF302D74CF3D42B0F33263` |
 | Forwarder oficial | carregado de `%SystemRoot%\SysWOW64\version.dll`; não é distribuído |
-| Patches golden | `Bin/RakionClientPatch.dll`, SHA-256 `4E964FF7790DD81A1998480C189CE8019DB323A3694174B6F6E71C4623483051` |
+| Patches golden | `Bin/RakionClientPatch.dll`, SHA-256 `36DF8372BBB2AFFAACA2E2B98F4ADD874A217EDBDBDE0171267EB2A6E68AAE92` |
 | Destino | `server.host=127.0.0.1`, `display.mode=windowed` |
 | Verificação estática | `validation-install.json` atualizado e 14/14 arquivos aprovados em 18/07/2026 |
 
@@ -35,7 +35,7 @@ golden source; este diretório é somente o ambiente de execução.
 | World | aprovado | TCP `40708` e UDP `40708/40709` ouvindo |
 | Buddy | aprovado | TCP/UDP `8500/8504` ouvindo |
 | Build do cliente/DLL | aprovado | solução 0 warnings/erros; launcher 14/14; DLLs x86 `/W4 /WX`, 317 patches, 17 exports e duas builds com hashes idênticos |
-| Instalação do cliente | aprovado | refresh transacional concluído; 14/14 arquivos íntegros, `verorig.dll` removida e `originalBackupRoot` preservado |
+| Instalação do cliente | aprovado | refresh transacional concluído; 15/15 arquivos íntegros, `verorig.dll` removida e `originalBackupRoot` preservado |
 | Auto-update de conteúdo | aprovado | smoke HTTP assinado `258→259` atualizou `version.dll` e `RakionClientPatch.dll`, sem resíduos |
 | Abertura sem elevação | aprovado | launcher `asInvoker`; processo legado recebeu `RunAsInvoker`; nenhum processo `consent.exe` foi aberto |
 | Login e render inicial | aprovado | cliente pristine exibiu servidor e `GoHeroi` lvl 40; login `test`, TCP World `40708`, Buddy `8500`, `SuccessUDP`, canal e lista de salas confirmados |

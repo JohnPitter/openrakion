@@ -64,6 +64,8 @@ python client\RakionClientCompat\verify_legacy_client_patch.py `
 
 Resolução, mouse, som e gamma continuam em `Scripts/PersistentSymbols.ini`; `display.mode` continua
 selecionando `windowed`, `borderless` ou `fullscreen`. São preferências do jogador, não patches.
+O refresh do Messenger também não pertence mais à DLL: o Buddy server detecta a seleção persistida
+do personagem e reenvia o snapshot social pelo protocolo existente.
 
 ## Build
 
@@ -83,7 +85,7 @@ valida também o hash e o prólogo de `CNet::SendToOtherClient` na `engine.dll`,
 O linker usa `/Brepro`: duas compilações consecutivas com o mesmo toolchain e as mesmas entradas
 devem produzir o mesmo SHA-256. A build estável validada em 19/07/2026 gerou
 `13C1D0CC022D0000FA2E7ED03ABD0107AD41D894E0AF302D74CF3D42B0F33263` para `version.dll` e
-`FF351A56C1FB448CBA2B7C32C6179D40CD1CDDB44BB17219C8A99E3BEE9D9104` para
+`36DF8372BBB2AFFAACA2E2B98F4ADD874A217EDBDBDE0171267EB2A6E68AAE92` para
 `RakionClientPatch.dll` nas duas execuções. O build de
 `client/RakionLauncher` chama esse script, embute `version.dll` e `RakionClientPatch.dll` e instala
 as duas em `Bin` antes de iniciar o jogo.

@@ -39,6 +39,12 @@ public sealed class BuddyHeadlessE2ETests
             AssertLogin(aliceLogin.Payload, "bob", "Bob");
             uint firstToken = ReadUdpToken(aliceLogin.Payload);
             await ExecuteAsync(scoped.ConnectionString,
+                "UPDATE usergameinfo SET charname='AliceNewChar' WHERE name='alice'");
+            aliceLogin = await alice.ReadUntilAsync(BuddyProtocol.RET_LOGIN);
+            AssertLogin(aliceLogin.Payload, "bob", "Bob");
+            Assert.NotEqual(firstToken, ReadUdpToken(aliceLogin.Payload));
+            firstToken = ReadUdpToken(aliceLogin.Payload);
+            await ExecuteAsync(scoped.ConnectionString,
                 "UPDATE usergameinfo SET buddyname='AliceNova' WHERE name='alice'");
             await alice.SetNicknameAsync("Alice");
             BuddyFrame nickResult = await alice.ReadUntilAsync(BuddyProtocol.RET_SET_NICK);

@@ -125,6 +125,7 @@ namespace RakionServer.Buddy
 
             connection.AccountId = account.AccountId;
             connection.DisplayName = account.DisplayName;
+            connection.ActiveCharacterName = account.ActiveCharacterName;
             connection.Crypto = crypto;
             BuddyChatState chat = await _database.LoadChatStateAsync(account.AccountId);
             connection.ChatState.Load(chat.MutedUntilUtc, chat.BlockedAccounts);
@@ -173,7 +174,8 @@ namespace RakionServer.Buddy
                 return;
             }
 
-            var senderAccount = new BuddyAccount(sender.AccountId, sender.DisplayName);
+            var senderAccount = new BuddyAccount(
+                sender.AccountId, sender.DisplayName, sender.ActiveCharacterName);
             BuddySmsMessage? message = await _database.QueueSmsAsync(
                 senderAccount, targetAccount, decision.Text);
             if (message == null)

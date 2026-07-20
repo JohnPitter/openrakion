@@ -8,7 +8,8 @@ using RakionServer.Common;
 
 namespace RakionServer.Buddy
 {
-    public sealed record BuddyAccount(string AccountId, string DisplayName);
+    public sealed record BuddyAccount(
+        string AccountId, string DisplayName, string ActiveCharacterName);
     public sealed record BuddyChatState(DateTime MutedUntilUtc, IReadOnlyList<string> BlockedAccounts);
 
     public sealed partial class BuddyDatabase
@@ -49,15 +50,37 @@ namespace RakionServer.Buddy
 
         public async Task<BuddyAccount?> LoadAccountAsync(string accountId)
         {
+            IReadOnlyDictionary<string, BuddyAccount> accounts =
+                await LoadAccountsAsync([accountId]);
+            return accounts.GetValueOrDefault(accountId);
+        }
+
+        public async Task<IReadOnlyDictionary<string, BuddyAccount>> LoadAccountsAsync(
+            IReadOnlyList<string> accountIds)
+        {
+            var accounts = new Dictionary<string, BuddyAccount>(StringComparer.OrdinalIgnoreCase);
+            if (accountIds.Count == 0) return accounts;
+
             await using MySqlConnection connection = await OpenAsync();
-            await using var command = new MySqlCommand(
-                "SELECT COALESCE(NULLIF(g.buddyname,''),NULLIF(g.charname,''),u.id) " +
-                "FROM user u LEFT JOIN usergameinfo g ON g.name=u.id WHERE u.id=@id LIMIT 1", connection);
-            command.Parameters.AddWithValue("@id", accountId);
+            var parameters = new string[accountIds.Count];
+            await using var command = connection.CreateCommand();
+            for (int index = 0; index < accountIds.Count; index++)
+            {
+                parameters[index] = $"@id{index}";
+                command.Parameters.AddWithValue(parameters[index], accountIds[index]);
+            }
+            command.CommandText =
+                "SELECT u.id,COALESCE(NULLIF(g.buddyname,''),NULLIF(g.charname,''),u.id)," +
+                "COALESCE(g.charname,'') FROM user u LEFT JOIN usergameinfo g ON g.name=u.id " +
+                $"WHERE u.id IN ({string.Join(',', parameters)})";
             await using MySqlDataReader reader = await command.ExecuteReaderAsync();
-            return await reader.ReadAsync()
-                ? new BuddyAccount(accountId, reader.GetString(0))
-                : null;
+            while (await reader.ReadAsync())
+            {
+                string accountId = reader.GetString(0);
+                accounts[accountId] = new BuddyAccount(
+                    accountId, reader.GetString(1), reader.GetString(2));
+            }
+            return accounts;
         }
 
         public async Task<BuddyChatState> LoadChatStateAsync(string accountId)

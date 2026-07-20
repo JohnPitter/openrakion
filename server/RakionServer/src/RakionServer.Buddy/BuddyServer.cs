@@ -31,6 +31,7 @@ namespace RakionServer.Buddy
 
         public void Start()
         {
+            _ = Task.Run(() => CharacterSelectionRefreshLoopAsync(_cts.Token));
             foreach (int port in _config.Ports)
             {
                 var listener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);

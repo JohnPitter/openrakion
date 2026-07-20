@@ -16,12 +16,12 @@ lista continua aberta e o Messenger ainda não deve ser classificado como funcio
 Em 19/07/2026 foi reproduzida outra falha: após criar e selecionar um personagem sem encerrar a
 sessão do World, o modelo social era reinicializado, mas o cliente não repetia `SVC_LOGIN` nem
 `SVC_SET_NICK`; sair e entrar no servidor recriava a conexão Buddy e restaurava a lista. A correção
-fica no `RakionClientPatch.dll`: depois de todo callback bem-sucedido do ack de seleção `0x14`, ele
-chama o slot original `SetNick` do `Buddy2.dll` com o nickname residente. O mesmo refresh permanece
-depois do ack `0x15`, quando uma troca de `buddyname` foi persistida pelo World. O Buddy compara o
-nome canônico do banco com o estado da conexão e responde `RET_SET_NICK` seguido de um novo
-`RET_LOGIN` quando precisa reconstruir o modelo. Não há polling nem cache paralelo de amigos. O
-fluxo headless continua coberto; a confirmação visual create→select→F9 permanece pendente.
+agora fica integralmente no backend. O Buddy acompanha em uma única consulta em lote o `charname`
+das contas online; ao observar uma troca estável por dois ciclos de 500 ms, atualiza o perfil da
+conexão e reenvia `RET_LOGIN`. Esse é o mesmo contrato que o cliente já consome no login, sem chamar
+`SetNick`, sem alterar o executável e sem manter cache paralelo da lista de amigos. Falhas temporárias
+do banco são registradas e o monitor continua ativo. O fluxo create→select→refresh está coberto no
+E2E; a confirmação visual pelo F9 permanece pendente.
 
 A matriz LAN/NAT também permanece pendente. O P2P UDP direto continua sendo executado pelo
 `Buddy2.dll`; o servidor fornece descoberta de endpoint e fallback TCP, mas não interpreta nem
@@ -87,6 +87,7 @@ O backend usa vertical slices por responsabilidade, mantendo codecs byte-exatos 
 banco e do transporte:
 
 - `BuddyServer.Protocol.cs`: dispatch, handshake, login e SMS;
+- `BuddyServer.CharacterSelection.cs`: refresh da lista após troca do personagem ativo;
 - `BuddyServer.Friends.cs`: amigos, grupos e extensões;
 - `BuddyServer.Presence.cs`: token, registro UDP e online/offline;
 - `BuddyServer.Tunnel.cs`: autorização e relay;

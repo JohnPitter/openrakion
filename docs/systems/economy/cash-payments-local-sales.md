@@ -26,6 +26,11 @@ há provedor autorizado. Isso é intencional: navegar, atualizar a página ou re
 pode creditar a wallet. A concessão futura deverá ocorrer somente após webhook assinado e idempotente,
 processado pelo backend em transação com pedido e ledger.
 
+A abertura automática permanece uma responsabilidade mínima da DLL: o protocolo `0x34` entrega ao
+cliente apenas o status numérico de saldo insuficiente e não possui mensagem server-side capaz de
+pedir ao Windows que abra uma URL. Remover esse hook exige aceitar navegação manual ou estender
+coordenadamente o protocolo/launcher; o servidor continua responsável apenas pela decisão econômica.
+
 ## Evidência reproduzível
 
 World original analisado:
