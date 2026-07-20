@@ -1,6 +1,9 @@
 # OpenRakion
 
-Servidor privado **open source** para **Rakion** (SoftNyx, versão *XfsVer258*) — com um **servidor reescrito do zero em .NET**: broker, world (lobby/salas/partida) e buddy, mais o backend de autenticação. Você loga, entra no lobby, abre o inventário/armazém, **compra e vende** na loja e entra em partida — **sem precisar dos executáveis de servidor proprietários da SoftNyx**. Roda nativo em **Windows, Linux e Mac** (.NET 9, sem Wine).
+Servidor privado **open source** para **Rakion** (SoftNyx, versão *XfsVer258*), com broker,
+World, Buddy, launcher web e painel administrativo reescritos em **.NET 9**. O servidor roda
+nativamente em Windows e Linux, sem os executáveis proprietários de servidor e sem Wine. O
+launcher e a camada de compatibilidade do cliente são voltados para Windows.
 
 > ⚠️ **Legal:** Este repositório **NÃO contém** os arquivos proprietários do **cliente** Rakion (`rakion.bin`/`rakion.exe`, `engine.dll`, `*.xfs`, `NyxLauncher`, GameGuard). Esses são **copyright da SoftNyx** — obtenha de uma cópia legítima do jogo. Aqui está apenas **trabalho original** (servidor .NET, auth web, tools, docs) e componentes open source de terceiros. Veja [NOTICE.md](NOTICE.md).
 
@@ -14,8 +17,16 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
   - **Broker** (`RakionServer.Broker`) — lista de servidores/canais, anuncia o world (advertised IP) e faz a ponte de login.
   - **World** (`RakionServer.World`) — login completo, lobby, lista de canais/salas, seleção de personagem, **inventário + armazém (box) persistente**, **loja (compra e venda) com saldo em tempo real**, **Power User** (compra + bônus configurável de XP/gold), chat, handshake **UDP de gameplay**, **motor de partida** (Golem/Deathmatch/TeamDeath/Boss com settlement persistido) e **bots PvP** server-side (`/addbot`).
   - **Buddy** (`RakionServer.Buddy`) — serviço **canônico** de amigos/mensageiro (F9): login, adicionar/remover amigo, grupos, apelido, **presença** (amigo acende online), **SMS/PM** e **brokering de tunnel P2P** para convite/mensagem direta.
-  - **LauncherWeb** (`RakionServer.LauncherWeb`) — auth web do launcher (login + auto-update `fetch`) em ASP.NET; reimplementa o backend PHP de auth/`fetch` do [RakionLauncher do CarlosX](https://github.com/CarlosX/RakionLauncher) (ver [CREDITS.md](CREDITS.md); o PHP original não é redistribuído aqui).
+  - **LauncherWeb** (`RakionServer.LauncherWeb`) — autenticação por ticket, update assinado,
+    página de compra de Cash e endpoint público de status/jogadores online.
   - **Admin** (`RakionServer.Admin`) — painel web (Blazor) pra gerenciar **contas, gold/cash, itens no inventário** (visual estilo jogo, com nomes), a **config do Power User** (preço/bônus/multiplicadores/promoção) e **publicar updates** do launcher.
+- 🟢 **Launcher próprio para Windows** — login, atualização, resolução/modo de tela, opções do jogo,
+  status do servidor e quantidade de jogadores conectados.
+- 🟢 **Compatibilidade v258 por DLL** — `version.dll` faz somente o bootstrap e carrega
+  `RakionClientPatch.dll`, que concentra redirecionamento de IP, retirada do GameGuard, correções de
+  UI/lifecycle, Add Bot, ponte de combate dos bots e acesso à página de Cash.
+- 🟢 **Pacote reproduzível do cliente** — um comando gera uma sobreposição self-contained, com
+  `Bin`, `Data`, launcher, configurações, manifesto SHA-256 e verificador de integridade.
 - 🟢 **Login resolvido** — a peça que travava a comunidade. A conta loga, o world aceita, o banco carrega personagem e itens.
 
 ## Status honesto (o que funciona / o que não)
@@ -29,20 +40,28 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
 | Handshake UDP + entrada no campo + motor de partida | ✅ |
 | **Power User** (compra + bônus de XP/gold configurável + bonus points) | ✅ |
 | **Painel admin** (contas, gold/cash, itens, config do PU, updates) | ✅ |
-| **Stack roda nativo em Windows/Linux/Mac** (.NET 9, sem Wine/P-Invoke) | ✅ |
+| **Stack de servidor roda nativo em Windows/Linux** (.NET 9, sem Wine) | ✅ |
+| **Launcher**: login, update, opções, resolução, status e jogadores online | ✅ |
+| **DLL de compatibilidade v258**: no-GG, IP, UI e patches golden em memória | ✅ |
+| Criação/troca de personagem e atualização do Messenger no char-select | ✅ validado no cliente |
+| Stage PvE: criação, entrada, saída durante a partida e retorno à lista | ✅ validado no cliente |
+| Botão **Buy Cash** e página web de recarga | ✅ implementado com debounce; reabertura aguarda confirmação visual final |
 | Modos PvP (Golem/Deathmatch/TeamDeath/Boss) | ✅ motor de round server-side + **validado headless com 2 clientes no fio** (criar/entrar sala, ready/start, movimento e combate UDP, win/lose persistido no DB) |
-| **Bots PvP** (peer sintético server-side, `/addbot`) | ✅ roster, IA (perseguição/orbita/antecipação) e movimento/combate sintetizados no fio; sem HIT×N nativo (teto de RE) |
+| **Bots PvP** (`Add Bot` somente em Battle) | ✅ fluxo, movimento, dano e morte cobertos headless; smoke visual continua sendo gate de lançamento |
 | **Buddy/Mensageiro (F9)**: amigos, grupos, presença, SMS/PM, tunnel P2P | ✅ serviço canônico do stack; persistência atômica de amigos/grupos e presença bidirecional |
-| **GameGuard** original | ❌ morto (servidor nProtect offline desde ~2007) — exige client no-GG |
+| **GameGuard** original | ❌ serviço externo offline; fluxo neutralizado pela DLL de compatibilidade |
 | Navegação inventário/loja ↔ lista de salas (botão **Previous**) | ✅ |
 
-> O único ❌ é o **GameGuard** — não é limitação do nosso servidor, e sim de um serviço externo da nProtect offline há anos ([detalhe](#gameguard-veredito-honesto)).
+> O GameGuard original não é recuperável porque depende de um serviço externo desativado. O pacote
+> atual usa a DLL de compatibilidade para neutralizar esse fluxo. Isso não deve ser confundido com
+> validação gráfica completa de todos os modos, que ainda precisa ser registrada por build.
 
 ### Engenharia reversa e validação
 
 - **RE estático completo** do v258: os 29 domínios do jogo, todas as 10 famílias de NPC + 3 classes especiais, e um **censo de 116 classes de entidade** com veredito por classe. Ver [`docs/audits/entity-class-census.md`](docs/audits/entity-class-census.md) e [`docs/audits/re-status-summary.md`](docs/audits/re-status-summary.md).
 - **Validação dinâmica via backend** com **dois clientes headless** dirigindo o `WorldServer` real (TCP + AES + UDP + banco): login, sala, partida, movimento/combate UDP, settlement persistido, matriz de modos e chat. Ver [`docs/audits/dynamic-validation.md`](docs/audits/dynamic-validation.md).
-- **~800 testes** (regras de domínio, golden byte-a-byte contra captura, e os E2E no fio) verdes.
+- **840 testes do servidor e 14 testes do launcher** verdes, além do build nativo `/W4 /WX` e smoke
+  das 17 exportações do proxy `version.dll`.
 
 Documentação técnica, mapas de RE e lacunas de validação: [`docs/README.md`](docs/README.md).
 
@@ -52,17 +71,21 @@ Documentação técnica, mapas de RE e lacunas de validação: [`docs/README.md`
 
 ```
 openrakion/
+├── client/
+│   ├── RakionLauncher/       Launcher WinForms
+│   ├── RakionClientCompat/   Proxy version.dll e RakionClientPatch.dll
+│   └── build_client_package.ps1  Gera a sobreposição distribuível
 ├── server/
 │   ├── RakionServer/     Servidor .NET — código-fonte
 │   │   ├── src/          .Broker, .World, .Buddy, .Common, .LauncherWeb (auth :80), .Admin (painel :8080)
 │   │   ├── tools/        OracleDiff (diff de blobs de login)
 │   │   ├── deploy/        worldserver.ini (template)
-│   │   ├── start-stack.ps1  Sobe os 4 serviços .NET de uma vez
+│   │   ├── start-stack.ps1  Sobe os serviços .NET
 │   │   ├── Dockerfile     Container (Linux + .NET)
 │   │   └── TUTORIAL.md    Setup passo a passo
 │   ├── config/           Templates (Settings.ini, GameServers.ini, worldserver.ini)
 │   └── README.md
-├── tools/                xfs_read/repack (XFS2), worldprobe/listprobe (sondas), difftest (teste diferencial)
+├── tools/                XFS2, probes, publicação e análise reproduzível
 ├── database/             Schema do banco (MariaDB)
 ├── docs/                 Índice, protocolos, sistemas, guias, auditorias e histórico
 ├── CREDITS.md
@@ -83,8 +106,8 @@ dotnet build -c Release RakionServer.sln
 
 # 3) configs: ajuste IPs/credenciais em deploy/worldserver.ini e src/RakionServer.Broker/Settings/
 
-# 4) rodar — tudo de uma vez (Windows):
-cd server/RakionServer && ./start-stack.ps1
+# 4) rodar — tudo de uma vez (Windows PowerShell):
+.\start-stack.ps1
 #    ou cada serviço em seu processo:
 #    - launcher web: RakionServer.LauncherWeb (RakionLauncherWeb)  porta 80
 #    - broker:       RakionServer.Broker      (BrokenServer)       porta 40706
@@ -95,6 +118,10 @@ cd server/RakionServer && ./start-stack.ps1
 
 > Os **web apps** (LauncherWeb/Admin) usam o runtime ASP.NET. Se o .NET não estiver no diretório
 > padrão do sistema, exporte `DOTNET_ROOT` — o `start-stack.ps1` já cuida disso.
+
+Com o stack ativo, `GET /api/v1/server-status` responde o estado do World, jogadores autenticados e
+capacidade. O launcher consulta esse endpoint ao abrir e a cada dez segundos; snapshots vencidos
+são tratados como offline.
 
 ### Credenciais de amostra (open source — troque se precisar)
 
@@ -115,16 +142,62 @@ Com `Admin__Password` e `ConnectionStrings__Rakion` definidos, sobe em **http://
 Dali dá pra criar/editar **contas**, ajustar **gold/cash**, **adicionar itens** ao inventário,
 configurar o **Power User** e **publicar updates** do launcher.
 
-## O cliente (proprietário)
+## Preparar o cliente para distribuição
 
-O OpenRakion **não distribui** o cliente. Você precisa de uma cópia legítima do Rakion v258 e, para conectar a um servidor próprio:
+O OpenRakion não distribui os arquivos proprietários do jogo. O administrador fornece uma cópia
+legítima do baseline v258 golden e executa, na raiz deste repositório:
 
-1. Gerar o **`config.xfs`** apontando para a SUA URL web (senão o client trava em *"Config.xfs File not found or changed"*) — veja [docs/guides/config-xfs.md](docs/guides/config-xfs.md).
-2. Usar um cliente **no-GG** (o GameGuard original não inicializa mais — veja abaixo).
+```powershell
+.\client\build_client_package.ps1 `
+  -GoldenRoot '<caminho-do-cliente-v258-golden>' `
+  -ServerHost '<ipv4-do-world>' `
+  -LauncherBaseUrl 'https://launcher.exemplo.com/' `
+  -CashStoreUrl 'https://launcher.exemplo.com/cash'
+```
+
+A saída é `artifacts/client-v258-overlay`, com esta estrutura:
+
+```text
+client-v258-overlay/
+├── RakionLauncher.exe
+├── launcher.settings.json
+├── server.host
+├── cash-shop.url
+├── display.mode
+├── client-package.json
+├── verify-package.ps1
+├── Bin/
+│   ├── rakion.exe
+│   ├── engine.dll
+│   ├── version.dll
+│   └── RakionClientPatch.dll
+└── Data/
+    └── SeriousSam.gms
+```
+
+`DataSetup.xfs` também fica na raiz da pasta. O launcher é self-contained; o jogador não precisa
+instalar o .NET. Antes de distribuir ou depois de copiar sobre o cliente original, valide:
+
+```powershell
+.\verify-package.ps1
+```
+
+Copie **todo o conteúdo** da sobreposição para a raiz do cliente, preservando `Bin` e `Data`, e
+inicie `RakionLauncher.exe`. Não copie somente as DLLs para um cliente de versão desconhecida e não
+renomeie `rakion.bin` para `rakion.exe`. O procedimento completo, hashes e rollback estão em
+[docs/guides/client-compatibility-dll.md](docs/guides/client-compatibility-dll.md).
+
+Para habilitar atualização assinada, acrescente
+`-EnableUpdates -PublicKeyPath '<chave-publica.pem>'`. A URL remota do LauncherWeb exige HTTPS.
 
 ## GameGuard (veredito honesto)
 
-O GameGuard (nProtect, 2007) **não inicializa mais**: o GameMon requisita o servidor de update/auth do nProtect, que está **offline** há anos (*"Game guard error : 0"*). **Não** é problema de Windows 11/driver; VM Win7/10 **não resolve**. Saídas: jogar pelo fluxo do launcher (em alguns builds o `rakion.bin` conecta com o GG falhando de forma não-fatal) ou aplicar um patch *no-GG* no client. Detalhes em [docs/guides/gameguard.md](docs/guides/gameguard.md).
+O GameGuard (nProtect, 2007) não inicializa mais porque seu serviço de update/auth está offline. Não
+é um problema resolvido por VM ou versão do Windows. O fluxo suportado usa o executável pristine
+v258 com `version.dll` + `RakionClientPatch.dll`; os patches são aplicados em memória antes do entry
+point, sem distribuir um executável modificado. Detalhes em
+[docs/guides/gameguard.md](docs/guides/gameguard.md) e
+[docs/guides/client-compatibility-dll.md](docs/guides/client-compatibility-dll.md).
 
 ## Tools
 
