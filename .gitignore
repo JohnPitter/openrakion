@@ -32,6 +32,7 @@ Thumbs.db
 [Bb]in/
 [Oo]bj/
 artifacts/
+/client/RakionDiag/
 
 # Exceções: configs de exemplo PODEM entrar
 !server/config/*.ini

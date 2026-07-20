@@ -83,13 +83,14 @@ substituídos por builders/golden tests; não são `.dem` nem replay de gameplay
 ## Diagnósticos disponíveis
 
 - `engine_host.log`, `rakion.log`, `.RPT`, `ScreenShots\` e `%TEMP%\rakion_launcher.log`;
-- `client/RakionDiag`, com DLL x86 opt-in por `RAKION_DIAG_DLL`;
+- uma pasta local e ignorada `<ferramenta-local>/RakionDiag`, com DLL x86 opt-in por
+  `RAKION_DIAG_DLL`;
 - `tools/orig_capture.ps1` e `orig_diag.ps1` para captura controlada do World original;
 - sondas headless e logs estruturados do Broker, World e Buddy.
 
-`RakionDiag` usa `OpenProcess`, `VirtualAllocEx`, `WriteProcessMemory` e `CreateRemoteThread`. É uma
-ferramenta local autorizada de RE, desabilitada quando `RAKION_DIAG_DLL` não existe. Não deve ser
-embutida nem habilitada no pacote de produção.
+`RakionDiag` não faz parte do repositório nem do pacote distribuído. A cópia local usa
+`OpenProcess`, `VirtualAllocEx`, `WriteProcessMemory` e `CreateRemoteThread`; é uma ferramenta de RE
+desabilitada quando `RAKION_DIAG_DLL` não existe e não deve ser embutida na produção.
 
 ## Operação fiel e eventual extensão
 
