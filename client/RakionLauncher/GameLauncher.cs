@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -85,9 +86,35 @@ internal static class GameLauncher
     /// <summary>Converte a senha em hex ASCII (o esquema que o cliente/world esperam no argv[1]).</summary>
     public static string HexPass(string pass) => Convert.ToHexString(Encoding.ASCII.GetBytes(pass)).ToLowerInvariant();
 
-    public static bool IsRunning()
+    public static int CountRunning(string binDir)
     {
-        foreach (var _ in System.Diagnostics.Process.GetProcessesByName("rakion")) return true;
-        return false;
+        string expectedExecutable = Path.GetFullPath(Path.Combine(binDir, GameProcess));
+        int count = 0;
+        foreach (Process process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(GameProcess)))
+        {
+            using (process)
+            {
+                try
+                {
+                    if (!process.HasExited && IsGameExecutable(process.MainModule?.FileName, expectedExecutable))
+                        count++;
+                }
+                catch (InvalidOperationException)
+                {
+                }
+                catch (System.ComponentModel.Win32Exception)
+                {
+                }
+            }
+        }
+
+        return count;
     }
+
+    internal static bool IsGameExecutable(string? executablePath, string expectedExecutable) =>
+        !string.IsNullOrWhiteSpace(executablePath) &&
+        string.Equals(
+            Path.GetFullPath(executablePath),
+            Path.GetFullPath(expectedExecutable),
+            StringComparison.OrdinalIgnoreCase);
 }

@@ -21,12 +21,14 @@ internal sealed class MainForm : Form
     private readonly Button _play = new() { Text = "START\nGAME" };
     private readonly Button _options = new() { Text = "GAME\nOPTION" };
     private readonly Label _status = new();
+    private readonly Label _clientStatus = new();
     private readonly Label _serverStatus = new();
     private readonly System.Windows.Forms.Timer _serverStatusTimer = new() { Interval = 10000 };
+    private readonly System.Windows.Forms.Timer _clientStatusTimer = new() { Interval = 1000 };
     private readonly ServerStatusClient _serverStatusClient = new();
 
     private bool _drag; private Point _dragOrigin;
-    private int _clients;   // nº de clientes abertos (o patch do mutex permite vários)
+    private int _clients;
 
     public MainForm()
     {
@@ -49,10 +51,20 @@ internal sealed class MainForm : Form
         BuildBanner();
         BuildStatus();          // antes dos botões: o status fica atrás, os botões na frente
         BuildLoginAndButtons();
-        Shown += async (_, _) => await RefreshServerStatusAsync();
+        Shown += async (_, _) =>
+        {
+            RefreshClientCount();
+            await RefreshServerStatusAsync();
+        };
         _serverStatusTimer.Tick += async (_, _) => await RefreshServerStatusAsync();
+        _clientStatusTimer.Tick += (_, _) => RefreshClientCount();
         _serverStatusTimer.Start();
-        FormClosed += (_, _) => _serverStatusTimer.Dispose();
+        _clientStatusTimer.Start();
+        FormClosed += (_, _) =>
+        {
+            _serverStatusTimer.Dispose();
+            _clientStatusTimer.Dispose();
+        };
     }
 
     private void BuildHeader()
@@ -139,9 +151,15 @@ internal sealed class MainForm : Form
     private void BuildStatus()
     {
         var box = new Panel { Bounds = new Rectangle(18, 378, 592, 66), BackColor = Theme.Panel, BorderStyle = BorderStyle.FixedSingle };
-        _status.Bounds = new Rectangle(10, 6, 572, 54); _status.ForeColor = Theme.Ink; _status.Font = new Font("Segoe UI", 8.5f);
+        _status.Bounds = new Rectangle(10, 6, 410, 54); _status.ForeColor = Theme.Ink; _status.Font = new Font("Segoe UI", 8.5f);
         _status.Text = $"Pronto.   Modo de tela: {ModeLabel(_settings.DisplayMode)}   ·   {_settings.ScreenWidth} x {_settings.ScreenHeight}";
-        box.Controls.Add(_status); Controls.Add(box);
+        _clientStatus.Bounds = new Rectangle(424, 6, 158, 54);
+        _clientStatus.TextAlign = ContentAlignment.MiddleRight;
+        _clientStatus.ForeColor = Theme.Ink;
+        _clientStatus.Font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
+        box.Controls.Add(_status);
+        box.Controls.Add(_clientStatus);
+        Controls.Add(box);
     }
 
     private static string ModeLabel(string m) => m switch
@@ -167,6 +185,7 @@ internal sealed class MainForm : Form
             if (_pass.Text == "") { Status("informe a senha", true); return; }
 
             ClientCompatibility.Install(_binDir);
+            RefreshClientCount();
             int clientVersion = UpdateClient.GetInstalledVersion(
                 _clientDir, _launcherConfig.BaseVersion);
             if (_clients == 0 && _launcherConfig.UpdatesEnabled)
@@ -190,7 +209,7 @@ internal sealed class MainForm : Form
                 _launcherConfig, clientVersion, user, _pass.Text);
             var (pid, hThread) = GameLauncher.LaunchSuspended(
                 _binDir, user, GameLauncher.HexPass(credential), ServerId);
-            WindowMode.Log($"launch cliente #{_clients + 1}: user='{user}' pid={pid}");   // diagnóstico: que conta foi lançada
+            WindowMode.Log($"launch cliente: abertos={_clients} user='{user}' pid={pid}");
             GameLauncher.Resume(hThread);
 
             uint upid = (uint)pid;   // frama/patcha por PID -> cada cliente cuida da SUA janela (suporta vários)
@@ -198,14 +217,20 @@ internal sealed class MainForm : Form
             new Thread(() => WindowMode.FrameGameWindow(upid, mode, w, h)) { IsBackground = true }.Start();
             new Thread(() => WindowMode.InjectDiagDll(pid)) { IsBackground = true }.Start();   // dev-only (opt-in RAKION_DIAG_DLL): hook de RE pós-loader
 
-            _clients++;
-            Status($"Rakion iniciado — {_clients} cliente(s) aberto(s). Pode abrir outro no START GAME.", false);
+            RefreshClientCount();
+            Status("Rakion iniciado. Pode abrir outro no START GAME.", false);
         }
         catch (Exception ex) { Status(ex.Message, true); }
         finally { _play.Enabled = true; }
     }
 
     private void Status(string msg, bool error) { _status.ForeColor = error ? Color.Firebrick : Theme.Ink; _status.Text = msg; }
+
+    private void RefreshClientCount()
+    {
+        _clients = GameLauncher.CountRunning(_binDir);
+        _clientStatus.Text = $"Clientes abertos: {_clients}";
+    }
 
     private static string ResolveClientDir()
     {
