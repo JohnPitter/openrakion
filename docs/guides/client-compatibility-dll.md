@@ -89,7 +89,7 @@ valida também o hash e o prólogo de `CNet::SendToOtherClient` na `engine.dll`,
 O linker usa `/Brepro`: duas compilações consecutivas com o mesmo toolchain e as mesmas entradas
 devem produzir o mesmo SHA-256. A build estável validada em 20/07/2026 gerou
 `13C1D0CC022D0000FA2E7ED03ABD0107AD41D894E0AF302D74CF3D42B0F33263` para `version.dll` e
-`3F861D1B1CC4DA2CE6F7511218B6F029A58A2015972137387B239F6829C80A09` para
+`751CA95AE0DA5C9C54006BC2A99AE2C83DF85B4B379D46E68ECAA66D68EC9689` para
 `RakionClientPatch.dll` nas duas execuções. O build de
 `client/RakionLauncher` chama esse script, embute `version.dll` e `RakionClientPatch.dll` e instala
 as duas em `Bin` antes de iniciar o jogo.
@@ -108,7 +108,8 @@ as duas em `Bin` antes de iniciar o jogo.
 
 Na tela Shop/Box, `Buy Cash` deve aparecer imediatamente à direita de `Potion slot`. O clique abre a
 URL configurada no navegador padrão. Essa navegação não concede saldo: crédito continua sendo uma
-operação exclusiva do backend.
+operação exclusiva do backend. Cliques concorrentes são consolidados e o botão é liberado novamente
+após dois segundos, permitindo reabrir a página sem criar vários workers simultâneos no cliente.
 
 O nosso launcher é o método oficial porque instala os artefatos e grava as configurações. Depois
 de `version.dll`, `RakionClientPatch.dll`, `server.host`, `cash-shop.url` e a build v258 estarem no lugar, iniciar

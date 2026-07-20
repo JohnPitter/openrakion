@@ -27,7 +27,9 @@ nativo `Buy Cash` ao lado do botão `Potion slot` (command `0x18B`). Como a tela
 instância desse controle, a DLL registra todas elas. O envio de comando do UIToolkit é interceptado
 somente quando o remetente pertence a esse conjunto; o clique é consumido e abre diretamente a
 `cash-shop.url`, sem encerrar a sessão. O botão herda bitmap, fonte, posição vertical e tamanho do
-controle original; não usa janela sobreposta nem duplica a configuração da URL.
+controle original; não usa janela sobreposta nem duplica a configuração da URL. A abertura roda em
+um único worker CRT por vez, com debounce de dois segundos; depois disso, um novo clique pode abrir
+novamente a loja.
 
 A página está pronta como entrada operacional, mas os botões permanecem desabilitados enquanto não
 há provedor autorizado. Isso é intencional: navegar, atualizar a página ou retornar ao jogo nunca

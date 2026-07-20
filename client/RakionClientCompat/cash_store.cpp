@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <shellapi.h>
+#include <process.h>
 
 #include <cstdint>
 #include <cstring>
@@ -35,6 +36,7 @@ constexpr char BuyCashLabel[] = "Buy Cash";
 constexpr int PotionSlotCommand = 0x18b;
 constexpr int BuyCashCommand = 0x7f01;
 constexpr long BuyCashOffsetX = 0x6d;
+constexpr DWORD CashStoreOpenCooldownMs = 2000;
 uintptr_t PowerUserCallbackContinue{};
 volatile LONG CashStoreOpenRequested{};
 void* PotionSlotButton{};
@@ -87,7 +89,7 @@ std::string LoadCashStoreUrl()
     return IsHttpUrl(url) ? url : DefaultCashStoreUrl;
 }
 
-DWORD WINAPI OpenCashStore(void*)
+unsigned __stdcall OpenCashStore(void*)
 {
     const std::string url = LoadCashStoreUrl();
     auto result = reinterpret_cast<INT_PTR>(
@@ -98,17 +100,18 @@ DWORD WINAPI OpenCashStore(void*)
     CompatLog(result > 32
         ? "pagina de recarga aberta no navegador"
         : "falha ao abrir pagina de recarga no navegador");
-    if (result <= 32) InterlockedExchange(&CashStoreOpenRequested, 0);
+    Sleep(CashStoreOpenCooldownMs);
+    InterlockedExchange(&CashStoreOpenRequested, 0);
     return result > 32 ? 0 : 1;
 }
 
 void RequestOpenCashStore()
 {
     if (InterlockedCompareExchange(&CashStoreOpenRequested, 1, 0) != 0) return;
-    HANDLE thread = CreateThread(nullptr, 0, OpenCashStore, nullptr, 0, nullptr);
-    if (thread)
+    const uintptr_t thread = _beginthreadex(nullptr, 0, OpenCashStore, nullptr, 0, nullptr);
+    if (thread != 0)
     {
-        CloseHandle(thread);
+        CloseHandle(reinterpret_cast<HANDLE>(thread));
         return;
     }
     InterlockedExchange(&CashStoreOpenRequested, 0);
