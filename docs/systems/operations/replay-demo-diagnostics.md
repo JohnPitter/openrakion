@@ -83,23 +83,16 @@ substituídos por builders/golden tests; não são `.dem` nem replay de gameplay
 ## Diagnósticos disponíveis
 
 - `engine_host.log`, `rakion.log`, `.RPT`, `ScreenShots\` e `%TEMP%\rakion_launcher.log`;
-- uma pasta local e ignorada `<ferramenta-local>/RakionDiag`, com DLL x86 opt-in por
-  `RAKION_DIAG_DLL`;
 - `tools/orig_capture.ps1` e `orig_diag.ps1` para captura controlada do World original;
 - sondas headless e logs estruturados do Broker, World e Buddy.
-
-`RakionDiag` não faz parte do repositório nem do pacote distribuído. A cópia local usa
-`OpenProcess`, `VirtualAllocEx`, `WriteProcessMemory` e `CreateRemoteThread`; é uma ferramenta de RE
-desabilitada quando `RAKION_DIAG_DLL` não existe e não deve ser embutida na produção.
 
 ## Operação fiel e eventual extensão
 
 Para fidelidade v258, não há replay a ativar. Manter:
 
-1. `RAKION_DIAG_DLL` ausente no ambiente normal;
-2. capturas limitadas a conta/ambiente de teste;
-3. logs com retenção e acesso restritos;
-4. dumps, IPs, chat e identificadores fora de artefatos públicos.
+1. capturas limitadas a conta/ambiente de teste;
+2. logs com retenção e acesso restritos;
+3. dumps, IPs, chat e identificadores fora de artefatos públicos.
 
 Se replay for requisito de produto, criar formato próprio e versionado no backend:
 
