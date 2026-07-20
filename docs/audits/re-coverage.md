@@ -62,7 +62,7 @@ transições internas e validações visual/multicliente.
 
 | Documento | Sistema | Cobertura real |
 |---|---|---|
-| [`protocol/buddy.md`](../protocol/buddy.md) | amigos, presença, grupos, P2P/tunnel buddy | RE e implementação headless completos; refresh pós-seleção agora é server-side; visual/LAN/NAT pendentes |
+| [`protocol/buddy.md`](../protocol/buddy.md) | amigos, presença, grupos, P2P/tunnel buddy | RE e implementação headless completos; primeiro char e sequência `RET_SET_NICK` → `RET_LOGIN` são server-side; visual/LAN/NAT pendentes |
 | [`systems/social/clan.md`](../systems/social/clan.md) | clã, árvore, ranking e guerra | RE e implementação headless do ciclo básico completos: login `0x0C`, árvore, Admin transacional, Buddy e presença de canal. A UI de canal usa `clanId` apenas para escolher a cor do nome; a tela é destruída ao entrar na sala e o roster não carrega clã. Restam validação gráfica, `0x78` dormente e guerra sem transporte ativo |
 | [`systems/events/christmas-and-gifts.md`](../systems/events/christmas-and-gifts.md) | Natal e caixa persistente de presentes | Gift Box implementada/probada; dez eventos de entidade tipados; stage fechado como conteúdo dormente/ausente |
 | [`guides/gameguard.md`](../guides/gameguard.md) | dependência nProtect | Coberto para o veredito de incompatibilidade/offline |

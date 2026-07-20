@@ -5,8 +5,8 @@ Bootstrap x86 `version.dll`, carregado pelo fluxo normal antes do entry point. E
 `RakionClientPatch.dll`, que centraliza os patches do cliente: diff golden do `rakion-final`,
 no-GameGuard, janela/multi-instância/Alt+Tab, IP do servidor, HIT/SHOT, lifecycle, ground-snap e
 telemetria de ataque humano contra bot. O lifecycle original da tela de personagens é restaurado em
-conjunto com o unlink seguro dos componentes do `uitoolkit.dll`. A sincronização do Messenger após
-seleção pertence ao Buddy server e não instala hook no cliente. Em saldo insuficiente
+conjunto com o unlink seguro dos componentes do `uitoolkit.dll`. A sincronização do Messenger no
+login e após seleção pertence aos servidores World/Buddy e não instala hook no cliente. Em saldo insuficiente
 na compra de Power User, ela abre a URL HTTP(S) de `cash-shop.url`; nenhuma carteira é alterada no
 cliente.
 

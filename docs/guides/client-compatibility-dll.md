@@ -64,8 +64,9 @@ python client\RakionClientCompat\verify_legacy_client_patch.py `
 
 Resolução, mouse, som e gamma continuam em `Scripts/PersistentSymbols.ini`; `display.mode` continua
 selecionando `windowed`, `borderless` ou `fullscreen`. São preferências do jogador, não patches.
-O refresh do Messenger também não pertence mais à DLL: o Buddy server detecta a seleção persistida
-do personagem e reenvia o snapshot social pelo protocolo existente.
+O refresh do Messenger também não pertence à DLL. O World fixa o primeiro personagem por slot como
+identidade inicial no char-select, e o Buddy server envia `RET_SET_NICK` antes de cada `RET_LOGIN` e
+repete esse par quando a identidade persistida muda.
 
 ## Build
 

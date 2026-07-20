@@ -135,7 +135,7 @@ namespace RakionServer.Buddy
                 catch (System.Net.Sockets.SocketException) { }
             _online[account.AccountId] = connection;
 
-            await SendLoginOkAsync(connection);
+            await SendProfileSnapshotAsync(connection);
             await DeliverPendingAsync(connection);
             Log.Ok("buddy", "[{0}] login account='{1}' autenticado", connection.RemoteIp, account.AccountId);
         }
@@ -233,6 +233,12 @@ namespace RakionServer.Buddy
             uint udpToken = IssueUdpToken(connection);
             byte[] payload = BuddyFriendCodec.BuildLogin(udpToken, friends);
             await SendAsync(connection, BuddyProtocol.RET_LOGIN, payload);
+        }
+
+        private async Task SendProfileSnapshotAsync(BuddyConnection connection)
+        {
+            await ReplyResultAsync(connection, BuddyProtocol.RET_SET_NICK, 0);
+            await SendLoginOkAsync(connection);
         }
 
         private async Task ReplyResultAsync(

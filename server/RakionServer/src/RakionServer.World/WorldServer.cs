@@ -1066,7 +1066,7 @@ namespace RakionServer.World
                         : "");
             }
             else { Log.Warn("login", "[{0}] '{1}' sem char ativo (characterinfo.used=1 ausente)", s.Slot, userId); }
-            s.LoginCharList = await BuildLoginCharListAsync(s);   // lista de chars do char-select (0x0C), sintetizada do DB
+            await RefreshCharacterSelectIdentityAsync(s);
             s.ConnectionLogId = await _db.LogUserConnectAsync(new ConnectionLogStart(
                 gi.Id, userId, _cfg.ServerId, s.RemoteIp, s.Country));
             Log.Ok("login", "[{0}] '{1}' logado (char='{2}', gold={3}, cash={4}) — {5}/{6} online",
@@ -1074,9 +1074,11 @@ namespace RakionServer.World
         }
 
         /// <summary>Monta a lista de chars do char-select (0x0C) a partir do DB — síntese de raiz, sem replay.</summary>
-        private async Task<CharList> BuildLoginCharListAsync(ClientSession s)
+        private async Task<CharList> BuildLoginCharListAsync(
+            ClientSession s, IReadOnlyList<CharacterInfo>? loadedCharacters = null)
         {
-            var chars = await _db.LoadCharactersAsync(s.GameInfoId);
+            IReadOnlyList<CharacterInfo> chars = loadedCharacters ??
+                await _db.LoadCharactersAsync(s.GameInfoId);
             int previewCharacterId = s.ActiveCharId > 0 ? s.ActiveCharId : s.PreviewCharId;
             var quickslot = previewCharacterId > 0
                 ? await _db.LoadQuickslotAsync(s.GameInfoId, previewCharacterId)
@@ -1105,6 +1107,23 @@ namespace RakionServer.World
                 PowerLevelPoint = (ushort)Math.Min(s.PowerLevelPoint, (uint)ushort.MaxValue),
                 Chars = summaries,
             };
+        }
+
+        private async Task RefreshCharacterSelectIdentityAsync(ClientSession session)
+        {
+            IReadOnlyList<CharacterInfo> characters =
+                await _db.LoadCharactersAsync(session.GameInfoId);
+            CharacterInfo? first = characters.Count > 0 ? characters[0] : null;
+            if (first != null && !string.Equals(
+                    session.BuddyName, first.Name, StringComparison.Ordinal))
+            {
+                Database.BuddyNameChangeResult result =
+                    await ChangeBuddyNameAsync(session, first.Name);
+                if (result != Database.BuddyNameChangeResult.Success)
+                    Log.Warn("character", "[{0}] não sincronizou buddyname com primeiro char='{1}': {2}",
+                        session.Slot, first.Name, result);
+            }
+            session.LoginCharList = await BuildLoginCharListAsync(session, characters);
         }
 
         private CharSummary BuildCharSummary(CharacterInfo ch, IReadOnlyList<UserItem> items, byte[] ranks,
@@ -1179,7 +1198,7 @@ namespace RakionServer.World
                 s.Stats[8] = ch.Speed; s.Stats[9] = ch.Maxcp;
                 InventoryHydration inventory = await HydrateInventoryAsync(s, ch, "character");
                 s.StageRanks = await _db.LoadStageRanksAsync(ch.Id);
-                s.LoginCharList = await BuildLoginCharListAsync(s);
+                await RefreshCharacterSelectIdentityAsync(s);
                 Log.Ok("character", "[{0}] selecionou char '{1}' id={2} class={3} lvl={4} itens={5} box={6}",
                     s.Slot, ch.Name, ch.Id, ch.Class, ch.Level,
                     inventory.ActiveItems,
@@ -1210,7 +1229,7 @@ namespace RakionServer.World
                             s.GameInfoId, characterId, key));
                 }
                 if (result != Database.CharacterDeleteResult.Success) return result;
-                s.LoginCharList = await BuildLoginCharListAsync(s);
+                await RefreshCharacterSelectIdentityAsync(s);
                 Log.Ok("character", "[{0}] excluiu char id={1}", s.Slot, characterId);
                 return result;
             }

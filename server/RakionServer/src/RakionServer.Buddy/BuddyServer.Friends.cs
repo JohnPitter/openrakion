@@ -90,15 +90,14 @@ public sealed partial class BuddyServer
         BuddyAccount? account = valid
             ? await _database.LoadAccountAsync(connection.AccountId)
             : null;
-        valid = account != null;
-        bool changed = valid && !string.Equals(
-            connection.DisplayName, account!.DisplayName, System.StringComparison.Ordinal);
-        if (valid) connection.DisplayName = account!.DisplayName;
-        await ReplyResultAsync(connection, BuddyProtocol.RET_SET_NICK,
-            valid ? (ushort)0 : (ushort)1);
-        if (!changed) return;
-        await SendLoginOkAsync(connection);
-        Log.Info("buddy", "account='{0}' sincronizou nick '{1}' -> '{2}' e lista de amigos",
+        if (account == null)
+        {
+            await ReplyResultAsync(connection, BuddyProtocol.RET_SET_NICK, 1);
+            return;
+        }
+        connection.DisplayName = account.DisplayName;
+        await SendProfileSnapshotAsync(connection);
+        Log.Info("buddy", "account='{0}' solicitou nick '{1}'; perfil efetivo='{2}' e lista atualizada",
             connection.AccountId, requestedName, connection.DisplayName);
     }
 

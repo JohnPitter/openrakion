@@ -22,7 +22,7 @@ namespace RakionServer.World
             {
                 var result = await _db.CreateCharacterAsync(session.GameInfoId, name, charClass, slot);
                 if (result.Status != CharacterCreateStatus.Success) return result;
-                session.LoginCharList = await BuildLoginCharListAsync(session);
+                await RefreshCharacterSelectIdentityAsync(session);
                 Log.Ok("character", "[{0}] criou char '{1}' id={2} class={3} slot={4}",
                     session.Slot, name, result.Character!.Id, charClass, slot);
                 return result;
@@ -52,7 +52,7 @@ namespace RakionServer.World
                 session.CharLevelPoint = result.LevelPoint;
                 session.PowerLevelPoint = result.PowerLevelPoint;
                 System.Array.Clear(session.Stats);
-                session.LoginCharList = await BuildLoginCharListAsync(session);
+                await RefreshCharacterSelectIdentityAsync(session);
                 NotifyRandomPresents(session, result.Presents);
                 Log.Ok("character", "[{0}] resetou stats do char={1}; cash={2} lp={3} power={4} pagamento={5}",
                     session.Slot, session.ActiveCharId, result.Cash, result.LevelPoint,
@@ -83,7 +83,7 @@ namespace RakionServer.World
                 if (payment.UsesCoupon) session.ClearBoxCell(checked((byte)payment.Slot));
                 session.Cash = checked((uint)result.Cash);
                 session.CharName = newName;
-                session.LoginCharList = await BuildLoginCharListAsync(session);
+                await RefreshCharacterSelectIdentityAsync(session);
                 NotifyRandomPresents(session, result.Presents);
                 Log.Ok("character", "[{0}] renomeou char={1} para '{2}'; cash={3} pagamento={4}",
                     session.Slot, session.ActiveCharId, newName, result.Cash,

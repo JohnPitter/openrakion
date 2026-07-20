@@ -20,8 +20,8 @@ namespace RakionServer.Buddy
         public string AccountId { get; set; } = "";
         public string DisplayName { get; set; } = "";
         public string ActiveCharacterName { get; set; } = "";
-        public string PendingCharacterName { get; set; } = "";
-        public long PendingCharacterSince { get; set; }
+        public string PendingProfileSignature { get; set; } = "";
+        public long PendingProfileSince { get; set; }
         public uint UdpToken { get; set; }
         public IPEndPoint? UdpEndpoint { get; set; }
         public long TunnelWindowStart { get; set; }

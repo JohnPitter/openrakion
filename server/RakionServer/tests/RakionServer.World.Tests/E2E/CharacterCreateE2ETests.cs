@@ -19,12 +19,23 @@ namespace RakionServer.World.Tests.E2E
             if (!fixture.Available) return;
 
             string name = "E2E" + Guid.NewGuid().ToString("N")[..9];
+            string? originalBuddyName = null;
             try
             {
+                originalBuddyName = await LoadBuddyNameAsync(
+                    fixture.DbConnectionString, "test");
+                string firstCharacterName = await LoadFirstCharacterNameAsync(
+                    fixture.DbConnectionString, "test");
+                await UpdateBuddyNameAsync(fixture.DbConnectionString, "test",
+                    "T" + Guid.NewGuid().ToString("N")[..10]);
+
                 await using var client = await HeadlessWorldClient.ConnectAsync(
                     WorldServerFixture.Host, fixture.TcpPort, "character-create");
                 client.Login("test", "test");
-                client.WaitForFirstByte(0x0C, Timeout);
+                byte[] login = client.WaitForFirstByte(0x0C, Timeout);
+                Assert.Equal(firstCharacterName, ReadCString(login, 41));
+                Assert.Equal(firstCharacterName, await LoadBuddyNameAsync(
+                    fixture.DbConnectionString, "test"));
                 client.DrainReceived();
 
                 int selectedId = await LoadCharacterIdAsync(
@@ -55,7 +66,53 @@ namespace RakionServer.World.Tests.E2E
             finally
             {
                 await DeleteCharacterAsync(fixture.DbConnectionString, name);
+                if (originalBuddyName != null)
+                    await UpdateBuddyNameAsync(
+                        fixture.DbConnectionString, "test", originalBuddyName);
             }
+        }
+
+        private static async Task<string> LoadBuddyNameAsync(
+            string connectionString, string accountId)
+        {
+            await using var connection = new MySqlConnection(connectionString);
+            await connection.OpenAsync();
+            await using var command = new MySqlCommand(
+                "SELECT buddyname FROM usergameinfo WHERE name=@account", connection);
+            command.Parameters.AddWithValue("@account", accountId);
+            return Convert.ToString(await command.ExecuteScalarAsync()) ?? "";
+        }
+
+        private static async Task<string> LoadFirstCharacterNameAsync(
+            string connectionString, string accountId)
+        {
+            await using var connection = new MySqlConnection(connectionString);
+            await connection.OpenAsync();
+            await using var command = new MySqlCommand(
+                "SELECT c.name FROM characterinfo c " +
+                "JOIN usergameinfo g ON g.id=c.userid " +
+                "WHERE g.name=@account AND c.auth<>10 ORDER BY c.slot LIMIT 1", connection);
+            command.Parameters.AddWithValue("@account", accountId);
+            return Convert.ToString(await command.ExecuteScalarAsync()) ?? "";
+        }
+
+        private static async Task UpdateBuddyNameAsync(
+            string connectionString, string accountId, string buddyName)
+        {
+            await using var connection = new MySqlConnection(connectionString);
+            await connection.OpenAsync();
+            await using var command = new MySqlCommand(
+                "UPDATE usergameinfo SET buddyname=@buddy WHERE name=@account", connection);
+            command.Parameters.AddWithValue("@buddy", buddyName);
+            command.Parameters.AddWithValue("@account", accountId);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        private static string ReadCString(byte[] frame, int offset)
+        {
+            int end = Array.IndexOf(frame, (byte)0, offset);
+            if (end < 0) end = frame.Length;
+            return Encoding.ASCII.GetString(frame, offset, end - offset);
         }
 
         private static async Task<int> LoadCharacterIdAsync(string connectionString, string name)

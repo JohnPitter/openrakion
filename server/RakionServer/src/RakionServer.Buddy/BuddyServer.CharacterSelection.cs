@@ -54,20 +54,24 @@ public sealed partial class BuddyServer
     private async Task RefreshSelectedCharacterAsync(
         BuddyConnection connection, BuddyAccount account, long now)
     {
-        if (string.Equals(connection.ActiveCharacterName, account.ActiveCharacterName,
-                StringComparison.OrdinalIgnoreCase))
+        bool characterChanged = !string.Equals(
+            connection.ActiveCharacterName, account.ActiveCharacterName,
+            StringComparison.OrdinalIgnoreCase);
+        bool displayNameChanged = !string.Equals(
+            connection.DisplayName, account.DisplayName, StringComparison.Ordinal);
+        if (!characterChanged && !displayNameChanged)
         {
-            connection.PendingCharacterName = "";
+            connection.PendingProfileSignature = "";
             return;
         }
-        if (!string.Equals(connection.PendingCharacterName, account.ActiveCharacterName,
-                StringComparison.OrdinalIgnoreCase))
+        string signature = account.ActiveCharacterName + '\u001f' + account.DisplayName;
+        if (!string.Equals(connection.PendingProfileSignature, signature, StringComparison.Ordinal))
         {
-            connection.PendingCharacterName = account.ActiveCharacterName;
-            connection.PendingCharacterSince = now;
+            connection.PendingProfileSignature = signature;
+            connection.PendingProfileSince = now;
             return;
         }
-        if (now - connection.PendingCharacterSince < CharacterRefreshInterval.TotalMilliseconds)
+        if (now - connection.PendingProfileSince < CharacterRefreshInterval.TotalMilliseconds)
             return;
         if (!_online.TryGetValue(connection.AccountId, out BuddyConnection? current) ||
             !ReferenceEquals(current, connection))
@@ -75,9 +79,9 @@ public sealed partial class BuddyServer
 
         connection.ActiveCharacterName = account.ActiveCharacterName;
         connection.DisplayName = account.DisplayName;
-        connection.PendingCharacterName = "";
-        await SendLoginOkAsync(connection);
-        Log.Info("buddy", "account='{0}' atualizou Messenger após selecionar char='{1}'",
-            connection.AccountId, connection.ActiveCharacterName);
+        connection.PendingProfileSignature = "";
+        await SendProfileSnapshotAsync(connection);
+        Log.Info("buddy", "account='{0}' atualizou Messenger nick='{1}' char='{2}'",
+            connection.AccountId, connection.DisplayName, connection.ActiveCharacterName);
     }
 }

@@ -13,15 +13,15 @@ visualmente vazio mesmo com uma relação bilateral no banco. O trace no consume
 `RET_LOGIN friendCount=1` e `NTF_USER_STATE` online nos dois sentidos; portanto, a renderização da
 lista continua aberta e o Messenger ainda não deve ser classificado como funcional completo.
 
-Em 19/07/2026 foi reproduzida outra falha: após criar e selecionar um personagem sem encerrar a
-sessão do World, o modelo social era reinicializado, mas o cliente não repetia `SVC_LOGIN` nem
-`SVC_SET_NICK`; sair e entrar no servidor recriava a conexão Buddy e restaurava a lista. A correção
-agora fica integralmente no backend. O Buddy acompanha em uma única consulta em lote o `charname`
-das contas online; ao observar uma troca estável por dois ciclos de 500 ms, atualiza o perfil da
-conexão e reenvia `RET_LOGIN`. Esse é o mesmo contrato que o cliente já consome no login, sem chamar
-`SetNick`, sem alterar o executável e sem manter cache paralelo da lista de amigos. Falhas temporárias
-do banco são registradas e o monitor continua ativo. O fluxo create→select→refresh está coberto no
-E2E; a confirmação visual pelo F9 permanece pendente.
+Em 19–20/07/2026 foi reproduzida outra falha: após entrar no servidor ou trocar de personagem, o
+modelo social podia ser reinicializado sem que o cliente repetisse `SVC_SET_NICK`; a lista só surgia
+depois de selecionar manualmente **Nick Change**. A correção fica integralmente no backend. Antes do
+snapshot `0x0C`, o World normaliza `buddyname` para o primeiro personagem válido por slot. No login
+Buddy e em todo refresh válido, o servidor reproduz a sequência que destrava o cliente:
+`RET_SET_NICK(result=0)` seguido de `RET_LOGIN`. A mesma sequência é reenviada mesmo se o nome já
+estava correto. O monitor acompanha `charname` e `buddyname` das contas online em uma consulta em
+lote e exige estabilidade por dois ciclos de 500 ms antes do refresh. Login, create, rename,
+select, delete e refresh estão cobertos no backend; a confirmação visual pelo F9 permanece pendente.
 
 A matriz LAN/NAT também permanece pendente. O P2P UDP direto continua sendo executado pelo
 `Buddy2.dll`; o servidor fornece descoberta de endpoint e fallback TCP, mas não interpreta nem
@@ -30,7 +30,7 @@ modera o tráfego direto.
 | Camada | Estado |
 |---|---|
 | Framing, handshake e login AES | Implementado e validado no fio |
-| Lista inicial de amigos | Validada headless e no callback real; renderização no F9 ainda vazia |
+| Lista inicial de amigos | Sequência `RET_SET_NICK` → `RET_LOGIN` validada headless; novo smoke F9 pendente |
 | Amigos e grupos | Persistência InnoDB e mutações principais implementadas |
 | Registro UDP e presença | E2E de dois clientes em localhost; validação LAN/NAT pendente |
 | Túnel TCP `0x2020/0x2021` | Implementado, autorizado e limitado |
