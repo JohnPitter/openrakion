@@ -14,6 +14,18 @@ pacote. `LauncherWeb` serve autenticação e atualização do launcher; não é 
 Assim, o RE do runtime fornecido está fechado. Uma integração com dinheiro real seria um produto
 novo, não uma função recuperável desses binários.
 
+## Página de compra de créditos
+
+O `LauncherWeb` agora publica `/cash/`, uma página responsiva com os pacotes disponíveis e o estado
+explícito do checkout. Quando falta Cash na compra de Power User (status `3`), a
+`RakionClientPatch.dll` abre essa página usando a URL de `cash-shop.url`; a URL padrão de validação é
+`http://127.0.0.1/cash`.
+
+A página está pronta como entrada operacional, mas os botões permanecem desabilitados enquanto não
+há provedor autorizado. Isso é intencional: navegar, atualizar a página ou retornar ao jogo nunca
+pode creditar a wallet. A concessão futura deverá ocorrer somente após webhook assinado e idempotente,
+processado pelo backend em transação com pedido e ledger.
+
 ## Evidência reproduzível
 
 World original analisado:
@@ -144,4 +156,5 @@ dos saldos.
 Para vender cash por dinheiro real ainda seria necessário escolher e autorizar explicitamente um
 provedor. Esse sistema novo precisaria de order state machine, assinatura de webhook, idempotência,
 refund/chargeback compensatório, reconciliação e proteção de segredos. Nada disso deve ser inventado
-ou ativado como se fosse parte do Rakion v258 original.
+ou ativado como se fosse parte do Rakion v258 original. A landing `/cash/` e o redirecionamento do
+cliente já existem; checkout, webhook e liquidação da wallet continuam nessa fronteira externa.

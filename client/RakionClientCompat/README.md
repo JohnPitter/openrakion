@@ -7,11 +7,14 @@ no-GameGuard, janela/multi-instância/Alt+Tab, IP do servidor, HIT/SHOT, lifecyc
 telemetria de ataque humano contra bot. A DLL também corrige a sincronização do Messenger após a
 seleção de personagem, disparando o `SetNick` já existente do `Buddy2.dll` depois de todo ACK
 bem-sucedido de `0x14` e também após a troca de `buddyname` em `0x15`. O lifecycle original da tela de personagens é
-restaurado em conjunto com o unlink seguro dos componentes do `uitoolkit.dll`.
+restaurado em conjunto com o unlink seguro dos componentes do `uitoolkit.dll`. Em saldo insuficiente
+na compra de Power User, ela abre a URL HTTP(S) de `cash-shop.url`; nenhuma carteira é alterada no
+cliente.
 
 O código está separado em bootstrap/forwarding (`version_proxy.cpp`), lifecycle e HIT/SHOT
 (`rakion_client_patch.cpp`), patches do cliente (`client_patches.cpp`), IP e telemetria
-(`bot_telemetry.cpp`), lifecycle da UI (`ui_lifecycle_patch.cpp`) e log (`compat_log.cpp`). O antigo
+(`bot_telemetry.cpp`), lifecycle da UI (`ui_lifecycle_patch.cpp`), loja (`cash_store.cpp`) e log
+(`compat_log.cpp`). O antigo
 binário em `client/RakionClientPatch/build` é somente evidência auxiliar: suas 317 entradas
 foram comparadas pelo `verify_legacy_client_patch.py`; ele não é distribuído nem carregado. A
 `RakionClientPatch.dll` final é sempre recompilada a partir do código deste diretório.

@@ -58,7 +58,7 @@ namespace RakionServer.World.Tests
                 DisplayName = "JP",
                 Gold = 0x3A3B3C3D,
                 PowerLevelPoint = 0x4A4B,
-                SessionHandle = new byte[] { 0xa0, 0x0d, 0x87, 0x3f },
+                ServerTimeMarker = 0x3f870da0,
                 Chars = new List<CharSummary> { Abcdef() },
             };
             AssertMatches(LoginCharListWriter.Build(list), Fixture("golden_0c_1char.bin"), list);
@@ -72,7 +72,7 @@ namespace RakionServer.World.Tests
                 DisplayName = "JP",
                 Gold = 0x3A3B3C3D,
                 PowerLevelPoint = 0x4A4B,
-                SessionHandle = new byte[] { 0xa9, 0x0d, 0x87, 0x3f },
+                ServerTimeMarker = 0x3f870da9,
                 Chars = new List<CharSummary> { Abcdef(), Ghijklmn() },
             };
             AssertMatches(LoginCharListWriter.Build(list), Fixture("golden_0c_2char.bin"), list);
@@ -86,7 +86,7 @@ namespace RakionServer.World.Tests
                 DisplayName = "JP",
                 Gold = 0x3A3B3C3D,
                 PowerLevelPoint = 0x4A4B,
-                SessionHandle = new byte[] { 0xd7, 0x0d, 0x87, 0x3f },
+                ServerTimeMarker = 0x3f870dd7,
                 Chars = new List<CharSummary> { Abcdef() with { Class = 3 }, Ghijklmn() with { Class = 4 } },
             };
             AssertMatches(LoginCharListWriter.Build(list), Fixture("golden_0c_2char_cls.bin"), list);
@@ -101,6 +101,25 @@ namespace RakionServer.World.Tests
 
             Assert.Equal((ushort)12, BinaryPrimitives.ReadUInt16LittleEndian(frame.AsSpan(7)));
             Assert.Equal(0x12345678u, BinaryPrimitives.ReadUInt32LittleEndian(frame.AsSpan(9)));
+        }
+
+        [Fact]
+        public void HeaderCarriesServerTimeAndPowerUserExpirationMarkers()
+        {
+            var list = new CharList
+            {
+                DisplayName = "account",
+                ServerTimeMarker = 1_065_862_228,
+                PowerTimeMarker = 1_065_905_403
+            };
+
+            byte[] frame = LoginCharListWriter.Build(list);
+            int tail = 41 + list.DisplayName.Length + 1;
+
+            Assert.Equal(list.ServerTimeMarker,
+                BinaryPrimitives.ReadUInt32LittleEndian(frame.AsSpan(13)));
+            Assert.Equal(list.PowerTimeMarker,
+                BinaryPrimitives.ReadUInt32LittleEndian(frame.AsSpan(tail)));
         }
 
         [Fact]

@@ -264,7 +264,7 @@ marcador; a repetição e o saldo `16499` não mutaram o banco. A fixture foi re
 | `1B` | 12 padded | corpo lógico `[paymentType:u8][boxSlot:u16 se type!=0]`; 1/3 bytes | cash/coupon e parser fechados |
 | `1C` | variável | `[newName\0][paymentType:u8][boxSlot:u16 se type!=0]` | cash/coupon e parser fechados |
 | `20` | 12 | corpo lógico vazio; cauda do bloco não é regra | fechado |
-| `2C` | 12 | `FF FF FF FF` + handle de sessão `u32` | forma fechada |
+| `2C` | 12 | `FF FF FF FF` + marcador de tempo do servidor `u32` | forma fechada |
 | `2D` | 12 padded | corpo lógico vazio; os oito bytes posteriores são padding | fechado pelo builder |
 | `32` | 12 | `[mode:u8][couponSlot:u16 se mode=1]` | cash/cupom/limite fechados |
 | `35` | 12 | `[mode:u8][couponSlot:u16 se mode=1]` | cash/cupom/limite fechados |

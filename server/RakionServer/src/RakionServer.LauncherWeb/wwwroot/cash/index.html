@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Central oficial de recarga de Cash do OpenRakion.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%233b2710' stroke='%23f0b84b' d='M32 2 62 32 32 62 2 32Z'/%3E%3Ctext x='32' y='41' text-anchor='middle' font-family='serif' font-weight='700' font-size='28' fill='%23ffd77e'%3ER%3C/text%3E%3C/svg%3E">
+  <title>OpenRakion — Recarga de Cash</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #080b10;
+      --panel: #111722;
+      --panel-strong: #171f2d;
+      --line: #2c3749;
+      --text: #f3f6fb;
+      --muted: #9da9bb;
+      --gold: #f0b84b;
+      --gold-strong: #ffd77e;
+      --red: #b83232;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 75% 8%, rgba(184, 50, 50, .2), transparent 30rem),
+        radial-gradient(circle at 12% 35%, rgba(240, 184, 75, .09), transparent 28rem),
+        var(--bg);
+    }
+    a { color: inherit; }
+    .shell { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 76px;
+      border-bottom: 1px solid rgba(255, 255, 255, .08);
+    }
+    .brand { display: flex; gap: 12px; align-items: center; font-weight: 800; letter-spacing: .04em; }
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border: 1px solid #8e6724;
+      background: linear-gradient(145deg, #3b2710, #15100a);
+      color: var(--gold-strong);
+      transform: rotate(45deg);
+    }
+    .brand-mark span { transform: rotate(-45deg); }
+    .secure { color: var(--muted); font-size: .86rem; }
+    main { padding: 76px 0 56px; }
+    .hero { max-width: 760px; }
+    .eyebrow { color: var(--gold); font-size: .78rem; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
+    h1 { margin: 12px 0 18px; font-size: clamp(2.4rem, 7vw, 5.5rem); line-height: .96; letter-spacing: -.055em; }
+    .lead { margin: 0; max-width: 650px; color: var(--muted); font-size: 1.08rem; line-height: 1.7; }
+    .notice {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 14px;
+      margin: 34px 0 46px;
+      padding: 18px;
+      border: 1px solid #594521;
+      background: rgba(240, 184, 75, .07);
+      color: #e8d3a6;
+    }
+    .notice strong { color: var(--gold-strong); }
+    .notice p { margin: 4px 0 0; color: #c7b58f; line-height: 1.5; }
+    .packages { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-height: 290px;
+      padding: 26px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: linear-gradient(155deg, var(--panel-strong), var(--panel));
+    }
+    .card::after {
+      content: "";
+      position: absolute;
+      right: -42px;
+      bottom: -50px;
+      width: 150px;
+      height: 150px;
+      border: 28px solid rgba(240, 184, 75, .035);
+      transform: rotate(28deg);
+    }
+    .card.featured { border-color: #8e6724; box-shadow: 0 18px 55px rgba(0, 0, 0, .28); }
+    .tag { align-self: flex-start; color: var(--muted); font-size: .76rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    .featured .tag { color: var(--gold); }
+    .amount { margin: 28px 0 8px; font-size: 2.25rem; font-weight: 850; letter-spacing: -.04em; }
+    .amount small { font-size: .95rem; color: var(--gold); letter-spacing: .08em; text-transform: uppercase; }
+    .card p { margin: 0 0 28px; color: var(--muted); line-height: 1.55; }
+    .button {
+      z-index: 1;
+      margin-top: auto;
+      padding: 13px 16px;
+      border: 1px solid #49566a;
+      color: #c5ceda;
+      background: #202937;
+      font: inherit;
+      font-weight: 750;
+      text-align: center;
+      cursor: not-allowed;
+    }
+    .featured .button { border-color: #71531f; color: #ffe1a3; background: #352611; }
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin-top: 58px; padding-top: 30px; border-top: 1px solid var(--line); }
+    .step span { color: var(--gold); font-weight: 800; }
+    .step h2 { margin: 8px 0; font-size: 1rem; }
+    .step p { margin: 0; color: var(--muted); font-size: .9rem; line-height: 1.55; }
+    footer { padding: 24px 0 34px; color: #6f7b8c; font-size: .82rem; }
+    @media (max-width: 780px) {
+      main { padding-top: 48px; }
+      .packages, .steps { grid-template-columns: 1fr; }
+      .card { min-height: 250px; }
+      .secure { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="shell">
+    <div class="brand"><div class="brand-mark"><span>R</span></div><span>OPENRAKION</span></div>
+    <div class="secure">Central oficial de recarga</div>
+  </header>
+  <main class="shell">
+    <section class="hero">
+      <div class="eyebrow">Carteira de jogo</div>
+      <h1>Volte para a batalha.</h1>
+      <p class="lead">Escolha sua recarga de Cash. O saldo será vinculado à sua conta somente depois da confirmação segura do pagamento.</p>
+    </section>
+    <aside class="notice" aria-label="Status do checkout">
+      <div aria-hidden="true">◆</div>
+      <div><strong>Checkout em configuração</strong><p>A página de recarga já está ativa. A conclusão do pagamento será liberada após a configuração do provedor oficial.</p></div>
+    </aside>
+    <section class="packages" aria-label="Pacotes de Cash">
+      <article class="card">
+        <span class="tag">Essencial</span>
+        <div class="amount">5.000 <small>Cash</small></div>
+        <p>Para itens, utilidades e pequenas melhorias na sua jornada.</p>
+        <button class="button" disabled>Aguardando checkout</button>
+      </article>
+      <article class="card featured">
+        <span class="tag">Mais escolhido</span>
+        <div class="amount">15.000 <small>Cash</small></div>
+        <p>Um saldo versátil para Power User, personagens e equipamentos.</p>
+        <button class="button" disabled>Aguardando checkout</button>
+      </article>
+      <article class="card">
+        <span class="tag">Elite</span>
+        <div class="amount">30.000 <small>Cash</small></div>
+        <p>Mais liberdade para preparar vários personagens e loadouts.</p>
+        <button class="button" disabled>Aguardando checkout</button>
+      </article>
+    </section>
+    <section class="steps" aria-label="Como funciona">
+      <div class="step"><span>01</span><h2>Identifique sua conta</h2><p>O checkout solicitará apenas o identificador necessário para entregar o saldo.</p></div>
+      <div class="step"><span>02</span><h2>Confirme o pagamento</h2><p>A operação será processada pelo provedor oficial em ambiente protegido.</p></div>
+      <div class="step"><span>03</span><h2>Receba o Cash</h2><p>Após a confirmação, o backend creditará a carteira e registrará a transação.</p></div>
+    </section>
+  </main>
+  <footer class="shell">OpenRakion · Nunca informe sua senha do jogo em páginas de pagamento.</footer>
+</body>
+</html>

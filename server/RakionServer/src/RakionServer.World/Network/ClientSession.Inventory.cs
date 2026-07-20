@@ -16,8 +16,8 @@ namespace RakionServer.World.Network
                 return;
             }
 
-            SendEncryptedFrame(LobbyFrames.InventoryEnterAck(_invHandle));
-            Log.Ok("shop", "[{0}] 0x2c InventoryEnter (handle {1})", Slot, System.Convert.ToHexString(_invHandle));
+            SendEncryptedFrame(LobbyFrames.InventoryEnterAck(ServerTimeMarker));
+            Log.Ok("shop", "[{0}] 0x2c InventoryEnter (serverTime={1})", Slot, ServerTimeMarker);
             PaintInventoryOnFirstOpen();
         }
 

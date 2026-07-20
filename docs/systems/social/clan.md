@@ -62,7 +62,7 @@ O início do corpo é fixo:
 | `+0x03` | `u8` | sucesso `1` |
 | `+0x07` | `u16 LE` | slot de rede |
 | `+0x09` | `u32 LE` | chave da sessão UDP |
-| `+0x0D` | 4 bytes | handle de sessão |
+| `+0x0D` | `u32 LE` | marcador corrente do servidor em minutos desde `TO_DAYS(0)` |
 | `+0x11` | `i32 LE` | clan ID; zero quando não há clã |
 | `+0x15` | variável | bloco abaixo |
 

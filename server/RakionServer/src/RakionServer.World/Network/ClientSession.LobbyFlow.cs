@@ -370,8 +370,7 @@ namespace RakionServer.World.Network
         /// <summary>
         /// Envia a resposta de login SINTETIZADA de raiz: 0x0C (char-select, serializado de
         /// <see cref="LoginCharList"/> pelo <see cref="LoginCharListWriter"/>) + 0x0D (tabela zerada, 1332B).
-        /// Sem replay de captura. O 0x10 (GameGuard) sai após estes frames e não depende do handshake UDP. O handle
-        /// de sessão (@13 do 0x0C) é o _invHandle, ecoado nos acks 0x2c/0x2d.
+        /// Sem replay de captura. O 0x10 (GameGuard) sai após estes frames e não depende do handshake UDP.
         /// </summary>
         public void SendLoginResponse()
         {
@@ -379,7 +378,7 @@ namespace RakionServer.World.Network
                 UdpKey = (uint)RandomNumberGenerator.GetInt32(1, 0x8000);
             var list = (LoginCharList ?? new CharList()) with
             {
-                SessionHandle = _invHandle,
+                ServerTimeMarker = ServerTimeMarker,
                 UdpSessionKey = UdpKey,
             };
             byte[] f0c = LoginCharListWriter.Build(list);

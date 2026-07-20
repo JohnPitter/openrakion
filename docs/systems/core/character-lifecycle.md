@@ -28,7 +28,7 @@ a entrega por um serviço SMTP operacional fora do pickup local.
 | personagem | linha `characterinfo`, identificada por `characterinfo.id` |
 | slot | posição visual do personagem, `characterinfo.slot` |
 | ativo | personagem cujo nome está em `usergameinfo.charname`; a lista original inclui `auth<>10`, mesmo com `used=0` |
-| session handle | quatro bytes variáveis do login, reutilizados em acks do inventário |
+| marcador de tempo do servidor | minutos no formato legado, enviado no login e reutilizado em acks do inventário |
 | cauda do `0x14` | quatro bytes de padding do bloco capturado; não fazem parte do builder lógico |
 
 `usergameinfo.charname` é a seleção persistida do legado. Ela só é aceita depois de resolver um
@@ -355,8 +355,9 @@ terminador da C-string; não existe header fixo de 65 bytes.
 | `3` | `u8` | resultado `1` |
 | `7` | `u16` | slot da sessão TCP |
 | `9` | `u32` | chave da sessão UDP |
-| `13` | 4 bytes | session handle |
+| `13` | `u32` | marcador corrente do servidor em minutos desde `TO_DAYS(0)` |
 | `41` | C-string variável | account ID; o callback copia para `AccountInfo_s` |
+| `tail` | `u32` | marcador de expiração do Power User na mesma unidade de minutos |
 | `tail+4` | `u16` | Power User level points |
 | `tail+12` | `u32` | gold |
 | `tail+16` | `u32` | cash/EX points |

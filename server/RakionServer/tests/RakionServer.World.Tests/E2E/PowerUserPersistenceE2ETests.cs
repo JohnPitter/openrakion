@@ -30,6 +30,9 @@ namespace RakionServer.World.Tests.E2E
                 initial = ParseSuccess(client.WaitForNext(IsPowerUserAck, JourneyHelper.Timeout));
                 Assert.Equal(PowerUserE2ESandbox.WorkingCash - 8_000, initial.Cash);
                 Assert.Equal(5, initial.Points);
+                Assert.InRange(initial.Marker - session.ServerTimeMarker,
+                    30u * 24 * 60 - 1, 30u * 24 * 60 + 1);
+                Assert.Equal(initial.Marker, session.PowerTimeMarker);
                 AssertSession(session, initial, active: true);
 
                 client.BuyPowerUser(mode: 1, sandbox.CouponSlot);

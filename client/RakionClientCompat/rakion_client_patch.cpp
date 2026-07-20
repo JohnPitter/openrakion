@@ -9,6 +9,7 @@
 
 #include "bot_telemetry.h"
 #include "buddy_refresh.h"
+#include "cash_store.h"
 #include "client_patches.h"
 #include "ui_lifecycle_patch.h"
 #include "compat_log.h"
@@ -227,6 +228,9 @@ DWORD WINAPI InstallCompatibility(void*)
     CompatLog(InstallBuddyRefreshHooks()
         ? "refresh do Messenger apos selecao instalado"
         : "refresh do Messenger indisponivel para esta build");
+    CompatLog(InstallCashStoreRedirectHook()
+        ? "redirect de saldo insuficiente para recarga instalado"
+        : "redirect de recarga indisponivel para esta build");
     PatchKeyHook();
     auto* patch = reinterpret_cast<BYTE*>(PatchAddress);
     for (int attempt = 0; attempt < 1200; ++attempt)

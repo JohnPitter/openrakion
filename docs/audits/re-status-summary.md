@@ -83,7 +83,7 @@ A validação **dinâmica** dirige o `WorldServer` real por clientes headless no
 - **bots server-side**: movimento, perseguição, convivência com dois humanos, datagrama de reação
   ao dano e morte no field, provados headless inclusive pela ponte DLL P2P→World; smoke visual pendente.
 
-São **29 testes E2E** e **830 testes World verdes**. Detalhe em
+São **29 testes E2E** e **836 testes World verdes**. Detalhe em
 [`dynamic-validation.md`](dynamic-validation.md).
 
 Não resta alvo headless conhecido nessa matriz. A próxima etapa é a auditoria final global e,
@@ -112,7 +112,7 @@ estado visual.
 
 O bot peer sintético server-side já foi entregue e está documentado em
 [`bot-subsystem.md`](../systems/gameplay/bot-subsystem.md). Permanecem como decisões autorais:
-puppet com segundo cliente real, checkout/recarga, liquidação de loteria, política moderna de PC
+puppet com segundo cliente real, provedor/webhook de checkout (a landing e o redirecionamento já existem), liquidação de loteria, política moderna de PC
 Bang, SMTP e eventual evento de Natal novo. Elas não devem ser contabilizadas como lacunas do RE
 original.
 

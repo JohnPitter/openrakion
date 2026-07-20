@@ -30,6 +30,7 @@ if (Test-Path -LiteralPath $legacyForwarder -PathType Leaf) {
 $patchSources = @(
     'rakion_client_patch.cpp',
     'buddy_refresh.cpp',
+    'cash_store.cpp',
     'client_patches.cpp',
     'ui_lifecycle_patch.cpp',
     'bot_telemetry.cpp',

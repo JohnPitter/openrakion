@@ -33,6 +33,7 @@ namespace RakionServer.World
                 session.Gold = checked((uint)result.Gold);
                 session.Cash = checked((uint)result.Cash);
                 session.PowerLevelPoint = checked((uint)result.PowerLevelPoints);
+                session.PowerTimeMarker = result.PowerTimeMarker;
                 session.PuExpiresAt = result.ExpiresAt;
                 session.PuActive = true;
                 session.ExpBonusActive = true;

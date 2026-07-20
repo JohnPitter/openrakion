@@ -1024,6 +1024,8 @@ namespace RakionServer.World
             s.BagCount = gi.Bag;
             s.CharacterSlotCount = gi.CharacterSlots;
             s.StageLevelFreeMarker = gi.StageLevelFreeMarker;
+            s.ServerTimeMarker = gi.CurrentMinuteMarker;
+            s.PowerTimeMarker = gi.PowerTimeMarker;
             s.ClanId = gi.ClanId;
             s.PowerLevelPoint = (uint)(gi.PowerLevelPoint < 0 ? 0 : gi.PowerLevelPoint); // PU Bonus Points -> 0x0C @48
             s.PuActive = gi.PuActive;                                   // powertimedate > now -> bônus de XP/gold
@@ -1098,6 +1100,8 @@ namespace RakionServer.World
                 SlotCount = s.CharacterSlotCount,
                 Gold = s.Gold,
                 Cash = s.Cash,
+                ServerTimeMarker = s.ServerTimeMarker,
+                PowerTimeMarker = s.PowerTimeMarker,
                 PowerLevelPoint = (ushort)Math.Min(s.PowerLevelPoint, (uint)ushort.MaxValue),
                 Chars = summaries,
             };

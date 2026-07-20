@@ -5,6 +5,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$GoldenRoot,
     [string]$ServerHost = '127.0.0.1',
+    [string]$CashStoreUrl,
     [ValidateSet('windowed', 'borderless', 'fullscreen')]
     [string]$DisplayMode = 'windowed',
     [switch]$Refresh
@@ -147,6 +148,11 @@ if (-not [System.Net.IPAddress]::TryParse($ServerHost, [ref]$ip) -or
     $ip.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork) {
     throw "server.host deve ser um IPv4: $ServerHost"
 }
+if (-not $CashStoreUrl) { $CashStoreUrl = "http://$ServerHost/cash" }
+$cashStoreUri = [Uri]::new($CashStoreUrl, [UriKind]::Absolute)
+if ($cashStoreUri.Scheme -notin @('http', 'https')) {
+    throw 'CashStoreUrl deve ser uma URL HTTP(S) absoluta'
+}
 
 $script:Target = Resolve-ExistingDirectory $TargetRoot 'diretório de validação'
 $golden = Resolve-ExistingDirectory $GoldenRoot 'rakion-final golden'
@@ -211,6 +217,7 @@ try {
         Install-File $entry.Source $entry.RelativePath
     }
     Install-Text $ServerHost 'server.host'
+    Install-Text $cashStoreUri.AbsoluteUri.TrimEnd('/') 'cash-shop.url'
     Install-Text $DisplayMode 'display.mode'
     Remove-InstalledFile 'Bin\verorig.dll'
 

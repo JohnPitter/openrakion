@@ -481,16 +481,13 @@ namespace RakionServer.World.Network
             return w.ToArray();
         }
 
-        /// <summary>Resultado lógico 0x2C: status e referência de sessão.</summary>
-        public static byte[] InventoryEnterAck(byte[] sessionHandle)
+        /// <summary>Resultado lógico 0x2C: status e marcador de tempo recebido no login.</summary>
+        public static byte[] InventoryEnterAck(uint serverTimeMarker)
         {
-            if (sessionHandle == null || sessionHandle.Length != 4)
-                throw new ArgumentException("O handle de inventário deve ter 4 bytes.", nameof(sessionHandle));
-
             using var w = new PacketWriter();
             w.WriteWord(0x2c);
             w.WriteByte(0);
-            w.WriteBytes(sessionHandle);
+            w.WriteUInt32(serverTimeMarker);
             return w.ToArray();
         }
 

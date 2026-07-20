@@ -53,6 +53,8 @@ python client\RakionClientCompat\verify_legacy_client_patch.py `
 - restaurar as cinco chamadas originais de fechamento da tela de personagens e o flag de preview;
   o destrutor de `csComponent` recebe antes um unlink seguro no `uitoolkit.dll`, evitando ponteiros
   de siblings pendurados e o acesso inválido observado em `engine.dll`;
+- abrir a página de créditos configurada em `cash-shop.url` quando a compra de Power User retorna
+  status `3` (Cash insuficiente), sem alterar saldo ou regra econômica no cliente;
 - manter HIT/SHOT, lifecycle e ground-snap visual dos bots;
 - ler o IPv4 de `server.host` e redirecionar somente `40706`, `40708` e `40709`, em TCP/UDP;
 - espelhar movimento e ataque P2P humano ao World pelo envelope `0xB07A`, sem reenviar esse pacote
@@ -81,7 +83,7 @@ valida também o hash e o prólogo de `CNet::SendToOtherClient` na `engine.dll`,
 O linker usa `/Brepro`: duas compilações consecutivas com o mesmo toolchain e as mesmas entradas
 devem produzir o mesmo SHA-256. A build estável validada em 19/07/2026 gerou
 `13C1D0CC022D0000FA2E7ED03ABD0107AD41D894E0AF302D74CF3D42B0F33263` para `version.dll` e
-`4E964FF7790DD81A1998480C189CE8019DB323A3694174B6F6E71C4623483051` para
+`FF351A56C1FB448CBA2B7C32C6179D40CD1CDDB44BB17219C8A99E3BEE9D9104` para
 `RakionClientPatch.dll` nas duas execuções. O build de
 `client/RakionLauncher` chama esse script, embute `version.dll` e `RakionClientPatch.dll` e instala
 as duas em `Bin` antes de iniciar o jogo.
@@ -92,11 +94,13 @@ as duas em `Bin` antes de iniciar o jogo.
    correspondentes). O pacote original de 2007 sozinho não é compatível.
 2. Coloque o launcher publicado na raiz do cliente.
 3. Crie `server.host` na raiz com um IPv4, por exemplo `203.0.113.10`.
-4. Escolha o modo no launcher; ele grava `display.mode` e `PersistentSymbols.ini`.
-5. Clique em START GAME. O launcher instala o proxy em `Bin`; a carga é automática pelo Windows.
+4. Crie `cash-shop.url` na raiz com a URL HTTP(S) da loja, por exemplo
+   `https://jogo.exemplo/cash`. O deploy de validação gera `http://<ServerHost>/cash` por padrão.
+5. Escolha o modo no launcher; ele grava `display.mode` e `PersistentSymbols.ini`.
+6. Clique em START GAME. O launcher instala o proxy em `Bin`; a carga é automática pelo Windows.
 
 O nosso launcher é o método oficial porque instala os artefatos e grava as configurações. Depois
-de `version.dll`, `RakionClientPatch.dll`, `server.host` e a build v258 estarem no lugar, iniciar
+de `version.dll`, `RakionClientPatch.dll`, `server.host`, `cash-shop.url` e a build v258 estarem no lugar, iniciar
 `Bin/rakion.exe` diretamente também carrega a DLL. O launcher antigo não injeta a DLL e só é
 compatível se não restaurar arquivos, iniciar o GameGuard ou sobrescrever a configuração.
 

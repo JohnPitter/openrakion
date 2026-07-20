@@ -6,7 +6,11 @@ using MySqlConnector;
 using RakionServer.Common;
 using RakionServer.LauncherWeb;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = AppContext.BaseDirectory,
+});
 LauncherWebConfig config = LauncherWebConfig.Load(
     builder.Configuration, builder.Environment.ContentRootPath);
 builder.WebHost.UseUrls(config.Endpoint.ToString());
@@ -22,6 +26,8 @@ var app = builder.Build();
 if (config.TicketAuthEnabled && config.EnsureTicketSchema)
     await app.Services.GetRequiredService<LauncherTicketRepository>().EnsureSchemaAsync();
 app.UseRateLimiter();
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.MapModernAuth();
 app.MapModernUpdates();
 

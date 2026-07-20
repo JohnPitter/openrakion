@@ -33,13 +33,13 @@ namespace RakionServer.World.CharSelect
     }
 
     /// <summary>
-    /// Lista de chars + dados de conta para o frame 0x0C do login. <see cref="SessionHandle"/> é o handle
-    /// gerado pelo servidor (vai no header @13 e nos acks 0x2c/0x2d).
+    /// Lista de chars + dados de conta para o frame 0x0C do login.
     /// </summary>
     public sealed record CharList
     {
         public string DisplayName { get; init; } = "";
         public ClanLoginSnapshot Clan { get; init; } = ClanLoginSnapshot.Empty;
+        public uint ServerTimeMarker { get; init; }
         public uint PowerTimeMarker { get; init; }
         public ushort Country { get; init; }
         public ushort NetworkSlot { get; init; }       // @7 do header; slot da sessão TCP
@@ -48,7 +48,6 @@ namespace RakionServer.World.CharSelect
         public uint Cash { get; init; }                // tail+16 do 0x0C (cash / EX points)
         public ushort PowerLevelPoint { get; init; }
         public uint UdpSessionKey { get; init; }          // @9 do header; user+0x1464 no world original
-        public byte[] SessionHandle { get; init; } = new byte[4];
         public IReadOnlyList<CharSummary> Chars { get; init; } = Array.Empty<CharSummary>();
     }
 }

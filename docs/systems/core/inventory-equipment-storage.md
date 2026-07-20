@@ -105,8 +105,8 @@ stack/padding e não integra o contrato. `engine.dll:0x36193680` lê apenas o pr
 `0x2D`. O `.NET` persiste cada mutação transacionalmente antes do retorno e, ao fechar, produz o
 mesmo resultado observável pela única `InventoryUiState`.
 
-`ClientSession.Inventory.cs` sintetiza a referência de abertura usando o session handle do `0x0C`.
-Handles capturados de outra sessão não são reutilizáveis.
+`ClientSession.Inventory.cs` repete na referência de abertura o marcador de tempo do servidor enviado
+no `0x0C`. O valor não é ponteiro nem handle aleatório e deve permanecer coerente com o login.
 
 ## Box e repaint
 

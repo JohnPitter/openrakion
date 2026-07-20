@@ -83,6 +83,8 @@ namespace RakionServer.World.Network
         public byte CharacterSlotCount { get; set; } = 4;    // user+0x1541 (slots de personagem)
         public byte PotionSlotCount { get; set; } = 3;       // characterinfo.potionslot
         public uint StageLevelFreeMarker { get; set; }       // usergameinfo.stagelevelfree (minutos desde TO_DAYS)
+        public uint ServerTimeMarker { get; set; }
+        public uint PowerTimeMarker { get; set; }
         // --- estado de COMPRA / char ativo (shop 0x2e) ---
         public int PreviewCharId { get; set; } = -1;         // characterinfo.used carregado para montar o 0x0C
         public int ActiveCharId { get; set; } = 0;           // user+0x14a4: zero até o 0x14 selecionar personagem
@@ -170,22 +172,6 @@ namespace RakionServer.World.Network
 
         private ushort _clientSeq;   // user+0x146e (ultimo seq recebido)
         private long _lastKeepAliveTick = Environment.TickCount64;
-        // HANDLE de sessao (0x0C@13, usado pela compatibilidade de inventário 0x2c/0x34). É um PONTEIRO autoral do
-        // servidor: no worldserv original variava por conexão (0x0C@13 = 8deb863f/b3c3863f/700e873f ~ 0x3f86xxxx)
-        // e o cliente apenas o ECOA, nunca dereferencia (é memória de outro processo). Por isso GERADO por sessão
-        // — NÃO copiado de captura: o cliente aceita qualquer valor estável (provado pelo diff de 3 sessões reais).
-        // (A cadeia de LOBBY já NÃO usa handle: todo 0x14/0x1e/0x1f/0x36/0x43 é LEN-real + zero-pad — ver LobbyFrames.)
-        private readonly byte[] _invHandle = NewHandle();
-
-        /// <summary>Gera um handle autoral do servidor (4B não-zero), único por sessão. O cliente só o ecoa,
-        /// então o valor é arbitrário — só precisa ser estável dentro da sessão e diferente de zero.</summary>
-        private static byte[] NewHandle()
-        {
-            byte[] h = new byte[4];
-            System.Random.Shared.NextBytes(h);
-            h[0] |= 0x01;   // garante != 0
-            return h;
-        }
         private int _gameGuardChallengeSent; // 0x10 e assíncrono ao UDP; trava atômica evita duplicar no fallback 0x0e
         private readonly int[] _potionSlot = new int[0x13];   // quickslot/equip = user+0x1da4 (19 celulas; type1 do move 0x31)
         private readonly int[] _potionCount = new int[0x13];  // quantidade empilhada por celula (contador 'v' do 0x31)

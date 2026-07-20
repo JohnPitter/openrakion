@@ -49,6 +49,16 @@ Falhas retornam o frame original curto `[u16 0x34][status]`. No sucesso, a opera
 `TO_DAYS(NOW())*1440 + HOUR(NOW())*60 + MINUTE(NOW())`, acrescido da duração. Compra inicial parte
 do horário atual; renovação soma a duração ao marcador existente.
 
+O texto de confirmação não calcula os dias apenas com o callback da compra. `FUN_004733F0` subtrai
+do marcador de expiração o marcador de tempo do servidor recebido no login `0x0C` em `@13` e os
+minutos transcorridos desde o login. O campo `@13` não é um handle de sessão: o servidor agora envia
+nele o marcador corrente e envia a expiração no tail variável do mesmo frame. O preenchimento antigo
+com valor aleatório e expiração zero causava exatamente a mensagem `de [0] para [0] dias`.
+
+Quando `FUN_00474F50` recebe status `3` (Cash insuficiente para Power User), o hook restrito da
+`RakionClientPatch.dll` abre a URL configurada em `cash-shop.url`. A DLL apenas navega para a loja;
+cotação, pagamento e crédito continuam obrigatoriamente autoritativos no backend.
+
 ## Bônus e validade
 
 PU ativo é `powertimedate > NOW()`. No cliente, `FUN_351EBE50` lê o campo gravado por
@@ -115,11 +125,12 @@ responder status real, com saldo/validade/limite resultantes.
 
 1. preservar os contratos e testes de `0x32/0x35/0x6F/0x34`;
 2. manter o callback `0x34` como golden source, sem patch de XFS;
-3. manter PU e bonus points na transação implementada;
-4. manter expiração durante sessão e snapshot por match habilitados;
-5. preservar a alocação transacional de stats;
-6. manter quickslot/runtime respeitando o limite e adicionar testes visuais;
-7. escrever ledger e testes de duas sessões.
+3. manter no login os marcadores correntes de servidor e de expiração do Power User;
+4. manter PU e bonus points na transação implementada;
+5. manter expiração durante sessão e snapshot por match habilitados;
+6. preservar a alocação transacional de stats;
+7. manter quickslot/runtime respeitando o limite e adicionar testes visuais;
+8. escrever ledger e testes de duas sessões.
 
 ```ini
 [PowerUser]
@@ -149,7 +160,8 @@ reinicia no login e não distingue uma tentativa repetida após reconnect de uma
 Logo, idempotência distribuída após queda de conexão não pode ser adicionada com fidelidade apenas no
 backend; exigiria extensão coordenada do cliente e do servidor. A implementação preserva a semântica
 original e garante atomicidade/serialização no banco. A frente está concluída em RE e validação
-headless; a única fronteira ainda aberta é observar popup, saldos e validade no cliente gráfico.
+headless. O popup foi observado no cliente e revelou o erro dos marcadores do login; a correção está
+coberta por golden/E2E, restando confirmar visualmente os dias e saldos após a nova implantação.
 
 ## Evidência executada em 2026-07-15
 
@@ -173,6 +185,9 @@ cupom Cash de 50% e valida o callback externo após cada commit. A jornada prova
 ledgers conciliados, reconnect ativo e expiração recarregada durante a sessão. O teste revelou que
 `logbuypoweruser.powertime_cur` repetia o marcador anterior; a persistência foi corrigida para o
 marcador novo que o mesmo callback entrega ao cliente.
+
+O golden do login também fixa o marcador corrente em `@13` e o marcador de expiração no tail. A
+suíte integral de 19/07/2026 fechou 836/836 testes, incluindo a diferença exata de 30 dias no E2E.
 
 `SoloStageSettlementE2ETests` agora ativa PU explicitamente antes do login e exige EXP
 `exp + exp/2`, Gold sem multiplicação, Cell EXP compatível, persistência e replay idempotente no

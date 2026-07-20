@@ -53,8 +53,7 @@ public static class LoginCharListWriter
         buffer[3] = 0x01;
         BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(7), list.NetworkSlot);
         BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(9), list.UdpSessionKey);
-        if (list.SessionHandle.Length >= 4)
-            list.SessionHandle.AsSpan(0, 4).CopyTo(buffer.AsSpan(13));
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(13), list.ServerTimeMarker);
         BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(17), list.Clan.Id);
 
         int offset = FixedPrefixSize;

@@ -140,7 +140,7 @@ namespace RakionServer.World.Tests
         [Fact]
         public void InventoryEnterAck_MatchesOriginalCapture() =>
             Assert.Equal("2c00008deb863f",
-                Hex(LobbyFrames.InventoryEnterAck(new byte[] { 0x8d, 0xeb, 0x86, 0x3f })));
+                Hex(LobbyFrames.InventoryEnterAck(0x3f86eb8d)));
 
         [Theory]
         [InlineData(1, "2c000100000000")]

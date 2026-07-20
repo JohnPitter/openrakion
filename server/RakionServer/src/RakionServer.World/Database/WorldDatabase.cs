@@ -423,6 +423,8 @@ namespace RakionServer.World.Database
             public bool Ban;
             public string BanReason = "";
             public int PowerLevelPoint;   // usergameinfo.powerlevelpoint = "Power User Bonus Points" (0x0C @48)
+            public uint PowerTimeMarker;
+            public uint CurrentMinuteMarker;
             public bool PuActive;         // powertimedate > now: PU vigente -> bônus de XP/gold
             public DateTime? PuExpiresAt;
             public byte Bag = 1;
@@ -439,9 +441,11 @@ namespace RakionServer.World.Database
                 await using var c = new MySqlConnection(_conn);
                 await c.OpenAsync();
                 await using var cmd = new MySqlCommand(
-                    "SELECT id, name, charname, buddyname, tutorial, gold, ban, IFNULL(BanReason,''), powerlevelpoint, " +
+                    "SELECT id,name,charname,buddyname,tutorial,gold,ban,IFNULL(BanReason,'')," +
+                    "powerlevelpoint,powertime," +
                     "NULLIF(powertimedate,'0000-00-00 00:00:00')," +
-                    "(powertimedate > NOW()),bag,slot,stagelevelfree,clanid " +
+                    "(powertimedate > NOW()),bag,slot,stagelevelfree,clanid," +
+                    "(TO_DAYS(NOW())*1440+HOUR(NOW())*60+MINUTE(NOW())) " +
                     "FROM usergameinfo WHERE name=@n LIMIT 1", c);
                 cmd.Parameters.AddWithValue("@n", accountName);
                 await using var r = await cmd.ExecuteReaderAsync();
@@ -458,12 +462,14 @@ namespace RakionServer.World.Database
                     Ban = r.GetInt32(6) != 0,
                     BanReason = r.GetString(7),
                     PowerLevelPoint = r.GetInt32(8),
-                    PuExpiresAt = r.IsDBNull(9) ? null : r.GetDateTime(9),
-                    PuActive = !r.IsDBNull(10) && r.GetInt32(10) != 0,
-                    Bag = checked((byte)r.GetInt32(11)),
-                    CharacterSlots = checked((byte)r.GetInt32(12)),
-                    StageLevelFreeMarker = checked((uint)r.GetInt64(13)),
-                    ClanId = r.IsDBNull(14) ? 0 : r.GetInt32(14),
+                    PowerTimeMarker = checked((uint)Math.Max(0, r.GetInt64(9))),
+                    PuExpiresAt = r.IsDBNull(10) ? null : r.GetDateTime(10),
+                    PuActive = !r.IsDBNull(11) && r.GetInt32(11) != 0,
+                    Bag = checked((byte)r.GetInt32(12)),
+                    CharacterSlots = checked((byte)r.GetInt32(13)),
+                    StageLevelFreeMarker = checked((uint)r.GetInt64(14)),
+                    ClanId = r.IsDBNull(15) ? 0 : r.GetInt32(15),
+                    CurrentMinuteMarker = checked((uint)r.GetInt64(16)),
                 };
             }
             catch (Exception ex)
