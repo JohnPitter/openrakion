@@ -65,6 +65,7 @@ __declspec(naked) void AddBotCreateGate()
     hidden:
         popad
         popfd
+        mov ecx, dword ptr [esp + 0xac]
         jmp dword ptr [AddBotCreateContinue]
     }
 }
@@ -84,6 +85,7 @@ __declspec(naked) void AddBotClickGate()
     disabled:
         popad
         popfd
+        mov ecx, dword ptr ds:[0x004feed0]
         jmp dword ptr [AddBotClickContinue]
     }
 }
