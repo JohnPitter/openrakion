@@ -225,8 +225,8 @@ DWORD WINAPI InstallCompatibility(void*)
         ? "ponte P2P->World para hit de bot instalada"
         : "ponte P2P->World indisponível");
     CompatLog(InstallCashStoreRedirectHook()
-        ? "redirect de saldo insuficiente para recarga instalado"
-        : "redirect de recarga indisponivel para esta build");
+        ? "redirect e botao nativo de recarga instalados"
+        : "integracao de recarga indisponivel para esta build");
     PatchKeyHook();
     auto* patch = reinterpret_cast<BYTE*>(PatchAddress);
     for (int attempt = 0; attempt < 1200; ++attempt)

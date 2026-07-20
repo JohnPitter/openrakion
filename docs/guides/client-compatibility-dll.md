@@ -55,6 +55,8 @@ python client\RakionClientCompat\verify_legacy_client_patch.py `
   de siblings pendurados e o acesso inválido observado em `engine.dll`;
 - abrir a página de créditos configurada em `cash-shop.url` quando a compra de Power User retorna
   status `3` (Cash insuficiente), sem alterar saldo ou regra econômica no cliente;
+- adicionar o botão nativo `Buy Cash` ao lado de `Potion slot`; ele reutiliza o command `0x15` de
+  compra de créditos que já existia no cliente e abre a mesma `cash-shop.url`;
 - manter HIT/SHOT, lifecycle e ground-snap visual dos bots;
 - ler o IPv4 de `server.host` e redirecionar somente `40706`, `40708` e `40709`, em TCP/UDP;
 - espelhar movimento e ataque P2P humano ao World pelo envelope `0xB07A`, sem reenviar esse pacote
@@ -84,9 +86,9 @@ valida também o hash e o prólogo de `CNet::SendToOtherClient` na `engine.dll`,
 `/W4 /WX` e executa `proxy_smoke.exe` para conferir exports e forwarding.
 
 O linker usa `/Brepro`: duas compilações consecutivas com o mesmo toolchain e as mesmas entradas
-devem produzir o mesmo SHA-256. A build estável validada em 19/07/2026 gerou
+devem produzir o mesmo SHA-256. A build estável validada em 20/07/2026 gerou
 `13C1D0CC022D0000FA2E7ED03ABD0107AD41D894E0AF302D74CF3D42B0F33263` para `version.dll` e
-`36DF8372BBB2AFFAACA2E2B98F4ADD874A217EDBDBDE0171267EB2A6E68AAE92` para
+`EBB294CC0BCB37630C5C16673CF4AE90FF8CAFD119724407B65AE8284DEFE8BB` para
 `RakionClientPatch.dll` nas duas execuções. O build de
 `client/RakionLauncher` chama esse script, embute `version.dll` e `RakionClientPatch.dll` e instala
 as duas em `Bin` antes de iniciar o jogo.
@@ -101,6 +103,10 @@ as duas em `Bin` antes de iniciar o jogo.
    `https://jogo.exemplo/cash`. O deploy de validação gera `http://<ServerHost>/cash` por padrão.
 5. Escolha o modo no launcher; ele grava `display.mode` e `PersistentSymbols.ini`.
 6. Clique em START GAME. O launcher instala o proxy em `Bin`; a carga é automática pelo Windows.
+
+Na tela Shop/Box, `Buy Cash` deve aparecer imediatamente à direita de `Potion slot`. O clique abre a
+URL configurada no navegador padrão. Essa navegação não concede saldo: crédito continua sendo uma
+operação exclusiva do backend.
 
 O nosso launcher é o método oficial porque instala os artefatos e grava as configurações. Depois
 de `version.dll`, `RakionClientPatch.dll`, `server.host`, `cash-shop.url` e a build v258 estarem no lugar, iniciar
