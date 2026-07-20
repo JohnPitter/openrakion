@@ -17,9 +17,18 @@ Em 19–20/07/2026 foi reproduzida outra falha: após entrar no servidor ou troc
 modelo social podia ser reinicializado sem que o cliente repetisse `SVC_SET_NICK`; a lista só surgia
 depois de selecionar manualmente **Nick Change**. O `RET_SET_NICK` contém somente o resultado da
 operação; enviá-lo sem um `SVC_SET_NICK` anterior não informa o nome ao cliente e não substitui o
-fluxo nativo. A correção mínima na DLL chama `SetNickname` do próprio `Buddy2.dll` após o primeiro
-`RET_LOGIN` aceito e após cada seleção de personagem. O servidor recebe `SVC_SET_NICK`, responde
+fluxo nativo. A correção mínima na DLL chama `SetNickname` do próprio `Buddy2.dll` no primeiro
+`RET_LOGIN` de cada host e após cada seleção de personagem. O callback nativo muda `host+0x24` de
+`0` para `1`; a DLL lê o valor anterior e só dispara no primeiro callback. Assim, o `RET_LOGIN`
+produzido pelo próprio refresh não forma recursão. O servidor recebe `SVC_SET_NICK`, responde
 `RET_SET_NICK(result=0)` e envia um novo `RET_LOGIN` com a lista atualizada.
+
+O lifecycle completo explica a falha de reentrada. `WorldLoginSuccess (0x0047BCE0)` cria o host em
+`application+0x4A60`, inicia `Buddy2::Login` e recebe a lista em `0x0048A5D0`. Ao sair do servidor,
+`LeaveWorldServer (0x004755B0)` chama `DestroyMessengerHost (0x0040A8F0)` e zera o ponteiro. A
+entrada seguinte cria outra instância, cujo endereço pode ser igual ao anterior. Por isso o hook
+não mantém contador, ponteiro processado ou flag próprio entre sessões; usa apenas o estado da
+instância ativa e obtém o host atual pelo ponteiro global quando a seleção de personagem termina.
 
 World e Buddy permanecem como autoridades. Antes do snapshot `0x0C`, o World normaliza
 `buddyname` para o primeiro personagem válido por slot. O monitor do Buddy acompanha `charname` e
@@ -61,6 +70,21 @@ reproduz os builders e consumers usados nesta documentação:
   -postScript DecompileBuddyServiceContracts.py `
   "$env:RAKION_EVIDENCE_DIR\buddy_service_contracts.txt"
 ```
+
+O lado `rakion.exe` é reproduzido por
+[`DecompileBuddyClientLifecycle.py`](../../tools/ghidra/DecompileBuddyClientLifecycle.py):
+
+```powershell
+& "$env:GHIDRA_HOME\support\analyzeHeadless.bat" `
+  "$env:RAKION_RE_WORK\_dbg\cliproj" cli `
+  -process rakion_orig.exe -noanalysis -scriptPath tools\ghidra `
+  -postScript DecompileBuddyClientLifecycle.py
+```
+
+Esse passe cobre criação/destruição do host, entrada/saída do World, login Buddy, seleção de
+personagem, resposta de nickname, rebuild do F9, callers e os 16 primeiros slots da vtable de
+callbacks. A assinatura de `BuddyLoginResult` é `thiscall(host, u16 result, list*)`, confirmada pelo
+acesso ao primeiro argumento e pelo `ret 8` em `0x0048A837`.
 
 O passe atual encontra 18 funções para 18 constantes, incluindo os builders de `0x2020`,
 `0x3000`, `0x3002`, `0x3004`, `0x3006`, `0x3100`, `0x3102`, `0x3104`, `0x3110` e `0x3152`, além

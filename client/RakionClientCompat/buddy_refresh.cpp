@@ -10,10 +10,13 @@ namespace
 {
 constexpr uintptr_t BuddyLoginCallbackAddress = 0x0048a5d0;
 constexpr uintptr_t CharacterSelectCallbackAddress = 0x0047cb40;
+constexpr uintptr_t RakionApplicationAddress = 0x004feed0;
 constexpr BYTE ExpectedBuddyLoginCallback[] = { 0x6a, 0xff, 0x68, 0xc3, 0xe3, 0x4c, 0x00 };
 constexpr BYTE ExpectedCharacterSelectCallback[] = { 0x64, 0xa1, 0x00, 0x00, 0x00, 0x00 };
 constexpr size_t BuddyInterfaceOffset = 0x20;
+constexpr size_t BuddyLoginStateOffset = 0x24;
 constexpr size_t BuddyNicknameOffset = 0x13b30;
+constexpr size_t MessengerHostOffset = 0x4a60;
 constexpr size_t SetNicknameVtableIndex = 3;
 constexpr size_t MaxNicknameLength = 20;
 
@@ -23,8 +26,6 @@ using SetNickname = void (__thiscall*)(void*, const wchar_t*);
 
 BuddyLoginCallback OriginalBuddyLogin{};
 CharacterSelectCallback OriginalCharacterSelect{};
-void* volatile BuddyUi{};
-volatile LONG RefreshPending{1};
 
 bool IsReadable(const void* pointer, size_t length)
 {
@@ -51,9 +52,17 @@ bool BelongsToModule(const void* pointer, HMODULE module)
     return address >= base && address < base + nt->OptionalHeader.SizeOfImage;
 }
 
-bool RefreshBuddyNickname()
+void* CurrentMessengerHost()
 {
-    auto* ui = InterlockedCompareExchangePointer(&BuddyUi, nullptr, nullptr);
+    auto** application = reinterpret_cast<void**>(RakionApplicationAddress);
+    if (!IsReadable(application, sizeof(void*)) || !*application) return nullptr;
+    auto** host = reinterpret_cast<void**>(
+        static_cast<BYTE*>(*application) + MessengerHostOffset);
+    return IsReadable(host, sizeof(void*)) ? *host : nullptr;
+}
+
+bool RefreshBuddyNickname(void* ui)
+{
     if (!IsReadable(ui, BuddyInterfaceOffset + sizeof(void*))) return false;
     auto* buddy = *reinterpret_cast<void**>(static_cast<BYTE*>(ui) + BuddyInterfaceOffset);
     if (!IsReadable(buddy, BuddyNicknameOffset + MaxNicknameLength * sizeof(wchar_t))) return false;
@@ -70,25 +79,19 @@ bool RefreshBuddyNickname()
     return true;
 }
 
-void RunPendingRefresh()
-{
-    if (InterlockedCompareExchange(&RefreshPending, 0, 1) != 1) return;
-    if (!RefreshBuddyNickname()) InterlockedExchange(&RefreshPending, 1);
-}
-
 void __fastcall BuddyLoginCallbackHook(void* self, void*, uint32_t result, uint32_t context)
 {
+    const bool wasLoggedIn = IsReadable(self, BuddyLoginStateOffset + 1) &&
+        *(static_cast<BYTE*>(self) + BuddyLoginStateOffset) != 0;
     OriginalBuddyLogin(self, result, context);
-    InterlockedExchangePointer(&BuddyUi, self);
-    if ((result & 0xffff) == 0) RunPendingRefresh();
+    if ((result & 0xffff) == 0 && !wasLoggedIn) RefreshBuddyNickname(self);
 }
 
 void __fastcall CharacterSelectCallbackHook(void* self, void*, uint32_t result)
 {
     OriginalCharacterSelect(self, result);
     if ((result & 0xff) != 0) return;
-    InterlockedExchange(&RefreshPending, 1);
-    RunPendingRefresh();
+    RefreshBuddyNickname(CurrentMessengerHost());
 }
 
 bool InstallHook(uintptr_t address, const BYTE* expected, size_t length,

@@ -624,6 +624,11 @@ ausente dos stages.
 (`CBuddy2+0x13B18`) e decompila as funções proprietárias. As saídas são
 `C:\temp\buddy_sms_flows.txt` e `C:\temp\buddy_sms_key.txt`.
 
+`ghidra/DecompileBuddyClientLifecycle.py` fecha a integração do `rakion.exe` com `Buddy2.dll`:
+criação e destruição do host, entrada e saída do World, login, seleção, nickname, rebuild do F9,
+callers e vtable de callbacks. Ele demonstra que cada reentrada cria uma nova instância e que
+`host+0x24` é o discriminador nativo entre o primeiro `RET_LOGIN` e os refreshes seguintes.
+
 `ghidra/DumpFunctionInstructions.py` exibe o assembly completo das funções que contêm os
 endereços informados. Ele complementa `DumpInstructionsAround.py` quando o decompiler perde
 parâmetros ou tipos de uma função inteira.

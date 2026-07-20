@@ -57,8 +57,9 @@ python client\RakionClientCompat\verify_legacy_client_patch.py `
 - adicionar o botão nativo `Buy Cash` ao lado de `Potion slot` (command `0x18B`); o hook registra
   todas as instâncias criadas pela tela, consome somente o clique desses controles e abre a mesma
   `cash-shop.url`;
-- disparar o `SetNickname` nativo do `Buddy2.dll` após o primeiro `RET_LOGIN` aceito e após cada
-  seleção de personagem, para que o cliente inicialize o próprio nome e seu modelo social;
+- disparar o `SetNickname` nativo do `Buddy2.dll` quando `RET_LOGIN` muda o estado do host de
+  desconectado para autenticado e após cada seleção de personagem; o estado nativo evita loops e
+  funciona mesmo quando o alocador reutiliza o endereço de uma instância destruída;
 - manter HIT/SHOT, lifecycle e ground-snap visual dos bots;
 - ler o IPv4 de `server.host` e redirecionar somente `40706`, `40708` e `40709`, em TCP/UDP;
 - espelhar movimento e ataque P2P humano ao World pelo envelope `0xB07A`, sem reenviar esse pacote
@@ -92,7 +93,7 @@ valida também o hash e o prólogo de `CNet::SendToOtherClient` na `engine.dll`,
 O linker usa `/Brepro`: duas compilações consecutivas com o mesmo toolchain e as mesmas entradas
 devem produzir o mesmo SHA-256. A build estável validada em 20/07/2026 gerou
 `13C1D0CC022D0000FA2E7ED03ABD0107AD41D894E0AF302D74CF3D42B0F33263` para `version.dll` e
-`78BE113C1DC035D0CC8CB8029697A18FAF5E1B658C3569B392D10316FDFE7AC3` para
+`BF2F0DE4D8588BFF811609DC20229A649F817B95E571C94A5EAC8D6BD3F44515` para
 `RakionClientPatch.dll` nas duas execuções. O build de
 `client/RakionLauncher` chama esse script, embute `version.dll` e `RakionClientPatch.dll` e instala
 as duas em `Bin` antes de iniciar o jogo.
