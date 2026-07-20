@@ -154,9 +154,16 @@ O modelo atual persiste posição em `useriteminfo`:
 - múltiplas linhas do mesmo `itemId` formam a quantidade do stack.
 
 `LoadQuickslotAsync` agrupa por `itemId`. `SaveInventoryLayoutAsync` bloqueia as linhas da conta e
-reatribui `characterid/slot` na mesma transação. Falha restaura o snapshot em memória e não envia
-confirmação. Itens não renderizáveis continuam ocupando célula real dentro de `bag*30`, evitando
-colisão entre o estado visível e o banco.
+reatribui `characterid/slot` na mesma transação, mas limita o reset de poções ao storage e ao
+personagem que está sendo salvo. Loadouts dos demais personagens da conta não participam da
+mutação. Falha restaura o snapshot em memória e não envia confirmação. Itens não renderizáveis
+continuam ocupando célula real dentro de `bag*30`, evitando colisão entre o estado visível e o banco.
+
+Login e seleção `0x14` usam a mesma hidratação autoritativa: carregam equipamento/cells do
+personagem, quickslot, storage global, normalizam itens incompatíveis e reconstruem os arrays da
+sessão usados pelos callbacks do cliente. Atualizar apenas `ClientSession.Items` não basta, porque o
+repaint e as mutações leem os arrays ativos e o box materializado. Essa unificação evita que o
+preview carregado no login permaneça em memória depois da escolha de outro personagem.
 
 O World original classifica poções explicitamente pela faixa `12000..12999` em `FUN_0040CD70`;
 portanto essa é a regra compatível da build, não uma heurística local. O catálogo foi auditado como
@@ -308,7 +315,7 @@ em falha, o snapshot é restaurado antes de repintar o estado anterior no client
 O RE do DB também fechou a persistência original: equipar atualiza `slot/characterid` na linha
 existente; desequipar preserva `id`, `item_sn`, refino e duração ao retornar para `characterid=0`.
 O `0x31` valida tipo, classe, nível e slot antes do commit. Itens incompatíveis encontrados no
-login são movidos de modo transacional para uma célula livre do storage.
+login ou na seleção são movidos de modo transacional para uma célula livre do storage.
 
 Aplicação/remoção de atributos é client-side nesta build. Depois de escrever os IDs ativos, o
 callback `FUN_0047D1D0` copia os dez atributos base com `FUN_00477E70`, recalcula derivados por
@@ -573,6 +580,15 @@ troca de flag; compensação de economia precisa de log e ferramenta administrat
   timestamps e reconnect da célula pelo wire `0x6B`–`0x6D`;
 - a fixture restaura Gold, item e ledgers mesmo se a jornada falhar depois do commit.
 
+### Evidência adicionada em 2026-07-19
+
+- `CharacterInventoryPersistenceE2ETests` cria dois personagens com poções do mesmo ID, seleciona
+  o segundo pelo socket World e confirma que o primeiro mantém seu próprio quickslot no MariaDB;
+- a seleção recarrega a cell `8000` e a poção `12003` do personagem escolhido, e publica o repaint
+  `0x31` da célula 13;
+- o save de layout deixou de resetar poções pertencentes aos demais personagens da conta.
+- 835/835 testes do World aprovados com o banco obrigatório, sem skips.
+
 ## Pontos não resolvidos
 
 - confirmação visual da expiração de box/equipamento/quickslot no cliente gráfico;
@@ -593,6 +609,7 @@ troca de flag; compensação de economia precisa de log e ferramenta administrat
 - `server/RakionServer/tests/RakionServer.World.Tests/CharacterPreviewProjectionTests.cs`;
 - `server/RakionServer/tests/RakionServer.World.Tests/InventoryExpirationFrameTests.cs`;
 - `server/RakionServer/tests/RakionServer.World.Tests/InventoryExpirationDatabaseSmokeTests.cs`;
+- `server/RakionServer/tests/RakionServer.World.Tests/E2E/CharacterInventoryPersistenceE2ETests.cs`;
 - `C:\temp\mitm_inv_previous.log`, `C:\temp\mitm_poweruser_potion.log`,
   `C:\temp\shop_capture.log`, `C:\temp\world_shop_request.txt`,
   `C:\temp\world_shop_pricing.txt`, `C:\temp\client_shop_responses.txt`,

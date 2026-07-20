@@ -87,9 +87,10 @@ namespace RakionServer.World.Network
             }
         }
 
-        public System.Threading.Tasks.Task<bool> PersistStorageLayoutAsync() =>
+        public System.Threading.Tasks.Task<bool> PersistStorageLayoutAsync(int? characterId = null) =>
             _server.Db.SaveInventoryLayoutAsync(
-                GameInfoId, ActiveCharId, _potionSlot, _potionRowId, BoxItems, BoxRowId);
+                GameInfoId, characterId ?? ActiveCharId,
+                _potionSlot, _potionRowId, BoxItems, BoxRowId);
 
         /// <summary>Adiciona um item ao box: poção empilha na célula existente do mesmo id; senão (e gear) ocupa
         /// a 1a célula vazia (contador 1, com nível de refino e id da linha). Retorna a célula ocupada.</summary>

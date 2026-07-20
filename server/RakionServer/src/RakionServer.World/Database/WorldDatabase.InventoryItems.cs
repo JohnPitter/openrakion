@@ -265,7 +265,7 @@ namespace RakionServer.World.Database
                 await using var transaction = await connection.BeginTransactionAsync(
                     IsolationLevel.Serializable);
                 await LockInventoryAsync(connection, transaction, userId);
-                await ResetPotionRowsAsync(connection, transaction, userId);
+                await ResetPotionRowsAsync(connection, transaction, userId, characterId);
                 await PersistActiveRowsAsync(connection, transaction,
                     userId, characterId, activeItems, activeRowIds);
                 await PersistStorageRowsAsync(connection, transaction,
@@ -295,7 +295,8 @@ namespace RakionServer.World.Database
                 bool potion = itemId is >= 12000 and <= 12999;
                 string sql = potion
                     ? "UPDATE useriteminfo SET characterid=@char,slot=@slot " +
-                      "WHERE userid=@u AND itemid=@item"
+                      "WHERE userid=@u AND itemid=@item " +
+                      "AND (characterid=0 OR characterid=@char)"
                     : "UPDATE useriteminfo SET characterid=@char,slot=@slot " +
                       "WHERE id=@row AND userid=@u";
                 await using var command = new MySqlCommand(sql, connection, transaction);
@@ -334,12 +335,15 @@ namespace RakionServer.World.Database
         }
 
         private static async Task ResetPotionRowsAsync(
-            MySqlConnection connection, MySqlTransaction transaction, int userId)
+            MySqlConnection connection, MySqlTransaction transaction,
+            int userId, int characterId)
         {
             await using var command = new MySqlCommand(
                 "UPDATE useriteminfo ui JOIN iteminfo def ON def.id=ui.itemid AND def.type=12 " +
-                "SET ui.characterid=0,ui.slot=119 WHERE ui.userid=@u", connection, transaction);
+                "SET ui.characterid=0,ui.slot=119 WHERE ui.userid=@u " +
+                "AND (ui.characterid=0 OR ui.characterid=@char)", connection, transaction);
             command.Parameters.AddWithValue("@u", userId);
+            command.Parameters.AddWithValue("@char", characterId);
             await command.ExecuteNonQueryAsync();
         }
 

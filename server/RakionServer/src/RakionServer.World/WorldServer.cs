@@ -1054,43 +1054,14 @@ namespace RakionServer.World
                 s.Stats[4] = ch.Chit; s.Stats[5] = ch.Hp; s.Stats[6] = ch.Ap; s.Stats[7] = ch.AttackSpeed;
                 s.Stats[8] = ch.Speed; s.Stats[9] = ch.Maxcp;
                 if (s.CharName.Length == 0) s.CharName = ch.Name;
-                s.Items = await _db.LoadItemsAsync(ch.Id);              // inventario do char p/ o Box (0x2f)
-                var invalidItems = s.Items.FindAll(item => !IsActiveItemValid(ch, item));
-                if (invalidItems.Count > 0)
-                {
-                    int moved = await _db.MoveInvalidItemsToStorageAsync(
-                        gi.Id, ch.Id, invalidItems.ConvertAll(item => item.Id), StorageCapacity(s));
-                    if (moved < 0)
-                        Log.Error("login", "[{0}] equipamento incompatível não pôde ser normalizado", s.Slot);
-                    else
-                    {
-                        Log.Warn("login", "[{0}] {1} item(ns) incompatível(is) movido(s) ao storage",
-                            s.Slot, moved);
-                        s.Items = await _db.LoadItemsAsync(ch.Id);
-                    }
-                }
-                // useriteminfo canônico: todos os itens ocupam célula; apenas os tipos compatíveis
-                // são renderizados no grid legado do cliente (ver IsBoxDisplayable).
-                var loadedBox = await _db.LoadStorageItemsAsync(gi.Id);
-                var setsInBox = loadedBox.FindAll(t => IsSet(t.ItemId));
-                if (setsInBox.Count > 0)
-                {
-                    foreach (var t in setsInBox)
-                        await _db.UnpackSetInStorageAsync(
-                            gi.Id, t, ExpandSetMembers(t.ItemId), StorageCapacity(s));
-                    loadedBox = await _db.LoadStorageItemsAsync(gi.Id);
-                    Log.Ok("login", "[{0}] {1} set(s) legado(s) type-10 processado(s) no armazem",
-                        s.Slot, setsInBox.Count);
-                }
-                var boxGear = loadedBox.FindAll(t => IsBoxDisplayable(t.ItemId));   // só gear entra no grid
-                s.SetBoxItems(loadedBox); // inclui células ocultas na ocupação; render filtra por compatibilidade
-                s.LoadActiveItems(s.Items);
-                s.LoadPotionSlot(await _db.LoadQuickslotAsync(gi.Id, ch.Id));
-                if (!await s.PersistStorageLayoutAsync())
-                    Log.Warn("login", "[{0}] layout do armazém não pôde ser normalizado", s.Slot);
+                InventoryHydration inventory = await HydrateInventoryAsync(s, ch, "login");
                 s.StageRanks = await _db.LoadStageRanksAsync(ch.Id);       // ranks de stage -> overlay 0x0C@333 (RANK X CLEAR na seleção)
-                int boxHidden = loadedBox.Count - boxGear.Count;
-                Log.Ok("login", "[{0}] char ativo='{1}' id={2} class={3} lvl={4} itens={5} box={6}{7}", s.Slot, ch.Name, ch.Id, ch.Class, ch.Level, s.Items.Count, boxGear.Count, boxHidden > 0 ? $" (+{boxHidden} não-gear ocultos)" : "");
+                Log.Ok("login", "[{0}] char ativo='{1}' id={2} class={3} lvl={4} itens={5} box={6}{7}",
+                    s.Slot, ch.Name, ch.Id, ch.Class, ch.Level, inventory.ActiveItems,
+                    inventory.VisibleStorageItems,
+                    inventory.HiddenStorageItems > 0
+                        ? $" (+{inventory.HiddenStorageItems} não-gear ocultos)"
+                        : "");
             }
             else { Log.Warn("login", "[{0}] '{1}' sem char ativo (characterinfo.used=1 ausente)", s.Slot, userId); }
             s.LoginCharList = await BuildLoginCharListAsync(s);   // lista de chars do char-select (0x0C), sintetizada do DB
@@ -1202,11 +1173,13 @@ namespace RakionServer.World
                 s.Stats[0] = ch.Hit1; s.Stats[1] = ch.Hit2; s.Stats[2] = ch.Hit3; s.Stats[3] = ch.Hit4;
                 s.Stats[4] = ch.Chit; s.Stats[5] = ch.Hp; s.Stats[6] = ch.Ap; s.Stats[7] = ch.AttackSpeed;
                 s.Stats[8] = ch.Speed; s.Stats[9] = ch.Maxcp;
-                s.Items = await _db.LoadItemsAsync(ch.Id);
+                InventoryHydration inventory = await HydrateInventoryAsync(s, ch, "character");
                 s.StageRanks = await _db.LoadStageRanksAsync(ch.Id);
                 s.LoginCharList = await BuildLoginCharListAsync(s);
-                Log.Ok("character", "[{0}] selecionou char '{1}' id={2} class={3} lvl={4}",
-                    s.Slot, ch.Name, ch.Id, ch.Class, ch.Level);
+                Log.Ok("character", "[{0}] selecionou char '{1}' id={2} class={3} lvl={4} itens={5} box={6}",
+                    s.Slot, ch.Name, ch.Id, ch.Class, ch.Level,
+                    inventory.ActiveItems,
+                    inventory.VisibleStorageItems + inventory.HiddenStorageItems);
                 return CharacterSelectStatus.Success;
             }
             finally
