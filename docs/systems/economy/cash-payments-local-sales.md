@@ -21,11 +21,12 @@ explícito do checkout. Quando falta Cash na compra de Power User (status `3`), 
 `RakionClientPatch.dll` abre essa página usando a URL de `cash-shop.url`; a URL padrão de validação é
 `http://127.0.0.1/cash`.
 
-O cliente original também contém uma rota de UI para compra de créditos: o command `0x15` fecha o
-estado corrente e chamava `ShellExecuteA` com a URL histórica da Softnyx. A DLL preserva essa rota,
-troca somente o destino pela `cash-shop.url` e cria um `csButton` nativo `Buy Cash` ao lado do botão
-`Potion slot` (command `0x18B`). O botão herda bitmap, fonte, posição vertical e tamanho do controle
-original; não usa janela sobreposta nem duplica a configuração da URL.
+O cliente original também contém uma rota de UI para compra de créditos, mas o command `0x15` primeiro
+fecha o estado corrente. A DLL redireciona a chamada histórica de `ShellExecuteA` e cria um `csButton`
+nativo `Buy Cash` ao lado do botão `Potion slot` (command `0x18B`). O envio de comando do UIToolkit é
+interceptado somente quando o remetente é esse novo botão; o clique é consumido e abre diretamente a
+`cash-shop.url`, sem encerrar a sessão. O botão herda bitmap, fonte, posição vertical e tamanho do
+controle original; não usa janela sobreposta nem duplica a configuração da URL.
 
 A página está pronta como entrada operacional, mas os botões permanecem desabilitados enquanto não
 há provedor autorizado. Isso é intencional: navegar, atualizar a página ou retornar ao jogo nunca

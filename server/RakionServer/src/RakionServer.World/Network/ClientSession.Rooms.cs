@@ -77,22 +77,19 @@ namespace RakionServer.World.Network
 
         private void HandleSoloRoomCreate(RoomCreationOptions options)
         {
+            byte status = 0;
             try
             {
                 _server.CreateField(options with { Searchable = false }, this);
             }
             catch (InvalidOperationException ex)
             {
+                status = 1;
                 Log.Warn("room", "[{0}] falhou ao preparar stage solo: {1}", Slot, ex.Message);
             }
-            using var body = new PacketWriter();
-            body.WriteUInt32((uint)GameInfoId)
-                .WriteCString(options.Name).WriteCString(options.Password)
-                .WriteCString(options.Description).WriteByte(options.MapId)
-                .WriteByte(options.Rounds).WriteWord(options.DurationSeconds)
-                .WriteByte(options.FragLimit).WriteByte(options.MinLevel)
-                .WriteByte(options.MaxLevel).WriteByte(options.LevelRangeCode);
-            SendMessage(0x25, body.ToArray());
+            SendEncryptedFrame(LobbyFrames.SoloStageCreateAck(_clientSeq, status, options));
+            Log.Info("room", "[{0}] resposta stage solo seq={1} status={2} stage={3}",
+                Slot, _clientSeq, status, options.MapId);
         }
 
         private void HandleCompetitiveRoomCreate(RoomCreationOptions options)

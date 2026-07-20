@@ -55,8 +55,8 @@ python client\RakionClientCompat\verify_legacy_client_patch.py `
   de siblings pendurados e o acesso inválido observado em `engine.dll`;
 - abrir a página de créditos configurada em `cash-shop.url` quando a compra de Power User retorna
   status `3` (Cash insuficiente), sem alterar saldo ou regra econômica no cliente;
-- adicionar o botão nativo `Buy Cash` ao lado de `Potion slot` (command `0x18B`); ele reutiliza o
-  command `0x15` de compra de créditos que já existia no cliente e abre a mesma `cash-shop.url`;
+- adicionar o botão nativo `Buy Cash` ao lado de `Potion slot` (command `0x18B`); o hook identifica
+  o controle remetente, consome somente esse clique e abre diretamente a mesma `cash-shop.url`;
 - manter HIT/SHOT, lifecycle e ground-snap visual dos bots;
 - ler o IPv4 de `server.host` e redirecionar somente `40706`, `40708` e `40709`, em TCP/UDP;
 - espelhar movimento e ataque P2P humano ao World pelo envelope `0xB07A`, sem reenviar esse pacote
