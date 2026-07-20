@@ -109,10 +109,11 @@ O parser de `ClientSession.Rooms` lê as três strings e os nove bytes finais na
 `duration @ +0x11C`, `fragLimit @ +0x11E`, `minLevel @ +0x111`, `maxLevel @ +0x112` e
 `levelRangeCode @ +0x113`. Em modos `1..4`, `rounds < 22`, `duration` fica entre `290..1210`, o
 criador precisa estar em `minLevel..maxLevel` e a capacidade original é fixa em `6+6=12`.
-`mode=0` usa a resposta correlacionada do callback de banco original (`FUN_00418b00`):
-`[requestSeq:u16][0x25:u16][status:u8][nome\0][senha\0][descrição\0][configuração]`.
-O `requestSeq` precisa repetir a sequência do `0x3B`; um frame comum iniciado diretamente por `0x25`
-é ignorado pelo cliente gráfico. O stage solo não ocupa o array público de fields do World original.
+`mode=0` envia internamente ao worker de banco o comando `0x25`. O callback `FUN_0041DA40`
+consome essa resposta, valida a elegibilidade, cria o field e só então responde ao cliente com o
+mesmo ACK público dos outros modos: `[0x3B:u16][status:u8][fieldId:u16]`. Enviar a resposta interna
+`0x25` diretamente ao cliente deixa a janela “Creating field” aguardando indefinidamente. O field
+do stage solo permanece não pesquisável na lista pública.
 
 O produtor da UI `rakion.bin:0x0044AC70` fecha as enumerações. `mode` é `0=Stage`, `1=Golem`,
 `2=Deathmatch`, `3=Team Death` e `4=Boss`. Os sete presets de level são:
@@ -211,7 +212,7 @@ tabela. Para `0x36`, `0x38`, `0x39` e `0x3B`, a tabela é a única entrada do co
 | `0x38` | `Op_FieldEnter` → `ClientSession.Rooms` | valida ID, estado, senha, penalidade e capacidade; em sala competitiva publica `0x38` e entrega `0x37`, sem `0x26` |
 | `0x39` | `Op_FieldQuickEnter` → `ClientSession.Rooms` | escolhe sala pública aberta e não cheia; entrega `0x38/0x37` e conclui com `0x39`, sem `0x26` |
 | `0x3A` | `Op_FieldExit` → `ClientSession.FieldTransitions` | publica `0x3A [seat]`, transfere host com `0x3C [novo]` ou remove vazia e reenvia `0x1F/0x1E/0x36` |
-| `0x3B` | `Op_FieldCreate` → `ClientSession.Rooms` | `mode=0` responde no envelope correlacionado `[seq][0x25][status]` e prepara field interno não pesquisável para o lifecycle solo; modos `1..4` publicam `Field` completo |
+| `0x3B` | `Op_FieldCreate` → `ClientSession.Rooms` | todos os modos respondem `[0x3B][status][fieldId]`; `mode=0` prepara field interno não pesquisável para o lifecycle solo e modos `1..4` publicam `Field` completo |
 | `0x3C` | `ClientSession.Rooms` em lobby | host transfere autoridade ao próximo membro |
 | `0x3D` | interceptado somente em `FieldLobby`; dispatcher em stage | no lobby altera `LobbyReady`; no stage preserva a ação de combate |
 | `0x3E` | `ClientSession.Rooms` em lobby; dispatcher em stage | alterna entre blocos de time e atualiza seat |
@@ -256,7 +257,7 @@ Consequências observáveis atuais:
 | Função | Estado | Evidência/problema |
 |---|---|---|
 | listar salas | RE estático + headless | `0x36` retornou a sala ID 1 usando cursor 0, direção forward e filtro mode 1 |
-| criar sala solo | compatível e não pesquisável | `mode=0` responde `[requestSeq][0x25][status]`; o .NET prepara field interno para `0x43`, mas ele nunca entra na lista pública |
+| criar sala solo | RE estático + headless | `mode=0` responde `[0x3B][status][fieldId]`; o .NET prepara field interno para `0x43`, mas ele nunca entra na lista pública |
 | criar sala pesquisável | headless validada | segunda sessão encontrou a sala pelo wire |
 | entrar por ID | RE estático + headless | `0x38` competitivo alocou seat e entregou `0x38/0x37`, sem o antigo `FIELD 0x26` sintético |
 | quick enter | RE estático + headless | `0x39` selecionou sala pública aberta, entregou `0x38/0x37` e não emitiu `0x26`; visual pendente |

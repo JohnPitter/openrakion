@@ -26,7 +26,6 @@ namespace RakionServer.World.Network
     ///   0x14 CharacterSelectAck: FUN_0041fef0 LEN=3 [14 00][status].
     ///   0x1e ChannelList: FUN_00404da0  LEN var [1e 00][type][count][nome1\0][nome2\0][N registros]; solo=28.
     ///   0x1f SessionInfo: FUN_00404fc0  erro LEN=3 [1f 00][status]; ok LEN=15 [1f 00][00][00][uid:u16][registro].
-    ///   0x25 SoloCreate : FUN_00418b00  LEN var [requestSeq:u16][25 00][status][nome/senha/descrição][config].
     ///   0x36 GameList   : FUN_00422c90 e FUN @0x41c0b7 (FieldPlayerList); LEN começa em 3 e cresce com a lista.
     ///                     Solo = lista vazia (count=0) = LEN=3 [36 00][00].
     ///   0x3b RoomCreate : FUN_00423580  LEN=5  [3b 00][status][seat:u16].
@@ -490,21 +489,6 @@ namespace RakionServer.World.Network
             w.WriteByte(0);
             w.WriteUInt32(serverTimeMarker);
             return w.ToArray();
-        }
-
-        /// <summary>Resposta correlacionada de criação de stage solo. O callback do DB original
-        /// (FUN_00418b00) envia [requestSeq][0x25][status] antes dos dados variáveis do stage.</summary>
-        public static byte[] SoloStageCreateAck(
-            ushort requestSequence, byte status, RoomCreationOptions options)
-        {
-            using var writer = new PacketWriter();
-            writer.WriteWord(requestSequence).WriteWord(0x25).WriteByte(status)
-                .WriteCString(options.Name).WriteCString(options.Password)
-                .WriteCString(options.Description).WriteByte(options.MapId)
-                .WriteByte(options.Rounds).WriteWord(options.DurationSeconds)
-                .WriteByte(options.FragLimit).WriteByte(options.MinLevel)
-                .WriteByte(options.MaxLevel).WriteByte(options.LevelRangeCode);
-            return writer.ToArray();
         }
 
         public static byte[] InventoryEnterResult(byte status)

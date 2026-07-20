@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <array>
 #include <fstream>
 #include <string>
 
@@ -34,7 +35,8 @@ uintptr_t PowerUserCallbackContinue{};
 volatile LONG LastOpenTick{};
 void* PotionSlotButton{};
 void* BuyCashButton{};
-void* ActiveBuyCashButton{};
+std::array<void*, 16> BuyCashButtons{};
+size_t BuyCashButtonIndex{};
 
 using ButtonConstructor = void* (__thiscall*)(void*, void*, int, uint32_t, uint32_t,
                                               uint32_t, int, uint32_t);
@@ -144,7 +146,7 @@ void __fastcall SetSizeHook(void* self, void*, long width, long height)
     OriginalSetSize(self, width, height);
     if (self != PotionSlotButton || !BuyCashButton) return;
     OriginalSetSize(BuyCashButton, width, height);
-    ActiveBuyCashButton = BuyCashButton;
+    BuyCashButtons[BuyCashButtonIndex++ % BuyCashButtons.size()] = BuyCashButton;
     CompatLog("botao nativo Buy Cash criado");
     PotionSlotButton = nullptr;
     BuyCashButton = nullptr;
@@ -152,7 +154,10 @@ void __fastcall SetSizeHook(void* self, void*, long width, long height)
 
 void* __fastcall SendCommandHook(void* self, void*, int command, void* sender)
 {
-    if (sender != ActiveBuyCashButton)
+    bool isBuyCash = false;
+    for (void* button : BuyCashButtons)
+        if (sender == button) { isBuyCash = true; break; }
+    if (!isBuyCash)
         return OriginalSendCommand(self, command, sender);
     CompatLog("clique no botao Buy Cash interceptado");
     RequestOpenCashStore();

@@ -23,8 +23,9 @@ explícito do checkout. Quando falta Cash na compra de Power User (status `3`), 
 
 O cliente original também contém uma rota de UI para compra de créditos, mas o command `0x15` primeiro
 fecha o estado corrente. A DLL redireciona a chamada histórica de `ShellExecuteA` e cria um `csButton`
-nativo `Buy Cash` ao lado do botão `Potion slot` (command `0x18B`). O envio de comando do UIToolkit é
-interceptado somente quando o remetente é esse novo botão; o clique é consumido e abre diretamente a
+nativo `Buy Cash` ao lado do botão `Potion slot` (command `0x18B`). Como a tela constrói mais de uma
+instância desse controle, a DLL registra todas elas. O envio de comando do UIToolkit é interceptado
+somente quando o remetente pertence a esse conjunto; o clique é consumido e abre diretamente a
 `cash-shop.url`, sem encerrar a sessão. O botão herda bitmap, fonte, posição vertical e tamanho do
 controle original; não usa janela sobreposta nem duplica a configuração da URL.
 

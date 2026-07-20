@@ -100,21 +100,6 @@ namespace RakionServer.World.Tests
             Assert.Equal("3b0000000000000000000000", Hex(LobbyFrames.RoomCreateAck()));
 
         [Fact]
-        public void SoloStageCreateAck_PreservesRequestSequenceAndOriginalLayout()
-        {
-            var options = new RoomCreationOptions
-            {
-                Name = "stage", Password = "pw", Description = "desc", MapId = 2,
-                Mode = 0, Rounds = 1, DurationSeconds = 432, FragLimit = 0,
-                MinLevel = 1, MaxLevel = 10, LevelRangeCode = 0
-            };
-
-            Assert.Equal(
-                "050025000073746167650070770064657363000201b00100010a00",
-                Hex(LobbyFrames.SoloStageCreateAck(5, 0, options)));
-        }
-
-        [Fact]
         public void MatchStartAck_RealLen3_ZeroPad() =>      // RE FUN_004079d0: LEN=3 [43 00][status]; [handle][3b...] era lixo
             Assert.Equal("430000000000000000000000", Hex(LobbyFrames.MatchStartAck()));
 

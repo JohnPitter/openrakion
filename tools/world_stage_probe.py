@@ -36,7 +36,7 @@ def main() -> None:
         client.sendall(request(0x3B, 2, create_payload))
         created = receive(client)
         describe("create-stage", created)
-        if not has_prefix(created, b"\x02\x00\x25\x00\x00"):
+        if not has_prefix(created, b"\x3b\x00\x00"):
             raise RuntimeError("sala solo não foi criada")
 
         client.sendall(request(0x43, 3))
