@@ -534,7 +534,7 @@ CharacterDeleteBodyFileName=deletion.txt
 [MailSender]
 Enabled=1
 Sender=administrator@example.com
-PickupFolder=C:\Inetpub\mailroot\Pickup
+PickupFolder=<diretorio-pickup-smtp>
 ```
 
 O arquivo `deletion.txt` fica ao lado do `worldserver.ini`. `{0}` recebe a chave e `{1}` o nome do
@@ -601,7 +601,9 @@ alto recebe erro interno se tentar emitir a chave. Não restaure linhas `auth=10
 - `server/RakionServer/tests/RakionServer.World.Tests/CharListWriterGoldenTests.cs`;
 - `server/RakionServer/tests/RakionServer.World.Tests/CharacterDeletePolicyTests.cs`;
 - `server/RakionServer/tests/RakionServer.World.Tests/CharacterDeleteDatabaseSmokeTests.cs`;
-- `C:\temp\server_1fef0.txt`, `C:\temp\character_lifecycle_worldserv_exe.txt`,
-  `C:\temp\character_lifecycle_rakion_orig_exe.txt`, `C:\temp\shop_drafts.txt` e
-  `C:\temp\worldserv_full.asm`;
+- `<diretorio-de-evidencias>/server_1fef0.txt`,
+  `<diretorio-de-evidencias>/character_lifecycle_worldserv_exe.txt`,
+  `<diretorio-de-evidencias>/character_lifecycle_rakion_orig_exe.txt`,
+  `<diretorio-de-evidencias>/shop_drafts.txt` e
+  `<diretorio-de-evidencias>/worldserv_full.asm`;
 - `/server/DB/rakion_all.sql` dentro da imagem `openrakion-server:latest`.

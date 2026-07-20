@@ -93,8 +93,8 @@ cd server/RakionServer && ./start-stack.ps1
 #    - buddy:        RakionServer.Buddy       (BuddyServer)         portas 8500/8504
 ```
 
-> Os **web apps** (LauncherWeb/Admin) usam o runtime ASP.NET. Se o .NET for user-local (fora de
-> `C:\Program Files\dotnet`), exporte `DOTNET_ROOT` — o `start-stack.ps1` já cuida disso.
+> Os **web apps** (LauncherWeb/Admin) usam o runtime ASP.NET. Se o .NET não estiver no diretório
+> padrão do sistema, exporte `DOTNET_ROOT` — o `start-stack.ps1` já cuida disso.
 
 ### Credenciais de amostra (open source — troque se precisar)
 

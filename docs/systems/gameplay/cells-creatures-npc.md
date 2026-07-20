@@ -480,7 +480,7 @@ bytecode de gameplay. A tabela `BasicEffectType_values @ 0x3537FC20` em `entitie
 seguintes tipos de efeito relevantes. Esses valores não são event IDs de `0x30C`:
 
 `tools/ghidra/DumpBasicEffectTypes.py` reproduz a tabela completa em
-`C:\temp\basic_effect_types.txt`.
+`<diretorio-de-evidencias>/basic_effect_types.txt`.
 
 | ID | Nome compilado |
 |---:|---|

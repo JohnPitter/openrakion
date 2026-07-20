@@ -35,18 +35,21 @@ lidos para expiração.
 
 Scripts reproduzíveis:
 
-- `tools/ghidra/DecompileWorldPotionFlow.py` gera `C:\temp\world_potion_flow.txt`;
-- `tools/ghidra/DecompileClientPotionEffects.py` gera `C:\temp\client_potion_effects.txt`.
+- `tools/ghidra/DecompileWorldPotionFlow.py` gera
+  `<diretorio-de-evidencias>/world_potion_flow.txt`;
+- `tools/ghidra/DecompileClientPotionEffects.py` gera
+  `<diretorio-de-evidencias>/client_potion_effects.txt`.
 - `tools/extract_potion_catalog.py` gera o catálogo JSON de itens, aliases e fórmulas;
 - `tools/ghidra/FindPotionStateConsumers.py` audita os subobjetos/propriedades de Steam e Scouter
-  entre `CPlayer+0x2C40..+0x2C68` e gera `C:\temp\potion_state_consumers.txt`.
+  entre `CPlayer+0x2C40..+0x2C68` e gera
+  `<diretorio-de-evidencias>/potion_state_consumers.txt`.
 - `tools/ghidra/AuditPotionDurationConsumers.py` varre offsets e escalares de duração em
   `entitiesmp`, `engine`, `gamemp` e `rakion_orig`, gerando
-  `C:\temp\potion_duration_consumers_<programa>.txt`.
+  `<diretorio-de-evidencias>/potion_duration_consumers_<programa>.txt`.
 - `tools/ghidra/DecompileClientChaosState.py` extrai a máquina `ChaosProc`, carga, modificadores,
-  morte, animação e armas para `C:\temp\client_chaos_state.txt`.
+  morte, animação e armas para `<diretorio-de-evidencias>/client_chaos_state.txt`.
 - `tools/ghidra/DumpBasicEffectTypes.py` extrai a enum canônica para
-  `C:\temp\basic_effect_types.txt`.
+  `<diretorio-de-evidencias>/basic_effect_types.txt`.
 
 ## Contrato World `0x6E`
 
@@ -296,9 +299,8 @@ subir o World reconstruído.
 ## Como compilar e ativar
 
 ```powershell
-$dotnet = 'C:\Users\joaop\.dotnet\dotnet.exe'
-& $dotnet test .\server\RakionServer\tests\RakionServer.World.Tests\RakionServer.World.Tests.csproj
-& $dotnet build .\server\RakionServer\src\RakionServer.World\RakionServer.World.csproj -c Release
+dotnet test .\server\RakionServer\tests\RakionServer.World.Tests\RakionServer.World.Tests.csproj
+dotnet build .\server\RakionServer\src\RakionServer.World\RakionServer.World.csproj -c Release
 ```
 
 Depois, publique/substitua o World pelo build atual conforme

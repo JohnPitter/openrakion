@@ -42,7 +42,8 @@ py tools/ghidra/AuditClientWorldLotterySupport.py
 ```
 
 O primeiro script roda no projeto do `worldserv.exe`. O segundo roda no projeto do `engine.dll` e
-gera `C:\temp\client_world_lottery_support.txt`, comprovando `0x75=absent`, `0x76=absent` e maior
+gera `<diretorio-de-evidencias>/client_world_lottery_support.txt`, comprovando `0x75=absent`,
+`0x76=absent` e maior
 case `0x74`.
 
 ## Wire protocol
@@ -172,8 +173,8 @@ ativa a UI no cliente v258.
 
 ```powershell
 cd server/RakionServer
-& C:\Users\joaop\.dotnet\dotnet.exe build RakionServer.sln -c Release
-& C:\Users\joaop\.dotnet\dotnet.exe test tests/RakionServer.World.Tests/RakionServer.World.Tests.csproj -c Release
+dotnet build RakionServer.sln -c Release
+dotnet test tests/RakionServer.World.Tests/RakionServer.World.Tests.csproj -c Release
 ```
 
 Uma validação visual exige outro cliente original que comprovadamente possua builders e consumers de

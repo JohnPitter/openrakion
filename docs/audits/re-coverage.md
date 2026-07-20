@@ -9,7 +9,7 @@ Este documento responde duas perguntas:
 
 Fontes cruzadas:
 
-- cliente: `C:\Users\joaop\Desenvolvimento\Rakion\rakion-final`;
+- cliente: `<cliente-v258-golden>`;
 - exports e decompile do cliente: `rakion-work\ghidra-proj\stage_spawn_re3.out.txt`;
 - dispatcher original: `rakion-work\ghidra-proj\handlers.out.txt`;
 - banco legado: `rakion-tutorial\server\DB\rakion_data.sql`;
@@ -395,7 +395,7 @@ Um sistema só passa para **Coberto** depois de captura dourada ou evidência bi
   a Gift Box `0x6A`–`0x6D` também foi fechada por decompile, probes e integração; isso ainda não
   substitui capturas das demais rotas nem validação visual.
 - Não houve teste visual de todas as telas e modos.
-- O SDK .NET 9 está ativo em `C:\Users\joaop\.dotnet`; o build atual passa com zero erros e zero warnings.
+- O build validado com o SDK .NET 9 passa com zero erros e zero warnings.
 - A suíte de World cobre os contratos já promovidos a golden; a contagem vigente deve ser obtida
   executando `dotnet test`, e não tratada como prova de captura original ou validação visual.
 - Itens/classes genéricos herdados da Serious Engine não foram automaticamente classificados como features Rakion; só entraram no backlog quando também havia protocolo, UI, tabela ou uso Rakion correspondente.

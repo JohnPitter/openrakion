@@ -12,7 +12,7 @@ necessários e não contêm credenciais além da conta local de teste já presen
 
 ## Artefatos e integridade
 
-Base local: `C:\Users\joaop\Desenvolvimento\Rakion\rakion-work`.
+Base de trabalho de RE: `<workspace-re>`.
 
 | Artefato | SHA-256 | Prova principal |
 |---|---|---|
@@ -1162,7 +1162,7 @@ C-strings precedidas por outro campo. Há regressão específica e 282 testes .N
 `engine.dll:0x36197320` na build de SHA-256
 `83b20d6c32cd66b95c8f8e41ad6de13a58e8f5f948cd21cbd118d42ef8cf88f2`. Foram extraídos
 88 cases distintos, de `0x00` a `0x74`, sem case sem handler e sem opcode duplicado. O TSV bruto
-é `C:\temp\client_world_response_catalog.tsv`; o segundo passe validado gera
+é `<diretorio-de-evidencias>/client_world_response_catalog.tsv`; o segundo passe validado gera
 [`world-response-dispatch.md`](world-response-dispatch.md).
 
 `TraceClientWorldResponseDispatcher.py` encontrou uma única referência ao switch dentro dessa

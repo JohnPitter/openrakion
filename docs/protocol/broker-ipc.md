@@ -75,7 +75,8 @@ Não existe export Broker que receba conta ou senha. Em contraste, o mesmo biná
 `IScavengerWorldNet::SendLogin`, e a captura World contém conta/senha no opcode `0x0C`. Assim,
 login Broker→IPC não é uma lacuna de implementação desta build; é código morto herdado no
 BrokenServer. Os builders, estruturas de correlação e handler World correspondentes foram removidos
-da implementação ativa. O resultado reproduzível está em `C:\temp\engine_broker_protocol.txt` e o
+da implementação ativa. O resultado reproduzível está em
+`<diretorio-de-evidencias>/engine_broker_protocol.txt` e o
 script em `tools/ghidra/DecompileEngineBrokerProtocol.py`.
 
 ## Auditoria da implementação

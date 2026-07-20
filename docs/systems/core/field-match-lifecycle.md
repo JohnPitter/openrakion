@@ -104,7 +104,7 @@ e confirmação somente após commit. Stage solo usa `0x53` e `StageRun`, não o
 Não existe a flag `MATCH_ENGINE_V2`; ela não deve ser adicionada apenas para ativar este caminho.
 O motor é iniciado pelo `WorldServer` e atua nos fields em `State=2`.
 
-1. Compile a solução com o SDK configurado em `C:\Users\joaop\.dotnet\dotnet.exe`.
+1. Compile a solução com o SDK .NET disponível no `PATH`.
 2. Inicie o stack pelo `server/RakionServer/start-stack.ps1`.
 3. Crie uma sala Battle, deixe todos os membros ready e inicie pelo host.
 4. O start chama `ArmMatch`; cada spawn chama `NotifyPlayerReady`; o loop global chama

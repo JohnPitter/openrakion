@@ -17,6 +17,7 @@ arquivos em `archive/` somente para contexto histórico.
 | executar e registrar a validação visual do cliente | [`audits/visual-validation.md`](audits/visual-validation.md) |
 | revisar qualidade estrutural | [`audits/code-quality.md`](audits/code-quality.md) |
 | configurar o cliente | [`guides/config-xfs.md`](guides/config-xfs.md) |
+| gerar o pacote completo do cliente | [`guides/client-compatibility-dll.md`](guides/client-compatibility-dll.md#gerar-o-pacote-para-distribuição) |
 | instalar e ativar a DLL do cliente | [`guides/client-compatibility-dll.md`](guides/client-compatibility-dll.md) |
 | entender o GameGuard | [`guides/gameguard.md`](guides/gameguard.md) |
 

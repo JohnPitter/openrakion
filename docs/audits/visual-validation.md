@@ -14,7 +14,7 @@ do contrato.
 
 | Item | Evidência atual |
 |---|---|
-| Cliente de validação | `C:\Users\joaop\Downloads\Rakion-Original\Rakion` |
+| Cliente de validação | `<cliente-original-de-teste>` |
 | Executável pristine v258 | `Bin/rakion.exe`, SHA-256 `88E177F243FA4C43769CD323FB4D73E106AE833070F9BCE7B2DC05B8DDFD6AF8` |
 | Engine golden | SHA-256 `83B20D6C32CD66B95C8F8E41AD6DE13A58E8F5F948CD21CBD118D42EF8CF88F2` |
 | Proxy determinístico | `Bin/version.dll`, SHA-256 `13C1D0CC022D0000FA2E7ED03ABD0107AD41D894E0AF302D74CF3D42B0F33263` |

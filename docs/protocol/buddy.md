@@ -43,7 +43,7 @@ modera o tráfego direto.
 Cliente analisado:
 
 ```text
-C:\Users\joaop\Desenvolvimento\Rakion\rakion-final\Bin\Buddy2.dll
+<cliente-v258-golden>\Bin\Buddy2.dll
 SHA-256 6501BBC46EDAB7E25F132322BAFA941226C6B8B35AEB63D0398E7CD35AABFEE7
 ```
 
@@ -51,10 +51,11 @@ O script [`DecompileBuddyServiceContracts.py`](../../tools/ghidra/DecompileBuddy
 reproduz os builders e consumers usados nesta documentação:
 
 ```powershell
-& 'C:\Users\joaop\Desenvolvimento\Rakion\ghidra_11.0.3_PUBLIC\support\analyzeHeadless.bat' `
-  'C:\Users\joaop\Desenvolvimento\Rakion\rakion-work\_dbg\buddyproj' buddy `
+& "$env:GHIDRA_HOME\support\analyzeHeadless.bat" `
+  "$env:RAKION_RE_WORK\_dbg\buddyproj" buddy `
   -process Buddy2.dll -noanalysis -scriptPath tools\ghidra `
-  -postScript DecompileBuddyServiceContracts.py C:\temp\buddy_service_contracts.txt
+  -postScript DecompileBuddyServiceContracts.py `
+  "$env:RAKION_EVIDENCE_DIR\buddy_service_contracts.txt"
 ```
 
 O passe atual encontra 18 funções para 18 constantes, incluindo os builders de `0x2020`,
@@ -406,11 +407,11 @@ ele retorna sem alterar banco local.
 Comandos:
 
 ```powershell
-& 'C:\Users\joaop\.dotnet\dotnet.exe' test `
+dotnet test `
   server\RakionServer\tests\RakionServer.World.Tests\RakionServer.World.Tests.csproj `
   --filter 'FullyQualifiedName~Buddy'
 
-& 'C:\Users\joaop\.dotnet\dotnet.exe' build `
+dotnet build `
   server\RakionServer\src\RakionServer.Buddy\RakionServer.Buddy.csproj `
   -c Release
 ```

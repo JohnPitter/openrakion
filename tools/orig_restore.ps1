@@ -12,7 +12,7 @@ $ok=$false; for($i=0; $i -lt 15; $i++){ $r = docker exec rakion-db mariadb -uroo
 Write-Output "   rakion-db: $ok"
 
 Write-Output "== religando stack .NET =="
-& "C:\Users\joaop\Desenvolvimento\openrakion\server\RakionServer\start-stack.ps1"
+& (Join-Path $PSScriptRoot '..\server\RakionServer\start-stack.ps1')
 Start-Sleep -Seconds 3
 Get-Process -Name RakionWorldServer,BrokenServer,RakionLauncherWeb,RakionAdmin -ErrorAction SilentlyContinue | Select-Object Name,Id | Format-Table -AutoSize
 Write-Output "PRONTO — stack .NET no ar."

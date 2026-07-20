@@ -610,9 +610,13 @@ troca de flag; compensação de economia precisa de log e ferramenta administrat
 - `server/RakionServer/tests/RakionServer.World.Tests/InventoryExpirationFrameTests.cs`;
 - `server/RakionServer/tests/RakionServer.World.Tests/InventoryExpirationDatabaseSmokeTests.cs`;
 - `server/RakionServer/tests/RakionServer.World.Tests/E2E/CharacterInventoryPersistenceE2ETests.cs`;
-- `C:\temp\mitm_inv_previous.log`, `C:\temp\mitm_poweruser_potion.log`,
-  `C:\temp\shop_capture.log`, `C:\temp\world_shop_request.txt`,
-  `C:\temp\world_shop_pricing.txt`, `C:\temp\client_shop_responses.txt`,
-  `C:\temp\rakion_inventory_callback_vtable.txt`, `C:\temp\client_equipment_effects.txt` e
-  `C:\temp\client_inv*.txt`;
+- `<diretorio-de-evidencias>/mitm_inv_previous.log`,
+  `<diretorio-de-evidencias>/mitm_poweruser_potion.log`,
+  `<diretorio-de-evidencias>/shop_capture.log`,
+  `<diretorio-de-evidencias>/world_shop_request.txt`,
+  `<diretorio-de-evidencias>/world_shop_pricing.txt`,
+  `<diretorio-de-evidencias>/client_shop_responses.txt`,
+  `<diretorio-de-evidencias>/rakion_inventory_callback_vtable.txt`,
+  `<diretorio-de-evidencias>/client_equipment_effects.txt` e
+  `<diretorio-de-evidencias>/client_inv*.txt`;
 - `/server/DB/rakion_all.sql` da imagem `openrakion-server:latest`.

@@ -272,9 +272,9 @@ recusa a alterar clãs se `claninfo` ou `usergameinfo` não for InnoDB.
 ### 4. Compilar e testar
 
 ```powershell
-C:\Users\joaop\.dotnet\dotnet.exe build `
+dotnet build `
   server/RakionServer/RakionServer.sln -c Release
-C:\Users\joaop\.dotnet\dotnet.exe test `
+dotnet test `
   server/RakionServer/tests/RakionServer.World.Tests/RakionServer.World.Tests.csproj -c Release
 ```
 

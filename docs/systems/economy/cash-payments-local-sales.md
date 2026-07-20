@@ -54,7 +54,7 @@ O script abaixo encontrou 16 strings de cash e 13 funções consumidoras:
 py tools/ghidra/FindWorldCashAccounting.py
 ```
 
-Relatório: `C:\temp\world_cash_accounting.txt`.
+Relatório: `<diretorio-de-evidencias>/world_cash_accounting.txt`.
 
 As strings comprovadas incluem:
 
@@ -160,8 +160,8 @@ dos saldos.
 - schema temporário removido após o teste.
 
 ```powershell
-& C:\Users\joaop\.dotnet\dotnet.exe build server/RakionServer/RakionServer.sln -c Release
-& C:\Users\joaop\.dotnet\dotnet.exe test server/RakionServer/tests/RakionServer.World.Tests/RakionServer.World.Tests.csproj -c Release
+dotnet build server/RakionServer/RakionServer.sln -c Release
+dotnet test server/RakionServer/tests/RakionServer.World.Tests/RakionServer.World.Tests.csproj -c Release
 ```
 
 ## Fronteira externa

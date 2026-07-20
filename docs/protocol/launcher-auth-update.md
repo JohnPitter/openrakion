@@ -142,8 +142,8 @@ instalação sem impedir atualizações posteriores dos patches.
 
 ```powershell
 .\tools\new_update_key.ps1 `
-  -PrivateKeyPath C:\rakion-secrets\update-private.pem `
-  -PublicKeyPath C:\rakion-client\update-public.pem
+  -PrivateKeyPath "$env:RAKION_SECRETS\update-private.pem" `
+  -PublicKeyPath "$env:RAKION_CLIENT_PACKAGE\update-public.pem"
 ```
 
 Nunca copie a chave privada para o cliente ou para o Git.
@@ -159,8 +159,8 @@ $env:Auth__Enabled='true'
 $env:Auth__EnsureSchema='false'
 $env:Auth__TicketLifetimeSeconds='60'
 $env:Updates__Enabled='true'
-$env:Updates__ContentRoot='D:\rakion-updates'
-$env:Updates__SigningPrivateKeyPath='C:\rakion-secrets\update-private.pem'
+$env:Updates__ContentRoot=$env:RAKION_UPDATE_ROOT
+$env:Updates__SigningPrivateKeyPath="$env:RAKION_SECRETS\update-private.pem"
 $env:Legacy__Enabled='false'
 ```
 
@@ -172,10 +172,10 @@ Depois use `false` e uma conta runtime dedicada com `SELECT` em `user(id,passwor
 
 ```powershell
 .\tools\publish_update.ps1 `
-  -SourceDir D:\builds\rakion-259 `
-  -ContentRoot D:\rakion-updates `
+  -SourceDir $env:RAKION_RELEASE_SOURCE `
+  -ContentRoot $env:RAKION_UPDATE_ROOT `
   -AppId 11001 -Version 259 `
-  -DeleteListPath D:\builds\delete.list
+  -DeleteListPath $env:RAKION_DELETE_LIST
 ```
 
 O script copia para diretório temporário, recusa reparse/path inseguro, move a release e cria
@@ -220,7 +220,7 @@ servidor. Variáveis equivalentes do launcher:
 Smoke operacional sem abrir a UI:
 
 ```powershell
-dotnet RakionLauncher.dll --update-only C:\Rakion
+dotnet RakionLauncher.dll --update-only $env:RAKION_DIR
 ```
 
 ## Rollback

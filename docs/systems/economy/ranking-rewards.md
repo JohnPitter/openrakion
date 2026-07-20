@@ -114,8 +114,7 @@ Pré-requisitos: .NET 9, MariaDB acessível e as sete tabelas `*rankp` do dump i
 projeção.
 
 ```powershell
-$env:DOTNET_ROOT = 'C:\Users\joaop\.dotnet'
-$env:PATH = "$env:DOTNET_ROOT;$env:PATH"
+dotnet --info
 $env:ConnectionStrings__Rakion = 'Server=127.0.0.1;Database=rakion;Uid=rakion;Pwd=troque;'
 $env:ConnectionStrings__RakionRank = 'Server=127.0.0.1;Database=rakionrank;Uid=rakion;Pwd=troque;'
 $env:Ranking__ActiveMonths = '2'
@@ -136,14 +135,15 @@ Publique o executável:
 
 ```powershell
 dotnet publish .\server\RakionServer\src\RakionServer.Ranking\RakionServer.Ranking.csproj `
-  -c Release -o C:\openrakion\ranking
+  -c Release -o $env:RAKION_RANKING_DIR
 ```
 
 Defina as três variáveis no ambiente da conta de serviço do agendador. Depois registre a tarefa para
 rodar uma vez por dia; o processo não deve ficar residente:
 
 ```powershell
-$action = New-ScheduledTaskAction -Execute 'C:\openrakion\ranking\RakionRankUpdate.exe'
+$rankingExe = Join-Path $env:RAKION_RANKING_DIR 'RakionRankUpdate.exe'
+$action = New-ScheduledTaskAction -Execute $rankingExe
 $trigger = New-ScheduledTaskTrigger -Daily -At '00:05'
 $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 2)
 Register-ScheduledTask -TaskName 'OpenRakion-Ranking' -Action $action -Trigger $trigger `

@@ -2,7 +2,7 @@
 
 ## Estado do documento
 
-- Cliente analisado: `C:\Users\joaop\Desenvolvimento\Rakion\rakion-final`
+- Cliente analisado: `<cliente-v258-golden>`
 - Servidor atual: `server/RakionServer`
 - Base original consultada: executável/saídas do Ghidra e `rakion_data.sql`
 - Tipo de análise: engenharia reversa estática, decompile de callbacks e probes dinâmicos
@@ -47,11 +47,11 @@ Recompensas do Natal podem ser entregues pelo Gift Box, mas os domínios continu
 
 ## Evidências e fontes
 
-- Cliente e arquivos XFS: `C:\Users\joaop\Desenvolvimento\Rakion\rakion-final`
-- Extrações: `C:\Users\joaop\Desenvolvimento\Rakion\rakion-work\ragezone`
-- Envios do cliente: `C:\Users\joaop\Desenvolvimento\Rakion\rakion-work\ghidra-proj\stage_spawn_re3.out.txt`
-- Handlers originais: `C:\Users\joaop\Desenvolvimento\Rakion\rakion-work\ghidra-proj\handlers.out.txt`
-- Banco legado: `C:\Users\joaop\Desenvolvimento\Rakion\rakion-tutorial\server\DB\rakion_data.sql`
+- Cliente e arquivos XFS: `<cliente-v258-golden>`
+- Extrações: `<workspace-re>/ragezone`
+- Envios do cliente: `<workspace-re>/ghidra-proj/stage_spawn_re3.out.txt`
+- Handlers originais: `<workspace-re>/ghidra-proj/handlers.out.txt`
+- Banco legado: `<workspace-legado>/server/DB/rakion_data.sql`
 - Servidor atual: `server/RakionServer/src/RakionServer.World`
 
 ## Evento de Natal no cliente
@@ -82,7 +82,7 @@ O `entitiesmp.dll` exporta as classes `CChristmasBoxItem_DLLClass`, `CEventItem_
 O jogador possui métodos `SetChristmasBox`, `SetEventItem`, `EventMessage`, `RenderEventMessage` e
 `RenderEventTime`. Isso confirma um fluxo dirigido por entidades/eventos de partida, não um simples
 opcode do lobby. `tools/ghidra/DecompileClientChristmasEvents.py` reproduz a extração em
-`C:\temp\client_christmas_events.txt`.
+`<diretorio-de-evidencias>/client_christmas_events.txt`.
 
 ### Contratos dos eventos
 
@@ -536,8 +536,8 @@ O sistema só pode ser chamado de completo quando:
 
 ## Limites desta validação
 
-O SDK .NET está instalado em `C:\Users\joaop\.dotnet`. A contagem atual deve ser obtida executando
-as suítes do repositório. Houve probes contra o original e integração no World local, mas ainda não
+Use um SDK .NET compatível disponível no `PATH`. A contagem atual deve ser obtida executando as
+suítes do repositório. Houve probes contra o original e integração no World local, mas ainda não
 houve validação visual da Gift Box `0x6B..0x6D`. A célula física está comprovada por persistência,
 recarga e testes headless, mas ainda não foi observada após relog no cliente gráfico. O smoke MySQL
 fica inerte sem `RAKION_MYSQL_SMOKE_CONNECTION`. Os eventos de entidade estão tipados; o evento de

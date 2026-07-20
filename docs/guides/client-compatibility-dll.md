@@ -8,10 +8,9 @@
 `RakionClientPatch.dll`. A segunda DLL concentra todos os patches, sem alterar o executável em
 disco; `version.dll` não contém regra de compatibilidade do jogo.
 
-O `rakion-final` é o **golden source**. O pacote
-`C:\Users\joaop\Downloads\Rakion-Original\Rakion` serve somente como exemplo de instalação e
-ambiente de smoke depois de receber a build v258; seus binários antigos não geram endereços nem
-bytes para a DLL.
+O diretório informado como `<cliente-v258-golden>` é o **golden source**. Um cliente original serve
+somente como destino da sobreposição e ambiente de smoke depois de receber a build v258; seus
+binários antigos não geram endereços nem bytes para a DLL.
 
 ## Baselines aceitas
 
@@ -73,13 +72,14 @@ repete esse par quando a identidade persistida muda.
 
 ## Build
 
-Pré-requisito: Visual Studio Build Tools com C++ x86 e o SDK .NET 9 para o launcher.
+Pré-requisitos: Visual Studio Build Tools com C++ x86, SDK .NET 9 e Python 3 disponíveis no
+ambiente de build.
 
 ```powershell
 cd client\RakionClientCompat
 .\build.ps1 `
-  -PatchedExe "C:\Users\joaop\Desenvolvimento\Rakion\rakion-final\Bin\rakion.exe" `
-  -OriginalExe "C:\Users\joaop\Desenvolvimento\Rakion\rakion-final\Bin\rakion.exe.orig"
+  -PatchedExe "$env:RAKION_GOLDEN_ROOT\Bin\rakion.exe" `
+  -OriginalExe "$env:RAKION_GOLDEN_ROOT\Bin\rakion.exe.orig"
 ```
 
 Os parâmetros regeneram `baked_patches.h`. Sem eles, o build usa o manifesto versionado. O script
@@ -89,7 +89,7 @@ valida também o hash e o prólogo de `CNet::SendToOtherClient` na `engine.dll`,
 O linker usa `/Brepro`: duas compilações consecutivas com o mesmo toolchain e as mesmas entradas
 devem produzir o mesmo SHA-256. A build estável validada em 20/07/2026 gerou
 `13C1D0CC022D0000FA2E7ED03ABD0107AD41D894E0AF302D74CF3D42B0F33263` para `version.dll` e
-`EBB294CC0BCB37630C5C16673CF4AE90FF8CAFD119724407B65AE8284DEFE8BB` para
+`3F861D1B1CC4DA2CE6F7511218B6F029A58A2015972137387B239F6829C80A09` para
 `RakionClientPatch.dll` nas duas execuções. O build de
 `client/RakionLauncher` chama esse script, embute `version.dll` e `RakionClientPatch.dll` e instala
 as duas em `Bin` antes de iniciar o jogo.
@@ -121,6 +121,30 @@ incluir os quatro artefatos golden, a publicação completa do launcher e os arq
 `server.host`, `cash-shop.url`, `display.mode` e `launcher.settings.json`. O script abaixo é a fonte
 reproduzível desse pacote e impede combinações de versões incompatíveis.
 
+### Gerar o pacote para distribuição
+
+Execute a partir da raiz do repositório. A saída padrão é
+`artifacts/client-v258-overlay`, já com `Bin`, `Data`, launcher e configurações nas posições
+corretas:
+
+```powershell
+$env:RAKION_GOLDEN_ROOT = '<caminho-do-cliente-v258-golden>'
+
+.\client\build_client_package.ps1 `
+  -GoldenRoot $env:RAKION_GOLDEN_ROOT `
+  -ServerHost '203.0.113.10' `
+  -LauncherBaseUrl 'https://launcher.exemplo.com/' `
+  -CashStoreUrl 'https://launcher.exemplo.com/cash'
+```
+
+O launcher é publicado como single-file self-contained, portanto o jogador não precisa instalar o
+.NET. O administrador distribui a pasta gerada e o usuário copia **todo o conteúdo** dela para a
+raiz do cliente original compatível, preservando as subpastas. O arquivo `client-package.json`
+registra os hashes de todos os artefatos; `verify-package.ps1` confere a pasta antes ou depois da
+cópia. Para ativar update assinado, acrescente
+`-EnableUpdates -PublicKeyPath '<chave-publica.pem>'`; para autenticação por ticket, acrescente
+`-EnableTicketAuth`.
+
 Não renomeie `rakion.bin` antigo para `rakion.exe`: além do tamanho diferente, sua `engine.dll`
 também é incompatível. A atualização para v258 deve acontecer antes da ativação da DLL.
 
@@ -137,14 +161,14 @@ da DLL em memória.
 ```powershell
 cd client\RakionClientCompat
 .\deploy_validation.ps1 `
-  -TargetRoot "C:\Users\joaop\Downloads\Rakion-Original\Rakion" `
-  -GoldenRoot "C:\Users\joaop\Desenvolvimento\Rakion\rakion-final" `
+  -TargetRoot "$env:RAKION_TEST_CLIENT" `
+  -GoldenRoot "$env:RAKION_GOLDEN_ROOT" `
   -ServerHost "127.0.0.1" `
   -LauncherBaseUrl "http://127.0.0.1/" `
   -DisplayMode windowed
 
 python .\verify_validation_install.py `
-  "C:\Users\joaop\Downloads\Rakion-Original\Rakion"
+  "$env:RAKION_TEST_CLIENT"
 ```
 
 O verificador confere todos os hashes de `validation-install.json`, baseline pristine, golden da

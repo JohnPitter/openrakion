@@ -280,10 +280,10 @@ múltiplos jogadores.
 
 ## Evidências locais
 
-- `C:\temp\world_channel_lobby.txt`;
-- `C:\temp\client_channel_lobby.txt`;
-- `C:\temp\world_character_handle.txt`;
-- `C:\temp\rakion_worldnet_accessor.txt`;
+- `<diretorio-de-evidencias>/world_channel_lobby.txt`;
+- `<diretorio-de-evidencias>/client_channel_lobby.txt`;
+- `<diretorio-de-evidencias>/world_character_handle.txt`;
+- `<diretorio-de-evidencias>/rakion_worldnet_accessor.txt`;
 - `tools/ghidra/TraceWorldChannelLobby.py`;
 - `tools/ghidra/DecompileClientChannelLobby.py`;
 - `tools/ghidra/TraceClientClanPresence.py`;

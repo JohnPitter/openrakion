@@ -100,8 +100,8 @@ metadados; isso reduz exposição de conversa sem perder correlação de abuso r
 
 ## Buddy e SMS central
 
-O RE adicional de `Buddy2.dll` está em `C:\temp\buddy_sms_flows.txt` e
-`C:\temp\buddy_sms_key.txt`, gerados por:
+O RE adicional de `Buddy2.dll` está em `<diretorio-de-evidencias>/buddy_sms_flows.txt` e
+`<diretorio-de-evidencias>/buddy_sms_key.txt`, gerados por:
 
 ```powershell
 py tools/ghidra/FindBuddySmsFlows.py

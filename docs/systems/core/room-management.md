@@ -34,7 +34,7 @@ mistura as duas interpretações e adiciona um terceiro caminho no interceptador
 |---|---|---|
 | `worldnet.dll`, exports `IScavengerWorldNet::SendField*` | intenção da API do cliente e contratos C→S | alta |
 | `worldserv.exe` v258, jump table `0x42B80C` e handlers `FUN_00422C90..00424210` | rota e semântica do servidor original analisado | alta para esta build |
-| `C:\temp\dll_dispatch.txt`, `C:\temp\client_vtbl2.txt` | nomes, endereços e vtable do cliente | alta |
+| `<diretorio-de-evidencias>/dll_dispatch.txt`, `<diretorio-de-evidencias>/client_vtbl2.txt` | nomes, endereços e vtable do cliente | alta |
 | `ClientSession.LobbyFlow.cs` e `LobbyFrames.cs` | fluxo realmente interceptado no .NET | alta |
 | `WorldHandlers*.cs`, `Domain/Field.cs`, `WorldServer.cs` | dispatcher e domínio atuais | alta |
 | `LobbyFrameGoldenTests.cs`, `RoomRosterFrameGoldenTests.cs` | respostas e layout variável do roster | alta para o codec .NET; visual ainda pendente |

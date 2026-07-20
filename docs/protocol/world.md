@@ -2,8 +2,8 @@
 
 ## Status e objetivo
 
-Este documento é a fonte canônica do protocolo do World Server para o cliente em
-`C:\Users\joaop\Desenvolvimento\Rakion\rakion-final`. Ele consolida o frame TCP,
+Este documento é a fonte canônica do protocolo do World Server para o
+`<cliente-v258-golden>`. Ele consolida o frame TCP,
 sequências, cifra, máquina de estados, métodos `IScavengerWorldNet::Send*`, dispatch do
 `worldserv.exe` original e a rota realmente executada pelo servidor .NET atual.
 
@@ -535,14 +535,15 @@ implementação, não afirma que o protocolo canônico já está ativado.
 
 ## Fontes locais
 
-- cliente analisado: `C:\Users\joaop\Desenvolvimento\Rakion\rakion-final`;
+- cliente analisado: `<cliente-v258-golden>`;
 - transporte e RE anterior: [`../archive/protocol-world-legacy.md`](../archive/protocol-world-legacy.md);
 - cobertura global: [`../audits/re-coverage.md`](../audits/re-coverage.md);
 - dispatch atual: `server/RakionServer/src/RakionServer.World/Network/ClientSession.cs`;
 - interceptador atual: `server/RakionServer/src/RakionServer.World/Network/ClientSession.LobbyFlow.cs`;
 - tabela única: `WorldHandlers.cs`; corpos organizados nos partials `WorldHandlers.*.cs`;
 - golden tests: `server/RakionServer/tests/RakionServer.World.Tests`.
-- evidência assembly preservada: `C:\temp\worldserv_full.asm`;
-- exports/decompilação do cliente preservados: `C:\temp\dll_dispatch.txt`,
-  `C:\temp\client_vtbl2.txt`, `C:\temp\rakion_worldnet_accessor.txt` e
-  `C:\temp\client_dormant_world_callsites.txt`.
+- evidência assembly preservada: `<diretorio-de-evidencias>/worldserv_full.asm`;
+- exports/decompilação do cliente preservados: `<diretorio-de-evidencias>/dll_dispatch.txt`,
+  `<diretorio-de-evidencias>/client_vtbl2.txt`,
+  `<diretorio-de-evidencias>/rakion_worldnet_accessor.txt` e
+  `<diretorio-de-evidencias>/client_dormant_world_callsites.txt`.

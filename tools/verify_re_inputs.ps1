@@ -1,7 +1,10 @@
 param(
-    [string]$ClientRoot = 'C:\Users\joaop\Desenvolvimento\Rakion\rakion-final',
-    [string]$ReRoot = 'C:\Users\joaop\Desenvolvimento\Rakion\rakion-work'
+    [string]$ClientRoot = $env:RAKION_GOLDEN_ROOT,
+    [string]$ReRoot = $env:RAKION_RE_WORK
 )
+
+if (-not $ClientRoot) { throw 'informe -ClientRoot ou RAKION_GOLDEN_ROOT' }
+if (-not $ReRoot) { throw 'informe -ReRoot ou RAKION_RE_WORK' }
 
 $artifacts = @(
     @{ Name = 'client engine'; Path = Join-Path $ClientRoot 'Bin\engine.dll'; Sha256 = '83B20D6C32CD66B95C8F8E41AD6DE13A58E8F5F948CD21CBD118D42EF8CF88F2' },
