@@ -57,9 +57,8 @@ python client\RakionClientCompat\verify_legacy_client_patch.py `
 - adicionar o botão nativo `Buy Cash` ao lado de `Potion slot` (command `0x18B`); o hook registra
   todas as instâncias criadas pela tela, consome somente o clique desses controles e abre a mesma
   `cash-shop.url`;
-- disparar o `SetNickname` nativo do `Buddy2.dll` quando `RET_LOGIN` muda o estado do host de
-  desconectado para autenticado e após cada seleção de personagem; o estado nativo evita loops e
-  funciona mesmo quando o alocador reutiliza o endereço de uma instância destruída;
+- disparar uma única vez o `SetNickname` nativo do `Buddy2.dll` após cada seleção de personagem,
+  aguardando o `RET_LOGIN` quando a autenticação Buddy ainda não terminou;
 - manter HIT/SHOT, lifecycle e ground-snap visual dos bots;
 - ler o IPv4 de `server.host` e redirecionar somente `40706`, `40708` e `40709`, em TCP/UDP;
 - espelhar movimento e ataque P2P humano ao World pelo envelope `0xB07A`, sem reenviar esse pacote

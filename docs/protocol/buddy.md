@@ -17,18 +17,19 @@ Em 19–20/07/2026 foi reproduzida outra falha: após entrar no servidor ou troc
 modelo social podia ser reinicializado sem que o cliente repetisse `SVC_SET_NICK`; a lista só surgia
 depois de selecionar manualmente **Nick Change**. O `RET_SET_NICK` contém somente o resultado da
 operação; enviá-lo sem um `SVC_SET_NICK` anterior não informa o nome ao cliente e não substitui o
-fluxo nativo. A correção mínima na DLL chama `SetNickname` do próprio `Buddy2.dll` no primeiro
-`RET_LOGIN` de cada host e após cada seleção de personagem. O callback nativo muda `host+0x24` de
-`0` para `1`; a DLL lê o valor anterior e só dispara no primeiro callback. Assim, o `RET_LOGIN`
-produzido pelo próprio refresh não forma recursão. O servidor recebe `SVC_SET_NICK`, responde
-`RET_SET_NICK(result=0)` e envia um novo `RET_LOGIN` com a lista atualizada.
+fluxo nativo. A correção mínima na DLL chama `SetNickname` do próprio `Buddy2.dll` uma vez após
+cada seleção de personagem. Se `host+0x24` ainda indica que o login Buddy não terminou, a chamada
+fica pendente e é executada pelo primeiro `RET_LOGIN` bem-sucedido. Isso evita tanto o envio antes
+da autenticação quanto a duplicidade `RET_LOGIN` + seleção, que podia deixar o rebuild do F9 no
+estado vazio. O servidor recebe `SVC_SET_NICK`, responde `RET_SET_NICK(result=0)` e envia um novo
+`RET_LOGIN` com a lista atualizada.
 
 O lifecycle completo explica a falha de reentrada. `WorldLoginSuccess (0x0047BCE0)` cria o host em
 `application+0x4A60`, inicia `Buddy2::Login` e recebe a lista em `0x0048A5D0`. Ao sair do servidor,
 `LeaveWorldServer (0x004755B0)` chama `DestroyMessengerHost (0x0040A8F0)` e zera o ponteiro. A
-entrada seguinte cria outra instância, cujo endereço pode ser igual ao anterior. Por isso o hook
-não mantém contador, ponteiro processado ou flag próprio entre sessões; usa apenas o estado da
-instância ativa e obtém o host atual pelo ponteiro global quando a seleção de personagem termina.
+entrada seguinte cria outra instância, cujo endereço pode ser igual ao anterior. O hook não usa
+contador nem marca permanente por endereço: mantém somente a seleção pendente até a autenticação
+da instância ativa e obtém o host atual pelo ponteiro global quando a seleção termina.
 
 World e Buddy permanecem como autoridades. Antes do snapshot `0x0C`, o World normaliza
 `buddyname` para o primeiro personagem válido por slot. O monitor do Buddy acompanha `charname` e

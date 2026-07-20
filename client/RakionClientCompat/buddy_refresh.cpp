@@ -26,6 +26,7 @@ using SetNickname = void (__thiscall*)(void*, const wchar_t*);
 
 BuddyLoginCallback OriginalBuddyLogin{};
 CharacterSelectCallback OriginalCharacterSelect{};
+PVOID volatile PendingRefreshHost{};
 
 bool IsReadable(const void* pointer, size_t length)
 {
@@ -79,19 +80,39 @@ bool RefreshBuddyNickname(void* ui)
     return true;
 }
 
+bool IsBuddyLoggedIn(void* ui)
+{
+    return IsReadable(ui, BuddyLoginStateOffset + 1) &&
+        *(static_cast<BYTE*>(ui) + BuddyLoginStateOffset) != 0;
+}
+
+void RefreshAfterCharacterSelection(void* ui)
+{
+    if (!ui) return;
+    if (!IsBuddyLoggedIn(ui))
+    {
+        InterlockedExchangePointer(&PendingRefreshHost, ui);
+        CompatLog("SetNick do Messenger aguardando login Buddy");
+        return;
+    }
+
+    InterlockedCompareExchangePointer(&PendingRefreshHost, nullptr, ui);
+    RefreshBuddyNickname(ui);
+}
+
 void __fastcall BuddyLoginCallbackHook(void* self, void*, uint32_t result, uint32_t context)
 {
-    const bool wasLoggedIn = IsReadable(self, BuddyLoginStateOffset + 1) &&
-        *(static_cast<BYTE*>(self) + BuddyLoginStateOffset) != 0;
     OriginalBuddyLogin(self, result, context);
-    if ((result & 0xffff) == 0 && !wasLoggedIn) RefreshBuddyNickname(self);
+    if ((result & 0xffff) != 0) return;
+    if (InterlockedCompareExchangePointer(&PendingRefreshHost, nullptr, self) == self)
+        RefreshBuddyNickname(self);
 }
 
 void __fastcall CharacterSelectCallbackHook(void* self, void*, uint32_t result)
 {
     OriginalCharacterSelect(self, result);
     if ((result & 0xff) != 0) return;
-    RefreshBuddyNickname(CurrentMessengerHost());
+    RefreshAfterCharacterSelection(CurrentMessengerHost());
 }
 
 bool InstallHook(uintptr_t address, const BYTE* expected, size_t length,
