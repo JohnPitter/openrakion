@@ -36,7 +36,7 @@ constexpr int PotionSlotCommand = 0x18b;
 constexpr int BuyCashCommand = 0x7f01;
 constexpr long BuyCashOffsetX = 0x6d;
 uintptr_t PowerUserCallbackContinue{};
-volatile LONG LastOpenTick{};
+volatile LONG CashStoreOpenRequested{};
 void* PotionSlotButton{};
 void* BuyCashButton{};
 std::array<void*, 16> BuyCashButtons{};
@@ -98,16 +98,21 @@ DWORD WINAPI OpenCashStore(void*)
     CompatLog(result > 32
         ? "pagina de recarga aberta no navegador"
         : "falha ao abrir pagina de recarga no navegador");
+    if (result <= 32) InterlockedExchange(&CashStoreOpenRequested, 0);
     return result > 32 ? 0 : 1;
 }
 
 void RequestOpenCashStore()
 {
-    const LONG now = static_cast<LONG>(GetTickCount());
-    const LONG previous = InterlockedExchange(&LastOpenTick, now);
-    if (previous != 0 && static_cast<DWORD>(now - previous) < 5000) return;
+    if (InterlockedCompareExchange(&CashStoreOpenRequested, 1, 0) != 0) return;
     HANDLE thread = CreateThread(nullptr, 0, OpenCashStore, nullptr, 0, nullptr);
-    if (thread) CloseHandle(thread);
+    if (thread)
+    {
+        CloseHandle(thread);
+        return;
+    }
+    InterlockedExchange(&CashStoreOpenRequested, 0);
+    CompatLog("falha ao criar worker da pagina de recarga");
 }
 
 void SetButtonLabel(void* button)
