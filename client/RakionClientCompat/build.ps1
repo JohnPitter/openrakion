@@ -31,6 +31,7 @@ $patchSources = @(
     'rakion_client_patch.cpp',
     'buddy_refresh.cpp',
     'client_patches.cpp',
+    'ui_lifecycle_patch.cpp',
     'bot_telemetry.cpp',
     'compat_log.cpp'
 ) | ForEach-Object { '"{0}"' -f (Join-Path $PSScriptRoot $_) }

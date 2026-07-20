@@ -458,11 +458,10 @@ No sucesso de `0x12`, `rakion.exe:0x0047C4D0` adiciona o ID retornado ao slot, r
 “Não”, a janela permanecia órfã: `Create` reenviava o slot já ocupado e `Cancel` não alcançava mais
 o owner.
 
-Uma tentativa de chamar diretamente o método virtual `+0x0C` da janela em
-`rakion.exe+0x685B8` foi descartada: durante o callback de rede ela causa reentrância na árvore de
-componentes e acesso inválido em `engine.dll+0x37F31`. Preservar o owner até o Cancel evitou a queda,
-mas deixou o viewport escurecido e sem o preview 3D. Esses hooks experimentais não fazem parte da
-build estável.
+Uma tentativa inicial de restaurar somente o método virtual `+0x0C` da janela em
+`rakion.exe+0x685B8` caiu em `engine.dll+0x37F31`. Preservar o owner até o Cancel evitou a queda,
+mas deixou o viewport escurecido e sem o preview 3D. Esses dois experimentos incompletos foram
+removidos.
 
 O RE do `worldserv.exe` original fecha o limite do backend. `FUN_0041C3D0` atualiza o registro do
 slot mantido em memória e envia somente o ACK lógico de sete bytes
@@ -471,11 +470,18 @@ adicional emitido pelo servidor. No cliente, a resposta “Não” do diálogo t
 `0x11B`, que apenas remove o diálogo em `FUN_0044C030`. Nenhum pacote C→S é produzido, portanto o
 servidor não consegue observar a recusa nem decidir quando deve fechar ou reconstruir essa UI.
 
-Logo, não existe correção **server-side fiel ao original** para essa transição. Forçar reconnect após
-todo ACK de criação ou enviar uma lista não solicitada depois de um atraso seriam workarounds novos,
-com perda de sessão ou corrida com a escolha “Sim”; não devem ser ativados sem uma decisão explícita
-de produto. A correção fiel permanece no evento da UI do cliente, depois da resposta ao diálogo, e
-precisa ser validada visualmente antes de voltar à DLL.
+Logo, não existe correção **server-side fiel ao original** para essa transição. A causa foi isolada
+por diff entre builds do próprio cliente: o arquivo tratado anteriormente como pristine (`88E177...`)
+já possui 110 bytes diferentes do v258 `0682B6...`. Além dos 18 bytes do GameGuard, ele remove cinco
+chamadas de fechamento em `FUN_00468540` e desliga um flag do preview. Restaurar apenas a primeira
+chamada expõe um defeito anterior do `uitoolkit.dll`: o destrutor deixa o componente na lista circular
+de siblings, causando use-after-free quando a engine redesenha a tela.
+
+A correção atual restaura o conjunto original completo em `FUN_00468540` e, antes disso, corrige o
+destrutor de `csComponent` para desvincular com segurança `this` dos elos `+0x140/+0x144` e atualizar
+o parent `+0x148`. Todos os prólogos, NOPs e o code cave são validados antes da escrita; build
+incompatível falha fechada. O ACK e a regra de criação no servidor permanecem iguais ao original.
+Ainda é obrigatória a validação visual de criar e responder “Não” antes de encerrar o item.
 
 ## Arquitetura de implementação
 

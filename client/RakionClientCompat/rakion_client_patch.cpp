@@ -10,6 +10,7 @@
 #include "bot_telemetry.h"
 #include "buddy_refresh.h"
 #include "client_patches.h"
+#include "ui_lifecycle_patch.h"
 #include "compat_log.h"
 
 namespace
@@ -219,6 +220,7 @@ std::vector<BYTE> BuildCode(uintptr_t cave)
 DWORD WINAPI InstallCompatibility(void*)
 {
     if (!IsRakionProcess()) return 0;
+    ApplyCharacterUiLifecycleFix();
     CompatLog(InstallBotTelemetryHook()
         ? "ponte P2P->World para hit de bot instalada"
         : "ponte P2P->World indisponível");

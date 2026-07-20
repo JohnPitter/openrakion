@@ -17,13 +17,18 @@ bytes para a DLL.
 
 | Artefato | SHA-256 | Papel |
 |---|---|---|
-| `rakion-final/Bin/rakion.exe.orig` | `88E177F243FA4C43769CD323FB4D73E106AE833070F9BCE7B2DC05B8DDFD6AF8` | executável v258 pristine |
+| `rakion-tutorial/client/Bin/rakion.bin` | `0682B6464DA64C2A79B4B1BF648594273DD7A3BF2AB8EA005A59920B10899D2F` | executável v258 pristine confirmado por diff |
+| `rakion-tutorial/client/Bin/rakion.exe` | `0A2A481E3D0F63AD73EFD33F6C1ADD05ED2E92A865A1DB1F4404CCD0DD4C2883` | pristine com somente 18 bytes de retirada do GameGuard |
+| `rakion-final/Bin/rakion.exe.orig` | `88E177F243FA4C43769CD323FB4D73E106AE833070F9BCE7B2DC05B8DDFD6AF8` | baseline histórico de instalação; não é pristine |
 | `rakion-final/Bin/rakion.exe` | `435F50E3FF9F3F140D4C335336B4BA4A758DF823C146210CC8DA90460960FFFF` | resultado golden com todos os patches históricos |
 | `Rakion-Original/Bin/rakion.bin` | `3D2E2A837C827865B12C6687D59BA3F31F6875AA2BC5EA9F37A3FC488DFEDB2D` | exemplo antigo, incompatível com os RVAs v258 |
 
-O diff golden contém 317 bytes. A DLL valida **todos** os bytes antes de aplicar o conjunto; build
-desconhecida é rejeitada sem patch parcial. O `rakion-tutorial` documenta somente a retirada do
-GameGuard em outra build e não é fonte de bytes para o cliente final.
+O diff golden contra o baseline histórico contém 317 bytes. A DLL valida **todos** os bytes antes de
+aplicar o conjunto; build desconhecida é rejeitada sem patch parcial. Uma auditoria byte a byte
+mostrou que o baseline `88E177...` já difere em 110 bytes do pristine `0682B6...`: 18 pertencem à
+retirada do GameGuard e 92 são alterações adicionais, incluindo a remoção do lifecycle de destruição
+da tela de personagens. O pristine do tutorial é usado somente como evidência para restaurar esse
+fluxo; o `rakion-final` permanece o golden source distribuído.
 
 O binário legado `client/RakionClientPatch/build/RakionClientPatch.dll`, recuperado do trabalho
 guardado, não substitui o golden. Ele não contém os hooks de rede/bot, mas sua tabela compilada
@@ -45,6 +50,9 @@ python client\RakionClientCompat\verify_legacy_client_patch.py `
   espera de SYN mesmo após o fluxo legado já ter sido neutralizado;
 - aplicar multi-instância sempre e, conforme `display.mode`, janela e bloqueio do reset de display;
 - neutralizar o bloqueio de Alt+Tab em `keyhook.dll`;
+- restaurar as cinco chamadas originais de fechamento da tela de personagens e o flag de preview;
+  o destrutor de `csComponent` recebe antes um unlink seguro no `uitoolkit.dll`, evitando ponteiros
+  de siblings pendurados e o acesso inválido observado em `engine.dll`;
 - manter HIT/SHOT, lifecycle e ground-snap visual dos bots;
 - ler o IPv4 de `server.host` e redirecionar somente `40706`, `40708` e `40709`, em TCP/UDP;
 - espelhar movimento e ataque P2P humano ao World pelo envelope `0xB07A`, sem reenviar esse pacote
@@ -73,7 +81,7 @@ valida também o hash e o prólogo de `CNet::SendToOtherClient` na `engine.dll`,
 O linker usa `/Brepro`: duas compilações consecutivas com o mesmo toolchain e as mesmas entradas
 devem produzir o mesmo SHA-256. A build estável validada em 19/07/2026 gerou
 `13C1D0CC022D0000FA2E7ED03ABD0107AD41D894E0AF302D74CF3D42B0F33263` para `version.dll` e
-`7711BE128CF4E6134BA53BAE11C0AD8152F70FF526F85E531B67745C5437CFEA` para
+`B1F248B2702B5F8DDF5772B6FE9803BAB223E31C9915EECBC4F54CAEF363AF99` para
 `RakionClientPatch.dll` nas duas execuções. O build de
 `client/RakionLauncher` chama esse script, embute `version.dll` e `RakionClientPatch.dll` e instala
 as duas em `Bin` antes de iniciar o jogo.
