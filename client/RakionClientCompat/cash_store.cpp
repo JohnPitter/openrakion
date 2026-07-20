@@ -22,10 +22,14 @@ constexpr uint32_t ComponentSetPosIatRva = 0x000d10b8;
 constexpr uint32_t ComponentSetSizeIatRva = 0x000d10bc;
 constexpr uint32_t LegacyCashShellExecuteRva = 0x0004c852;
 constexpr uint32_t ComponentSendCommandRva = 0x0001d310;
+constexpr uint32_t ButtonPressRva = 0x0001c070;
 constexpr BYTE ExpectedPowerUserCallback[] = { 0x6a, 0xff, 0x68, 0x2d, 0xc5, 0x4c, 0x00 };
 constexpr BYTE ExpectedButtonConstructor[] = { 0x6a, 0xff, 0x68, 0xd8, 0x68, 0x4c, 0x00 };
 constexpr BYTE ExpectedLegacyCashShellExecute[] = { 0xff, 0x15, 0x0c, 0xb7, 0x5d, 0x00 };
 constexpr BYTE ExpectedComponentSendCommand[] = { 0x55, 0x8b, 0xec, 0x6a, 0xff };
+constexpr BYTE ExpectedButtonPress[] = {
+    0x56, 0x8b, 0xf1, 0x8a, 0x86, 0x7c, 0x01, 0x00, 0x00
+};
 constexpr char DefaultCashStoreUrl[] = "http://127.0.0.1/cash";
 constexpr char BuyCashLabel[] = "Buy Cash";
 constexpr int PotionSlotCommand = 0x18b;
@@ -44,12 +48,23 @@ using ButtonAllocator = void* (__cdecl*)(size_t);
 using SetBitmap = void (__thiscall*)(void*, void*, void*, void*);
 using SetGeometry = void (__thiscall*)(void*, long, long);
 using SendCommand = void* (__thiscall*)(void*, int, void*);
+using ButtonPress = void (__thiscall*)(void*);
 
 ButtonConstructor OriginalButtonConstructor{};
 SetBitmap OriginalSetBitmap{};
 SetGeometry OriginalSetPos{};
 SetGeometry OriginalSetSize{};
 SendCommand OriginalSendCommand{};
+ButtonPress OriginalButtonPress{};
+
+bool IsBuyCashButton(void* button)
+{
+    if (!button) return false;
+    for (void* candidate : BuyCashButtons)
+        if (candidate == button)
+            return *reinterpret_cast<int*>(static_cast<BYTE*>(button) + 0x170) == BuyCashCommand;
+    return false;
+}
 
 bool IsHttpUrl(const std::string& value)
 {
@@ -75,11 +90,14 @@ std::string LoadCashStoreUrl()
 DWORD WINAPI OpenCashStore(void*)
 {
     const std::string url = LoadCashStoreUrl();
-    const auto result = reinterpret_cast<INT_PTR>(
+    auto result = reinterpret_cast<INT_PTR>(
         ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+    if (result <= 32)
+        result = reinterpret_cast<INT_PTR>(
+            ShellExecuteA(nullptr, "open", "explorer.exe", url.c_str(), nullptr, SW_SHOWNORMAL));
     CompatLog(result > 32
-        ? "pagina de recarga aberta apos saldo insuficiente"
-        : "falha ao abrir pagina de recarga");
+        ? "pagina de recarga aberta no navegador"
+        : "falha ao abrir pagina de recarga no navegador");
     return result > 32 ? 0 : 1;
 }
 
@@ -154,14 +172,22 @@ void __fastcall SetSizeHook(void* self, void*, long width, long height)
 
 void* __fastcall SendCommandHook(void* self, void*, int command, void* sender)
 {
-    bool isBuyCash = false;
-    for (void* button : BuyCashButtons)
-        if (sender == button) { isBuyCash = true; break; }
-    if (!isBuyCash)
+    if (!IsBuyCashButton(sender) && command != BuyCashCommand)
         return OriginalSendCommand(self, command, sender);
     CompatLog("clique no botao Buy Cash interceptado");
     RequestOpenCashStore();
     return nullptr;
+}
+
+void __fastcall ButtonPressHook(void* self, void*)
+{
+    if (!IsBuyCashButton(self))
+    {
+        OriginalButtonPress(self);
+        return;
+    }
+    CompatLog("clique nativo no botao Buy Cash interceptado");
+    RequestOpenCashStore();
 }
 
 HINSTANCE WINAPI CashShellExecuteHook(HWND, LPCSTR, LPCSTR, LPCSTR, LPCSTR, INT)
@@ -223,6 +249,24 @@ bool InstallSendCommandHook()
         sizeof(ExpectedComponentSendCommand), &SendCommandHook, 0xe9);
 }
 
+bool InstallButtonPressHook()
+{
+    auto* toolkit = reinterpret_cast<BYTE*>(GetModuleHandleW(L"uitoolkit.dll"));
+    if (!toolkit) return false;
+    BYTE* press = toolkit + ButtonPressRva;
+    auto* trampoline = static_cast<BYTE*>(VirtualAlloc(
+        nullptr, 16, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+    if (!trampoline) return false;
+    std::memcpy(trampoline, ExpectedButtonPress, sizeof(ExpectedButtonPress));
+    trampoline[sizeof(ExpectedButtonPress)] = 0xe9;
+    *reinterpret_cast<int32_t*>(trampoline + sizeof(ExpectedButtonPress) + 1) =
+        static_cast<int32_t>(press + sizeof(ExpectedButtonPress) -
+            (trampoline + sizeof(ExpectedButtonPress) + 5));
+    OriginalButtonPress = reinterpret_cast<ButtonPress>(trampoline);
+    return WriteJump(press, ExpectedButtonPress, sizeof(ExpectedButtonPress),
+        &ButtonPressHook, 0xe9);
+}
+
 bool InstallBuyCashButton(BYTE* image)
 {
     BYTE* constructor = image + ButtonConstructorRva;
@@ -239,7 +283,7 @@ bool InstallBuyCashButton(BYTE* image)
         constructor + sizeof(ExpectedButtonConstructor) - (trampoline + 12));
     OriginalButtonConstructor = reinterpret_cast<ButtonConstructor>(trampoline);
 
-    if (!InstallSendCommandHook() ||
+    if (!InstallSendCommandHook() || !InstallButtonPressHook() ||
         !ReplaceIat(image + ButtonSetBitmapIatRva,
                     reinterpret_cast<SetBitmap>(&SetBitmapHook), OriginalSetBitmap) ||
         !ReplaceIat(image + ComponentSetPosIatRva,

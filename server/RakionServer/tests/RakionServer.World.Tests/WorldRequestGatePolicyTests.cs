@@ -9,7 +9,7 @@ namespace RakionServer.World.Tests
         [InlineData(0x0E, 1, -1, 2)]
         [InlineData(0x14, 1, 0, 2)]
         [InlineData(0x2C, 1, 7, 2)]
-        [InlineData(0x3A, 1, 7, 3)]
+        [InlineData(0x3A, 1, 7, 2)]
         [InlineData(0x6B, 1, 7, 4)]
         public void AllowsOriginalIdentityAndPhase(
             ushort opcode, int gameInfoId, int characterId, byte status)
@@ -22,6 +22,7 @@ namespace RakionServer.World.Tests
         [InlineData(0x0E, 1, 7, 2, 0x16)]
         [InlineData(0x2C, 0, 7, 2, 0x32)]
         [InlineData(0x2C, 1, 7, 3, 0x33)]
+        [InlineData(0x3A, 1, 7, 3, 0x51)]
         [InlineData(0x4B, 1, 7, 2, 0x87)]
         [InlineData(0x73, 1, 0, 2, 0xDE)]
         public void ReturnsOriginalDisconnectReason(

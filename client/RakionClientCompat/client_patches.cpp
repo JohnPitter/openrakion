@@ -15,8 +15,104 @@ constexpr uint32_t WindowedRva = 0x00d46d;
 constexpr uint32_t NoDisplayResetRvas[] = { 0x00dbc2, 0x00dc1e, 0x00dc4f };
 constexpr uint32_t MultiInstanceRva = 0x002c96;
 constexpr uint32_t LegacyGameGuardUrlRva = 0x000d4028;
+constexpr uint32_t WorldNetAccessorRva = 0x00071b70;
+constexpr uint32_t IsBattleMapIatRva = 0x000d0880;
+constexpr uint32_t AddBotCreateHookRva = 0x00047329;
+constexpr uint32_t AddBotCreateCaveRva = 0x00115207;
+constexpr uint32_t AddBotCreateContinueRva = 0x00047330;
+constexpr uint32_t AddBotClickHookRva = 0x00047bf5;
+constexpr uint32_t AddBotClickCaveRva = 0x00115380;
+constexpr uint32_t AddBotClickContinueRva = 0x00047bfb;
+constexpr BYTE ExpectedAddBotCreateHook[] = { 0xe9, 0xd9, 0xde, 0x0c, 0x00, 0x90, 0x90 };
+constexpr BYTE ExpectedAddBotClickHook[] = { 0xe9, 0x86, 0xd7, 0x0c, 0x00, 0x90 };
 constexpr char LegacyGameGuardUrl[] = "http://218.145.66.176:10200";
 constexpr char DisabledGameGuardUrl[] = "http://127.0.0.1:1";
+uintptr_t AddBotCreateCave{};
+uintptr_t AddBotCreateContinue{};
+uintptr_t AddBotClickCave{};
+uintptr_t AddBotClickContinue{};
+
+using WorldNetAccessor = void* (__cdecl*)();
+using GetFieldInfo = void* (__thiscall*)(void*);
+using IsBattleMap = int (__cdecl*)(uint32_t);
+
+bool IsCurrentRoomBattle()
+{
+    auto* image = reinterpret_cast<BYTE*>(GetModuleHandleW(nullptr));
+    if (!image) return false;
+    void* world = reinterpret_cast<WorldNetAccessor>(image + WorldNetAccessorRva)();
+    if (!world) return false;
+    const auto vtable = *reinterpret_cast<uintptr_t**>(world);
+    void* field = reinterpret_cast<GetFieldInfo>(vtable[2])(world);
+    if (!field) return false;
+    const uint32_t map = *(static_cast<BYTE*>(field) + 0x1a3);
+    const auto isBattleMap = *reinterpret_cast<IsBattleMap*>(image + IsBattleMapIatRva);
+    return isBattleMap && isBattleMap(map) != 0;
+}
+
+__declspec(naked) void AddBotCreateGate()
+{
+    __asm
+    {
+        pushfd
+        pushad
+        call IsCurrentRoomBattle
+        test al, al
+        jz hidden
+        popad
+        popfd
+        jmp dword ptr [AddBotCreateCave]
+    hidden:
+        popad
+        popfd
+        jmp dword ptr [AddBotCreateContinue]
+    }
+}
+
+__declspec(naked) void AddBotClickGate()
+{
+    __asm
+    {
+        pushfd
+        pushad
+        call IsCurrentRoomBattle
+        test al, al
+        jz disabled
+        popad
+        popfd
+        jmp dword ptr [AddBotClickCave]
+    disabled:
+        popad
+        popfd
+        jmp dword ptr [AddBotClickContinue]
+    }
+}
+
+bool WriteRelativeJump(BYTE* address, const BYTE* expected, SIZE_T length, const void* target)
+{
+    if (std::memcmp(address, expected, length) != 0) return false;
+    DWORD oldProtection{};
+    if (!VirtualProtect(address, length, PAGE_EXECUTE_READWRITE, &oldProtection)) return false;
+    address[0] = 0xe9;
+    *reinterpret_cast<int32_t*>(address + 1) = static_cast<int32_t>(
+        reinterpret_cast<const BYTE*>(target) - (address + 5));
+    if (length > 5) std::memset(address + 5, 0x90, length - 5);
+    VirtualProtect(address, length, oldProtection, &oldProtection);
+    FlushInstructionCache(GetCurrentProcess(), address, length);
+    return true;
+}
+
+bool InstallAddBotRoomModeGate(BYTE* image)
+{
+    AddBotCreateCave = reinterpret_cast<uintptr_t>(image + AddBotCreateCaveRva);
+    AddBotCreateContinue = reinterpret_cast<uintptr_t>(image + AddBotCreateContinueRva);
+    AddBotClickCave = reinterpret_cast<uintptr_t>(image + AddBotClickCaveRva);
+    AddBotClickContinue = reinterpret_cast<uintptr_t>(image + AddBotClickContinueRva);
+    return WriteRelativeJump(image + AddBotCreateHookRva, ExpectedAddBotCreateHook,
+               sizeof(ExpectedAddBotCreateHook), &AddBotCreateGate) &&
+        WriteRelativeJump(image + AddBotClickHookRva, ExpectedAddBotClickHook,
+               sizeof(ExpectedAddBotClickHook), &AddBotClickGate);
+}
 
 bool ApplyBytePatch(BYTE* image, uint32_t rva, BYTE expected, BYTE replacement)
 {
@@ -92,7 +188,13 @@ bool ApplyFinalClientPatches()
         first = last;
     }
     FlushInstructionCache(GetCurrentProcess(), nullptr, 0);
+    if (!InstallAddBotRoomModeGate(image))
+    {
+        CompatLog("gate de Add Bot por modo de sala incompatível");
+        return false;
+    }
     OutputDebugStringA("RakionClientCompat: patches do rakion-final aplicados\n");
+    CompatLog("Add Bot habilitado somente em Battle rooms");
     return true;
 }
 
