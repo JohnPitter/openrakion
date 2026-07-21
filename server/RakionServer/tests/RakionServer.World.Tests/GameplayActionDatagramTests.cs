@@ -99,6 +99,19 @@ namespace RakionServer.World.Tests
         }
 
         [Theory]
+        [InlineData(
+            "0A032700000000650020005E01000092090000A5000000000000",
+            "0A03650020005E01000092090000A5000000000000")]
+        [InlineData("1103630000000A0A02010203", "11030A02010203")]
+        public void BuildTunnelPayload_RemovesPeerTransportHeader(string datagramHex, string expectedHex)
+        {
+            byte[] payload = GameplayActionDatagram.BuildTunnelPayload(
+                System.Convert.FromHexString(datagramHex));
+
+            Assert.Equal(System.Convert.FromHexString(expectedHex), payload);
+        }
+
+        [Theory]
         [InlineData("0A030000000000")]
         [InlineData("0F030000000000000000000000")]
         [InlineData("110300000000000000")]

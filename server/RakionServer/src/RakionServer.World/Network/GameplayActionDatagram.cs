@@ -148,6 +148,17 @@ namespace RakionServer.World.Network
             return true;
         }
 
+        public static byte[] BuildTunnelPayload(ReadOnlySpan<byte> datagram)
+        {
+            if (!TryParseHeader(datagram, out _))
+                throw new ArgumentException("Datagrama de gameplay inválido.", nameof(datagram));
+
+            byte[] payload = new byte[datagram.Length - 5];
+            datagram[..2].CopyTo(payload);
+            datagram[7..].CopyTo(payload.AsSpan(2));
+            return payload;
+        }
+
         private static bool HasValidSize(ushort type, int size) => type switch
         {
             MoveType => size == MoveSize,

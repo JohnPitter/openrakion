@@ -108,9 +108,10 @@ namespace RakionServer.World.Network
             if (session == null || !target.Occupied) return;
             if (target.UsesTunneling)
             {
+                byte[] payload = GameplayActionDatagram.BuildTunnelPayload(datagram);
                 using var writer = new PacketWriter();
-                writer.WriteWord((ushort)datagram.Length);
-                writer.WriteBytes(datagram);
+                writer.WriteWord((ushort)payload.Length);
+                writer.WriteBytes(payload);
                 session.SendMessage(0x57, writer.ToArray());
                 return;
             }

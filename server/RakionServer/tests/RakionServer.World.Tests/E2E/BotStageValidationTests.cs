@@ -132,17 +132,16 @@ namespace RakionServer.World.Tests.E2E
             bot.Position = spot;
 
             byte[] movement = human.WaitFor(
-                frame => IsTunneledBotAction(frame, bot.Seat, BotMovement.MoveType),
+                frame => IsTunneledBotAction(frame, BotMovement.MoveType, 21),
                 JourneyHelper.Timeout);
-            Assert.Equal(BotMovement.MoveSize, BitConverter.ToUInt16(movement, 2));
+            Assert.Equal((byte)bot.Seat, (byte)(movement[8] & 0x1f));
 
             human.SendBotTelemetryAttack(fixture.UdpPort2, session.FieldSeat, kind: 1);
             byte[] damage = human.WaitFor(
-                frame => IsTunneledBotAction(frame, bot.Seat, BotMovement.AttackType) &&
-                    frame[12] == (byte)PlayerAnimationKind.Damage,
+                frame => IsTunneledBotAction(frame, BotMovement.AttackType, 7) &&
+                    frame[7] == (byte)PlayerAnimationKind.Damage,
                 JourneyHelper.Timeout);
-            Assert.Equal(GameplayActionDatagram.ExtendedAnimationSize,
-                BitConverter.ToUInt16(damage, 2));
+            Assert.Equal((byte)bot.Seat, damage[6]);
         }
 
         private static bool IsBotDamage(byte[] packet, byte botSeat) =>
@@ -156,12 +155,11 @@ namespace RakionServer.World.Tests.E2E
             return frame.Length >= 7 && frame[0] == 0x4f && frame[1] == 0x00;
         }
 
-        private static bool IsTunneledBotAction(byte[] frame, byte botSeat, ushort type)
+        private static bool IsTunneledBotAction(byte[] frame, ushort type, ushort payloadLength)
         {
-            if (frame.Length < 11 || frame[0] != 0x57 || frame[1] != 0) return false;
-            ushort payloadLength = BitConverter.ToUInt16(frame, 2);
-            return frame.Length >= payloadLength + 4 && payloadLength >= 7 &&
-                BitConverter.ToUInt16(frame, 4) == type && frame[10] == botSeat;
+            return frame.Length >= payloadLength + 4 && frame[0] == 0x57 && frame[1] == 0 &&
+                BitConverter.ToUInt16(frame, 2) == payloadLength &&
+                BitConverter.ToUInt16(frame, 4) == type;
         }
 
         private static async Task<(ClientSession hs, Field field, BotPlayer bot)> SetupBotMatchAsync(

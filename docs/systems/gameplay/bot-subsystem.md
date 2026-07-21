@@ -8,6 +8,9 @@ compatibilidade captura movimento e ataque na entrada de `CNet::SendToOtherClien
 World pelo envelope `0xB07A`, sem duplicar o pacote entregue aos peers e sem exigir um peer humano.
 O retorno do bot segue a rota real de cada humano: `0x57` via TCP para clientes com tunneling e
 datagrama UDP somente para peers com rota direta.
+No túnel, o World remove o cabeçalho P2P `[sequence:u32][transportSource:u8]`: movimento cru de
+26 bytes vira a mensagem nativa de 21 bytes, e a reação de dano de 12 bytes vira 7 bytes. Repassar
+o datagrama cru dentro do `0x57` é inválido e o engine gráfico o ignora.
 
 ## Veredito do RE (respeitado, não contornado)
 
@@ -49,7 +52,8 @@ re-tentado). Regras invioláveis herdadas do RE:
    lida em `UdpGameplay.RelayToField`), avança a IA (`BotSteering`) e **sintetiza o `0x030A` do
    bot** (`BotMovement.SynthesizeMove`, origem = assento do bot), entregando-o aos peers humanos via
    `UdpGameplay.SendBotGameplay`. O servidor é a **fonte**; não há relay do bot. Em `ForceTunneling`,
-   o datagrama sintético é encapsulado no `0x57`; no modo direto, segue pelo endpoint UDP autenticado.
+   o payload nativo, sem o cabeçalho de transporte P2P, é encapsulado no `0x57`; no modo direto, o
+   datagrama completo segue pelo endpoint UDP autenticado.
 3. **Cleanup**: fim de match / último humano sai → `RemoveAllBots`.
 
 ## Combate (server-side, dentro do teto RE)
