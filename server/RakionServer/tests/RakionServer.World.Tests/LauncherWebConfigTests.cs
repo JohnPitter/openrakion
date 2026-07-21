@@ -8,6 +8,22 @@ namespace RakionServer.World.Tests;
 public sealed class LauncherWebConfigTests
 {
     [Fact]
+    public void EnablesTicketAuthenticationByDefault()
+    {
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Legacy:Enabled"] = "false",
+                ["ConnectionStrings:Rakion"] = "Server=localhost;Database=rakion"
+            })
+            .Build();
+
+        LauncherWebConfig config = LauncherWebConfig.Load(configuration, ".");
+
+        Assert.True(config.TicketAuthEnabled);
+    }
+
+    [Fact]
     public void UsesServerSelectionCompatibleTicketLifetimeByDefault()
     {
         LauncherWebConfig config = LoadConfig(new Dictionary<string, string?>());

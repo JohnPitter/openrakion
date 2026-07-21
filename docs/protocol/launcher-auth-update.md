@@ -55,6 +55,12 @@ web e um endpoint `file.php` não são fatos desta build. A decompilação repro
 
 ## Login moderno implementado
 
+O LauncherWeb e o launcher distribuído habilitam autenticação por ticket por padrão. Essa
+configuração deve permanecer alinhada: desabilitar `Auth:Enabled` no servidor enquanto
+`ticketAuthEnabled` estiver ativo no launcher faz o endpoint de login responder `404` e o cliente
+exibir uma recusa genérica. `Auth__Enabled=false` continua disponível somente para rollout legado
+coordenado com um launcher que também desabilite tickets.
+
 `POST /api/v1/auth/ticket` recebe JSON com `user`, `password`, `appId` e `buildVersion`. Em sucesso,
 retorna `{ "ticket": "...", "expiresAt": "..." }`.
 

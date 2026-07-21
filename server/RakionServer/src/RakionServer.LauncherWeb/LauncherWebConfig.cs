@@ -13,7 +13,7 @@ public sealed record LauncherWebConfig(
             "http://127.0.0.1:80");
         bool legacy = configuration.GetValue("Legacy:Enabled", true);
         bool updates = configuration.GetValue("Updates:Enabled", false);
-        bool ticketAuth = configuration.GetValue("Auth:Enabled", false);
+        bool ticketAuth = configuration.GetValue("Auth:Enabled", true);
         bool ensureTicketSchema = configuration.GetValue("Auth:EnsureSchema", true);
         int ticketLifetime = Math.Clamp(
             configuration.GetValue("Auth:TicketLifetimeSeconds", 900), 60, 1800);
