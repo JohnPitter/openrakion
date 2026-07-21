@@ -31,8 +31,8 @@ namespace RakionServer.World.Network
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(15), ToWire(position.Z));
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(17), HeadingToWire(heading));
             p[19] = 0;
-            // view rotation = rumo (o cliente usa p/ orientar o modelo do peer)
-            BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(20), HeadingToWire(heading));
+            // 20..25 são deltas acumuláveis de câmera, não rumo absoluto. Reenviar heading aqui
+            // faz o cliente somar a mesma rotação a cada tick e o avatar girar no próprio eixo.
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(22), 0);
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(24), 0);
             return p;

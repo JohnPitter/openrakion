@@ -8,6 +8,9 @@ envelope `0xB07A`. O dano usa um contrato separado, `0xB07B`: ele só é emitido
 engine confirmou a colisão com o bot, contendo sequência antirreplay e o assento exato da vítima.
 O retorno do bot segue a rota real de cada humano: `0x57` via TCP para clientes com tunneling e
 datagrama UDP somente para peers com rota direta.
+No movimento, `0x030A+17` carrega o heading absoluto. Os words `+20/+22/+24` permanecem zerados:
+eles são deltas acumuláveis de câmera e repetir o heading nesse trio faz o modelo girar no próprio
+eixo a cada tick.
 No túnel, o World remove o cabeçalho P2P `[sequence:u32][transportSource:u8]`: movimento cru de
 26 bytes vira a mensagem nativa de 21 bytes, e a reação de dano de 12 bytes vira 7 bytes. Repassar
 o datagrama cru dentro do `0x57` é inválido e o engine gráfico o ignora.
@@ -65,9 +68,12 @@ O servidor é a **autoridade do HP do bot** (`BotPlayer.Health`, curva `100 + le
 entregue e o que é teto:
 
 - **Bot como VÍTIMA (funcional no canal World)**: `0x0311 kind=Attack` é somente animação e **não
-  prova hit**. O hook nativo de colisão envia `0xB07B(sequence,targetSeat)` ao endpoint autenticado
-  do World. O servidor rejeita replay e valida partida, atacante vivo, assento exato, time e alcance
-  em `ResolveConfirmedBotHit`/`BotCombat.TryApplyConfirmedHit`. A cada acerto, o servidor devolve
+  prova hit**. O hook nativo intercepta a entrada de `CPlayer::ReceiveDamage`, antes dos gates que
+  rejeitam uma entidade remota sintética, e aceita apenas uma vítima cujo seat tem lifecycle de bot
+  e cujo atacante é o jogador local. A colisão confirmada envia `0xB07B(sequence,targetSeat)` ao
+  endpoint autenticado do World. O servidor rejeita replay e valida partida, atacante vivo, assento
+  exato, time e alcance em `ResolveConfirmedBotHit`/`BotCombat.TryApplyConfirmedHit`. A cada acerto,
+  o servidor devolve
   um `0x0311 kind=Damage` estendido com o assento do bot e segura a IA por 1,1 s, permitindo que a
   animação de queda/recuperação termine antes do próximo movimento. O ataque do bot alterna as três
   animações observadas na captura humana (`0x1B`, `0x1A`, `0x12`) e usa cooldown de 2,2/1,7/1,3 s
@@ -91,8 +97,8 @@ entregue e o que é teto:
 - `BotHitTelemetryDatagramTests` e `BotCombatTests`: contrato `0xB07B`, alvo exato, time, alcance,
   dano e morte; a telemetria de animação `0x0311` isolada não altera HP.
 - `BotRespawnTests`: política de 7 segundos e restauração de HP/lifecycle.
-- `BotMovementSynthTests` (4): formato do 0x030A, assento/`sourceEcho`, roundtrip da posição e reação
-  estendida `0x0311 kind=Damage`.
+- `BotMovementSynthTests` (5): formato do 0x030A, assento/`sourceEcho`, roundtrip da posição,
+  separação entre heading absoluto e deltas de câmera, e reação estendida `0x0311 kind=Damage`.
 - `E2E/AddBotButtonCommandE2ETests` (1): envia exatamente `GoHeroi : /addbot` pelo `0x47` capturado
   do botão e confirma bot no time oposto sem derrubar o host da sala.
 - `E2E/BotMovementE2ETests` (1): no fio, um humano recebe o `0x030A` sintetizado do bot com a

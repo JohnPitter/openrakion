@@ -1,3 +1,5 @@
+using System;
+using System.Buffers.Binary;
 using RakionServer.World.Domain;
 using RakionServer.World.Network;
 using Xunit;
@@ -29,6 +31,18 @@ namespace RakionServer.World.Tests
             Assert.Equal(1234f, read.X);
             Assert.Equal(-50f, read.Y);
             Assert.Equal(-600f, read.Z);
+        }
+
+        [Fact]
+        public void SynthesizeMove_KeepsAbsoluteHeadingOutOfAccumulatedViewDeltas()
+        {
+            byte[] packet = BotMovement.SynthesizeMove(
+                10, new BotVector(100, 0, 250), MathF.PI / 2, 8);
+
+            Assert.NotEqual(0, BinaryPrimitives.ReadInt16LittleEndian(packet.AsSpan(17)));
+            Assert.Equal(0, BinaryPrimitives.ReadInt16LittleEndian(packet.AsSpan(20)));
+            Assert.Equal(0, BinaryPrimitives.ReadInt16LittleEndian(packet.AsSpan(22)));
+            Assert.Equal(0, BinaryPrimitives.ReadInt16LittleEndian(packet.AsSpan(24)));
         }
 
         [Fact]
