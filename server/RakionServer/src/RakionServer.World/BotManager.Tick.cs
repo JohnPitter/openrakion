@@ -1,5 +1,4 @@
 using System;
-using System.Net;
 using RakionServer.World.Domain;
 using RakionServer.World.Network;
 
@@ -14,7 +13,7 @@ namespace RakionServer.World
     /// </summary>
     public sealed partial class BotManager
     {
-        public void TickField(Field field, float dt, Action<IPEndPoint, byte[]> send)
+        public void TickField(Field field, float dt, Action<PlayerRec, byte[]> send)
         {
             long now = Environment.TickCount64;
             lock (field.SyncRoot)
@@ -48,12 +47,11 @@ namespace RakionServer.World
             }
         }
 
-        private static void Broadcast(Field field, Action<IPEndPoint, byte[]> send, byte[] datagram)
+        private static void Broadcast(Field field, Action<PlayerRec, byte[]> send, byte[] datagram)
         {
             foreach (PlayerRec human in field.Slots)
             {
-                IPEndPoint? endpoint = human.Session?.UdpEndpoint;
-                if (endpoint != null && human.Occupied) send(endpoint, datagram);
+                if (human.Session != null && human.Occupied) send(human, datagram);
             }
         }
 

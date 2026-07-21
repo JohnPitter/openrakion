@@ -555,7 +555,7 @@ namespace RakionServer.World
                         }
                         // Tick de IA/movimento dos bots (fora do lock do clock; TickField trava o field).
                         if (f.BotCount > 0 && _udpGame != null)
-                            Bots.TickField(f, 0.15f, _udpGame.SendGameplayDatagram);
+                            Bots.TickField(f, 0.15f, _udpGame.SendBotGameplay);
                     }
                 }
                 catch (Exception ex) { Log.Debug("field", "game clock: {0}", ex.Message); }

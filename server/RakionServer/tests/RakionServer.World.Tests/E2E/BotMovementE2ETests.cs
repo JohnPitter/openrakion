@@ -45,6 +45,7 @@ namespace RakionServer.World.Tests.E2E
             human.UdpHandshake(fixture.UdpPort2, hs.Slot, hs.UdpKey);
             JourneyHelper.WaitUntil(() => hs.UdpEndpoint != null, "endpoint UDP não autenticado");
             human.WaitForUdp(p => p.Length == 12 && p[0] == 0x01 && p[1] == 0x02, JourneyHelper.Timeout);
+            field.Slots[hs.FieldSeat].UsesTunneling = false;
             human.SendMove(fixture.UdpPort2, hs.FieldSeat, 500, 0, 500); // posição do humano p/ o bot mirar
 
             // Coloca o field EM JOGO (State 2) — o game clock passa a tickar os bots.

@@ -6,6 +6,8 @@ server-side**: entra no roster como um jogador, é movido pela IA e tem o movime
 fio. Nos testes headless, o ataque chega pela extensão UDP do World; no cliente gráfico, a DLL de
 compatibilidade captura movimento e ataque na entrada de `CNet::SendToOtherClient` e os espelha ao
 World pelo envelope `0xB07A`, sem duplicar o pacote entregue aos peers e sem exigir um peer humano.
+O retorno do bot segue a rota real de cada humano: `0x57` via TCP para clientes com tunneling e
+datagrama UDP somente para peers com rota direta.
 
 ## Veredito do RE (respeitado, não contornado)
 
@@ -16,7 +18,8 @@ gate `ReceiveDamage@0x3518ce40` exige `[vítima+0x394]!=0`, que só é setado nu
 em combate localmente** = um peer de sessão real sincronizado (limite type-7, confirmado e não
 re-tentado). Regras invioláveis herdadas do RE:
 
-- **Nenhum pacote do bot fala direto com o cliente** — só via o socket do `UdpGameplay`.
+- **Nenhum pacote do bot fala por um endpoint P2P inventado** — o World escolhe o fallback TCP ou a
+  rota UDP autenticada de cada humano.
 - **O servidor nunca sequestra o canal humano↔humano** — só emite o tráfego DO bot (sem relay do
   P2P humano). Evita a dupla-entrega que matava o seq/ack reliable.
 - Ciclo **efêmero**: bots somem no fim do match ou quando o último humano sai (field liberado).
@@ -44,8 +47,9 @@ re-tentado). Regras invioláveis herdadas do RE:
 2. **Em jogo** (`BotManager.TickField`, chamado pelo game-clock a 150 ms quando `Field.State==2`):
    para cada bot, mira o **humano inimigo vivo mais próximo** (posição rastreada do `0x030A` dele,
    lida em `UdpGameplay.RelayToField`), avança a IA (`BotSteering`) e **sintetiza o `0x030A` do
-   bot** (`BotMovement.SynthesizeMove`, origem = assento do bot), injetando-o aos peers humanos via
-   `UdpGameplay.SendGameplayDatagram`. O servidor é a **fonte**; não há relay do bot.
+   bot** (`BotMovement.SynthesizeMove`, origem = assento do bot), entregando-o aos peers humanos via
+   `UdpGameplay.SendBotGameplay`. O servidor é a **fonte**; não há relay do bot. Em `ForceTunneling`,
+   o datagrama sintético é encapsulado no `0x57`; no modo direto, segue pelo endpoint UDP autenticado.
 3. **Cleanup**: fim de match / último humano sai → `RemoveAllBots`.
 
 ## Combate (server-side, dentro do teto RE)
@@ -81,7 +85,8 @@ entregue e o que é teto:
 - `E2E/BotMovementE2ETests` (1): no fio, um humano recebe o `0x030A` sintetizado do bot com a
   partida em jogo.
 - `E2E/BotStageValidationTests`: o primeiro golpe reduz HP e retorna `0x0311 kind=Damage` ao humano;
-  golpes seguintes matam o bot e publicam `0x4F` com o assento correto.
+  golpes seguintes matam o bot e publicam `0x4F` com o assento correto; também cobre movimento e
+  reação de dano encapsulados em TCP `0x57` quando `ForceTunneling` está ativo.
 
 ## Fronteira (o teto do RE, não um bug)
 

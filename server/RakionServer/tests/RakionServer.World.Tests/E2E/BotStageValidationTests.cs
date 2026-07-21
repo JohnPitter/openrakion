@@ -54,6 +54,8 @@ namespace RakionServer.World.Tests.E2E
 
             var (ms, js, field) = JourneyHelper.DriveToUdpReadyRoom(
                 server, master, joiner, HeadlessWorldClient.RoomSpec.TeamDeath("bot-2h"), fixture.UdpPort2);
+            field.Slots[ms.FieldSeat].UsesTunneling = false;
+            field.Slots[js.FieldSeat].UsesTunneling = false;
 
             // joiner vai para o time 1; bot entra no time oposto ao master (time 1 também) -> mira o joiner?
             // O bot entra no time OPOSTO ao HOST (master, time 0) => time 1. Alvo do bot = inimigos (time 0) = master.
@@ -110,6 +112,39 @@ namespace RakionServer.World.Tests.E2E
             Assert.Equal((byte)bot.Seat, death![2]);
         }
 
+        [Fact]
+        public async Task Bot_WithForcedTunneling_PublishesMovementAndDamageOverTcp()
+        {
+            await using var fixture = await WorldServerFixture.CreateAsync(forceTunneling: true);
+            if (!fixture.Available) return;
+            WorldServer server = fixture.Server!;
+
+            await using var human = await HeadlessWorldClient.ConnectAsync(
+                WorldServerFixture.Host, fixture.TcpPort, "tunnel-bot");
+            var (session, field, bot) = await SetupBotMatchAsync(
+                server, human, fixture, BotDifficulty.Normal);
+
+            PlayerRec humanRecord = field.Slots[session.FieldSeat];
+            humanRecord.UsesTunneling = true;
+            var spot = new BotVector(1000, 0, 1000);
+            humanRecord.Position = spot;
+            field.Slots[bot.Seat].Position = spot;
+            bot.Position = spot;
+
+            byte[] movement = human.WaitFor(
+                frame => IsTunneledBotAction(frame, bot.Seat, BotMovement.MoveType),
+                JourneyHelper.Timeout);
+            Assert.Equal(BotMovement.MoveSize, BitConverter.ToUInt16(movement, 2));
+
+            human.SendBotTelemetryAttack(fixture.UdpPort2, session.FieldSeat, kind: 1);
+            byte[] damage = human.WaitFor(
+                frame => IsTunneledBotAction(frame, bot.Seat, BotMovement.AttackType) &&
+                    frame[12] == (byte)PlayerAnimationKind.Damage,
+                JourneyHelper.Timeout);
+            Assert.Equal(GameplayActionDatagram.ExtendedAnimationSize,
+                BitConverter.ToUInt16(damage, 2));
+        }
+
         private static bool IsBotDamage(byte[] packet, byte botSeat) =>
             packet.Length == GameplayActionDatagram.ExtendedAnimationSize &&
             packet[0] == 0x11 && packet[1] == 0x03 && packet[6] == botSeat &&
@@ -119,6 +154,14 @@ namespace RakionServer.World.Tests.E2E
         {
             // frame de campo do servidor: conteúdo decifrado começa por [u16 msgType=0x4f]...
             return frame.Length >= 7 && frame[0] == 0x4f && frame[1] == 0x00;
+        }
+
+        private static bool IsTunneledBotAction(byte[] frame, byte botSeat, ushort type)
+        {
+            if (frame.Length < 11 || frame[0] != 0x57 || frame[1] != 0) return false;
+            ushort payloadLength = BitConverter.ToUInt16(frame, 2);
+            return frame.Length >= payloadLength + 4 && payloadLength >= 7 &&
+                BitConverter.ToUInt16(frame, 4) == type && frame[10] == botSeat;
         }
 
         private static async Task<(ClientSession hs, Field field, BotPlayer bot)> SetupBotMatchAsync(
@@ -140,6 +183,7 @@ namespace RakionServer.World.Tests.E2E
             human.UdpHandshake(fixture.UdpPort2, hs.Slot, hs.UdpKey);
             JourneyHelper.WaitUntil(() => hs.UdpEndpoint != null, "endpoint UDP não autenticado");
             human.WaitForUdp(p => p.Length == 12 && p[0] == 0x01 && p[1] == 0x02, JourneyHelper.Timeout);
+            field.Slots[hs.FieldSeat].UsesTunneling = false;
 
             lock (field.SyncRoot)
             {

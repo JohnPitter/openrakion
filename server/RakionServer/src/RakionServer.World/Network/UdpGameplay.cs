@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using RakionServer.Common;
+using RakionServer.World.Domain;
 
 namespace RakionServer.World.Network
 {
@@ -99,6 +100,23 @@ namespace RakionServer.World.Network
         {
             try { _sock?.SendTo(datagram, to); }
             catch (Exception ex) { Log.Debug("udp", "bot datagram {0}: {1}", to, ex.Message); }
+        }
+
+        public void SendBotGameplay(PlayerRec target, byte[] datagram)
+        {
+            ClientSession? session = target.Session;
+            if (session == null || !target.Occupied) return;
+            if (target.UsesTunneling)
+            {
+                using var writer = new PacketWriter();
+                writer.WriteWord((ushort)datagram.Length);
+                writer.WriteBytes(datagram);
+                session.SendMessage(0x57, writer.ToArray());
+                return;
+            }
+
+            if (session.UdpEndpoint != null)
+                SendGameplayDatagram(session.UdpEndpoint, datagram);
         }
 
         public void SendTick(IPEndPoint to, byte seq, byte state = DefaultGameplayState)
@@ -279,11 +297,12 @@ namespace RakionServer.World.Network
 
         private void BroadcastBotFeedback(int fieldId, byte[] datagram)
         {
-            foreach (ClientSession session in _world.Sessions)
+            Field? field = _world.GetField(fieldId);
+            if (field == null) return;
+            lock (field.SyncRoot)
             {
-                if (!session.InField || session.FieldId != fieldId || session.UdpEndpoint == null)
-                    continue;
-                SendGameplayDatagram(session.UdpEndpoint, datagram);
+                foreach (PlayerRec target in field.Slots)
+                    SendBotGameplay(target, datagram);
             }
         }
     }
