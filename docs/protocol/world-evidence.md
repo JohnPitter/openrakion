@@ -489,6 +489,12 @@ antiga colisão inferida pela ordem dos exports; `SendFieldSlotUDP` é `0x62`, n
 O .NET foi corrigido para usar o mesmo alvo e corpo; a regressão de domínio cobre alvo válido e
 seat vazio.
 
+Uma captura gráfica posterior mostrou oito pedidos `C→S 0x62 [targetSeat]` do master antes do
+início da partida sem qualquer resposta. O handler os descartava porque exigia `InField (3)`,
+enquanto o modelo .NET conserva `FieldLobby (2)` na game room. A compatibilidade foi limitada aos
+estados `2/3` com associação de field e slots válida; o E2E agora prova que o alvo recebe
+`S→C 0x62 [senderSeat]` ainda antes do carregamento do stage.
+
 No World, `FUN_00424B60` confirma os gates `mode!=0`, `State=2`, `Phase=2`, aplica o bônus de
 EXP antes do anti-cheat e só envia `0x51 [level][levelPoint:u16]` quando `FUN_0040D300` retorna
 level-up. A mesma função mostra que cada level-up soma 3 level points. `FUN_00405980` fecha o

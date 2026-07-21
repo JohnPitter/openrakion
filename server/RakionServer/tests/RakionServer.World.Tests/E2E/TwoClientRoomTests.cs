@@ -69,6 +69,15 @@ namespace RakionServer.World.Tests.E2E
             Assert.Equal(2, occupied);
             Assert.Contains(field.Slots, rec => rec.Session == masterSession);
             Assert.Contains(field.Slots, rec => rec.Session == joinerSession);
+
+            // O cliente gráfico solicita o peer UDP ainda na game room, antes do 0x4B.
+            Assert.Equal(UserStatus.FieldLobby, masterSession.Status);
+            Assert.Equal(UserStatus.FieldLobby, joinerSession.Status);
+            master.Send(0x62, new[] { joinerSession.FieldSeat });
+            byte[] bootstrap = joiner.WaitForNext(
+                frame => frame.Length >= 3 && frame[0] == 0x62 && frame[1] == 0x00,
+                Timeout);
+            Assert.Equal(masterSession.FieldSeat, bootstrap[2]);
         }
 
         private static ClientSession WaitForSession(

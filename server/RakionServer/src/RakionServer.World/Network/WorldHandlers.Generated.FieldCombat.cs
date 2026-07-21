@@ -81,7 +81,8 @@ namespace RakionServer.World.Network
         private static void Op_FieldRelayAction(HandlerContext ctx)
         {
             var u = ctx.User;
-            if (!(u.InField && u.FieldSecondary && u.Status == 0x03)) return;
+            if (!(u.InField && u.FieldSecondary)) return;
+            if (u.Status != UserStatus.FieldLobby && u.Status != UserStatus.InField) return;
             if (!ctx.P.CanRead(1)) return;
             byte targetSeat = ctx.P.Byte();
             Field? field = ctx.World.GetField(u.FieldId);
@@ -90,6 +91,8 @@ namespace RakionServer.World.Network
                 return;
 
             target!.SendMessage(0x62, new[] { senderSeat });
+            Log.Debug("field", "[{0}] 0x62 bootstrap UDP seat {1}->{2} no field {3}",
+                u.Slot, senderSeat, targetSeat, field.Id);
         }
 
 

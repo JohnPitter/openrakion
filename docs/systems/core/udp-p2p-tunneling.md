@@ -16,6 +16,12 @@ record e envia somente ao alvo `S→C 0x62 [senderSeat]`. O callback
 `rakion.bin:0x00473980` publica então um datagrama unreliable com o próprio seat. A implementação
 .NET deixou de fazer broadcast e agora preserva alvo e origem do original.
 
+No executável original, `FUN_0041C2B0` recebe esse pedido com `user+0x1440 == 3` ainda na game
+room. O ciclo .NET mantém `FieldLobby (2)` durante essa tela para rotear os comandos de sala e só
+promove a sessão a `InField (3)` no carregamento `0x4B`. Por isso, o handler aceita `0x62` nos
+dois estados, mas apenas quando `InField`, `FieldSecondary`, field, record de origem e slot de alvo
+já são válidos. O teste E2E de dois clientes cobre explicitamente o bootstrap antes do `0x4B`.
+
 O handshake, o brokering de endpoints, os codecs conhecidos e o fallback TCP estão reconstruídos
 estaticamente. A implementação .NET passa o probe headless com três sessões. Entretanto, uma
 captura direta nas portas `2300..2399` ainda é necessária para declarar o transporte P2P completo
