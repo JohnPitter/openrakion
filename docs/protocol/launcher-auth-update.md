@@ -68,6 +68,11 @@ retorna `{ "ticket": "...", "expiresAt": "..." }`.
 - o cliente envia o ticket diretamente em `IScavengerWorldNet::SendLogin`; o World o consome
   atomicamente antes de promover a sessão;
 - credencial inválida não promove mais a sessão do World;
+- uma segunda sessão da mesma conta é recusada pelo World mesmo que o launcher seja contornado;
+- o World publica somente hashes SHA-256 normalizados das contas ativas em um snapshot local;
+- depois de validar a senha, o LauncherWeb responde `409 account_in_use` quando a conta já está
+  conectada; requisição inválida usa `400 invalid_request` e credenciais incorretas usam
+  `401 invalid_credentials`;
 - quando ticket está habilitado no launcher, falha da API interrompe o launch, sem downgrade
   silencioso para senha reutilizável;
 - senha e ticket nunca são escritos nos logs.

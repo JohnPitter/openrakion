@@ -23,10 +23,10 @@ public static class ModernAuthEndpoints
             request.AppId <= 0 || request.BuildVersion < 0)
             return Results.BadRequest(new TicketError("invalid_request"));
 
-        IssuedLauncherTicket? issued;
+        LauncherTicketIssueResult result;
         try
         {
-            issued = await repository.IssueAsync(
+            result = await repository.IssueAsync(
                 account, password,
                 new LauncherBuildIdentity(request.AppId, request.BuildVersion), cancellationToken);
         }
@@ -36,12 +36,18 @@ public static class ModernAuthEndpoints
                 account, error.GetType().Name);
             return Results.Json(new TicketError("service_unavailable"), statusCode: 503);
         }
-        if (issued is null)
+        if (result.Status == LauncherTicketIssueStatus.InvalidCredentials)
         {
             Log.Warn("web", "ticket recusado para user={0}", account);
             return Results.Json(new TicketError("invalid_credentials"), statusCode: 401);
         }
+        if (result.Status == LauncherTicketIssueStatus.AccountInUse)
+        {
+            Log.Warn("web", "ticket recusado: conta já conectada user={0}", account);
+            return Results.Json(new TicketError("account_in_use"), statusCode: 409);
+        }
 
+        IssuedLauncherTicket issued = result.Ticket!;
         Log.Ok("web", "ticket emitido para user={0}, expira em {1:O}",
             account, issued.ExpiresAt);
         return Results.Ok(new TicketResponse(issued.Ticket, issued.ExpiresAt));

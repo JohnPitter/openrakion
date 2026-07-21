@@ -39,6 +39,12 @@ O launcher roda como usuário normal. Para o `rakion.exe` legado, ele cria um bl
 dedicado com `__COMPAT_LAYER=RunAsInvoker`; assim preserva a linha de comando especial
 `argv[0]=user` e evita o prompt UAC sem alterar o executável pristine.
 
+## Bandeja do sistema
+
+O botão `X` oculta o launcher e o mantém na bandeja do sistema. Um clique no ícone ou a opção
+**Abrir launcher** restaura a janela. O processo só é encerrado pela opção **Fechar** do menu da
+bandeja; isso mantém o status dos clientes e as verificações do servidor ativos.
+
 ## Login por ticket e update assinado
 
 O launcher pode trocar a senha por um ticket aleatório de 20 caracteres antes de iniciar o jogo e
@@ -56,7 +62,8 @@ aplicar releases assinadas com ECDSA P-256/SHA-256. Em servidor remoto, a URL pr
 ```
 
 Copie a chave pública para junto do launcher. Se a emissão do ticket falhar, o jogo não é aberto e
-não há fallback silencioso para a senha. O launcher inclui `appId` e a versão persistida em
+não há fallback silencioso para a senha. A UI distingue login inválido, credenciais inválidas e
+conta já conectada antes de abrir o cliente. O launcher inclui `appId` e a versão persistida em
 `.update/version` no ticket; o World pode exigir esse par com `RequiredAppId` e
 `RequiredBuildVersion`. Para testar somente o updater:
 
@@ -67,7 +74,8 @@ dotnet RakionLauncher.dll --update-only C:\Rakion
 O passo a passo de servidor, publicação, rollout e rollback está em
 [`docs/protocol/launcher-auth-update.md`](../../docs/protocol/launcher-auth-update.md).
 
-O arquivo versionado `launcher.settings.json` mantém updates desabilitados por segurança. O recurso
+O arquivo versionado `launcher.settings.json` mantém updates desabilitados por segurança e a
+autenticação por ticket habilitada. O recurso de update
 só fica ativo depois de configurar a URL, distribuir `update-public.pem` e definir
 `updatesEnabled: true`. Ele atualiza o conteúdo do cliente, inclusive `version.dll` e
 `RakionClientPatch.dll`; atualizar o próprio launcher em execução exige um bootstrapper externo.

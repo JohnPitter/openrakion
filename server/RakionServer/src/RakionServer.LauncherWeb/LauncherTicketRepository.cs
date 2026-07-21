@@ -8,8 +8,14 @@ namespace RakionServer.LauncherWeb;
 public sealed class LauncherTicketRepository
 {
     private readonly LauncherWebConfig _config;
+    private readonly ActiveAccountLookup _activeAccounts;
 
-    public LauncherTicketRepository(LauncherWebConfig config) => _config = config;
+    public LauncherTicketRepository(
+        LauncherWebConfig config, ActiveAccountLookup activeAccounts)
+    {
+        _config = config;
+        _activeAccounts = activeAccounts;
+    }
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken = default)
     {
@@ -20,18 +26,21 @@ public sealed class LauncherTicketRepository
             await ExecuteSchemaAsync(connection, sql, cancellationToken);
     }
 
-    public async Task<IssuedLauncherTicket?> IssueAsync(
+    public async Task<LauncherTicketIssueResult> IssueAsync(
         string account, string password, CancellationToken cancellationToken)
         => await IssueAsync(account, password, default, cancellationToken);
 
-    public async Task<IssuedLauncherTicket?> IssueAsync(
+    public async Task<LauncherTicketIssueResult> IssueAsync(
         string account, string password, LauncherBuildIdentity build,
         CancellationToken cancellationToken)
     {
         await using var connection = new MySqlConnection(_config.ConnectionString!);
         await connection.OpenAsync(cancellationToken);
         string? storedPassword = await ReadPasswordAsync(connection, account, cancellationToken);
-        if (storedPassword is null || !PasswordsEqual(storedPassword, password)) return null;
+        if (storedPassword is null || !PasswordsEqual(storedPassword, password))
+            return new(LauncherTicketIssueStatus.InvalidCredentials, null);
+        if (_activeAccounts.Contains(account))
+            return new(LauncherTicketIssueStatus.AccountInUse, null);
 
         string token = LauncherTicketToken.Create();
         DateTime expiresAt = DateTime.UtcNow.AddSeconds(_config.TicketLifetimeSeconds);
@@ -45,7 +54,8 @@ public sealed class LauncherTicketRepository
         command.Parameters.AddWithValue("@build", build.BuildVersion);
         command.Parameters.AddWithValue("@expires", expiresAt);
         await command.ExecuteNonQueryAsync(cancellationToken);
-        return new IssuedLauncherTicket(token, expiresAt);
+        return new(LauncherTicketIssueStatus.Success,
+            new IssuedLauncherTicket(token, expiresAt));
     }
 
     private static async Task ExecuteSchemaAsync(
@@ -74,3 +84,6 @@ public sealed class LauncherTicketRepository
 }
 
 public sealed record IssuedLauncherTicket(string Ticket, DateTime ExpiresAt);
+public sealed record LauncherTicketIssueResult(
+    LauncherTicketIssueStatus Status, IssuedLauncherTicket? Ticket);
+public enum LauncherTicketIssueStatus { Success, InvalidCredentials, AccountInUse }

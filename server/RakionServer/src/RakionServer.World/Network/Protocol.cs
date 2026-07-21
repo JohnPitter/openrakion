@@ -84,6 +84,7 @@ namespace RakionServer.World.Network
             public const byte Category = 3;
             public const byte Main = 0x0C;       // 12 (opcode Login ecoado)
             public const byte SubInvalidCredential = 1; // política OpenRakion; valor histórico não confirmado
+            public const byte SubAccountInUse = 2;      // conta autenticada em outra sessão
             public const byte SubHashMismatch = 8;
             public const byte SubServerFull = 10;// capacidade (this+0x536c) atingida
         }

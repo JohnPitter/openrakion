@@ -35,6 +35,23 @@ public sealed class LaunchAuthenticatorTests
                 Config(ticketAuth: true), 259, "test", "secret"));
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.Conflict, "account_in_use", "Esta conta já está aberta.")]
+    [InlineData(HttpStatusCode.BadRequest, "invalid_request", "Login/usuário inválido.")]
+    [InlineData(HttpStatusCode.Unauthorized, "invalid_credentials", "Usuário ou senha inválidos.")]
+    public async Task TicketFailureShowsSpecificLoginReason(
+        HttpStatusCode status, string code, string expectedMessage)
+    {
+        var authenticator = new LaunchAuthenticator(new HttpClient(
+            new AuthHandler(status, $"{{\"error\":\"{code}\"}}")));
+
+        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            authenticator.GetCredentialAsync(
+                Config(ticketAuth: true), 259, "test", "secret"));
+
+        Assert.Equal(expectedMessage, error.Message);
+    }
+
     [Fact]
     public async Task DisabledTicketModeKeepsRolloutCompatibility()
     {

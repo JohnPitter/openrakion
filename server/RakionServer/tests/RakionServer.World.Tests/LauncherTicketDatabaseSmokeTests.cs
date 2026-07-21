@@ -40,13 +40,16 @@ public sealed class LauncherTicketDatabaseSmokeTests
 
             var webConfig = new LauncherWebConfig(new Uri("http://127.0.0.1/"),
                 false, false, true, true, 60, scoped.ConnectionString, ".", null);
-            var issuer = new LauncherTicketRepository(webConfig);
+            var issuer = new LauncherTicketRepository(
+                webConfig, new ActiveAccountLookup(Path.Combine(database, "active.json")));
             await issuer.EnsureSchemaAsync();
             var world = new WorldDatabase(WorldDbConfig(scoped));
             var build = new LauncherBuildIdentity(11001, 259);
 
-            IssuedLauncherTicket issued = Assert.IsType<IssuedLauncherTicket>(
-                await issuer.IssueAsync("test", "secret", build, default));
+            LauncherTicketIssueResult issuedResult =
+                await issuer.IssueAsync("test", "secret", build, default);
+            Assert.Equal(LauncherTicketIssueStatus.Success, issuedResult.Status);
+            IssuedLauncherTicket issued = Assert.IsType<IssuedLauncherTicket>(issuedResult.Ticket);
             Assert.Null(await world.AuthenticateCredentialAsync(
                 "other", issued.Ticket, allowPasswordLogin: false));
             Assert.Null(await world.AuthenticateCredentialAsync(
@@ -59,8 +62,9 @@ public sealed class LauncherTicketDatabaseSmokeTests
             Assert.Null(await world.AuthenticateCredentialAsync(
                 "test", issued.Ticket, allowPasswordLogin: false));
 
-            IssuedLauncherTicket expired = Assert.IsType<IssuedLauncherTicket>(
-                await issuer.IssueAsync("test", "secret", build, default));
+            LauncherTicketIssueResult expiredResult =
+                await issuer.IssueAsync("test", "secret", build, default);
+            IssuedLauncherTicket expired = Assert.IsType<IssuedLauncherTicket>(expiredResult.Ticket);
             await ExecuteAsync(scoped.ConnectionString,
                 "UPDATE launcher_ticket SET expires_at=UTC_TIMESTAMP(6)-INTERVAL 1 SECOND " +
                 "WHERE used_at IS NULL");

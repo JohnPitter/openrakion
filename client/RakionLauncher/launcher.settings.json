@@ -1,6 +1,6 @@
 {
   "updatesEnabled": false,
-  "ticketAuthEnabled": false,
+  "ticketAuthEnabled": true,
   "updateBaseUrl": "http://127.0.0.1/",
   "appId": 11001,
   "baseVersion": 258,

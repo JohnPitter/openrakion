@@ -26,8 +26,11 @@ internal sealed class MainForm : Form
     private readonly System.Windows.Forms.Timer _serverStatusTimer = new() { Interval = 10000 };
     private readonly System.Windows.Forms.Timer _clientStatusTimer = new() { Interval = 1000 };
     private readonly ServerStatusClient _serverStatusClient = new();
+    private readonly NotifyIcon _trayIcon = new();
+    private readonly ContextMenuStrip _trayMenu = new();
 
     private bool _drag; private Point _dragOrigin;
+    private bool _exitRequested, _trayHintShown;
     private int _clients;
 
     public MainForm()
@@ -48,6 +51,7 @@ internal sealed class MainForm : Form
         Font = new Font("Segoe UI", 9f);
 
         BuildHeader();
+        BuildTray();
         BuildBanner();
         BuildStatus();          // antes dos botões: o status fica atrás, os botões na frente
         BuildLoginAndButtons();
@@ -60,11 +64,60 @@ internal sealed class MainForm : Form
         _clientStatusTimer.Tick += (_, _) => RefreshClientCount();
         _serverStatusTimer.Start();
         _clientStatusTimer.Start();
+        FormClosing += OnFormClosing;
         FormClosed += (_, _) =>
         {
             _serverStatusTimer.Dispose();
             _clientStatusTimer.Dispose();
+            _trayIcon.Dispose();
+            _trayMenu.Dispose();
         };
+    }
+
+    private void BuildTray()
+    {
+        var open = new ToolStripMenuItem("Abrir launcher");
+        open.Click += (_, _) => RestoreFromTray();
+        var exit = new ToolStripMenuItem("Fechar");
+        exit.Click += (_, _) => ExitFromTray();
+        _trayIcon.Icon = Icon ?? SystemIcons.Application;
+        _trayIcon.Text = "Rakion Launcher";
+        _trayMenu.Items.Add(open);
+        _trayMenu.Items.Add(new ToolStripSeparator());
+        _trayMenu.Items.Add(exit);
+        _trayIcon.ContextMenuStrip = _trayMenu;
+        _trayIcon.MouseClick += (_, eventArgs) =>
+        {
+            if (eventArgs.Button == MouseButtons.Left) RestoreFromTray();
+        };
+        _trayIcon.Visible = true;
+    }
+
+    private void OnFormClosing(object? sender, FormClosingEventArgs eventArgs)
+    {
+        if (_exitRequested || eventArgs.CloseReason != CloseReason.UserClosing) return;
+        eventArgs.Cancel = true;
+        Hide();
+        ShowInTaskbar = false;
+        if (_trayHintShown) return;
+        _trayHintShown = true;
+        _trayIcon.ShowBalloonTip(2500, "Rakion Launcher",
+            "O launcher continua aberto na bandeja do sistema.", ToolTipIcon.Info);
+    }
+
+    private void RestoreFromTray()
+    {
+        ShowInTaskbar = true;
+        Show();
+        WindowState = FormWindowState.Normal;
+        Activate();
+    }
+
+    private void ExitFromTray()
+    {
+        _exitRequested = true;
+        _trayIcon.Visible = false;
+        Close();
     }
 
     private void BuildHeader()

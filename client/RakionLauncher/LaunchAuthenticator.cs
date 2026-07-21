@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 using RakionServer.Common;
 
 namespace RakionLauncher;
@@ -21,9 +22,16 @@ internal sealed class LaunchAuthenticator
             endpoint, new TicketRequest(
                 user, password, config.AppId, buildVersion), cancellationToken);
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException(response.StatusCode == System.Net.HttpStatusCode.Unauthorized
-                ? "Usuário ou senha inválidos."
-                : "O serviço de autenticação recusou o login.");
+        {
+            string? error = await ReadErrorCodeAsync(response, cancellationToken);
+            throw new InvalidOperationException(error switch
+            {
+                "account_in_use" => "Esta conta já está aberta.",
+                "invalid_request" => "Login/usuário inválido.",
+                "invalid_credentials" => "Usuário ou senha inválidos.",
+                _ => "O serviço de autenticação recusou o login."
+            });
+        }
 
         TicketResponse? result = await response.Content.ReadFromJsonAsync<TicketResponse>(
             cancellationToken: cancellationToken);
@@ -36,4 +44,16 @@ internal sealed class LaunchAuthenticator
     private sealed record TicketRequest(
         string User, string Password, int AppId, int BuildVersion);
     private sealed record TicketResponse(string Ticket, DateTime ExpiresAt);
+    private sealed record TicketError(string Error);
+
+    private static async Task<string?> ReadErrorCodeAsync(
+        HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return (await response.Content.ReadFromJsonAsync<TicketError>(
+                cancellationToken: cancellationToken))?.Error;
+        }
+        catch (JsonException) { return null; }
+    }
 }

@@ -16,6 +16,7 @@ LauncherWebConfig config = LauncherWebConfig.Load(
 builder.WebHost.UseUrls(config.Endpoint.ToString());
 builder.Services.AddSingleton(config);
 builder.Services.AddSingleton<UpdateReleaseProvider>();
+builder.Services.AddSingleton<ActiveAccountLookup>();
 builder.Services.AddSingleton<LauncherTicketRepository>();
 builder.Services.AddRateLimiter(options =>
 {

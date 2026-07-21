@@ -9,7 +9,7 @@ param(
     [ValidateSet('windowed', 'borderless', 'fullscreen')]
     [string]$DisplayMode = 'windowed',
     [switch]$EnableUpdates,
-    [switch]$EnableTicketAuth,
+    [switch]$EnableTicketAuth = $true,
     [string]$PublicKeyPath
 )
 

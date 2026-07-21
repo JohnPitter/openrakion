@@ -825,6 +825,15 @@ namespace RakionServer.World
             {
                 ServerStatusSnapshotStore.Write(new ServerStatusSnapshot(
                     online, online ? CurrentUsers : 0, MaxUser, DateTimeOffset.UtcNow));
+                string[] accounts = online
+                    ? _sessions.Values
+                        .Where(session => session.Authenticated)
+                        .Select(session => ActiveAccountSnapshotStore.Hash(session.UserId))
+                        .Distinct(StringComparer.Ordinal)
+                        .ToArray()
+                    : Array.Empty<string>();
+                ActiveAccountSnapshotStore.Write(new ActiveAccountSnapshot(
+                    online, accounts, DateTimeOffset.UtcNow));
             }
             catch (Exception ex)
             {
@@ -1007,13 +1016,26 @@ namespace RakionServer.World
                     ? Domain.UserSubStatus.Gm
                     : Domain.UserSubStatus.Normal;
             }
-            s.SlotActive = true;
-            s.Authenticated = true;
-            s.UserId = account;
-            s.Status = Domain.UserStatus.LoggedIn;
-            s.CharName = account;
-            s.GroupId = Groups.Count > 0 ? Groups[0].Id : 0;
-            Interlocked.Increment(ref _currentUsers);
+            lock (_sessions)
+            {
+                bool accountInUse = _sessions.Values.Any(other =>
+                    other != s && other.Authenticated &&
+                    string.Equals(other.UserId, account, StringComparison.OrdinalIgnoreCase));
+                if (accountInUse)
+                {
+                    Log.Warn("auth", "[{0}] conta '{1}' já conectada", s.Slot, account);
+                    s.SendLoginError(Protocol.LoginError.SubAccountInUse);
+                    return;
+                }
+                s.SlotActive = true;
+                s.Authenticated = true;
+                s.UserId = account;
+                s.Status = Domain.UserStatus.LoggedIn;
+                s.CharName = account;
+                s.GroupId = Groups.Count > 0 ? Groups[0].Id : 0;
+                Interlocked.Increment(ref _currentUsers);
+            }
+            PublishServerStatus(true);
 
             // Carrega gold/cash/level/itens do DB ANTES do 0x0C: a síntese do 0x0C serializa gold/cash do
             // estado vivo (o display reflete a compra). Sincrono p/ garantir s.Gold/s.Cash setados no 0x0C.
@@ -1314,6 +1336,7 @@ namespace RakionServer.World
                 LeaveChannel(s, true);
                 if (s.Authenticated)
                     Interlocked.Decrement(ref _currentUsers);
+                PublishServerStatus(true);
                 await _db.CloseConnectionLogAsync(s.ConnectionLogId, s.DisconnectReason);
                 Log.Info("world", "[{0}] sessao encerrada ('{1}') — {2}/{3} online",
                     s.Slot, s.UserId, CurrentUsers, MaxUser);
