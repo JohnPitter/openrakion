@@ -293,7 +293,7 @@ slot em `rakion_orig.exe`; a única chamada exata desta build está no `entities
 
 | primeiro campo de `EPlayerDeath` | `cause` enviado | derivação comprovada |
 |---:|---:|---|
-| `1` | `2` ou `8` | predicado `0x35169440`; `8` é o ramo especial de dois pontos |
+| `1` | `2` ou `8` | predicado `0x35169440`; tráfego gráfico confirmou `8` em eliminação comum, valendo um ponto |
 | `3` | `7` ou `4` | `4` somente quando o terceiro campo resolve a classe `NpcGoldGolem`; senão `7` |
 | `8` | `1` | substitui o killer pelo próprio seat em `CPlayer+0x264` |
 | `4` | `5` ou `6` | segundo campo `0` gera `5`; segundo campo `10` gera `6` |

@@ -454,9 +454,11 @@ contadores `+0x12D/+0x12E` e pontos de resultado `+0x130`; o port anterior mistu
 `tools/world_combat_probe.py` executou uma sala modo `3` com seats `0` e `10`. O primeiro
 `0x4F [cause=8][killer=10]` foi entregue aos dois clientes como
 `4F 00 00 08 0A 00 02`; um segundo `0x4F [cause=0][killer=10]` foi aceito sem respawn explícito
-e entregue como `4F 00 00 00 0A 00 03`. Isso comprova score `+2/+1`, broadcast idêntico e que a
-vítima permanece playing em Team Death. A fixture foi removida e a conta principal permaneceu
-com 23 itens e 23 seriais.
+e entregue como `4F 00 00 00 0A 00 03`. Isso documenta o comportamento `+2/+1` da reconstrução
+inicial, o broadcast idêntico e que a vítima permanece playing em Team Death. O `+2` foi removido
+após o cliente gráfico reportar uma eliminação comum como `cause=8`: a regra publicada do jogo é
+um ponto por oponente eliminado. A fixture foi removida e a conta principal permaneceu com 23
+itens e 23 seriais.
 
 Na repetição de 2026-07-15, os dois jogadores enviaram `0x46 [flag=2]`. Ambos receberam primeiro
 `46 00 00`, depois `46 00 0A` e exatamente um fim PvP
@@ -951,8 +953,10 @@ sem consumidor comprovado.
 `tools/world_deathmatch_probe.py` atravessou create/join/ready/start/spawn com duas sessões em
 modo `2` e frag limit `2`. O reporte `0x4F [cause=8,killer=1]` chegou aos dois peers como
 `4F 00 00 08 01 00 02`; em seguida, ambos receberam `4A 00 01 00 00 00`. Isso confirma score
-individual do killer, `reason=1`, ausência de incremento em `Wins0/Wins1` e que o fim individual
-não fabrica um lado vencedor para persistência.
+individual do killer e `reason=1` na reconstrução inicial. O valor `02` não é mantido como regra:
+o teste gráfico posterior identificou `cause=8` em eliminação comum, que deve valer um ponto.
+A ausência de incremento em `Wins0/Wins1` e o fato de o fim individual não fabricar um lado
+vencedor para persistência permanecem válidos.
 
 O sample `0C839A00000000000100002A0091010400000001000000` confirma a composição: raw `0x830C`,
 sequence `0x9A`, source `0`, e corpo `0x030C` com entity class `1` (player), event type

@@ -702,6 +702,8 @@ namespace RakionServer.World
             lock (f.SyncRoot)
             {
                 long now = Environment.TickCount64;
+                bool alreadyPlaying = f.Phase == Domain.MatchPhase.Playing &&
+                    f.FindRec(s)?.Playing == true;
                 bool started = f.OnPlayerReady(s, now);
                 if (started)
                 {
@@ -709,6 +711,12 @@ namespace RakionServer.World
                     f.BroadcastLobby(f.Build0x48());
                     Log.Ok("field", "[{0}] partida iniciada no field {1} (0x48 a {2} player(s))",
                         s.Slot, f.Id, f.CountPlaying());
+                }
+                else if (alreadyPlaying)
+                {
+                    s.SendEncryptedFrame(f.Build0x48());
+                    Log.Info("field", "[{0}] field {1}: 0x48 repetido confirmado ao cliente",
+                        s.Slot, f.Id);
                 }
                 else
                 {

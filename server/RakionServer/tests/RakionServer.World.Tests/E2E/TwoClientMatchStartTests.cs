@@ -150,6 +150,17 @@ namespace RakionServer.World.Tests.E2E
                 joiner.DrainReceived();
                 Assert.Single(master.Received.Skip(masterFramesBeforeReady), IsRoundStart);
                 Assert.Single(joiner.Received, IsRoundStart);
+
+                int masterRoundStarts = master.Received.Count(IsRoundStart);
+                int joinerRoundStarts = joiner.Received.Count(IsRoundStart);
+                master.RoundStart();
+                WaitUntil(() =>
+                {
+                    master.DrainReceived();
+                    return master.Received.Count(IsRoundStart) == masterRoundStarts + 1;
+                }, Timeout, "0x48 repetido do master não foi confirmado");
+                joiner.DrainReceived();
+                Assert.Equal(joinerRoundStarts, joiner.Received.Count(IsRoundStart));
             }
         }
 

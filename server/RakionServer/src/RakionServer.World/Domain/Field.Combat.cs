@@ -90,7 +90,7 @@ namespace RakionServer.World.Domain
             }
             else
             {
-                killer.RoundScore = AddByte(killer.RoundScore, cause == 8 ? 2 : 1);
+                killer.RoundScore = AddByte(killer.RoundScore, 1);
             }
 
             if (FragLimit > 0 && killer.RoundScore >= FragLimit) BeginIndividualRoundEnd();
@@ -104,7 +104,7 @@ namespace RakionServer.World.Domain
             if (cause is 1 or 8)
             {
                 scoringTeam = victim.Team == 0 ? 1 : 0;
-                delta = cause == 8 ? 2 : 1;
+                delta = 1;
             }
             else
             {

@@ -21,7 +21,7 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
-        public void Deathmatch_SuicideDecrementsVictimAndSpecialKillAddsTwo()
+        public void Deathmatch_SuicideDecrementsVictimAndCauseEightAddsOneKill()
         {
             Field field = CreatePlayingField(GameMode.Deathmatch);
             field.Slots[0].RoundScore = 2;
@@ -31,14 +31,14 @@ namespace RakionServer.World.Tests
 
             Assert.Equal((byte)1, suicide.ScoreA);
             Assert.Equal((byte)0, suicide.ScoreB);
-            Assert.Equal((byte)2, special.ScoreB);
+            Assert.Equal((byte)1, special.ScoreB);
         }
 
         [Fact]
         public void Deathmatch_FragLimitEndsRoundWithoutTeamWinMutation()
         {
             Field field = CreatePlayingField(GameMode.Deathmatch);
-            field.FragLimit = 2;
+            field.FragLimit = 1;
 
             field.ApplyReportedDeath(0, 10, cause: 8);
 
@@ -52,12 +52,12 @@ namespace RakionServer.World.Tests
         public void TeamDeath_UsesTeamScoreAndOriginalLosingSideEncoding()
         {
             Field field = CreatePlayingField(GameMode.TeamDeath);
-            field.FragLimit = 2;
+            field.FragLimit = 1;
 
             DeathReportResult result = field.ApplyReportedDeath(0, 10, cause: 8);
 
             Assert.Equal((byte)0, result.ScoreA);
-            Assert.Equal((byte)2, result.ScoreB);
+            Assert.Equal((byte)1, result.ScoreB);
             Assert.Equal((byte)1, field.Wins1);
             Assert.Equal((byte)0, field.LosingSideWire);
             Assert.Equal(MatchPhase.RoundEnd, field.Phase);

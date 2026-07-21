@@ -106,18 +106,25 @@ Gold Golem, Golden Sword e Master Golem são entidades da game session/P2P; cons
 ### Deathmatch
 
 - `cause=1` decrementa o score da vítima, sem ficar negativo;
-- `cause=8` soma dois ao killer;
-- demais causas somam um;
+- toda eliminação adversária soma um ao killer, inclusive `cause=8`;
 - a vítima não é eliminada permanentemente;
 - frag limit encerra o round sem incrementar `Wins0/Wins1`;
 - no prazo, empate no maior score retorna lado `2`;
 - o resultado W/L/D do World original é draw para modo 2.
 
 O produtor nativo em `entitiesmp.dll:CPlayer::Death @ 0x3515E830` confirma que `cause=1` é morte
-própria: ele troca o killer pelo seat local em `CPlayer+0x264`. `cause=8` é o ramo especial do mesmo
-grupo que produz `cause=2`; o predicado distingue os dois, mas seu nome original não sobreviveu no
-binário. A seleção completa está em
+própria: ele troca o killer pelo seat local em `CPlayer+0x264`. `cause=8` é um ramo do mesmo grupo
+que produz `cause=2`; o predicado distingue os dois, mas seu nome original não sobreviveu no
+binário. Em tráfego gráfico real, uma eliminação comum chegou como `cause=8`. Por compatibilidade
+com o cliente e com a regra oficial de um ponto por adversário, ambos valem uma kill. A seleção
+completa está em
 [`combat-actions-status.md`](combat-actions-status.md#causas-de-morte-e-placar).
+
+A regra é publicada tanto pela [Softnyx](https://rakion.softnyx.com/GameInfo/Mode/DeathMathTeam.aspx)
+quanto pela [Lemon8/Neosonyx](https://rakion.playlemon8.com/GameInfo/Mode/DeathMathTeam.aspx).
+O guia oficial da [Rakion SEA](https://rakionsea.playpark.com/game-guide/game-mode/) também fixa
+uma eliminação de jogador em `01 Exp`. Esse EXP integra o resultado `0x50` enviado pelo cliente no
+fim do round e não deve ser somado novamente ao processar a morte `0x4F`.
 
 O probe alcançou score individual `0/14` e recebeu `0x4A [1,0,0,0]`, sem inventar vitória do
 time associado ao seat.
@@ -125,12 +132,13 @@ time associado ao seat.
 ### Team Death
 
 - kills são agregadas em `Score0/Score1`;
-- suicídio e kill especial pontuam o time oposto em um/dois pontos;
+- suicídio e `cause=8` pontuam o time oposto em um ponto;
 - kill normal pontua o time do killer;
 - frag limit, prazo ou ausência de membros ativos de um time encerram o round;
 - o settle grava win/lose/draw pelo time do registro.
 
-O probe confirmou kills `+2/+1` e o give-up do último membro do time 0 publicando exatamente
+O probe histórico confirmou os dois valores emitidos pela reconstrução inicial. A validação gráfica
+posterior corrigiu `cause=8` para `+1`; o give-up do último membro do time 0 publica exatamente
 `0x46 [seat]` e `0x4A [1,0,0,1]` ao peer ainda ativo.
 
 ### Boss
