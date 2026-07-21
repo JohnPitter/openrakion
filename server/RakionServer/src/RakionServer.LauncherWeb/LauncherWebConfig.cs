@@ -16,7 +16,7 @@ public sealed record LauncherWebConfig(
         bool ticketAuth = configuration.GetValue("Auth:Enabled", false);
         bool ensureTicketSchema = configuration.GetValue("Auth:EnsureSchema", true);
         int ticketLifetime = Math.Clamp(
-            configuration.GetValue("Auth:TicketLifetimeSeconds", 60), 15, 300);
+            configuration.GetValue("Auth:TicketLifetimeSeconds", 900), 60, 1800);
         string? connectionString = configuration.GetConnectionString("Rakion");
         if ((legacy || ticketAuth) && string.IsNullOrWhiteSpace(connectionString))
             throw new InvalidOperationException(

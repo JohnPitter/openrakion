@@ -162,7 +162,7 @@ $env:LauncherWeb__Url='https://launcher.exemplo.com:443'
 $env:ConnectionStrings__Rakion='Server=127.0.0.1;Database=rakion;Uid=launcher_app;Pwd=troque;'
 $env:Auth__Enabled='true'
 $env:Auth__EnsureSchema='false'
-$env:Auth__TicketLifetimeSeconds='60'
+$env:Auth__TicketLifetimeSeconds='900'
 $env:Updates__Enabled='true'
 $env:Updates__ContentRoot=$env:RAKION_UPDATE_ROOT
 $env:Updates__SigningPrivateKeyPath="$env:RAKION_SECRETS\update-private.pem"
@@ -172,6 +172,10 @@ $env:Legacy__Enabled='false'
 No primeiro boot/migração, use `Auth__EnsureSchema=true` com uma conta capaz de criar a tabela.
 Depois use `false` e uma conta runtime dedicada com `SELECT` em `user(id,password)` e
 `SELECT/INSERT/UPDATE` em `launcher_ticket`; não use `root` em produção.
+
+O ticket é descartável e continua sendo consumido uma única vez pelo World. O valor recomendado de
+900 segundos cobre o tempo em que o cliente legado pode permanecer na seleção de servidor antes de
+abrir a conexão World. Valores configurados são limitados ao intervalo de 60 a 1800 segundos.
 
 ### 3. Publicar uma release
 
