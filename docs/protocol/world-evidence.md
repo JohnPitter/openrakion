@@ -1543,6 +1543,12 @@ ao chamar o callback com `payload[0]` e `payload[1]`. O .NET enviava sucesso com
 o jogador no seat `1` interpretava esse valor como status de erro e exibia `Not Playing`, apesar do
 combate ativo. O golden e o E2E agora exigem `[0, seat]`; rejeições usam `[status, seat]`.
 
+Depois da correção do status, o segundo cliente avançou de `Not Playing` para `Waiting for other
+players`. A ordem observada explica a transição: o spawn do master pode chegar enquanto o joiner
+ainda troca de cena, e o cliente gráfico não envia depois o `0x45` existente nas sondas headless.
+No primeiro `0x4B` do jogador tardio, o World agora repete os spawns dos peers já `state=4`. Um E2E
+dedicado drena os frames antecipados e prova que a entrada tardia recebe novamente master e self.
+
 ## Variações que não podem ser copiadas
 
 - handles/ponteiros vistos em `0x0E` e `0x2C` pertencem à sessão; `0x14` leva apenas o personagem,

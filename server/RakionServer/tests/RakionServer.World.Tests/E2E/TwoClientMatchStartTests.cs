@@ -199,6 +199,47 @@ namespace RakionServer.World.Tests.E2E
             }
         }
 
+        [Fact]
+        public async Task SlowerJoiner_ReplaysMasterSpawnWhenEnteringStage()
+        {
+            await using var fixture = await WorldServerFixture.CreateAsync(forceTunneling: true);
+            if (!fixture.Available) return;
+            var (master, joiner, field, joinerSession) = await PrepareRoom(
+                fixture, HeadlessWorldClient.RoomSpec.Deathmatch("e2e-late-spawn"));
+            await using (master)
+            await using (joiner)
+            {
+                ClientSession masterSession = field.Master!;
+                joiner.SetReady(true);
+                WaitUntil(() => field.FindRec(joinerSession)?.LobbyReady == true, Timeout,
+                    "joiner não ficou ready");
+                master.StartMatch();
+                WaitUntil(() => field.MatchId != Guid.Empty, Timeout, "partida não armou");
+
+                master.RoundStart();
+                master.SpawnField(new byte[] { 1, 2, 3, 4 });
+                WaitUntil(() => masterSession.PlayerSpawnMatchId == field.MatchId, Timeout,
+                    "master não entrou primeiro");
+
+                joiner.RoundStart();
+                WaitUntil(() => field.Phase == MatchPhase.Playing, Timeout,
+                    "joiner não concluiu o carregamento");
+                joiner.DrainReceived();
+                int beforeLateSpawn = joiner.Received.Count;
+
+                joiner.SpawnField(new byte[] { 5, 6, 7, 8 });
+                WaitUntil(() => joinerSession.PlayerSpawnMatchId == field.MatchId, Timeout,
+                    "joiner não publicou o próprio spawn");
+                Thread.Sleep(200);
+                joiner.DrainReceived();
+
+                byte[] seats = joiner.Received.Skip(beforeLateSpawn)
+                    .Where(IsSpawn).Select(frame => frame[3]).OrderBy(seat => seat).ToArray();
+                Assert.Equal(new[] { masterSession.FieldSeat, joinerSession.FieldSeat }
+                    .OrderBy(seat => seat).ToArray(), seats);
+            }
+        }
+
         private static bool IsRoundStart(byte[] frame) =>
             frame.Length >= 2 && frame[0] == 0x48 && frame[1] == 0;
 

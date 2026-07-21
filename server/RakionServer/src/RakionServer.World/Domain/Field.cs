@@ -458,6 +458,18 @@ namespace RakionServer.World.Domain
             return replayed;
         }
 
+        public int ReplayPlayerSpawnsTo(ClientSession target)
+        {
+            int replayed = 0;
+            foreach (PlayerRec source in Slots)
+            {
+                if (!source.Playing || source.Session == target) continue;
+                target.SendMessage(0x45, FieldLifecycleFrames.Spawn((byte)source.Slot));
+                replayed++;
+            }
+            return replayed;
+        }
+
         private static byte[] BuildPlayerMovement(PlayerRec source, byte[] movement)
         {
             using var writer = new PacketWriter();

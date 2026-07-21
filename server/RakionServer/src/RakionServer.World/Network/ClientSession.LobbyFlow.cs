@@ -453,7 +453,10 @@ namespace RakionServer.World.Network
                         f, FieldSeat, _server.Config.ForceTunneling))
                 {
                     PlayerSpawnMatchId = f.MatchId;
+                    int peerSpawns = f.ReplayPlayerSpawnsTo(this);
                     _server.Bots.SendMatchSpawnsTo(this, f);
+                    Log.Info("field", "[{0}] entrada no stage sincronizou {1} spawn(s) de peer",
+                        Slot, peerSpawns);
                 }
             }
             Log.Ok("field", "[{0}] sala aplicada ao field {1}: mode={2} map={3} dur={4}s rounds={5}",
