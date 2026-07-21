@@ -42,7 +42,7 @@ namespace RakionServer.World.Tests
             Assert.InRange(result.Seat, 10, 19);                 // host time 0 -> bot time 1
             Assert.Equal((byte)1, field.Slots[result.Seat].Team);
             Assert.NotNull(field.Slots[result.Seat].Bot);
-            Assert.Equal((byte)3, field.Slots[result.Seat].State); // ready
+            Assert.Equal((byte)2, field.Slots[result.Seat].State); // ready
             Assert.True(field.Slots[result.Seat].LobbyReady);
             Assert.Equal(1, field.BotCount);
         }

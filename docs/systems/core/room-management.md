@@ -168,6 +168,12 @@ cstr name; cstr password; cstr description
     u16 serverUserSlot; u8 auth; playerRecord variável
 ```
 
+Em salas competitivas comuns, o World original abre seis assentos por time e publica os slots
+`6..9` e `16..19` com estado `5` (fechado). O `0x3D [ready]` não mantém um booleano paralelo:
+ele alterna o estado do registro entre `1` (aguardando) e `2` (pronto). No `0x43`, status `2`
+indica capacidade aberta diferente entre os times e status `3` indica outro jogador ainda não
+pronto. O start bem-sucedido promove estados `1/2` para `3`.
+
 Cada entrada da lista `0x36`, após `fieldId`, segue exatamente:
 
 ```text
@@ -263,10 +269,10 @@ Consequências observáveis atuais:
 | quick enter | RE estático + headless | `0x39` selecionou sala pública aberta, entregou `0x38/0x37` e não emitiu `0x26`; visual pendente |
 | senha | RE + golden + probe | flag correta na lista, comparação atômica no join, status `3` em erro; nunca logada |
 | roster/membros | codec implementado e headless validado | `Field.Slots` é canônico; `0x38` incremental e `0x37` completo chegaram às duas sessões; UI pendente |
-| capacidade | RE + concorrência | modos competitivos usam 12 vagas; 40 candidatos não excederam capacidade nem duplicaram seat |
+| capacidade | RE + concorrência | modos competitivos usam 12 vagas, seis por time; slots `6..9` e `16..19` começam fechados; 40 candidatos não excederam capacidade nem duplicaram seat |
 | dono/boss | RE estático + headless | `0x3C [newSeat]` transferiu host `seat 0→10`; visual ainda falta |
 | troca de time | RE estático + headless | membro mudou `seat 1→10`; ambos receberam `0x3E [0][1][10]` |
-| ready | headless validado | `0x3D` em status 2 atualiza e transmite seat/ready; visual ainda pendente |
+| ready | RE + headless + visual | `0x3D` alterna o estado canônico `1/2` e transmite seat/ready; a divergência que exibia `Wrong number of closed slots` foi corrigida |
 | regra | headless validada | broadcast idêntico do payload, domínio atualizado e ready resetado |
 | lock de slot | headless validado | somente host altera slot vazio utilizável |
 | kick | RE estático + headless | original chama a rotina de saída e devolve o alvo ao canal (`Status=2`); .NET publica `0x3A`, preserva a conexão e devolve a vítima por `0x1F/0x1E/0x36` |

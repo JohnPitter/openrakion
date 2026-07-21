@@ -196,7 +196,16 @@ namespace RakionServer.World.Network
             {
                 var record = field.FindRec(this);
                 if (record == null) return;
-                record.LobbyReady = ready != 0;
+                if (ready == 0)
+                {
+                    if (record.State != 2) return;
+                    record.State = 1;
+                }
+                else
+                {
+                    if (record.State != 1) return;
+                    record.State = 2;
+                }
                 field.BroadcastField(0x3d, new[] { (byte)record.Slot, ready });
             }
             Log.Info("room", "[{0}] sala {1}: ready={2}", Slot, field.Id, ready);
@@ -342,7 +351,7 @@ namespace RakionServer.World.Network
                     if (!record.Occupied || record.Session == this) continue;
                     if (!record.LobbyReady)
                     {
-                        SendEncryptedFrame(LobbyFrames.MatchStartAck(2));
+                        SendEncryptedFrame(LobbyFrames.MatchStartAck(3));
                         return;
                     }
                 }

@@ -7,8 +7,8 @@ namespace RakionServer.World.Domain
 {
     /// <summary>
     /// Estado do player dentro de um Field (espelha o registro de 0x14 bytes em
-    /// field+0x124 + i*0x14 do worldserv.exe). state: 0=vazio, 1=alive/armaA,
-    /// 2=alive/armaB, 3=ready/spawning, 4=playing/alive, 5=spectator/locked.
+    /// field+0x124 + i*0x14 do worldserv.exe). state: 0=vazio, 1=aguardando,
+    /// 2=pronto, 3=spawning, 4=playing/alive, 5=slot fechado.
     /// </summary>
     public sealed class PlayerRec
     {
@@ -22,7 +22,7 @@ namespace RakionServer.World.Domain
         public uint ResultPoints;         // +12 (+0x130): pontos/EXP acumulados no resultado
         public byte VoteState;            // +16 (+0x134): 0=nao votou, 1=sim, 2=nao, 3=abstencao
         public byte Cause;               // ultima causa de morte
-        public bool LobbyReady;           // prontidão no lobby, separada do spawn
+        public bool LobbyReady => State == 2;
         public bool UsesTunneling;         // user+0x1478: sem rota UDP direta confirmada
         public BotPlayer? Bot;             // peer sintético server-side (assento ocupado por bot)
         public BotVector Position;          // última posição observada (do 0x030A do humano / IA do bot) p/ mira do bot
@@ -173,7 +173,6 @@ namespace RakionServer.World.Domain
                 rec.CounterB = 0;
                 rec.ResultPoints = 0;
                 rec.VoteState = 0;
-                rec.LobbyReady = false;
                 rec.UsesTunneling = false;
             }
         }
@@ -239,8 +238,7 @@ namespace RakionServer.World.Domain
         {
             var existing = FindRec(s);
             if (existing != null) return existing.Slot;
-            int seatLimit = Math.Min(Slots.Length, Math.Max(1, (int)MaxPlayers));
-            for (int i = 0; i < seatLimit; i++)
+            for (int i = 0; i < Slots.Length; i++)
             {
                 if (Slots[i].State == 0 && Slots[i].Session == null)
                 {
@@ -253,11 +251,34 @@ namespace RakionServer.World.Domain
                     Slots[i].CounterB = 0;
                     Slots[i].ResultPoints = 0;
                     Slots[i].VoteState = 0;
-                    Slots[i].LobbyReady = false;
                     return i;
                 }
             }
             return -1;
+        }
+
+        public void InitializeLobbySlots()
+        {
+            if (Mode == 0)
+            {
+                CloseSeatRange(MaxPlayers, Slots.Length);
+                return;
+            }
+
+            int teamASeats = (MaxPlayers + 1) / 2;
+            int teamBSeats = MaxPlayers / 2;
+            CloseSeatRange(teamASeats, 10);
+            CloseSeatRange(10 + teamBSeats, Slots.Length);
+        }
+
+        private void CloseSeatRange(int start, int end)
+        {
+            for (int seat = Math.Clamp(start, 0, Slots.Length);
+                 seat < Math.Clamp(end, 0, Slots.Length);
+                 seat++)
+            {
+                Slots[seat].State = 5;
+            }
         }
 
         public int CountPlaying()
@@ -537,7 +558,6 @@ namespace RakionServer.World.Domain
                 if (!record.Occupied) continue;
                 record.State = 3;
                 record.Dead = false;
-                record.LobbyReady = false;
             }
         }
 

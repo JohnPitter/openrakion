@@ -156,7 +156,7 @@ namespace RakionServer.World.Tests
         public void ForceChangeTeam_MovesRequestedRecordToFirstOppositeSeat()
         {
             var (field, _, member) = CreateRoom();
-            field.Slots[1].State = 2;
+            field.Slots[1].State = 1;
             field.Slots[1].RoundScore = 7;
 
             ForcedTeamChangeResult result = field.ForceChangeTeam(1, out byte newSeat);
@@ -170,17 +170,18 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
-        public void ForceChangeTeam_DeniesReadyTargetWithoutMutation()
+        public void ForceChangeTeam_MovesReadyTargetAndPreservesReadyState()
         {
             var (field, _, member) = CreateRoom();
-            field.Slots[1].State = 1;
-            field.Slots[1].LobbyReady = true;
+            field.Slots[1].State = 2;
 
             ForcedTeamChangeResult result = field.ForceChangeTeam(1, out byte newSeat);
 
-            Assert.Equal(ForcedTeamChangeResult.Denied, result);
-            Assert.Equal(1, newSeat);
-            Assert.Same(member, field.Slots[1].Session);
+            Assert.Equal(ForcedTeamChangeResult.Changed, result);
+            Assert.Equal(10, newSeat);
+            Assert.Null(field.Slots[1].Session);
+            Assert.Same(member, field.Slots[10].Session);
+            Assert.Equal((byte)2, field.Slots[10].State);
         }
 
         [Fact]
@@ -301,6 +302,10 @@ namespace RakionServer.World.Tests
             Assert.Equal((byte)3, snapshot.MaxRounds);
             Assert.Equal((byte)1, snapshot.PlayerCount);
             Assert.Equal((byte)12, snapshot.MaxPlayers);
+            Assert.All(new[] { 0, 1, 2, 3, 4, 5, 10, 11, 12, 13, 14, 15 },
+                seat => Assert.NotEqual((byte)5, field.Slots[seat].State));
+            Assert.All(new[] { 6, 7, 8, 9, 16, 17, 18, 19 },
+                seat => Assert.Equal((byte)5, field.Slots[seat].State));
         }
 
         [Fact]

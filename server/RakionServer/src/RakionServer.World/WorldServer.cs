@@ -105,6 +105,7 @@ namespace RakionServer.World
                     // resultado pendente; ResetMatch troca para false somente no start autorizado.
                     Settled = true,
                 };
+                field.InitializeLobbySlots();
                 if (!JoinField(master, field, true))
                     throw new InvalidOperationException("Não foi possível alocar o master da sala.");
                 lock (Fields) Fields.Add(field);

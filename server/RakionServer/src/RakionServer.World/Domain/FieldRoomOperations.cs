@@ -67,7 +67,6 @@ namespace RakionServer.World.Domain
             if (sourceSeat >= Slots.Length) return ForcedTeamChangeResult.Ignored;
             PlayerRec source = Slots[sourceSeat];
             if (source.State is not (1 or 2)) return ForcedTeamChangeResult.Ignored;
-            if (source.LobbyReady) return ForcedTeamChangeResult.Denied;
 
             int start = sourceSeat < 10 ? 10 : 0;
             int end = sourceSeat < 10 ? Slots.Length : 10;
@@ -102,11 +101,13 @@ namespace RakionServer.World.Domain
             if (locked && target.State == 0 && target.Session == null)
             {
                 target.State = 5;
+                MaxPlayers--;
                 return true;
             }
             if (!locked && target.State == 5 && target.Session == null)
             {
                 target.State = 0;
+                MaxPlayers++;
                 return true;
             }
             return false;
@@ -115,7 +116,7 @@ namespace RakionServer.World.Domain
         public void ResetLobbyReady()
         {
             foreach (var record in Slots)
-                if (record.Occupied) record.LobbyReady = false;
+                if (record.State == 2) record.State = 1;
         }
 
         private static bool IsUsableTeamSeat(byte seat) =>
@@ -133,7 +134,6 @@ namespace RakionServer.World.Domain
             target.ResultPoints = source.ResultPoints;
             target.VoteState = source.VoteState;
             target.Cause = source.Cause;
-            target.LobbyReady = source.LobbyReady;
         }
 
         private static void ClearRecord(PlayerRec record)
@@ -148,7 +148,6 @@ namespace RakionServer.World.Domain
             record.ResultPoints = 0;
             record.VoteState = 0;
             record.Cause = 0;
-            record.LobbyReady = false;
         }
     }
 }

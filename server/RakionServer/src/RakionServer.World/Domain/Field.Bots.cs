@@ -23,7 +23,7 @@ namespace RakionServer.World.Domain
 
         /// <summary>
         /// Aloca um bot num assento livre do <paramref name="team"/> pedido (0 = 0..9, 1 = 10..19).
-        /// O bot entra READY (State 3), como um humano que já marcou pronto. Devolve o seat ou -1
+        /// O bot entra pronto (State 2), como um humano que já marcou pronto. Devolve o seat ou -1
         /// se o bloco do time estiver cheio.
         /// </summary>
         public int AddBot(BotPlayer bot, byte team)
@@ -37,10 +37,9 @@ namespace RakionServer.World.Domain
                 {
                     bot.Seat = (byte)i;
                     rec.Bot = bot;
-                    rec.State = 3;          // ready (mesmo estado de um humano pronto)
+                    rec.State = 2;
                     rec.WeaponState = 1;
                     rec.Dead = false;
-                    rec.LobbyReady = true;  // bot está sempre pronto (não trava o start do host)
                     return i;
                 }
             }
@@ -76,7 +75,6 @@ namespace RakionServer.World.Domain
             rec.CounterB = 0;
             rec.ResultPoints = 0;
             rec.VoteState = 0;
-            rec.LobbyReady = false;
         }
 
         /// <summary>True se ainda há algum humano (Session != null) ocupando o field.</summary>
