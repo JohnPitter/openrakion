@@ -31,6 +31,7 @@ namespace RakionServer.World.Domain
         public int Health { get; private set; } = 100;
         public long NextAttackReadyMs;   // cooldown do ataque sintetizado do bot
         public long HitReactionUntilMs;  // evita que o próximo 0x030A apague imediatamente a reação visual
+        public long RespawnAtMs { get; private set; }
 
         /// <summary>HP inicial derivado de level/classe (curva simples; server-authoritative p/ o bot).</summary>
         public void InitHealth(byte level)
@@ -38,6 +39,7 @@ namespace RakionServer.World.Domain
             MaxHealth = 100 + level * 10;
             Health = MaxHealth;
             Alive = true;
+            RespawnAtMs = 0;
             LifecycleSequence++;
         }
 
@@ -54,6 +56,25 @@ namespace RakionServer.World.Domain
         }
 
         public void BeginHitReaction(long nowMs) => HitReactionUntilMs = nowMs + 300;
+
+        public void ScheduleRespawn(long nowMs, int delayMs)
+        {
+            RespawnAtMs = !Alive && delayMs > 0 ? nowMs + delayMs : 0;
+        }
+
+        public bool TryRespawn(long nowMs)
+        {
+            if (Alive || RespawnAtMs == 0 || nowMs < RespawnAtMs) return false;
+            Health = MaxHealth;
+            Alive = true;
+            RespawnAtMs = 0;
+            Velocity = default;
+            TargetSeat = Field.NoSeat;
+            NextAttackReadyMs = 0;
+            HitReactionUntilMs = 0;
+            LifecycleSequence++;
+            return true;
+        }
 
         // Estado interno da IA: EMA da velocidade do alvo (antecipação) e a última posição observada.
         private BotVector _targetVelocityEma;

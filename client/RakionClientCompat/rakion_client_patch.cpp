@@ -200,6 +200,10 @@ std::vector<BYTE> BuildCode(uintptr_t cave)
     const auto botEndpoint = code.size();
     Emit(code, { 0xa1, 0x30, 0x36, 0x2b, 0x35, 0xff, 0xd0, 0x3b, 0xe8 });
     const auto remoteAttacker = ShortBranch(code, 0x75);
+    code.push_back(0x53);
+    code.push_back(0xb8);
+    Emit32(code, static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&ReportBotHit)));
+    Emit(code, { 0xff, 0xd0 });
     Emit(code, { 0x8b, 0x84, 0x24 });
     Emit32(code, ReceiveDamageStackReturnOffset);
     code.push_back(0x3d);
@@ -223,8 +227,8 @@ DWORD WINAPI InstallCompatibility(void*)
     if (!IsRakionProcess()) return 0;
     ApplyCharacterUiLifecycleFix();
     CompatLog(InstallBotTelemetryHook()
-        ? "ponte P2P->World para hit de bot instalada"
-        : "ponte P2P->World indisponível");
+        ? "telemetria P2P->World de movimento e hit real instalada"
+        : "telemetria P2P->World indisponível");
     CompatLog(InstallBuddyRefreshHooks()
         ? "sincronizacao inicial do Messenger instalada"
         : "sincronizacao do Messenger indisponivel para esta build");

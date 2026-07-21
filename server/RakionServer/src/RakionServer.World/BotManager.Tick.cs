@@ -1,4 +1,5 @@
 using System;
+using RakionServer.Common;
 using RakionServer.World.Domain;
 using RakionServer.World.Network;
 
@@ -22,7 +23,7 @@ namespace RakionServer.World
                 foreach (PlayerRec botRec in field.BotSlots)
                 {
                     BotPlayer bot = botRec.Bot!;
-                    if (!bot.Alive) continue;
+                    if (!bot.Alive && !TryRespawn(field, botRec, bot, now)) continue;
                     if (botRec.State == 3) botRec.State = 4;   // ready -> playing (vítima válida do 0x4f)
                     if (now < bot.HitReactionUntilMs) continue;
 
@@ -45,6 +46,17 @@ namespace RakionServer.World
                     }
                 }
             }
+        }
+
+        private bool TryRespawn(Field field, PlayerRec record, BotPlayer bot, long now)
+        {
+            if (!bot.TryRespawn(now)) return false;
+            record.Dead = false;
+            record.State = 4;
+            PublishBotLifecycles(field);
+            Log.Ok("bot", "bot seat {0} respawnou com hp={1}/{2} (field {3})",
+                record.Slot, bot.Health, bot.MaxHealth, field.Id);
+            return true;
         }
 
         private static void Broadcast(Field field, Action<PlayerRec, byte[]> send, byte[] datagram)

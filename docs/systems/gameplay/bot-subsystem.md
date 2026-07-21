@@ -3,9 +3,9 @@
 Bot **funcional** reconstruído do zero sobre o motor de partida do golden, ancorado no RE. A
 implementação antiga (do master pré-golden) foi descartada. O bot é um **peer sintético
 server-side**: entra no roster como um jogador, é movido pela IA e tem o movimento sintetizado no
-fio. Nos testes headless, o ataque chega pela extensão UDP do World; no cliente gráfico, a DLL de
-compatibilidade captura movimento e ataque na entrada de `CNet::SendToOtherClient` e os espelha ao
-World pelo envelope `0xB07A`, sem duplicar o pacote entregue aos peers e sem exigir um peer humano.
+fio. No cliente gráfico, a DLL de compatibilidade espelha apenas o movimento local ao World pelo
+envelope `0xB07A`. O dano usa um contrato separado, `0xB07B`: ele só é emitido no ponto em que a
+engine confirmou a colisão com o bot, contendo sequência antirreplay e o assento exato da vítima.
 O retorno do bot segue a rota real de cada humano: `0x57` via TCP para clientes com tunneling e
 datagrama UDP somente para peers com rota direta.
 No túnel, o World remove o cabeçalho P2P `[sequence:u32][transportSource:u8]`: movimento cru de
@@ -34,7 +34,7 @@ re-tentado). Regras invioláveis herdadas do RE:
 | Domínio/IA (puro) | `Domain/BotProfile.cs`, `BotVector.cs`, `BotSteering.cs`, `BotPlayer.cs` | dificuldade Easy/Normal/Hard, perseguição/orbita-melee/antecipação (EMA), estado do bot |
 | Field | `Domain/Field.Bots.cs` (+ `PlayerRec.Bot`/`Position`) | assentos de bot, `AddBot`/`RemoveAllBots`, `BotSlots` |
 | Serviço | `BotManager.cs`, `BotManager.Tick.cs` | add host-only/time-oposto/pré-match, lifecycle, tick de IA→síntese |
-| Rede | `Network/RoomRosterFrames.cs` (bot record), `BotMovement.cs` | member-join 0x38 do bot, síntese do 0x030A |
+| Rede | `Network/RoomRosterFrames.cs`, `BotMovement.cs`, `BotHitTelemetryDatagram.cs` | roster, síntese do 0x030A e confirmação autenticada de hit |
 | Comando | `WorldHandlers.Field.cs` (`/addbot`) | `/addbot [facil\|normal\|dificil] [n]`, feedback ao host |
 
 ## Fluxo
@@ -54,21 +54,24 @@ re-tentado). Regras invioláveis herdadas do RE:
    `UdpGameplay.SendBotGameplay`. O servidor é a **fonte**; não há relay do bot. Em `ForceTunneling`,
    o payload nativo, sem o cabeçalho de transporte P2P, é encapsulado no `0x57`; no modo direto, o
    datagrama completo segue pelo endpoint UDP autenticado.
-3. **Cleanup**: fim de match / último humano sai → `RemoveAllBots`.
+3. **Morte e respawn**: o lifecycle muda para morto e é aplicado pela DLL no game thread. Em
+   Deathmatch, Team Death e Boss, o World agenda o respawn autoritativo de **7 segundos**, restaura
+   HP/estado/IA e publica um novo lifecycle vivo; Golem continua seguindo eliminação por round.
+4. **Cleanup**: fim de match / último humano sai → `RemoveAllBots`.
 
 ## Combate (server-side, dentro do teto RE)
 
 O servidor é a **autoridade do HP do bot** (`BotPlayer.Health`, curva `100 + level*10`). O que é
 entregue e o que é teto:
 
-- **Bot como VÍTIMA (funcional no canal World)**: quando o World recebe um ataque de melee humano
-  (`0x0311` kind=Attack),
-  o `UdpGameplay` chama `WorldServer.ResolveBotMeleeAttack` → `BotCombat.ResolveMeleeAttack` aplica
-  dano aos bots inimigos vivos no alcance (posições rastreadas). A cada acerto, o servidor devolve
+- **Bot como VÍTIMA (funcional no canal World)**: `0x0311 kind=Attack` é somente animação e **não
+  prova hit**. O hook nativo de colisão envia `0xB07B(sequence,targetSeat)` ao endpoint autenticado
+  do World. O servidor rejeita replay e valida partida, atacante vivo, assento exato, time e alcance
+  em `ResolveConfirmedBotHit`/`BotCombat.TryApplyConfirmedHit`. A cada acerto, o servidor devolve
   um `0x0311 kind=Damage` estendido com o assento do bot e segura a IA por 300 ms, tornando a reação
   publicada ao cliente. Ao zerar o HP, a morte é liquidada
   pelo **`Field.ApplyReportedDeath`** do modo e transmitida com **`0x4f`** aos humanos: o atacante
-  recebe o kill/pontos. A detecção autoritativa é por ataque, time, estado e proximidade no servidor;
+  recebe o kill/pontos. A detecção autoritativa combina colisão da engine com as regras do servidor;
   o cliente apresenta a reação, mas não computa o número cosmético HIT×N (gate `[+0x394]`, limite
   type-7).
 - **Bot como ATACANTE (cosmético)**: no melee, o tick sintetiza a animação de ataque (`0x0311`
@@ -82,13 +85,17 @@ entregue e o que é teto:
   em até dez segundos na escala wire real (100 unidades wire = 1 unidade de mapa).
 - `BotManagerTests` (6): add pelo host no time oposto, gates (não-host / em-jogo / solo), limpeza,
   time cheio.
+- `BotHitTelemetryDatagramTests` e `BotCombatTests`: contrato `0xB07B`, alvo exato, time, alcance,
+  dano e morte; a telemetria de animação `0x0311` isolada não altera HP.
+- `BotRespawnTests`: política de 7 segundos e restauração de HP/lifecycle.
 - `BotMovementSynthTests` (4): formato do 0x030A, assento/`sourceEcho`, roundtrip da posição e reação
   estendida `0x0311 kind=Damage`.
 - `E2E/AddBotButtonCommandE2ETests` (1): envia exatamente `GoHeroi : /addbot` pelo `0x47` capturado
   do botão e confirma bot no time oposto sem derrubar o host da sala.
 - `E2E/BotMovementE2ETests` (1): no fio, um humano recebe o `0x030A` sintetizado do bot com a
   partida em jogo.
-- `E2E/BotStageValidationTests`: o primeiro golpe reduz HP e retorna `0x0311 kind=Damage` ao humano;
+- `E2E/BotStageValidationTests`: prova que animação isolada não reduz HP; o hit `0xB07B` reduz HP e
+  retorna `0x0311 kind=Damage` ao humano;
   golpes seguintes matam o bot e publicam `0x4F` com o assento correto; também cobre movimento e
   reação de dano encapsulados em TCP `0x57` quando `ForceTunneling` está ativo.
 
@@ -96,8 +103,8 @@ entregue e o que é teto:
 
 Entregue e provado no cliente gráfico em 18/07/2026: botão Add Bot, roster, criação da entidade
 `Rok` no stage Mammoth, captura do primeiro ataque pela DLL, HP `500→0` no World e aplicação nativa
-dos lifecycles `alive seq=1` e `dead seq=2`. Ainda não foi aprovada visualmente a animação de dano,
-o respawn, nem o HUD de kill (a captura permaneceu em `0 Kills`); esses itens continuam no Smoke 3.
+dos lifecycles `alive seq=1` e `dead seq=2`. O fluxo novo de colisão real `0xB07B` e o lifecycle de
+respawn passaram no build/test automatizado, mas ainda precisam da aprovação visual no cliente.
 **Não** entregue por limite arquitetural: o número cosmético HIT×N nativo (exige peer de sessão real). Extensões possíveis
 (hitbox mais precisa, projéteis e dano bot→humano) seguem o mesmo teto sem um peer simulado pelo
 engine. Ver o cluster HIT×N na memória do projeto.

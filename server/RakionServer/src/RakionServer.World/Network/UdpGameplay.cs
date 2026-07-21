@@ -147,6 +147,12 @@ namespace RakionServer.World.Network
                 return;
             }
 
+            if (BotHitTelemetryDatagram.TryParse(pkt, out BotHitTelemetry hit))
+            {
+                ProcessConfirmedBotHit(from, hit);
+                return;
+            }
+
             // O World v258 ignora os tipos 0x03xx/0x83xx nesta porta: eles pertencem ao
             // socket P2P direto do engine. O relay abaixo é uma extensão de compatibilidade
             // para ambientes onde os peers não conseguem abrir o canal direto.
@@ -239,6 +245,20 @@ namespace RakionServer.World.Network
                 type, sender.Slot);
         }
 
+        private void ProcessConfirmedBotHit(IPEndPoint from, BotHitTelemetry hit)
+        {
+            ClientSession? sender = ResolveSender(from);
+            if (sender == null || !sender.InField || !sender.TryAcceptBotHitSequence(hit.Sequence))
+            {
+                Log.Warn("udp", "hit de bot inválido, repetido ou não autenticado de {0}", from);
+                return;
+            }
+            if (!_relayLimits.TryConsume(sender.Slot, sender.UdpKey, Environment.TickCount64)) return;
+
+            _world.ResolveConfirmedBotHit(sender, hit.TargetSeat,
+                feedback => BroadcastBotFeedback(sender.FieldId, feedback));
+        }
+
         private void RelayToUdpPeers(
             ClientSession sender, ReadOnlySpan<byte> packet, ushort type)
         {
@@ -287,12 +307,6 @@ namespace RakionServer.World.Network
                 var field = _world.GetField(sender.FieldId);
                 var rec = field?.FindRec(sender);
                 if (rec != null) rec.Position = humanPos;
-            }
-            // Ataque de melee humano (0x0311 kind=Attack): o servidor resolve dano nos bots inimigos.
-            else if (type == BotMovement.AttackType && packet.Length >= BotMovement.AttackSize && packet[8] == 1)
-            {
-                _world.ResolveBotMeleeAttack(sender,
-                    feedback => BroadcastBotFeedback(sender.FieldId, feedback));
             }
         }
 

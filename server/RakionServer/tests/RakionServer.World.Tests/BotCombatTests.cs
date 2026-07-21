@@ -1,68 +1,69 @@
-using System.Collections.Generic;
 using RakionServer.World.Domain;
 using Xunit;
 
 namespace RakionServer.World.Tests
 {
-    /// <summary>Combate server-side do bot: dano de melee, morte, filtro de time e alcance.</summary>
     public sealed class BotCombatTests
     {
-        private static Field GolemFieldWithBot(byte team, BotVector botPos)
+        private static (Field Field, PlayerRec Attacker, byte BotSeat) Match(
+            byte botTeam, BotVector attackerPosition, BotVector botPosition)
         {
-            var field = new Field(1) { Mode = (byte)GameMode.Golem, State = 2, Phase = MatchPhase.Playing };
-            var bot = new BotPlayer { Name = "B", Team = team, Position = botPos };
-            bot.InitHealth(1);   // MaxHealth = 110
-            int seat = field.AddBot(bot, team);
+            var field = new Field(1)
+            {
+                Mode = (byte)GameMode.Deathmatch,
+                State = 2,
+                Phase = MatchPhase.Playing
+            };
+            var attacker = field.Slots[0];
+            attacker.State = 4;
+            attacker.Position = attackerPosition;
+
+            var bot = new BotPlayer { Name = "B", Team = botTeam, Position = botPosition };
+            bot.InitHealth(1);
+            int seat = field.AddBot(bot, botTeam);
             field.Slots[seat].State = 4;
-            field.Slots[seat].Position = botPos;
-            return field;
+            field.Slots[seat].Position = botPosition;
+            return (field, attacker, (byte)seat);
         }
 
         [Fact]
-        public void MeleeAttack_DamagesEnemyBotInRange()
+        public void ConfirmedHit_DamagesOnlyDeclaredEnemyBotInRange()
         {
-            var field = GolemFieldWithBot(team: 1, new BotVector(100, 0, 100));
-            int before = field.Slots[10].Bot!.Health;
+            var match = Match(1, new BotVector(120, 0, 120), new BotVector(100, 0, 100));
+            int before = match.Field.Slots[match.BotSeat].Bot!.Health;
 
-            var hits = BotCombat.ResolveMeleeAttack(field, new BotVector(120, 0, 120), attackerTeam: 0, damage: 40);
+            bool applied = BotCombat.TryApplyConfirmedHit(
+                match.Field, match.Attacker, match.BotSeat, 40, out var hit);
 
-            Assert.Single(hits);
-            Assert.False(hits[0].Died);
-            Assert.Equal(before - 40, hits[0].Bot.Bot!.Health);
+            Assert.True(applied);
+            Assert.False(hit.Died);
+            Assert.Equal(before - 40, hit.BotRecord.Bot!.Health);
         }
 
         [Fact]
-        public void MeleeAttack_KillsBotWhenHealthDepleted()
+        public void ConfirmedHit_KillsDeclaredBotWhenHealthDepletes()
         {
-            var field = GolemFieldWithBot(team: 1, new BotVector(0, 0, 0));
+            var match = Match(1, default, default);
 
-            var hits = BotCombat.ResolveMeleeAttack(field, new BotVector(0, 0, 0), attackerTeam: 0, damage: 999);
+            bool applied = BotCombat.TryApplyConfirmedHit(
+                match.Field, match.Attacker, match.BotSeat, 999, out var hit);
 
-            Assert.Single(hits);
-            Assert.True(hits[0].Died);
-            Assert.False(hits[0].Bot.Bot!.Alive);
-            Assert.Equal(0, hits[0].Bot.Bot!.Health);
-            Assert.Equal(2u, hits[0].Bot.Bot!.LifecycleSequence);
+            Assert.True(applied);
+            Assert.True(hit.Died);
+            Assert.False(hit.BotRecord.Bot!.Alive);
+            Assert.Equal(0, hit.BotRecord.Bot.Health);
+            Assert.Equal(2u, hit.BotRecord.Bot.LifecycleSequence);
         }
 
-        [Fact]
-        public void MeleeAttack_IgnoresSameTeamBot()
+        [Theory]
+        [InlineData(true, 0)]
+        [InlineData(false, 10000)]
+        public void ConfirmedHit_RejectsInvalidTeamOrRange(bool sameTeam, float botX)
         {
-            var field = GolemFieldWithBot(team: 0, new BotVector(0, 0, 0));
+            var match = Match(sameTeam ? (byte)0 : (byte)1, default, new BotVector(botX, 0, 0));
 
-            var hits = BotCombat.ResolveMeleeAttack(field, new BotVector(0, 0, 0), attackerTeam: 0, damage: 40);
-
-            Assert.Empty(hits);   // bot é do mesmo time do atacante
-        }
-
-        [Fact]
-        public void MeleeAttack_IgnoresBotOutOfRange()
-        {
-            var field = GolemFieldWithBot(team: 1, new BotVector(10000, 0, 10000));
-
-            var hits = BotCombat.ResolveMeleeAttack(field, new BotVector(0, 0, 0), attackerTeam: 0, damage: 40);
-
-            Assert.Empty(hits);   // fora do alcance de melee
+            Assert.False(BotCombat.TryApplyConfirmedHit(
+                match.Field, match.Attacker, match.BotSeat, 40, out _));
         }
     }
 }

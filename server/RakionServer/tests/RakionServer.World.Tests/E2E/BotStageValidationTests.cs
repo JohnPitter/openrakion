@@ -93,6 +93,10 @@ namespace RakionServer.World.Tests.E2E
 
             int healthBefore = bot.Health;
             human.SendBotTelemetryAttack(fixture.UdpPort2, hs.FieldSeat, kind: 1);
+            Thread.Sleep(100);
+            Assert.Equal(healthBefore, bot.Health);
+
+            human.SendConfirmedBotHit(fixture.UdpPort2, bot.Seat);
             byte[] hitReaction = human.WaitForUdp(
                 packet => IsBotDamage(packet, bot.Seat), JourneyHelper.Timeout);
             Assert.Equal((byte)bot.Seat, hitReaction[6]);
@@ -102,7 +106,7 @@ namespace RakionServer.World.Tests.E2E
             byte[]? death = null;
             for (int i = 1; i < 20 && death == null; i++)
             {
-                human.SendBotTelemetryAttack(fixture.UdpPort2, hs.FieldSeat, kind: 1);
+                human.SendConfirmedBotHit(fixture.UdpPort2, bot.Seat);
                 try { death = human.WaitFor(Frame4f, TimeSpan.FromMilliseconds(400)); }
                 catch (TimeoutException) { }
             }
@@ -136,7 +140,7 @@ namespace RakionServer.World.Tests.E2E
                 JourneyHelper.Timeout);
             Assert.Equal((byte)bot.Seat, (byte)(movement[8] & 0x1f));
 
-            human.SendBotTelemetryAttack(fixture.UdpPort2, session.FieldSeat, kind: 1);
+            human.SendConfirmedBotHit(fixture.UdpPort2, bot.Seat);
             byte[] damage = human.WaitFor(
                 frame => IsTunneledBotAction(frame, BotMovement.AttackType, 7) &&
                     frame[7] == (byte)PlayerAnimationKind.Damage,

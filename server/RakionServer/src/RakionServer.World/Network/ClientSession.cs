@@ -29,6 +29,8 @@ namespace RakionServer.World.Network
         private readonly SemaphoreSlim _storageMutationLock = new(1, 1);
         private int _inventoryMutationInProgress;
         private readonly SemaphoreSlim _lotteryPurchaseLock = new(1, 1);
+        private readonly object _botHitSequenceLock = new();
+        private uint _lastBotHitSequence;
 
         // estado de usuario (espelha campos do objeto user[slot])
         public ushort Slot { get; }
@@ -73,6 +75,19 @@ namespace RakionServer.World.Network
         public byte LastGameplayFeedbackState;                  // ultimo estado ecoado pelo cliente em 1583 client->world
         private int _gameClockStarted;
         public uint UdpKey { get; set; }                     // user+0x1464 (chave de sessao UDP, validada nos pacotes)
+
+        public bool TryAcceptBotHitSequence(uint sequence)
+        {
+            if (sequence == 0) return false;
+            lock (_botHitSequenceLock)
+            {
+                if (_lastBotHitSequence != 0 &&
+                    unchecked((int)(sequence - _lastBotHitSequence)) <= 0)
+                    return false;
+                _lastBotHitSequence = sequence;
+                return true;
+            }
+        }
         public int ConnectionLogId { get; set; }             // user+0x1468: LogUserConnect.id da sessão
         public ushort DisconnectReason { get; private set; }
         public byte VerifyMode { get; set; }                 // user+0x237c (tipo de conexao p/ MD5)
