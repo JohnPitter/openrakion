@@ -31,6 +31,10 @@ dotnet publish -c Release -r win-x64 --self-contained true \
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
 ```
 
+O projeto ativa `EnableCompressionInSingleFile`, reduzindo o executável self-contained sem exigir
+que o jogador instale o .NET Desktop Runtime. Não habilite trimming no WinForms: além dos warnings
+da plataforma, ele pode remover caminhos acessados em runtime.
+
 O launcher roda como usuário normal. Para o `rakion.exe` legado, ele cria um bloco de ambiente
 dedicado com `__COMPAT_LAYER=RunAsInvoker`; assim preserva a linha de comando especial
 `argv[0]=user` e evita o prompt UAC sem alterar o executável pristine.
