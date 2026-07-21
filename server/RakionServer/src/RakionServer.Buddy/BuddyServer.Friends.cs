@@ -99,8 +99,7 @@ public sealed partial class BuddyServer
         connection.ActiveCharacterName = account.ActiveCharacterName;
         connection.PendingProfileSignature = "";
         await ReplyResultAsync(connection, BuddyProtocol.RET_SET_NICK, 0);
-        await SendLoginOkAsync(connection);
-        Log.Info("buddy", "account='{0}' solicitou nick '{1}'; perfil efetivo='{2}' e lista atualizada",
+        Log.Info("buddy", "account='{0}' solicitou nick '{1}'; perfil efetivo='{2}' confirmado",
             connection.AccountId, requestedName, connection.DisplayName);
     }
 

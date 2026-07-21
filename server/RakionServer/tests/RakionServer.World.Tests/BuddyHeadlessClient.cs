@@ -84,6 +84,31 @@ internal sealed class BuddyHeadlessClient : IAsyncDisposable
         }
     }
 
+    public async Task<bool> ReceivesAsync(ushort command, TimeSpan timeout)
+    {
+        if (_pending.TryGetValue(command, out Queue<BuddyFrame>? frames) && frames.Count > 0)
+            return true;
+        using var cancellation = new CancellationTokenSource(timeout);
+        try
+        {
+            while (true)
+            {
+                BuddyFrame frame = await ReadFrameAsync(cancellation.Token);
+                if (frame.Command == command) return true;
+                if (!_pending.TryGetValue(frame.Command, out frames))
+                {
+                    frames = new Queue<BuddyFrame>();
+                    _pending.Add(frame.Command, frames);
+                }
+                frames.Enqueue(frame);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
     public ValueTask DisposeAsync()
     {
         _udp.Dispose();

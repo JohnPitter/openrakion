@@ -48,10 +48,10 @@ public sealed partial class BuddyServer
         long now = Environment.TickCount64;
         foreach (BuddyConnection connection in connections)
             if (accounts.TryGetValue(connection.AccountId, out BuddyAccount? account))
-                await RefreshSelectedCharacterAsync(connection, account, now);
+                RefreshSelectedCharacter(connection, account, now);
     }
 
-    private async Task RefreshSelectedCharacterAsync(
+    private void RefreshSelectedCharacter(
         BuddyConnection connection, BuddyAccount account, long now)
     {
         bool characterChanged = !string.Equals(
@@ -80,8 +80,7 @@ public sealed partial class BuddyServer
         connection.ActiveCharacterName = account.ActiveCharacterName;
         connection.DisplayName = account.DisplayName;
         connection.PendingProfileSignature = "";
-        await SendLoginOkAsync(connection);
-        Log.Info("buddy", "account='{0}' atualizou Messenger nick='{1}' char='{2}'",
+        Log.Info("buddy", "account='{0}' sincronizou perfil nick='{1}' char='{2}'",
             connection.AccountId, connection.DisplayName, connection.ActiveCharacterName);
     }
 }

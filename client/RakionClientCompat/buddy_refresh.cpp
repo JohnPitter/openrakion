@@ -27,6 +27,8 @@ using SetNickname = void (__thiscall*)(void*, const wchar_t*);
 BuddyLoginCallback OriginalBuddyLogin{};
 CharacterSelectCallback OriginalCharacterSelect{};
 PVOID volatile PendingRefreshHost{};
+void* ActiveSessionHost{};
+wchar_t LastRequestedNickname[MaxNicknameLength + 1]{};
 
 bool IsReadable(const void* pointer, size_t length)
 {
@@ -62,20 +64,33 @@ void* CurrentMessengerHost()
     return IsReadable(host, sizeof(void*)) ? *host : nullptr;
 }
 
+const wchar_t* CurrentBuddyNickname(void* ui, void** buddyResult)
+{
+    if (!IsReadable(ui, BuddyInterfaceOffset + sizeof(void*))) return nullptr;
+    auto* buddy = *reinterpret_cast<void**>(static_cast<BYTE*>(ui) + BuddyInterfaceOffset);
+    if (!IsReadable(buddy, BuddyNicknameOffset + MaxNicknameLength * sizeof(wchar_t))) return nullptr;
+    *buddyResult = buddy;
+    auto* nickname = reinterpret_cast<const wchar_t*>(
+        static_cast<BYTE*>(buddy) + BuddyNicknameOffset);
+    return wcsnlen_s(nickname, MaxNicknameLength) > 0 ? nickname : nullptr;
+}
+
 bool RefreshBuddyNickname(void* ui)
 {
-    if (!IsReadable(ui, BuddyInterfaceOffset + sizeof(void*))) return false;
-    auto* buddy = *reinterpret_cast<void**>(static_cast<BYTE*>(ui) + BuddyInterfaceOffset);
-    if (!IsReadable(buddy, BuddyNicknameOffset + MaxNicknameLength * sizeof(wchar_t))) return false;
+    void* buddy{};
+    const wchar_t* nickname = CurrentBuddyNickname(ui, &buddy);
+    if (!nickname) return false;
+    if (ActiveSessionHost == ui &&
+        wcsncmp(LastRequestedNickname, nickname, MaxNicknameLength) == 0)
+        return true;
     auto** vtable = *reinterpret_cast<void***>(buddy);
     if (!IsReadable(vtable, (SetNicknameVtableIndex + 1) * sizeof(void*))) return false;
 
     void* method = vtable[SetNicknameVtableIndex];
     if (!BelongsToModule(method, GetModuleHandleW(L"Buddy2.dll"))) return false;
-    auto* nickname = reinterpret_cast<const wchar_t*>(
-        static_cast<BYTE*>(buddy) + BuddyNicknameOffset);
-    if (wcsnlen_s(nickname, MaxNicknameLength) == 0) return false;
     reinterpret_cast<SetNickname>(method)(buddy, nickname);
+    ActiveSessionHost = ui;
+    wcsncpy_s(LastRequestedNickname, nickname, MaxNicknameLength);
     CompatLog("SetNick do Messenger solicitado");
     return true;
 }
@@ -104,6 +119,8 @@ void __fastcall BuddyLoginCallbackHook(void* self, void*, uint32_t result, uint3
 {
     OriginalBuddyLogin(self, result, context);
     if ((result & 0xffff) != 0) return;
+    ActiveSessionHost = self;
+    LastRequestedNickname[0] = L'\0';
     if (InterlockedCompareExchangePointer(&PendingRefreshHost, nullptr, self) == self)
         RefreshBuddyNickname(self);
 }

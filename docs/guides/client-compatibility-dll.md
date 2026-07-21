@@ -71,7 +71,8 @@ selecionando `windowed`, `borderless` ou `fullscreen`. São preferências do jog
 O servidor continua como autoridade do Messenger. O World fixa o primeiro personagem por slot como
 identidade inicial, e o Buddy fornece a lista no `RET_LOGIN`. A DLL cobre apenas uma limitação do
 cliente: ele precisa chamar sua API nativa `SetNickname` para inicializar o nome próprio. Esse envio
-gera `SVC_SET_NICK`; o servidor responde `RET_SET_NICK` e publica um novo `RET_LOGIN`.
+  gera `SVC_SET_NICK`; o servidor responde somente `RET_SET_NICK`, que confirma o nome e atualiza
+  a janela sem reinicializar a lista recebida no login.
 
 ## Build
 

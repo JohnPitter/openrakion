@@ -17,12 +17,12 @@ Em 19–20/07/2026 foi reproduzida outra falha: após entrar no servidor ou troc
 modelo social podia ser reinicializado sem que o cliente repetisse `SVC_SET_NICK`; a lista só surgia
 depois de selecionar manualmente **Nick Change**. O `RET_SET_NICK` contém somente o resultado da
 operação; enviá-lo sem um `SVC_SET_NICK` anterior não informa o nome ao cliente e não substitui o
-fluxo nativo. A correção mínima na DLL chama `SetNickname` do próprio `Buddy2.dll` uma vez após
-cada seleção de personagem. Se `host+0x24` ainda indica que o login Buddy não terminou, a chamada
-fica pendente e é executada pelo primeiro `RET_LOGIN` bem-sucedido. Isso evita tanto o envio antes
-da autenticação quanto a duplicidade `RET_LOGIN` + seleção, que podia deixar o rebuild do F9 no
-estado vazio. O servidor recebe `SVC_SET_NICK`, responde `RET_SET_NICK(result=0)` e envia um novo
-`RET_LOGIN` com a lista atualizada.
+fluxo nativo. A correção mínima na DLL chama `SetNickname` do próprio `Buddy2.dll` uma vez por
+personagem em cada sessão. Se `host+0x24` ainda indica que o login Buddy não terminou, a chamada
+fica pendente e é executada pelo primeiro `RET_LOGIN` bem-sucedido. O servidor responde somente
+`RET_SET_NICK(result=0)`, como espera o callback original `0x004785B0`: ele aplica o nome solicitado
+e reconstrói a janela. Um segundo `RET_LOGIN` reinicializava o modelo recém-configurado e tornava o
+F9 intermitente.
 
 O lifecycle completo explica a falha de reentrada. `WorldLoginSuccess (0x0047BCE0)` cria o host em
 `application+0x4A60`, inicia `Buddy2::Login` e recebe a lista em `0x0048A5D0`. Ao sair do servidor,
@@ -33,9 +33,10 @@ da instância ativa e obtém o host atual pelo ponteiro global quando a seleçã
 
 World e Buddy permanecem como autoridades. Antes do snapshot `0x0C`, o World normaliza
 `buddyname` para o primeiro personagem válido por slot. O monitor do Buddy acompanha `charname` e
-`buddyname` das contas online em uma consulta em lote, exige estabilidade por dois ciclos de 500 ms
-e envia `RET_LOGIN` quando a identidade persistida muda. Login, create, rename, select, delete e
-refresh estão cobertos no backend; a confirmação visual pelo F9 permanece pendente.
+`buddyname` das contas online em uma consulta em lote e exige estabilidade por dois ciclos de 500
+ms. Ele atualiza a identidade autoritativa da conexão sem reenviar `RET_LOGIN`; a seleção concluída
+dispara o `SVC_SET_NICK` nativo. Login, create, rename, select, delete e refresh estão cobertos no
+backend; a confirmação visual pelo F9 permanece pendente.
 
 A matriz LAN/NAT também permanece pendente. O P2P UDP direto continua sendo executado pelo
 `Buddy2.dll`; o servidor fornece descoberta de endpoint e fallback TCP, mas não interpreta nem
@@ -44,7 +45,7 @@ modera o tráfego direto.
 | Camada | Estado |
 |---|---|
 | Framing, handshake e login AES | Implementado e validado no fio |
-| Lista inicial de amigos | `RET_LOGIN` e fluxo solicitado `SVC_SET_NICK` → `RET_SET_NICK` → `RET_LOGIN` validados headless; novo smoke F9 pendente |
+| Lista inicial de amigos | `RET_LOGIN` e fluxo solicitado `SVC_SET_NICK` → `RET_SET_NICK` validados headless; novo smoke F9 pendente |
 | Amigos e grupos | Persistência InnoDB e mutações principais implementadas |
 | Registro UDP e presença | E2E de dois clientes em localhost; validação LAN/NAT pendente |
 | Túnel TCP `0x2020/0x2021` | Implementado, autorizado e limitado |
