@@ -13,7 +13,7 @@ internal sealed partial class MainForm
 
     private void ShowOnlineFriends(IReadOnlyList<OnlineFriend> friends)
     {
-        _friendsTitle.Text = $"Amigos online ({friends.Count})";
+        _friendsTitle.Text = AuthenticatedTitle(_authenticatedUser ?? "", friends.Count);
         _onlineFriends.BeginUpdate();
         _onlineFriends.Items.Clear();
         foreach (OnlineFriend friend in friends)
@@ -21,6 +21,9 @@ internal sealed partial class MainForm
         if (friends.Count == 0) _onlineFriends.Items.Add("Nenhum amigo online");
         _onlineFriends.EndUpdate();
     }
+
+    internal static string AuthenticatedTitle(string account, int onlineFriendCount) =>
+        $"Conta: {account} · Amigos online ({onlineFriendCount})";
 
     private void BuildLoginAndButtons()
     {

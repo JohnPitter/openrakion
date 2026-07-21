@@ -68,7 +68,8 @@ conta já conectada antes de abrir o cliente. O launcher inclui `appId` e a vers
 `RequiredBuildVersion`. O fluxo visual separa autenticação e execução: inicialmente aparecem os
 inputs e **Login**; após autenticar, eles são substituídos pela lista de amigos online e pelos botões
 **Outra conta**, **Iniciar game** e **Game options**. A presença é atualizada a cada 30 segundos sem
-expor a lista global de usuários. O ticket fica somente em memória e é renovado se expirar antes do
+expor a lista global de usuários. O cabeçalho identifica explicitamente a conta autenticada para
+evitar confusão entre launchers simultâneos. O ticket fica somente em memória e é renovado se expirar antes do
 clique em **Iniciar game**. Para testar somente o updater:
 
 ```powershell
