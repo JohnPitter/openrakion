@@ -41,8 +41,9 @@ namespace RakionServer.World
                     // client-authoritative, teto RE). Cooldown p/ não floodar.
                     if (inMelee && now >= bot.NextAttackReadyMs)
                     {
-                        bot.NextAttackReadyMs = now + 900;
-                        Broadcast(field, send, BotMovement.SynthesizeAttack((byte)botRec.Slot, ++bot.MoveSeq));
+                        bot.NextAttackReadyMs = now + bot.Profile.AttackCooldownMs;
+                        Broadcast(field, send, BotMovement.SynthesizeAttack(
+                            (byte)botRec.Slot, ++bot.MoveSeq, bot.NextAttackVariant()));
                     }
                 }
             }

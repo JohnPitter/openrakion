@@ -43,7 +43,8 @@ namespace RakionServer.World.Network
 
         /// <summary>Sintetiza a animação de ataque do bot (0x0311, kind=Attack). Cosmético: o cliente
         /// vê o bot golpear; o dano bot→humano é client-authoritative (teto RE), não server-side.</summary>
-        public static byte[] SynthesizeAttack(byte seat, uint sequence)
+        public static byte[] SynthesizeAttack(
+            byte seat, uint sequence, BotAttackVariant variant = BotAttackVariant.VariantA)
         {
             byte[] p = new byte[AttackSize];
             BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(0), AttackType);
@@ -51,7 +52,12 @@ namespace RakionServer.World.Network
             p[6] = seat;
             p[7] = seat;
             p[8] = 1;   // kind = Attack
-            p[9] = 0;   // arg0
+            p[9] = variant switch
+            {
+                BotAttackVariant.VariantA => 0x1b,
+                BotAttackVariant.VariantB => 0x1a,
+                _ => 0x12
+            };
             return p;
         }
 

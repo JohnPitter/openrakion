@@ -51,5 +51,18 @@ namespace RakionServer.World.Tests
             Assert.Equal(PlayerAnimationKind.Damage, action.Kind);
             Assert.True(action.HasExtendedPayload);
         }
+
+        [Theory]
+        [InlineData(BotAttackVariant.VariantA, 0x1b)]
+        [InlineData(BotAttackVariant.VariantB, 0x1a)]
+        [InlineData(BotAttackVariant.VariantC, 0x12)]
+        public void SynthesizeAttack_UsesCapturedHumanAnimations(
+            BotAttackVariant variant, byte expectedAnimation)
+        {
+            byte[] packet = BotMovement.SynthesizeAttack(10, 4, variant);
+
+            Assert.Equal((byte)PlayerAnimationKind.Attack, packet[8]);
+            Assert.Equal(expectedAnimation, packet[9]);
+        }
     }
 }

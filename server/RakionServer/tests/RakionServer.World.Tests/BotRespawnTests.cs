@@ -29,5 +29,18 @@ namespace RakionServer.World.Tests
             Assert.Equal(bot.MaxHealth, bot.Health);
             Assert.Equal(3u, bot.LifecycleSequence);
         }
+
+        [Fact]
+        public void AttackPattern_CyclesThreeVariantsAndReactionLastsLongEnough()
+        {
+            var bot = new BotPlayer();
+
+            Assert.Equal(BotAttackVariant.VariantA, bot.NextAttackVariant());
+            Assert.Equal(BotAttackVariant.VariantB, bot.NextAttackVariant());
+            Assert.Equal(BotAttackVariant.VariantC, bot.NextAttackVariant());
+            Assert.Equal(BotAttackVariant.VariantA, bot.NextAttackVariant());
+            bot.BeginHitReaction(1000);
+            Assert.Equal(1000 + BotPlayer.DamageReactionMs, bot.HitReactionUntilMs);
+        }
     }
 }

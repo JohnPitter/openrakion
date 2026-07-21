@@ -31,7 +31,7 @@ re-tentado). Regras invioláveis herdadas do RE:
 
 | Camada | Arquivos | Papel |
 |---|---|---|
-| Domínio/IA (puro) | `Domain/BotProfile.cs`, `BotVector.cs`, `BotSteering.cs`, `BotPlayer.cs` | dificuldade Easy/Normal/Hard, perseguição/orbita-melee/antecipação (EMA), estado do bot |
+| Domínio/IA (puro) | `Domain/BotProfile.cs`, `BotVector.cs`, `BotSteering.cs`, `BotPlayer.cs` | dificuldade Easy/Normal/Hard, perseguição/frenagem-melee/antecipação (EMA), estado do bot |
 | Field | `Domain/Field.Bots.cs` (+ `PlayerRec.Bot`/`Position`) | assentos de bot, `AddBot`/`RemoveAllBots`, `BotSlots` |
 | Serviço | `BotManager.cs`, `BotManager.Tick.cs` | add host-only/time-oposto/pré-match, lifecycle, tick de IA→síntese |
 | Rede | `Network/RoomRosterFrames.cs`, `BotMovement.cs`, `BotHitTelemetryDatagram.cs` | roster, síntese do 0x030A e confirmação autenticada de hit |
@@ -68,7 +68,10 @@ entregue e o que é teto:
   prova hit**. O hook nativo de colisão envia `0xB07B(sequence,targetSeat)` ao endpoint autenticado
   do World. O servidor rejeita replay e valida partida, atacante vivo, assento exato, time e alcance
   em `ResolveConfirmedBotHit`/`BotCombat.TryApplyConfirmedHit`. A cada acerto, o servidor devolve
-  um `0x0311 kind=Damage` estendido com o assento do bot e segura a IA por 300 ms, tornando a reação
+  um `0x0311 kind=Damage` estendido com o assento do bot e segura a IA por 1,1 s, permitindo que a
+  animação de queda/recuperação termine antes do próximo movimento. O ataque do bot alterna as três
+  animações observadas na captura humana (`0x1B`, `0x1A`, `0x12`) e usa cooldown de 2,2/1,7/1,3 s
+  para Easy/Normal/Hard, respectivamente. Isso evita o loop acelerado do ataque básico.
   publicada ao cliente. Ao zerar o HP, a morte é liquidada
   pelo **`Field.ApplyReportedDeath`** do modo e transmitida com **`0x4f`** aos humanos: o atacante
   recebe o kill/pontos. A detecção autoritativa combina colisão da engine com as regras do servidor;
@@ -81,7 +84,7 @@ entregue e o que é teto:
 
 ## Cobertura de testes
 
-- `BotSteeringTests` (8): perseguição, orbita no melee, aceleração, antecipação, tick e convergência
+- `BotSteeringTests`: perseguição, frenagem no melee, aceleração, antecipação, tick e convergência
   em até dez segundos na escala wire real (100 unidades wire = 1 unidade de mapa).
 - `BotManagerTests` (6): add pelo host no time oposto, gates (não-host / em-jogo / solo), limpeza,
   time cheio.

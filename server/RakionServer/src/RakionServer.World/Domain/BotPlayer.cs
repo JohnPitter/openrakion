@@ -10,6 +10,7 @@ namespace RakionServer.World.Domain
     /// </summary>
     public sealed class BotPlayer
     {
+        public const int DamageReactionMs = 1100;
         public string Name { get; init; } = "";
         public byte Level { get; init; } = 1;
         public byte CharClass { get; init; } = 1;
@@ -32,6 +33,7 @@ namespace RakionServer.World.Domain
         public long NextAttackReadyMs;   // cooldown do ataque sintetizado do bot
         public long HitReactionUntilMs;  // evita que o próximo 0x030A apague imediatamente a reação visual
         public long RespawnAtMs { get; private set; }
+        private byte _attackVariant;
 
         /// <summary>HP inicial derivado de level/classe (curva simples; server-authoritative p/ o bot).</summary>
         public void InitHealth(byte level)
@@ -55,7 +57,14 @@ namespace RakionServer.World.Domain
             return true;
         }
 
-        public void BeginHitReaction(long nowMs) => HitReactionUntilMs = nowMs + 300;
+        public void BeginHitReaction(long nowMs) => HitReactionUntilMs = nowMs + DamageReactionMs;
+
+        public BotAttackVariant NextAttackVariant()
+        {
+            BotAttackVariant variant = (BotAttackVariant)(_attackVariant % 3);
+            _attackVariant++;
+            return variant;
+        }
 
         public void ScheduleRespawn(long nowMs, int delayMs)
         {
@@ -72,6 +81,7 @@ namespace RakionServer.World.Domain
             TargetSeat = Field.NoSeat;
             NextAttackReadyMs = 0;
             HitReactionUntilMs = 0;
+            _attackVariant = 0;
             LifecycleSequence++;
             return true;
         }
@@ -102,7 +112,7 @@ namespace RakionServer.World.Domain
                 Position, Velocity, Profile, targetPosition, _targetVelocityEma, dt);
             Position = step.Position;
             Velocity = step.Velocity;
-            Heading = step.Heading;
+            if (Position.HorizontalDistanceTo(targetPosition) > 1f) Heading = step.Heading;
             return step.InMelee;
         }
     }

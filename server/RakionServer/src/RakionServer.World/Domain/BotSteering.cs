@@ -7,15 +7,15 @@ namespace RakionServer.World.Domain
 
     /// <summary>
     /// Motor de IA do bot — funções PURAS (sem I/O, testáveis). Reproduz o comportamento humano
-    /// aprendido no RE: avançar até o alvo com velocidade/aceleração próprias, orbitar (strafe)
-    /// quando entra no alcance de melee, e antecipar o movimento do alvo (EMA da velocidade).
+    /// aprendido no RE: avançar até o alvo com velocidade/aceleração próprias, frear na distância
+    /// de combate e antecipar o movimento do alvo (EMA da velocidade).
     /// O resultado alimenta a síntese do datagrama de movimento 0x030A server-side.
     /// </summary>
     public static class BotSteering
     {
         /// <summary>
         /// Avança um passo de <paramref name="dt"/> segundos. Se estiver fora do alcance de melee,
-        /// persegue o alvo antecipado; dentro do alcance, orbita mantendo a distância. A velocidade
+        /// persegue o alvo antecipado; dentro do alcance, freia mantendo a distância. A velocidade
         /// é suavizada por <see cref="BotProfile.Acceleration"/> (steering, não teleporte).
         /// </summary>
         public static BotStep Step(
@@ -29,14 +29,9 @@ namespace RakionServer.World.Domain
 
             if (melee)
             {
-                // Orbita: tangente ao raio alvo→bot, girando a StrafeSpeed. Mantém pressão sem colar.
-                BotVector radial = (position - aimed).Normalized();
-                float ang = profile.StrafeSpeed * dt;
-                var tangent = new BotVector(
-                    radial.X * MathF.Cos(ang) - radial.Z * MathF.Sin(ang),
-                    0,
-                    radial.X * MathF.Sin(ang) + radial.Z * MathF.Cos(ang));
-                desired = tangent * profile.MoveSpeed;
+                desired = distance < profile.MeleeSpacing
+                    ? (position - aimed).Normalized() * (profile.MoveSpeed * 0.35f)
+                    : BotVector.Zero;
             }
             else
             {

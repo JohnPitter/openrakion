@@ -3,7 +3,7 @@ using Xunit;
 
 namespace RakionServer.World.Tests
 {
-    /// <summary>Testes do motor de IA puro do bot (perseguição, orbita no melee, antecipação).</summary>
+    /// <summary>Testes do motor de IA puro do bot (perseguição, frenagem no melee, antecipação).</summary>
     public sealed class BotSteeringTests
     {
         private static readonly BotProfile Normal = BotProfile.Normal;
@@ -23,16 +23,17 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
-        public void Step_WithinMeleeRange_OrbitsInsteadOfColliding()
+        public void Step_WithinMeleeRange_BrakesInsteadOfOrbiting()
         {
             var target = new BotVector(0, 0, 0);
-            var pos = new BotVector(100f, 0, 0); // dentro do MeleeRange wire (220)
+            var pos = new BotVector(150f, 0, 0); // dentro do MeleeRange, fora do spacing mínimo
 
-            BotStep step = BotSteering.Step(pos, BotVector.Zero, Normal, target, BotVector.Zero, 0.1f);
+            var velocity = new BotVector(0, 0, 100);
+            BotStep step = BotSteering.Step(pos, velocity, Normal, target, BotVector.Zero, 0.1f);
 
             Assert.True(step.InMelee);
-            // Orbitando: a componente tangencial move o bot para fora do eixo puramente radial.
-            Assert.NotEqual(0f, step.Position.Z, System.Math.Abs(0.0001f));
+            Assert.True(step.Velocity.Length < velocity.Length);
+            Assert.Equal(0f, step.Velocity.X, 0.0001f);
         }
 
         [Fact]
