@@ -245,7 +245,7 @@ namespace RakionServer.World.Domain
                 if (Slots[i].State == 0 && Slots[i].Session == null)
                 {
                     Slots[i].Session = s;
-                    Slots[i].State = 3; // ready
+                    Slots[i].State = 1; // humano entra no wait-room antes de Ready/Start
                     Slots[i].WeaponState = 1;
                     Slots[i].Dead = false;
                     Slots[i].RoundScore = 0;

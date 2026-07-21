@@ -13,6 +13,23 @@ namespace RakionServer.World.Tests
     public sealed class FieldRoomOperationsTests
     {
         [Fact]
+        public void AssignSeat_HumanStartsInWaitRoomInsteadOfPlaying()
+        {
+            var config = new WorldConfig();
+            var server = new WorldServer(config, new WorldDatabase(config.Db));
+            var session = NewSession(1, server);
+            var field = new Field(3) { State = 1, MaxPlayers = 8 };
+            field.Add(session);
+
+            int seat = field.AssignSeat(session);
+
+            Assert.Equal(0, seat);
+            Assert.Equal((byte)1, field.Slots[seat].State);
+            Assert.False(field.Slots[seat].LobbyReady);
+            Assert.False(field.Slots[seat].Playing);
+        }
+
+        [Fact]
         public void ChangeTeam_MovesRecordAndUpdatesSessionSeat()
         {
             var (field, master, member) = CreateRoom();
