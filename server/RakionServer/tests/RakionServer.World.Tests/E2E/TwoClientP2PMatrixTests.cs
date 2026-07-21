@@ -95,15 +95,15 @@ namespace RakionServer.World.Tests.E2E
                 DriveToPlayingMatch(fixture, master, joiner, joinerDirect: true);
             byte[] masterMove = master.SendBotTelemetryMove(
                 fixture.UdpPort2, masterSession.FieldSeat, 321, 0, -123);
-            Assert.Equal(masterMove, joiner.WaitForUdp(IsMove, JourneyHelper.Timeout));
+            AssertTunnel(joiner.WaitForNext(IsTunnelFrame, JourneyHelper.Timeout), masterMove);
 
             byte[] joinerMove = joiner.SendBotTelemetryMove(
                 fixture.UdpPort2, joinerSession.FieldSeat, -222, 0, 456);
-            Assert.Equal(joinerMove, master.WaitForUdp(IsMove, JourneyHelper.Timeout));
+            AssertTunnel(master.WaitForNext(IsTunnelFrame, JourneyHelper.Timeout), joinerMove);
 
             byte[] attack = master.SendBotTelemetryAttack(
                 fixture.UdpPort2, masterSession.FieldSeat);
-            Assert.Equal(attack, joiner.WaitForUdp(IsAttack, JourneyHelper.Timeout));
+            AssertTunnel(joiner.WaitForNext(IsTunnelFrame, JourneyHelper.Timeout), attack);
         }
 
         [Fact]
@@ -224,9 +224,6 @@ namespace RakionServer.World.Tests.E2E
 
         private static bool IsMove(byte[] packet) =>
             packet.Length == 26 && packet[0] == 0x0a && packet[1] == 0x03;
-
-        private static bool IsAttack(byte[] packet) =>
-            packet.Length == 10 && packet[0] == 0x11 && packet[1] == 0x03;
 
         private static bool IsTunnelFrame(byte[] frame) =>
             frame.Length >= 4 && frame[0] == 0x57 && frame[1] == 0 &&

@@ -221,8 +221,10 @@ ambientes com P2P direto comprovado, use `ForceTunneling=0`.
 A DLL de compatibilidade também espelha `0x030A` (movimento) e `0x0311` (ataque) ao World no
 envelope autenticado `0xB07A`. Esse caminho é necessário porque o cliente que cria a sala não
 recebe um roster contendo seu próprio flag individual de tunneling. O World valida seat, endpoint
-e field, remove o envelope e retransmite o datagrama original aos demais humanos da mesma
-partida. O mesmo input continua alimentando o combate contra bots.
+e field, remove o envelope e entrega o datagrama original aos demais humanos pelo callback TCP
+`0x57`. A entrega não pode usar UDP a partir de `40709`: o socket P2P conectado aceita somente o
+endpoint remoto anunciado e descarta essa origem. O mesmo input continua alimentando o combate
+contra bots.
 
 ## Tunneling e ping TCP
 
