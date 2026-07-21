@@ -18,12 +18,11 @@ namespace RakionServer.World.Network
 
         internal void BeginFieldGameRoundStart()
         {
-            int durationSeconds = PendingRoomMode == 0
-                ? _server.StageDurationSeconds(PendingRoomMap) ?? 432
-                : PendingRoomDurationSec > 0 ? PendingRoomDurationSec : 432;
-            SendEncryptedFrame(LobbyFrames.RemainingTime(durationSeconds));
-            Log.Info("lobby", "[{0}] 0x48 RoundStart (RemainingSec={1}s)",
-                Slot, durationSeconds + 3);
+            var field = _server.GetField(FieldId);
+            if (field == null) return;
+            _server.NotifyPlayerReady(field, this);
+            Log.Info("lobby", "[{0}] 0x48 cliente pronto (field={1}, seat={2})",
+                Slot, field.Id, FieldSeat);
         }
     }
 }

@@ -30,6 +30,7 @@ namespace RakionServer.World.Tests.E2E
             JourneyHelper.WaitUntil(() => session.Status == UserStatus.InField,
                 "stage não iniciou");
             player.SpawnField();
+            player.RoundStart();
 
             player.ExitFieldGame();
             JourneyHelper.WaitUntil(() => session.Status == UserStatus.FieldLobby,

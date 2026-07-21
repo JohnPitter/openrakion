@@ -35,6 +35,7 @@ namespace RakionServer.World.Tests.E2E
             try
             {
                 master.SpawnField();
+                master.RoundStart();
                 JourneyHelper.WaitUntil(
                     () => field.FindRec(masterSession)?.State == 4,
                     "master não spawnou");
@@ -50,6 +51,7 @@ namespace RakionServer.World.Tests.E2E
                 Assert.Equal((byte)3, field.FindRec(joinerSession)!.State);
 
                 joiner.SpawnField();
+                joiner.RoundStart();
                 JourneyHelper.WaitUntil(
                     () => field.FindRec(joinerSession)?.State == 4,
                     "joiner não entrou no round em andamento");

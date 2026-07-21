@@ -46,6 +46,7 @@ namespace RakionServer.World.Tests.E2E
             player.StartMatch();
             JourneyHelper.WaitUntil(() => s.Status == UserStatus.InField, "não promoveu a InField");
             player.SpawnField();
+            player.RoundStart();
             JourneyHelper.WaitUntil(() => s.StageRunId != Guid.Empty, "run de stage não iniciou");
 
             Assert.NotEqual(Guid.Empty, s.StageRunId);

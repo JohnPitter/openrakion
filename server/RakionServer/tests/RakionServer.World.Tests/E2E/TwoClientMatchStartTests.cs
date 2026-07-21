@@ -123,6 +123,18 @@ namespace RakionServer.World.Tests.E2E
                 AssertSpawns(joiner, masterSession.FieldSeat, joinerSession.FieldSeat);
                 Assert.Equal(field.MatchId, masterSession.PlayerSpawnMatchId);
                 Assert.Equal(field.MatchId, joinerSession.PlayerSpawnMatchId);
+                Assert.Equal((byte)3, field.FindRec(masterSession)!.State);
+                Assert.Equal((byte)3, field.FindRec(joinerSession)!.State);
+                Assert.Equal(MatchPhase.Pre, field.Phase);
+
+                master.RoundStart();
+                WaitUntil(() => field.FindRec(masterSession)?.State == 4, Timeout,
+                    "master não confirmou o carregamento");
+                Assert.Equal((byte)3, field.FindRec(joinerSession)!.State);
+                joiner.RoundStart();
+                WaitUntil(() => field.Phase == MatchPhase.Playing, Timeout,
+                    "round não iniciou após os dois 0x48");
+                Assert.Equal((byte)4, field.FindRec(joinerSession)!.State);
             }
         }
 

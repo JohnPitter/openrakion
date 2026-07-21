@@ -253,6 +253,9 @@ namespace RakionServer.World.Tests.E2E
         /// Payload real do cliente é grande; o servidor só usa o gatilho, então mandamos vazio.</summary>
         public void SpawnField() => Send(0x4b, new byte[72]);
 
+        /// <summary>Cliente terminou de carregar o stage e aceita iniciar o round (0x48).</summary>
+        public void RoundStart() => Send(0x48, Array.Empty<byte>());
+
         public void ExitFieldGame(byte flag = 0) => Send(0x46, new[] { flag });
 
         public void ExitRoom() => Send(0x3a, Array.Empty<byte>());

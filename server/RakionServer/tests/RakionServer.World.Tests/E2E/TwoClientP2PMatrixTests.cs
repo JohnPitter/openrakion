@@ -173,6 +173,8 @@ namespace RakionServer.World.Tests.E2E
             joiner.EnterField();
             master.SpawnField();
             joiner.SpawnField();
+            master.RoundStart();
+            joiner.RoundStart();
             JourneyHelper.WaitUntil(() => field.Phase == MatchPhase.Playing, "round não iniciou");
             JourneyHelper.WaitUntil(
                 () => field.FindRec(ms)?.State == 4 && field.FindRec(js)?.State == 4,

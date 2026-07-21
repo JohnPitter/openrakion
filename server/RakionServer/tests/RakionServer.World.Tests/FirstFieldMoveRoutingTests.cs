@@ -23,11 +23,16 @@ namespace RakionServer.World.Tests
                 GameInfoId = 100,
                 ActiveCharId = 200,
                 FieldId = 1,
-                PendingRoomMode = 1
+                PendingRoomMode = 2
             };
-            var field = new Field(1) { State = 2, Mode = 1 };
+            var field = new Field(1)
+            {
+                State = 2,
+                Mode = 2
+            };
             field.Add(session);
             int seat = field.AssignSeat(session);
+            field.ArmMatch(0);
             session.FieldSeat = (byte)seat;
             session.FieldObjectIndex = (ushort)seat;
             server.Fields.Add(field);
@@ -35,6 +40,10 @@ namespace RakionServer.World.Tests
             bool intercepted = session.TryHandleLobbyEntry(0x4B, new byte[72]);
 
             Assert.False(intercepted);
+            Assert.Equal((byte)3, field.Slots[seat].State);
+
+            session.BeginFieldGameRoundStart();
+
             Assert.Equal((byte)4, field.Slots[seat].State);
         }
     }

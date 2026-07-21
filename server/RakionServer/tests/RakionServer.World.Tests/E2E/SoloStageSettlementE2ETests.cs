@@ -72,6 +72,7 @@ namespace RakionServer.World.Tests.E2E
             player.StartMatch();
             JourneyHelper.WaitUntil(() => session.Status == UserStatus.InField, "não entrou no field");
             player.SpawnField();
+            player.RoundStart();
             JourneyHelper.WaitUntil(() => session.StageRunId != Guid.Empty, "run não iniciou");
             return session;
         }
