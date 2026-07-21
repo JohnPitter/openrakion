@@ -230,7 +230,7 @@ sala. Datagramas e reports já enfileirados podem produzir `0x46`, `0x4B`, `0x4F
 da mudança para `Status=2`; eles são consumidos como frames tardios enquanto a sessão ainda está
 associada à sala. Encaminhá-los aos gates de combate causava disconnect ao clicar em **Previous**.
 | `0x41` | `ClientSession.Rooms` em lobby; dispatcher em stage | host atualiza regra e reseta ready |
-| `0x42` | `ClientSession.Rooms` em lobby; dispatcher em stage | host trava/destrava slot vazio e reseta ready |
+| `0x42` | `ClientSession.Rooms` em lobby; dispatcher em stage | host trava/destrava slot vazio sem invalidar o ready dos jogadores |
 | `0x43` | `ClientSession.Rooms` | valida sala, host e ready dos membros; sucesso fecha novos joins e é broadcast |
 
 A tabela canônica aponta de propósito para as versões `Recon` de `0x3D` e outros. Para
@@ -279,7 +279,7 @@ Consequências observáveis atuais:
 | troca de time | RE estático + headless | membro mudou `seat 1→10`; ambos receberam `0x3E [0][1][10]` |
 | ready | RE + headless + visual | `0x3D` alterna o estado canônico `1/2` e transmite seat/ready; a divergência que exibia `Wrong number of closed slots` foi corrigida |
 | regra | headless validada | broadcast idêntico do payload, domínio atualizado e ready resetado |
-| lock de slot | headless validado | somente host altera slot vazio utilizável |
+| lock de slot | headless + visual | somente host altera slot vazio utilizável; fechar/reabrir slot após `READY` preserva o estado canônico e permite start |
 | kick | RE estático + headless | original chama a rotina de saída e devolve o alvo ao canal (`Status=2`); .NET publica `0x3A`, preserva a conexão e devolve a vítima por `0x1F/0x1E/0x36` |
 | close | headless validado | host fecha, limpa membros/field e recebe lista vazia |
 | start | headless validado | não-host e falta de ready falham; sucesso é entregue a todos |

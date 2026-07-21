@@ -215,6 +215,9 @@ namespace RakionServer.World.Tests.E2E
         /// <summary>Marca ready/not-ready na sala (0x3d): `[u8 ready]`.</summary>
         public void SetReady(bool ready) => Send(0x3d, new[] { (byte)(ready ? 1 : 0) });
 
+        public void SetSlotUnlocked(byte seat, bool unlocked) =>
+            Send(0x42, new[] { seat, (byte)(unlocked ? 1 : 0) });
+
         /// <summary>Troca de time na sala (0x3e): sem payload; move para o bloco de 10 assentos oposto.</summary>
         public void ChangeTeam() => Send(0x3e, Array.Empty<byte>());
 

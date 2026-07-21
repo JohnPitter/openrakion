@@ -314,7 +314,6 @@ namespace RakionServer.World.Network
             lock (field.SyncRoot)
             {
                 if (!field.TrySetSlotLock(this, seat, !unlocked)) return;
-                field.ResetLobbyReady();
                 field.BroadcastField(0x42, new[] { seat, data[1] });
             }
             Log.Info("room", "[{0}] sala {1}: slot {2} {3}",

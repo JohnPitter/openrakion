@@ -74,6 +74,59 @@ namespace RakionServer.World.Tests.E2E
             Assert.False(field.Settled);
         }
 
+        [Fact]
+        public async Task EmptySlotToggleAfterReady_PreservesReadyAndAllowsStart()
+        {
+            await using var fixture = await WorldServerFixture.CreateAsync();
+            if (!fixture.Available) return;
+            var (master, joiner, field, joinerSession) = await PrepareRoom(fixture);
+            await using (master)
+            await using (joiner)
+            {
+                joiner.SetReady(true);
+                WaitUntil(() => field.FindRec(joinerSession)?.LobbyReady == true, Timeout,
+                    "joiner não ficou ready");
+
+                master.SetSlotUnlocked(11, false);
+                master.SetSlotUnlocked(11, true);
+                WaitUntil(() => field.Slots[11].State == 0, Timeout,
+                    "slot vazio não foi reaberto");
+                Assert.True(field.FindRec(joinerSession)!.LobbyReady);
+
+                master.StartMatch();
+                WaitUntil(() => field.MatchId != Guid.Empty, Timeout,
+                    "toggle de slot vazio impediu o start");
+            }
+        }
+
+        private static async Task<(HeadlessWorldClient Master, HeadlessWorldClient Joiner,
+            Field Field, ClientSession JoinerSession)> PrepareRoom(WorldServerFixture fixture)
+        {
+            WorldServer server = fixture.Server!;
+            var master = await HeadlessWorldClient.ConnectAsync(
+                WorldServerFixture.Host, fixture.TcpPort, "slot-master");
+            var joiner = await HeadlessWorldClient.ConnectAsync(
+                WorldServerFixture.Host, fixture.TcpPort, "slot-joiner");
+            master.Login("test", "test");
+            joiner.Login("test2", "test2");
+            master.WaitForFirstByte(0x0C, Timeout);
+            joiner.WaitForFirstByte(0x0C, Timeout);
+            master.SelectCharacter(1);
+            joiner.SelectCharacter(9001);
+            ClientSession masterSession = WaitForSession(server, "test",
+                session => session.ActiveCharId > 0 && session.Status == UserStatus.FieldLobby,
+                Timeout);
+            ClientSession joinerSession = WaitForSession(server, "test2",
+                session => session.ActiveCharId > 0 && session.Status == UserStatus.FieldLobby,
+                Timeout);
+            master.CreateGolemRoom("e2e-slot-ready");
+            WaitUntil(() => masterSession.FieldId >= 0, Timeout, "sala não criada");
+            Field field = server.GetField(masterSession.FieldId)!;
+            joiner.JoinRoom((ushort)field.Id);
+            WaitUntil(() => joinerSession.FieldId == field.Id, Timeout, "joiner não entrou");
+            return (master, joiner, field, joinerSession);
+        }
+
         private static ClientSession WaitForSession(
             WorldServer server, string account, Func<ClientSession, bool> ready, TimeSpan timeout)
         {
