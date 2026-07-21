@@ -13,7 +13,6 @@
 namespace
 {
 constexpr uint16_t BotTelemetryType = 0xb07a;
-constexpr uint16_t BotHitTelemetryType = 0xb07b;
 constexpr uint32_t SendToOtherClientRva = 0x00100780;
 constexpr BYTE ExpectedSendToOtherClient[] = { 0x83, 0xec, 0x0c, 0x55, 0x8b, 0xe9 };
 using SendToFn = int(WSAAPI*)(SOCKET, const char*, int, int, const sockaddr*, int);
@@ -25,9 +24,8 @@ volatile LONG WorldEndpointAddress{};
 volatile LONG WorldSocketValue{-1};
 volatile LONG ServerAddress{};
 volatile LONG TelemetrySequence{};
-volatile LONG HitSequence{};
 volatile LONG LocalActionHookEnabled{};
-volatile LONG FirstHitLogged{};
+volatile LONG LocalAttackLogged{};
 alignas(8) volatile LONG64 LastTelemetryKey{};
 uintptr_t SendToOtherClientContinue{};
 
@@ -119,8 +117,10 @@ bool IsBotTelemetryInput(const char* buffer, int length, uint16_t& type, uint32_
     type = static_cast<uint16_t>(static_cast<BYTE>(buffer[0]) |
         static_cast<uint16_t>(static_cast<BYTE>(buffer[1])) << 8);
     const bool movement = type == 0x030a && length == 26;
+    const bool attack = type == 0x0311 && length == 10 &&
+        static_cast<BYTE>(buffer[8]) == 1;
     if (InterlockedCompareExchange(&LocalActionHookEnabled, 0, 0) != 0 ||
-        !movement)
+        (!movement && !attack))
         return false;
     std::memcpy(&sequence, buffer + 2, sizeof(sequence));
     return true;
@@ -164,14 +164,15 @@ int WSAAPI SendToHook(
 
 void __stdcall MirrorLocalAction(uint32_t type, const void* message)
 {
-    if (type != 0x030a || !message || !OriginalSendTo) return;
+    if ((type != 0x030a && type != 0x0311) || !message || !OriginalSendTo) return;
     __try
     {
         const auto* bytes = static_cast<const BYTE*>(message);
         const uint16_t payloadLength = *reinterpret_cast<const uint16_t*>(bytes + 0x3ea);
         const BYTE* payload = bytes + 2;
         const bool movement = type == 0x030a && payloadLength == 19;
-        if (!movement) return;
+        const bool attack = type == 0x0311 && payloadLength == 3 && payload[1] == 1;
+        if (!movement && !attack) return;
 
         sockaddr_in world{};
         const SOCKET socket = static_cast<SOCKET>(
@@ -187,10 +188,12 @@ void __stdcall MirrorLocalAction(uint32_t type, const void* message)
         packet[5] = static_cast<BYTE>(type >> 8);
         const uint32_t sequence = static_cast<uint32_t>(InterlockedIncrement(&TelemetrySequence));
         std::memcpy(packet + 6, &sequence, sizeof(sequence));
-        packet[10] = static_cast<BYTE>(payload[2] & 0x1f);
+        packet[10] = movement ? static_cast<BYTE>(payload[2] & 0x1f) : payload[0];
         std::memcpy(packet + 11, payload, payloadLength);
         OriginalSendTo(socket, reinterpret_cast<const char*>(packet), innerLength + 4, 0,
             reinterpret_cast<const sockaddr*>(&world), sizeof(world));
+        if (attack && InterlockedExchange(&LocalAttackLogged, 1) == 0)
+            CompatLog("primeiro ataque humano espelhado ao World para validar hit no bot");
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
@@ -310,26 +313,6 @@ bool InstallConnectHook(HMODULE module, const char* expectedLibrary)
     }
     return false;
 }
-}
-
-void __stdcall ReportBotHit(uint8_t botSeat)
-{
-    if (botSeat >= 20 || !OriginalSendTo) return;
-    sockaddr_in world{};
-    const SOCKET socket = static_cast<SOCKET>(
-        InterlockedCompareExchange(&WorldSocketValue, -1, -1));
-    if (socket == INVALID_SOCKET || !ReadWorldEndpoint(world)) return;
-
-    BYTE packet[7]{};
-    packet[0] = static_cast<BYTE>(BotHitTelemetryType);
-    packet[1] = static_cast<BYTE>(BotHitTelemetryType >> 8);
-    const uint32_t sequence = static_cast<uint32_t>(InterlockedIncrement(&HitSequence));
-    std::memcpy(packet + 2, &sequence, sizeof(sequence));
-    packet[6] = botSeat;
-    OriginalSendTo(socket, reinterpret_cast<const char*>(packet), sizeof(packet), 0,
-        reinterpret_cast<const sockaddr*>(&world), sizeof(world));
-    if (InterlockedExchange(&FirstHitLogged, 1) == 0)
-        CompatLog("primeiro hit real em bot confirmado pela engine e enviado ao World");
 }
 
 bool LoadServerAddress()

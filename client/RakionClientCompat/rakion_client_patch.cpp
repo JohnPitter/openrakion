@@ -18,8 +18,6 @@ namespace
 {
 constexpr uintptr_t PatchAddress = 0x351533e9;
 constexpr uintptr_t ContinueAddress = PatchAddress + 5;
-constexpr uintptr_t ReceiveDamageAddress = 0x35152da0;
-constexpr uintptr_t ReceiveDamageContinueAddress = ReceiveDamageAddress + 7;
 constexpr uintptr_t RangedDamageReturnAddress = 0x3519f5ad;
 constexpr uintptr_t PlayerUpdateAddress = 0x35165170;
 constexpr uintptr_t PlayerUpdateContinueAddress = PlayerUpdateAddress + 8;
@@ -33,7 +31,6 @@ constexpr uintptr_t FallDownToFloorAddress = 0x36124ce0;
 constexpr BYTE ExpectedFallDownToFloor[] = { 0x64, 0xa1, 0x00, 0x00, 0x00, 0x00, 0x6a, 0xff };
 constexpr uint32_t ReceiveDamageStackReturnOffset = 0x4d4;
 constexpr BYTE Expected[] = { 0x68, 0x30, 0xa6, 0x2b, 0x35 };
-constexpr BYTE ExpectedReceiveDamageEntry[] = { 0x6a, 0xff, 0x68, 0x1f, 0xe8, 0x26, 0x35 };
 constexpr BYTE ExpectedPlayerUpdate[] = { 0x6a, 0xff, 0x64, 0xa1, 0x00, 0x00, 0x00, 0x00 };
 constexpr int MaxPlayerSeats = 20;
 volatile LONG GroundSnapEnabled = 0;   // 1 só após verificar o prólogo de FallDownToFloor (fail-closed)
@@ -43,7 +40,6 @@ volatile LONG DesiredDeadState[MaxPlayerSeats]{};
 volatile LONG AppliedLifecycleSequence[MaxPlayerSeats]{};
 volatile LONG LoggedLifecycleSequence[MaxPlayerSeats]{};
 uintptr_t PlayerUpdateContinue = PlayerUpdateContinueAddress;
-uintptr_t ReceiveDamageContinue = ReceiveDamageContinueAddress;
 bool IsRakionProcess()
 {
     wchar_t path[MAX_PATH]{};
@@ -186,61 +182,6 @@ bool InstallPlayerUpdateHook()
     return true;
 }
 
-void __stdcall ReportConfirmedBotCollision(void* victim, void* attacker)
-{
-    __try
-    {
-        if (!victim || !attacker) return;
-        int seat = *reinterpret_cast<BYTE*>(static_cast<BYTE*>(victim) + 0x264);
-        if (seat < 0 || seat >= MaxPlayerSeats) return;
-        if (InterlockedCompareExchange(&DesiredLifecycleSequence[seat], 0, 0) == 0) return;
-
-        using GetLocalPlayerFn = void*(__cdecl*)();
-        auto getLocalPlayer = *reinterpret_cast<GetLocalPlayerFn*>(0x352b3630);
-        if (!getLocalPlayer || getLocalPlayer() != attacker) return;
-        ReportBotHit(static_cast<uint8_t>(seat));
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER)
-    {
-    }
-}
-
-__declspec(naked) void ReceiveDamageEntryHook()
-{
-    __asm
-    {
-        pushfd
-        pushad
-        push ebp
-        push ecx
-        call ReportConfirmedBotCollision
-        popad
-        popfd
-        push -1
-        push 0x3526e81f
-        jmp dword ptr [ReceiveDamageContinue]
-    }
-}
-
-bool InstallReceiveDamageEntryHook()
-{
-    auto* patch = reinterpret_cast<BYTE*>(ReceiveDamageAddress);
-    if (std::memcmp(patch, ExpectedReceiveDamageEntry, sizeof(ExpectedReceiveDamageEntry)) != 0)
-        return false;
-
-    DWORD oldProtection{};
-    if (!VirtualProtect(patch, sizeof(ExpectedReceiveDamageEntry), PAGE_EXECUTE_READWRITE,
-                        &oldProtection))
-        return false;
-    std::vector<BYTE> detour;
-    EmitJump(detour, ReceiveDamageAddress, reinterpret_cast<uintptr_t>(&ReceiveDamageEntryHook));
-    std::memcpy(patch, detour.data(), detour.size());
-    std::memset(patch + detour.size(), 0x90, sizeof(ExpectedReceiveDamageEntry) - detour.size());
-    VirtualProtect(patch, sizeof(ExpectedReceiveDamageEntry), oldProtection, &oldProtection);
-    FlushInstructionCache(GetCurrentProcess(), patch, sizeof(ExpectedReceiveDamageEntry));
-    return true;
-}
-
 std::vector<BYTE> BuildCode(uintptr_t cave)
 {
     std::vector<BYTE> code;
@@ -322,11 +263,6 @@ DWORD WINAPI InstallCompatibility(void*)
         return 4;
     }
     LoadLifecycleSnapshot();
-    if (!InstallReceiveDamageEntryHook())
-    {
-        CompatLog("hook de colisao real com bot falhou");
-        return 5;
-    }
     // Ground-snap: só habilita se a build de engine.dll casar o prólogo de FallDownToFloor (fail-closed —
     // build incompatível não faz o snap, sem patchar endereço desconhecido). Ver critério de não-regressão.
     if (std::memcmp(reinterpret_cast<BYTE*>(FallDownToFloorAddress), ExpectedFallDownToFloor,
@@ -339,7 +275,7 @@ DWORD WINAPI InstallCompatibility(void*)
     {
         CompatLog("ground-snap DESABILITADO: engine.dll nao casou o prologo de FallDownToFloor");
     }
-    CompatLog("compatibilidade HIT/SHOT, colisao real e lifecycle instalada");
+    CompatLog("compatibilidade HIT/SHOT, telemetria de ataque e lifecycle instalada");
     for (;;)
     {
         LoadLifecycleSnapshot();

@@ -1,37 +1,67 @@
+using System;
+
 namespace RakionServer.World.Domain
 {
     /// <summary>
     /// Combate server-side do bot (o servidor é a autoridade do HP do bot). Reproduz o que o RE
-    /// permite: o bot leva dano de humanos e MORRE (dá kill/pontos ao humano) — o cliente do humano
-    /// detecta o hit (computa cell points) mesmo sem o número cosmético HIT×N (gate `[+0x394]`).
-    /// A colisão vem da engine do atacante; o domínio valida alvo, estado, time e alcance antes de
-    /// alterar o HP. Uma animação 0x0311 isolada nunca é tratada como acerto.
+    /// permite: o bot leva dano de humanos e MORRE (dá kill/pontos ao humano). O cliente informa o
+    /// início do ataque; o domínio escolhe exatamente um bot inimigo vivo, dentro do alcance e do
+    /// cone frontal, e impede emissões repetidas do mesmo golpe.
     /// </summary>
     public static class BotCombat
     {
         /// <summary>Alcance de melee em unidades wire (i16 do 0x030A). Aproxima a hitbox do golpe.</summary>
         public const float MeleeRangeWire = 600f;
+        public const int MeleeAttackCooldownMs = 250;
+        private const float FrontalDotThreshold = 0.258819f; // cos(75°)
 
         public readonly record struct BotHit(PlayerRec BotRecord, bool Died);
 
         /// <summary>
-        /// Aplica um hit confirmado pela engine a um único assento de bot, após as validações
-        /// autoritativas do match.
+        /// Resolve um golpe contra o bot inimigo mais próximo no cone frontal do atacante.
         /// </summary>
-        public static bool TryApplyConfirmedHit(
-            Field field, PlayerRec attacker, byte targetSeat, int damage, out BotHit hit)
+        public static bool TryResolveMeleeAttack(
+            Field field, PlayerRec attacker, long nowMs, int damage, out BotHit hit)
         {
             hit = default;
-            PlayerRec? target = field.RecAt(targetSeat);
-            BotPlayer? bot = target?.Bot;
-            if (target == null || bot == null || !bot.Alive || attacker.Dead ||
-                attacker.State != 4 || bot.Team == attacker.Team || damage <= 0)
+            if (attacker.Dead || attacker.State != 4 || damage <= 0 ||
+                nowMs < attacker.NextBotMeleeAttackMs)
                 return false;
-            if (target.Position.HorizontalDistanceTo(attacker.Position) > MeleeRangeWire)
-                return false;
+            attacker.NextBotMeleeAttackMs = nowMs + MeleeAttackCooldownMs;
 
-            hit = new BotHit(target, bot.TakeDamage(damage));
+            PlayerRec? target = FindNearestTarget(field, attacker);
+            if (target?.Bot == null) return false;
+
+            hit = new BotHit(target, target.Bot.TakeDamage(damage));
             return true;
+        }
+
+        private static PlayerRec? FindNearestTarget(Field field, PlayerRec attacker)
+        {
+            PlayerRec? nearest = null;
+            float nearestDistance = float.MaxValue;
+            foreach (PlayerRec candidate in field.BotSlots)
+            {
+                BotPlayer bot = candidate.Bot!;
+                if (!bot.Alive || bot.Team == attacker.Team) continue;
+
+                float distance = candidate.Position.HorizontalDistanceTo(attacker.Position);
+                if (distance > MeleeRangeWire || distance >= nearestDistance ||
+                    !IsInsideFrontalCone(attacker, candidate.Position, distance)) continue;
+                nearest = candidate;
+                nearestDistance = distance;
+            }
+            return nearest;
+        }
+
+        private static bool IsInsideFrontalCone(
+            PlayerRec attacker, BotVector targetPosition, float distance)
+        {
+            if (distance <= 1f) return true;
+            float dx = (targetPosition.X - attacker.Position.X) / distance;
+            float dz = (targetPosition.Z - attacker.Position.Z) / distance;
+            float dot = MathF.Sin(attacker.Heading) * dx + MathF.Cos(attacker.Heading) * dz;
+            return dot >= FrontalDotThreshold;
         }
     }
 }

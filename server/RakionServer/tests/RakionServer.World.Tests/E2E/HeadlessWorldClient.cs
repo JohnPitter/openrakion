@@ -29,7 +29,6 @@ namespace RakionServer.World.Tests.E2E
         private readonly BlockingCollection<byte[]> _rx = new(new ConcurrentQueue<byte[]>());
         private readonly CancellationTokenSource _cts = new();
         private int _seq;
-        private uint _botHitSequence;
 
         public string Name { get; }
         public IReadOnlyList<byte[]> Received => _receivedLog;
@@ -381,13 +380,6 @@ namespace RakionServer.World.Tests.E2E
             _udp!.SendTo(BotTelemetryDatagram.Wrap(p),
                 new IPEndPoint(IPAddress.Loopback, serverGamePort));
             return p;
-        }
-
-        public void SendConfirmedBotHit(int serverGamePort, byte targetSeat)
-        {
-            uint sequence = ++_botHitSequence;
-            _udp!.SendTo(BotHitTelemetryDatagram.Build(sequence, targetSeat),
-                new IPEndPoint(IPAddress.Loopback, serverGamePort));
         }
 
         public byte[] SendBotTelemetryMove(

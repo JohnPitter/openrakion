@@ -34,6 +34,17 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
+        public void SynthesizeMove_PoseRoundtripsHeading()
+        {
+            byte[] packet = BotMovement.SynthesizeMove(
+                10, new BotVector(200, 5, -300), MathF.PI / 2, 2);
+
+            Assert.True(BotMovement.TryReadPose(packet, out BotVector position, out float heading));
+            Assert.Equal(new BotVector(200, 5, -300), position);
+            Assert.InRange(heading, MathF.PI / 2 - 0.001f, MathF.PI / 2 + 0.001f);
+        }
+
+        [Fact]
         public void SynthesizeMove_KeepsAbsoluteHeadingOutOfAccumulatedViewDeltas()
         {
             byte[] packet = BotMovement.SynthesizeMove(

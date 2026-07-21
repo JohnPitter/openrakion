@@ -19,7 +19,7 @@ do contrato.
 | Engine golden | SHA-256 `83B20D6C32CD66B95C8F8E41AD6DE13A58E8F5F948CD21CBD118D42EF8CF88F2` |
 | Proxy determinístico | `Bin/version.dll`, SHA-256 `13C1D0CC022D0000FA2E7ED03ABD0107AD41D894E0AF302D74CF3D42B0F33263` |
 | Forwarder oficial | carregado de `%SystemRoot%\SysWOW64\version.dll`; não é distribuído |
-| Patches golden | `Bin/RakionClientPatch.dll`, SHA-256 `BF2F0DE4D8588BFF811609DC20229A649F817B95E571C94A5EAC8D6BD3F44515` |
+| Patches golden | `Bin/RakionClientPatch.dll`, SHA-256 `6E8A4E507D0C8351F5D2A705ADD9755CEDA393CFF715C6A687EE5BB01926C18F` |
 | Destino | `server.host=127.0.0.1`, `display.mode=windowed` |
 | Verificação estática | `validation-install.json` atualizado e 14/14 arquivos aprovados em 18/07/2026 |
 
@@ -42,8 +42,8 @@ golden source; este diretório é somente o ambiente de execução.
 | Launcher: login e amigos online | aprovado em 21/07/2026 | usuário validou a transição dos inputs para a lista de amigos e os botões Outra conta, Iniciar game e Game options |
 | Messenger F9 | parcial | primeiro login aprovado; o RE de reentrada confirmou destruição/recriação do host, e a DLL agora usa a transição nativa `host+0x24: 0→1` em cada instância; reentrada aguarda reteste |
 | Add Bot | aprovado | botão enviou `0x47` `GoHeroi : /addbot`; `Rok` apareceu no time azul da sala e dentro do stage Mammoth |
-| Ataque humano→bot | aprovado no transporte e lifecycle | DLL registrou o primeiro ataque; World reduziu `500→0`; cliente aplicou `alive seq=1` e `dead seq=2` |
-| HUD/animação final do bot | pendente | captura ainda mostrou `0 Kills`; reação de dano, queda visível próxima, respawn e placar exigem novo smoke |
+| Ataque humano→bot | reteste pendente em 21/07/2026 | o hook de colisão anterior não emitiu o contrato esperado e foi removido; a build atual espelha o início do ataque e o World valida alvo único por rumo, cone, alcance e cooldown |
+| HUD/animação final do bot | pendente | validar redução de HP, parada imediata durante a queda de 1,8 s, morte, um kill e respawn sem perseguição enquanto caído |
 
 Na captura de 18/07/2026, o primeiro uso da porta UDP exibiu o diálogo do Windows Firewall. Ele
 não é UAC nem falha do launcher; permitir acesso é necessário para P2P fora de localhost. A janela
@@ -82,9 +82,10 @@ painel exibir a relação e uma mensagem ser observada pela interface.
 
 ## Smoke 3 — PvP, P2P e bot
 
-Parcial executado em 18/07/2026 com um cliente pristine: Add Bot, roster, entidade no stage,
-ataque humano→bot, HP e lifecycle de morte aprovados. Permanecem abertos os itens abaixo, sobretudo
-a observação próxima da animação/queda e o HUD de placar.
+Add Bot, roster e entidade no stage foram aprovados. Em 21/07/2026, o teste visual mostrou que a
+entidade caía localmente, mas o World não recebia o acerto e continuava publicando perseguição. A
+build atual remove esse caminho sem efeito, resolve o ataque no servidor com pose/cone/alcance e
+publica uma parada antes da reação. O novo fluxo ainda requer aprovação visual.
 
 - executar Golem, Deathmatch, Team Death e Boss com dois clientes;
 - validar movimento, arma, ataque, hit, HP/AP, morte, respawn, placar e encerramento;

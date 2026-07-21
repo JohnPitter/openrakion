@@ -31,9 +31,14 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
-        public void AttackPattern_CyclesThreeVariantsAndReactionLastsLongEnough()
+        public void AttackPattern_CyclesVariantsAndHitReactionStopsBot()
         {
-            var bot = new BotPlayer();
+            var bot = new BotPlayer
+            {
+                Velocity = new BotVector(10, 0, 20),
+                TargetSeat = 3,
+                NextAttackReadyMs = 1200
+            };
 
             Assert.Equal(BotAttackVariant.VariantA, bot.NextAttackVariant());
             Assert.Equal(BotAttackVariant.VariantB, bot.NextAttackVariant());
@@ -41,6 +46,9 @@ namespace RakionServer.World.Tests
             Assert.Equal(BotAttackVariant.VariantA, bot.NextAttackVariant());
             bot.BeginHitReaction(1000);
             Assert.Equal(1000 + BotPlayer.DamageReactionMs, bot.HitReactionUntilMs);
+            Assert.Equal(BotVector.Zero, bot.Velocity);
+            Assert.Equal(Field.NoSeat, bot.TargetSeat);
+            Assert.Equal(bot.HitReactionUntilMs, bot.NextAttackReadyMs);
         }
     }
 }

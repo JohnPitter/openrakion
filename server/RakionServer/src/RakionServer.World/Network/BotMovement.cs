@@ -74,17 +74,29 @@ namespace RakionServer.World.Network
             return packet;
         }
 
-        /// <summary>Extrai a posição (i16 x/y/z) de um 0x030A humano recebido, p/ a IA do bot mirar.</summary>
-        public static bool TryReadPosition(ReadOnlySpan<byte> packet, out BotVector position)
+        /// <summary>Extrai posição e rumo de um 0x030A humano recebido.</summary>
+        public static bool TryReadPose(
+            ReadOnlySpan<byte> packet, out BotVector position, out float heading)
         {
             position = default;
+            heading = 0;
             if (packet.Length < MoveSize ||
                 BinaryPrimitives.ReadUInt16LittleEndian(packet) != MoveType) return false;
             position = new BotVector(
                 BinaryPrimitives.ReadInt16LittleEndian(packet[11..]),
                 BinaryPrimitives.ReadInt16LittleEndian(packet[13..]),
                 BinaryPrimitives.ReadInt16LittleEndian(packet[15..]));
+            float normalized = Math.Clamp(
+                BinaryPrimitives.ReadInt16LittleEndian(packet[17..]) / (float)short.MaxValue,
+                -1f, 1f);
+            heading = normalized * MathF.PI;
             return true;
+        }
+
+        /// <summary>Extrai apenas a posição do 0x030A.</summary>
+        public static bool TryReadPosition(ReadOnlySpan<byte> packet, out BotVector position)
+        {
+            return TryReadPose(packet, out position, out _);
         }
 
         private static short ToWire(float v) =>

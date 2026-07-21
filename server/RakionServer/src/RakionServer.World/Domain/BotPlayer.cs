@@ -1,3 +1,5 @@
+using System;
+
 namespace RakionServer.World.Domain
 {
     /// <summary>
@@ -10,7 +12,7 @@ namespace RakionServer.World.Domain
     /// </summary>
     public sealed class BotPlayer
     {
-        public const int DamageReactionMs = 1100;
+        public const int DamageReactionMs = 1800;
         public string Name { get; init; } = "";
         public byte Level { get; init; } = 1;
         public byte CharClass { get; init; } = 1;
@@ -57,7 +59,15 @@ namespace RakionServer.World.Domain
             return true;
         }
 
-        public void BeginHitReaction(long nowMs) => HitReactionUntilMs = nowMs + DamageReactionMs;
+        public void BeginHitReaction(long nowMs)
+        {
+            HitReactionUntilMs = nowMs + DamageReactionMs;
+            Velocity = BotVector.Zero;
+            TargetSeat = Field.NoSeat;
+            NextAttackReadyMs = Math.Max(NextAttackReadyMs, HitReactionUntilMs);
+            _targetVelocityEma = BotVector.Zero;
+            _hasTarget = false;
+        }
 
         public BotAttackVariant NextAttackVariant()
         {
@@ -82,6 +92,8 @@ namespace RakionServer.World.Domain
             NextAttackReadyMs = 0;
             HitReactionUntilMs = 0;
             _attackVariant = 0;
+            _targetVelocityEma = BotVector.Zero;
+            _hasTarget = false;
             LifecycleSequence++;
             return true;
         }

@@ -35,6 +35,8 @@ namespace RakionServer.World.Domain
         public bool UsesTunneling;         // user+0x1478: sem rota UDP direta confirmada
         public BotPlayer? Bot;             // peer sintético server-side (assento ocupado por bot)
         public BotVector Position;          // última posição observada (do 0x030A do humano / IA do bot) p/ mira do bot
+        public float Heading;               // rumo observado do 0x030A humano, usado no cone de melee
+        public long NextBotMeleeAttackMs;   // anti-repetição de hooks do mesmo golpe humano
         public byte[]? InitialMovement;     // primeiro 0x4B do match, usado para sincronizar peers que carregaram depois
         public byte Team => (byte)(Slot < 10 ? 0 : 1); // slots 0..9 = time0, 10..0x13 = time1
         public int Slot;                 // indice no array (0..0x13)
@@ -184,6 +186,9 @@ namespace RakionServer.World.Domain
                 rec.ResultPoints = 0;
                 rec.VoteState = 0;
                 rec.UsesTunneling = false;
+                rec.Position = default;
+                rec.Heading = 0;
+                rec.NextBotMeleeAttackMs = 0;
                 rec.InitialMovement = null;
             }
         }
@@ -262,6 +267,9 @@ namespace RakionServer.World.Domain
                     Slots[i].CounterB = 0;
                     Slots[i].ResultPoints = 0;
                     Slots[i].VoteState = 0;
+                    Slots[i].Position = default;
+                    Slots[i].Heading = 0;
+                    Slots[i].NextBotMeleeAttackMs = 0;
                     return i;
                 }
             }

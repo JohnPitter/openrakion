@@ -406,8 +406,8 @@ namespace RakionServer.World
             try { target.SendLobby(Network.LobbyFrames.ChannelChat(slot, message)); } catch { }
         }
 
-        public void ResolveConfirmedBotHit(
-            ClientSession attacker, byte targetSeat, System.Action<byte[]> publishHit, int damage = 34)
+        public void ResolveBotMeleeAttack(
+            ClientSession attacker, System.Action<byte[]> publishHit, int damage = 34)
         {
             var field = GetField(attacker.FieldId);
             if (field == null || field.State != 2 || field.BotCount == 0) return;
@@ -415,27 +415,30 @@ namespace RakionServer.World
             {
                 var attackerRec = field.FindRec(attacker);
                 if (attackerRec == null) return;
-                if (!Domain.BotCombat.TryApplyConfirmedHit(
-                    field, attackerRec, targetSeat, damage, out var hit)) return;
+                long now = Environment.TickCount64;
+                if (!Domain.BotCombat.TryResolveMeleeAttack(
+                    field, attackerRec, now, damage, out var hit)) return;
 
                 BotPlayer bot = hit.BotRecord.Bot!;
-                long now = Environment.TickCount64;
                 bot.BeginHitReaction(now);
-                publishHit(Network.BotMovement.SynthesizeDamage(targetSeat, ++bot.MoveSeq));
-                Log.Debug("bot", "hit confirmado: humano seat {0} -> bot seat {1}: hp={2}/{3}",
-                    attackerRec.Slot, targetSeat, bot.Health, bot.MaxHealth);
+                byte botSeat = (byte)hit.BotRecord.Slot;
+                publishHit(Network.BotMovement.SynthesizeMove(
+                    botSeat, bot.Position, bot.Heading, ++bot.MoveSeq));
+                publishHit(Network.BotMovement.SynthesizeDamage(botSeat, ++bot.MoveSeq));
+                Log.Debug("bot", "melee validado: humano seat {0} -> bot seat {1}: hp={2}/{3}",
+                    attackerRec.Slot, botSeat, bot.Health, bot.MaxHealth);
                 if (!hit.Died) return;
 
                 if (hit.BotRecord.State != 4) hit.BotRecord.State = 4;
-                var death = field.ApplyReportedDeath(targetSeat, attackerRec.Slot, 0);
+                var death = field.ApplyReportedDeath(botSeat, attackerRec.Slot, 0);
                 hit.BotRecord.Dead = true;
                 bot.ScheduleRespawn(now, BotRespawnPolicy.DelayMs(field.Mode));
                 Bots.PublishBotLifecycles(field);
                 if (death.Processed)
                     field.BroadcastFieldPlaying(0x4f,
-                        new byte[] { targetSeat, 0, (byte)attackerRec.Slot, death.ScoreA, death.ScoreB });
+                        new byte[] { botSeat, 0, (byte)attackerRec.Slot, death.ScoreA, death.ScoreB });
                 Log.Ok("bot", "bot seat {0} morto por humano seat {1} (field {2}); respawn={3}ms",
-                    targetSeat, attackerRec.Slot, field.Id, BotRespawnPolicy.DelayMs(field.Mode));
+                    botSeat, attackerRec.Slot, field.Id, BotRespawnPolicy.DelayMs(field.Mode));
             }
         }
 
