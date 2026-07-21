@@ -42,6 +42,15 @@ clientes reais spawn, respawn, troca de round, resultado e retorno à sala.
 registro já `state=4` é ignorado, como em `FUN_00408440`, sem reiniciar o lifecycle local. Após 40
 segundos, o motor também pode iniciar com quem já spawnou, sem promover artificialmente os atrasados.
 
+### Ordem de carregamento dos peers
+
+O cliente pode enviar seu primeiro `0x4B` logo após confirmar `0x48`, antes de o outro jogador
+terminar de carregar. O relay original entrega `0x4B` somente a registros já em `state=4`; portanto,
+um master ainda em `state=3` não recebe esse estado inicial e pode permanecer em `Waiting other
+players`. O World guarda apenas o primeiro blob `0x4B` de cada jogador no match e o reproduz aos
+peers no instante em que eles passam para `state=4`. A cauda de movimentos continua sendo
+encaminhada normalmente e o cache é descartado em todo novo `MatchId`.
+
 ### Timeout por modo
 
 | Modo | Valores comparados | Efeito |

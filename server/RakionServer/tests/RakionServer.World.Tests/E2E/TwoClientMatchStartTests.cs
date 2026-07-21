@@ -162,11 +162,51 @@ namespace RakionServer.World.Tests.E2E
             }
         }
 
+        [Fact]
+        public async Task FasterJoiner_InitialMovementIsReplayedWhenMasterFinishesLoading()
+        {
+            await using var fixture = await WorldServerFixture.CreateAsync(forceTunneling: true);
+            if (!fixture.Available) return;
+            var (master, joiner, field, joinerSession) = await PrepareRoom(
+                fixture, HeadlessWorldClient.RoomSpec.Deathmatch("e2e-reverse-load"));
+            await using (master)
+            await using (joiner)
+            {
+                ClientSession masterSession = field.Master!;
+                joiner.SetReady(true);
+                WaitUntil(() => field.FindRec(joinerSession)?.LobbyReady == true, Timeout,
+                    "joiner não ficou ready");
+                master.StartMatch();
+                WaitUntil(() => field.MatchId != Guid.Empty, Timeout, "partida não armou");
+
+                byte[] joinerMovement = { 0x31, 0x32, 0x33, 0x34 };
+                joiner.RoundStart();
+                WaitUntil(() => field.FindRec(joinerSession)?.State == 4, Timeout,
+                    "joiner rápido não confirmou carregamento");
+                joiner.SpawnField(joinerMovement);
+                WaitUntil(() => field.FindRec(joinerSession)?.InitialMovement != null, Timeout,
+                    "movimento inicial do joiner não foi guardado");
+
+                master.RoundStart();
+                WaitUntil(() => field.Phase == MatchPhase.Playing, Timeout,
+                    "round não iniciou quando master terminou de carregar");
+
+                byte[] replay = master.WaitForNext(
+                    frame => IsMovementFrom(frame, joinerSession.FieldSeat), Timeout);
+                Assert.Equal(joinerMovement, replay.Skip(5).Take(joinerMovement.Length));
+                Assert.Equal((byte)4, field.FindRec(masterSession)!.State);
+                Assert.Equal((byte)4, field.FindRec(joinerSession)!.State);
+            }
+        }
+
         private static bool IsRoundStart(byte[] frame) =>
             frame.Length >= 2 && frame[0] == 0x48 && frame[1] == 0;
 
         private static bool IsSpawn(byte[] frame) =>
             frame.Length >= 3 && frame[0] == 0x45 && frame[1] == 0;
+
+        private static bool IsMovementFrom(byte[] frame, byte seat) =>
+            frame.Length >= 5 && frame[0] == 0x4b && frame[1] == 0 && frame[2] == seat;
 
         private static void AssertSpawns(HeadlessWorldClient client, params byte[] seats)
         {

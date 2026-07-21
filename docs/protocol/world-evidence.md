@@ -1516,6 +1516,13 @@ O World .NET agora representa essas saídas como transições explícitas e não
 duplicado. Os testes cobrem o início conjunto, a entrada tardia, a intermissão e a preservação do
 estado de um jogador já ativo.
 
+Uma captura posterior revelou a ordem inversa: o joiner enviou `0x48` e seu primeiro `0x4B` às
+`12:28:28.574`, enquanto o master ainda estava em `state=3`; o master confirmou `0x48` somente às
+`12:28:28.611`. Como `FUN_00405C00` restringe os destinos do relay `0x4B` a `state=4`, o estado
+inicial do joiner não alcançou o master e a UI permaneceu em `Waiting other players`. O servidor
+mantém agora o primeiro blob `0x4B` por jogador e o reproduz quando o peer atrasado é promovido.
+O E2E `FasterJoiner_InitialMovementIsReplayedWhenMasterFinishesLoading` fixa essa ordem no fio.
+
 ## Variações que não podem ser copiadas
 
 - handles/ponteiros vistos em `0x0E` e `0x2C` pertencem à sessão; `0x14` leva apenas o personagem,

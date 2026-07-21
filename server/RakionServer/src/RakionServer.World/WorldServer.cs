@@ -708,13 +708,18 @@ namespace RakionServer.World
                     case Domain.PlayerReadyTransition.Started:
                         _fieldStatusBeat[f.Id] = now;
                         f.BroadcastLobby(f.Build0x48());
-                        Log.Ok("field", "[{0}] partida iniciada no field {1} (0x48 a {2} player(s))",
-                            s.Slot, f.Id, f.CountPlaying());
+                        int replayed = 0;
+                        foreach (Domain.PlayerRec record in f.Slots)
+                            if (record.Playing && record.Session != null)
+                                replayed += f.ReplayInitialMovementsTo(record.Session);
+                        Log.Ok("field", "[{0}] partida iniciada no field {1} (0x48 a {2} player(s), replay 0x4B={3})",
+                            s.Slot, f.Id, f.CountPlaying(), replayed);
                         break;
                     case Domain.PlayerReadyTransition.JoinedPlaying:
                         s.SendEncryptedFrame(f.Build0x48());
-                        Log.Info("field", "[{0}] entrou no round em andamento do field {1}",
-                            s.Slot, f.Id);
+                        int lateReplay = f.ReplayInitialMovementsTo(s);
+                        Log.Info("field", "[{0}] entrou no round em andamento do field {1} (replay 0x4B={2})",
+                            s.Slot, f.Id, lateReplay);
                         break;
                     case Domain.PlayerReadyTransition.JoinedRoundEnd:
                         s.SendMessage(0x4a, f.Build0x4a());

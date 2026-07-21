@@ -35,6 +35,7 @@ namespace RakionServer.World.Domain
         public bool UsesTunneling;         // user+0x1478: sem rota UDP direta confirmada
         public BotPlayer? Bot;             // peer sintético server-side (assento ocupado por bot)
         public BotVector Position;          // última posição observada (do 0x030A do humano / IA do bot) p/ mira do bot
+        public byte[]? InitialMovement;     // primeiro 0x4B do match, usado para sincronizar peers que carregaram depois
         public byte Team => (byte)(Slot < 10 ? 0 : 1); // slots 0..9 = time0, 10..0x13 = time1
         public int Slot;                 // indice no array (0..0x13)
 
@@ -183,6 +184,7 @@ namespace RakionServer.World.Domain
                 rec.ResultPoints = 0;
                 rec.VoteState = 0;
                 rec.UsesTunneling = false;
+                rec.InitialMovement = null;
             }
         }
 
@@ -437,6 +439,32 @@ namespace RakionServer.World.Domain
             return PlayerReadyTransition.JoinedRoundEnd;
         }
 
+        public void RelayPlayerMovement(PlayerRec source, byte[] movement)
+        {
+            source.InitialMovement ??= (byte[])movement.Clone();
+            byte[] payload = BuildPlayerMovement(source, movement);
+            BroadcastFieldPlaying(0x4b, payload, source.Session);
+        }
+
+        public int ReplayInitialMovementsTo(ClientSession target)
+        {
+            int replayed = 0;
+            foreach (PlayerRec source in Slots)
+            {
+                if (!source.Playing || source.Session == target || source.InitialMovement == null) continue;
+                target.SendMessage(0x4b, BuildPlayerMovement(source, source.InitialMovement));
+                replayed++;
+            }
+            return replayed;
+        }
+
+        private static byte[] BuildPlayerMovement(PlayerRec source, byte[] movement)
+        {
+            using var writer = new PacketWriter();
+            writer.WriteByte((byte)source.Slot).WriteWord((ushort)movement.Length).WriteBytes(movement);
+            return writer.ToArray();
+        }
+
         /// <summary>Inicia o round 1 / reinicia o relogio da partida (transicao Pre/RoundEnd -> Playing).</summary>
         public void StartRound() => StartRound(Environment.TickCount64);
 
@@ -477,6 +505,7 @@ namespace RakionServer.World.Domain
                 r.CounterA = 0;
                 r.CounterB = 0;
                 r.ResultPoints = 0;
+                r.InitialMovement = null;
             }
         }
 
