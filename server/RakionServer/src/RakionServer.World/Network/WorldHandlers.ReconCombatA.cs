@@ -174,6 +174,10 @@ namespace RakionServer.World.Network
             {
                 result = 1; // field nao armado
             }
+            else if (rec.Playing)
+            {
+                result = 0; // cliente gráfico confirma 0x48 antes do 0x4B; não regride para spawning
+            }
             else if (field.Mode == 2)
             {
                 rec.State = 3; // survival: spawn direto

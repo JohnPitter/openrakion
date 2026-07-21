@@ -116,13 +116,6 @@ namespace RakionServer.World.Tests.E2E
                 master.StartMatch();
                 WaitUntil(() => field.MatchId != Guid.Empty, Timeout, "partida não armou");
 
-                master.SpawnField();
-                joiner.SpawnField();
-
-                AssertSpawns(master, masterSession.FieldSeat, joinerSession.FieldSeat);
-                AssertSpawns(joiner, masterSession.FieldSeat, joinerSession.FieldSeat);
-                Assert.Equal(field.MatchId, masterSession.PlayerSpawnMatchId);
-                Assert.Equal(field.MatchId, joinerSession.PlayerSpawnMatchId);
                 Assert.Equal((byte)3, field.FindRec(masterSession)!.State);
                 Assert.Equal((byte)3, field.FindRec(joinerSession)!.State);
                 Assert.Equal(MatchPhase.Pre, field.Phase);
@@ -136,10 +129,22 @@ namespace RakionServer.World.Tests.E2E
                 master.DrainReceived();
                 Assert.DoesNotContain(master.Received.Skip(masterFramesBeforeReady), IsRoundStart);
 
+                master.SpawnField();
+                WaitUntil(() => masterSession.PlayerSpawnMatchId == field.MatchId, Timeout,
+                    "spawn do master não foi publicado");
+                Assert.Equal((byte)4, field.FindRec(masterSession)!.State);
+
                 joiner.RoundStart();
                 WaitUntil(() => field.Phase == MatchPhase.Playing, Timeout,
                     "round não iniciou após os dois 0x48");
                 Assert.Equal((byte)4, field.FindRec(joinerSession)!.State);
+                joiner.SpawnField();
+                WaitUntil(() => joinerSession.PlayerSpawnMatchId == field.MatchId, Timeout,
+                    "spawn do joiner não foi publicado");
+                Assert.Equal((byte)4, field.FindRec(joinerSession)!.State);
+
+                AssertSpawns(master, masterSession.FieldSeat, joinerSession.FieldSeat);
+                AssertSpawns(joiner, masterSession.FieldSeat, joinerSession.FieldSeat);
                 Thread.Sleep(200);
                 master.DrainReceived();
                 joiner.DrainReceived();

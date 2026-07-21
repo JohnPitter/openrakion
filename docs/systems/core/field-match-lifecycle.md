@@ -107,9 +107,10 @@ O motor é iniciado pelo `WorldServer` e atua nos fields em `State=2`.
 1. Compile a solução com o SDK .NET disponível no `PATH`.
 2. Inicie o stack pelo `server/RakionServer/start-stack.ps1`.
 3. Crie uma sala Battle, deixe todos os membros ready e inicie pelo host.
-4. O start chama `ArmMatch`; o `0x4B` publica o spawn, o `0x48` enviado pelo cliente ao terminar
-   de carregar chama `NotifyPlayerReady`. O World aguarda todos os assentos em `spawning` e publica
-   um único `0x48` sincronizado para a sala; o loop global chama
+4. O start chama `ArmMatch`; no cliente gráfico v258, o `0x48` de carregamento pode chegar antes
+   do `0x4B` que publica o spawn. O spawn preserva o assento que já está em `playing`. O World
+   aguarda todos os assentos em `spawning` e publica um único `0x48` sincronizado para a sala;
+   o loop global chama
    `AdvanceLifecycle`.
 5. Confira logs `field` para início, timeout, próximo round, fim e settlement.
 
