@@ -84,6 +84,29 @@ namespace RakionServer.World.Tests.E2E
         }
 
         [Fact]
+        public async Task CompatibilityTelemetry_RelaysMovementAndAttackInBothDirections()
+        {
+            await using var fixture = await WorldServerFixture.CreateAsync(forceTunneling: true);
+            if (!fixture.Available) return;
+            await using var master = await ConnectAsync(fixture, "compat-master");
+            await using var joiner = await ConnectAsync(fixture, "compat-joiner");
+
+            var (masterSession, joinerSession, _) =
+                DriveToPlayingMatch(fixture, master, joiner, joinerDirect: true);
+            byte[] masterMove = master.SendBotTelemetryMove(
+                fixture.UdpPort2, masterSession.FieldSeat, 321, 0, -123);
+            Assert.Equal(masterMove, joiner.WaitForUdp(IsMove, JourneyHelper.Timeout));
+
+            byte[] joinerMove = joiner.SendBotTelemetryMove(
+                fixture.UdpPort2, joinerSession.FieldSeat, -222, 0, 456);
+            Assert.Equal(joinerMove, master.WaitForUdp(IsMove, JourneyHelper.Timeout));
+
+            byte[] attack = master.SendBotTelemetryAttack(
+                fixture.UdpPort2, masterSession.FieldSeat);
+            Assert.Equal(attack, joiner.WaitForUdp(IsAttack, JourneyHelper.Timeout));
+        }
+
+        [Fact]
         public async Task BattleExit_LateCombatFramesThenRoomExit_KeepsSessionConnected()
         {
             await using var fixture = await WorldServerFixture.CreateAsync(forceTunneling: true);
@@ -201,6 +224,9 @@ namespace RakionServer.World.Tests.E2E
 
         private static bool IsMove(byte[] packet) =>
             packet.Length == 26 && packet[0] == 0x0a && packet[1] == 0x03;
+
+        private static bool IsAttack(byte[] packet) =>
+            packet.Length == 10 && packet[0] == 0x11 && packet[1] == 0x03;
 
         private static bool IsTunnelFrame(byte[] frame) =>
             frame.Length >= 4 && frame[0] == 0x57 && frame[1] == 0 &&

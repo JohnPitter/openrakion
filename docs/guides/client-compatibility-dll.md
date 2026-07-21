@@ -61,10 +61,10 @@ python client\RakionClientCompat\verify_legacy_client_patch.py `
   aguardando o `RET_LOGIN` quando a autenticação Buddy ainda não terminou;
 - manter HIT/SHOT, lifecycle e ground-snap visual dos bots;
 - ler o IPv4 de `server.host` e redirecionar somente `40706`, `40708` e `40709`, em TCP/UDP;
-- espelhar movimento e ataque P2P humano ao World pelo envelope `0xB07A`, sem reenviar esse pacote
-  aos peers. Movimento e ataque são capturados na entrada de `CNet::SendToOtherClient`, antes do
-  loop que ignora seats sem endpoint; portanto humano + bot funciona mesmo sem um segundo peer
-  real. O World pode então calcular proximidade, HP e morte do bot.
+- espelhar movimento e ataque P2P humano ao World pelo envelope `0xB07A`. Movimento e ataque são
+  capturados na entrada de `CNet::SendToOtherClient`, antes do loop que ignora seats sem endpoint.
+  O World valida a origem e retransmite o datagrama interno aos outros humanos da mesma Battle;
+  o mesmo input permite calcular proximidade, HP e morte dos bots.
 
 Resolução, mouse, som e gamma continuam em `Scripts/PersistentSymbols.ini`; `display.mode` continua
 selecionando `windowed`, `borderless` ou `fullscreen`. São preferências do jogador, não patches.

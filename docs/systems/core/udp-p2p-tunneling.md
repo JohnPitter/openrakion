@@ -218,6 +218,12 @@ um endpoint observado pelo World como prova de que os dois clientes conseguem tr
 diretamente entre si. Movimento, animação, dano e mensagens reliable passam por `0x56/0x57`. Para
 ambientes com P2P direto comprovado, use `ForceTunneling=0`.
 
+A DLL de compatibilidade também espelha `0x030A` (movimento) e `0x0311` (ataque) ao World no
+envelope autenticado `0xB07A`. Esse caminho é necessário porque o cliente que cria a sala não
+recebe um roster contendo seu próprio flag individual de tunneling. O World valida seat, endpoint
+e field, remove o envelope e retransmite o datagrama original aos demais humanos da mesma
+partida. O mesmo input continua alimentando o combate contra bots.
+
 ## Tunneling e ping TCP
 
 ### Presença agregada

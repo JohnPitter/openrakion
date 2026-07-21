@@ -369,6 +369,29 @@ namespace RakionServer.World.Tests.E2E
             return p;
         }
 
+        public byte[] SendBotTelemetryMove(
+            int serverGamePort, byte sourceSeat, short x, short y, short z)
+        {
+            byte[] movement = BuildMove(sourceSeat, x, y, z);
+            _udp!.SendTo(BotTelemetryDatagram.Wrap(movement),
+                new IPEndPoint(IPAddress.Loopback, serverGamePort));
+            return movement;
+        }
+
+        private static byte[] BuildMove(byte sourceSeat, short x, short y, short z)
+        {
+            byte[] packet = new byte[GameplayActionDatagram.MoveSize];
+            BinaryPrimitives.WriteUInt16LittleEndian(packet, GameplayActionDatagram.MoveType);
+            BinaryPrimitives.WriteUInt32LittleEndian(packet.AsSpan(2), 1);
+            packet[6] = sourceSeat;
+            BinaryPrimitives.WriteUInt16LittleEndian(packet.AsSpan(7), 16);
+            packet[9] = sourceSeat;
+            BinaryPrimitives.WriteInt16LittleEndian(packet.AsSpan(11), x);
+            BinaryPrimitives.WriteInt16LittleEndian(packet.AsSpan(13), y);
+            BinaryPrimitives.WriteInt16LittleEndian(packet.AsSpan(15), z);
+            return packet;
+        }
+
         private static byte[] BuildAttack(byte sourceSeat, byte kind, byte arg0)
         {
             byte[] p = new byte[10];

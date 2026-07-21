@@ -202,16 +202,7 @@ namespace RakionServer.World.Network
             }
 
             ApplyBotInput(sender, type, packet);
-
-            int relayed = 0;
-            foreach (var session in _world.Sessions)
-            {
-                if (!session.InField || session.UdpEndpoint == null) continue;
-                if (session == sender || session.FieldId != sender.FieldId) continue;
-                try { _sock!.SendTo(packet, session.UdpEndpoint); relayed++; }
-                catch (SocketException ex) { Log.Debug("udp", "relay 0x{0:X4} para {1}: {2}", type, session.UdpEndpoint, ex.Message); }
-            }
-            Log.Debug("udp", "datagrama 0x{0:X4} relay p/ {1} peer(s) do field {2}", type, relayed, sender.FieldId);
+            RelayToHumanPeers(sender, packet, type);
         }
 
         private void ProcessBotTelemetry(IPEndPoint from, ReadOnlySpan<byte> packet)
@@ -225,6 +216,27 @@ namespace RakionServer.World.Network
             }
             if (!_relayLimits.TryConsume(sender.Slot, sender.UdpKey, Environment.TickCount64)) return;
             ApplyBotInput(sender, type, packet);
+            RelayToHumanPeers(sender, packet, type);
+        }
+
+        private void RelayToHumanPeers(
+            ClientSession sender, ReadOnlySpan<byte> packet, ushort type)
+        {
+            byte[] datagram = packet.ToArray();
+            int relayed = 0;
+            foreach (ClientSession session in _world.Sessions)
+            {
+                if (!session.InField || session.UdpEndpoint == null || session == sender ||
+                    session.FieldId != sender.FieldId) continue;
+                try { _sock!.SendTo(datagram, session.UdpEndpoint); relayed++; }
+                catch (SocketException ex)
+                {
+                    Log.Debug("udp", "relay 0x{0:X4} para {1}: {2}",
+                        type, session.UdpEndpoint, ex.Message);
+                }
+            }
+            Log.Debug("udp", "datagrama 0x{0:X4} relay p/ {1} peer(s) do field {2}",
+                type, relayed, sender.FieldId);
         }
 
         private static bool TryValidateBotTelemetry(
