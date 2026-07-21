@@ -218,6 +218,13 @@ namespace RakionServer.World.Tests.E2E
         /// <summary>Troca de time na sala (0x3e): sem payload; move para o bloco de 10 assentos oposto.</summary>
         public void ChangeTeam() => Send(0x3e, Array.Empty<byte>());
 
+        public void Invite(ushort targetSessionSlot)
+        {
+            byte[] payload = new byte[2];
+            BinaryPrimitives.WriteUInt16LittleEndian(payload, targetSessionSlot);
+            Send(0x72, payload);
+        }
+
         /// <summary>Chat de canal (0x22): `[cstr text]`. O cliente real embute "nome : msg".</summary>
         public void SendChannelChat(string text)
         {

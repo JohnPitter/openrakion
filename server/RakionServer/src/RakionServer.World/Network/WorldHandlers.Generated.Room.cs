@@ -26,7 +26,11 @@ namespace RakionServer.World.Network
         {
             var u = ctx.User;
             if (!(u.InField && u.FieldSecondary)) { u.Disconnect(0xd6); return; }
-            if (u.Status != UserStatus.InField) { u.Disconnect(0xd7); return; }
+            if (u.Status is not (UserStatus.FieldLobby or UserStatus.InField))
+            {
+                u.Disconnect(0xd7);
+                return;
+            }
 
             ushort targetSlot = ctx.P.UInt16();
             var target = ctx.World.Sessions.FirstOrDefault(s => s.Slot == targetSlot);

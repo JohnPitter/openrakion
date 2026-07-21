@@ -94,8 +94,9 @@ resultado aos três:             5f0000000302000001
 
 O nome C++ do parâmetro exportado não revela a semântica; o handler original `FUN_00428520` prova
 que o word é o **slot global da sessão alvo**. O remetente precisa estar com os dois handles de
-field e `Status=3`; o alvo precisa ter seu primeiro handle de field ativo. Falhas usam `DISC D6`,
-`D7` e `D8`, nessa ordem.
+field; o alvo precisa ter seu primeiro handle de field ativo. O original usa `Status=3`. Como o
+servidor .NET representa separadamente a espera na sala (`FieldLobby=2`) e a partida
+(`InField=3`), o handler aceita os dois estados. Falhas usam `DISC D6`, `D7` e `D8`, nessa ordem.
 
 A resposta vai apenas ao alvo pelo canal lobby:
 
