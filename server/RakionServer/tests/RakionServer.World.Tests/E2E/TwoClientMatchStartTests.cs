@@ -143,11 +143,13 @@ namespace RakionServer.World.Tests.E2E
                     "spawn do joiner não foi publicado");
                 Assert.Equal((byte)4, field.FindRec(joinerSession)!.State);
 
-                AssertSpawns(master, masterSession.FieldSeat, joinerSession.FieldSeat);
-                AssertSpawns(joiner, masterSession.FieldSeat, joinerSession.FieldSeat);
                 Thread.Sleep(200);
                 master.DrainReceived();
                 joiner.DrainReceived();
+                Assert.Contains(master.Received, frame => IsSpawnFrom(frame, joinerSession.FieldSeat));
+                Assert.DoesNotContain(master.Received, frame => IsSpawnFrom(frame, masterSession.FieldSeat));
+                Assert.Contains(joiner.Received, frame => IsSpawnFrom(frame, masterSession.FieldSeat));
+                Assert.DoesNotContain(joiner.Received, frame => IsSpawnFrom(frame, joinerSession.FieldSeat));
                 Assert.Single(master.Received.Skip(masterFramesBeforeReady), IsRoundStart);
                 Assert.Single(joiner.Received, IsRoundStart);
 
@@ -235,8 +237,9 @@ namespace RakionServer.World.Tests.E2E
 
                 byte[] seats = joiner.Received.Skip(beforeLateSpawn)
                     .Where(IsSpawn).Select(frame => frame[3]).OrderBy(seat => seat).ToArray();
-                Assert.Equal(new[] { masterSession.FieldSeat, joinerSession.FieldSeat }
-                    .OrderBy(seat => seat).ToArray(), seats);
+                Assert.Equal(new[] { masterSession.FieldSeat }, seats);
+                Assert.Contains(joiner.Received.Skip(beforeLateSpawn),
+                    frame => IsMovementFrom(frame, masterSession.FieldSeat));
             }
         }
 
@@ -245,6 +248,9 @@ namespace RakionServer.World.Tests.E2E
 
         private static bool IsSpawn(byte[] frame) =>
             frame.Length >= 4 && frame[0] == 0x45 && frame[1] == 0 && frame[2] == 0;
+
+        private static bool IsSpawnFrom(byte[] frame, byte seat) =>
+            IsSpawn(frame) && frame[3] == seat;
 
         private static bool IsMovementFrom(byte[] frame, byte seat) =>
             frame.Length >= 5 && frame[0] == 0x4b && frame[1] == 0 && frame[2] == seat;

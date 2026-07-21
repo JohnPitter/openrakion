@@ -1547,7 +1547,14 @@ Depois da correção do status, o segundo cliente avançou de `Not Playing` para
 players`. A ordem observada explica a transição: o spawn do master pode chegar enquanto o joiner
 ainda troca de cena, e o cliente gráfico não envia depois o `0x45` existente nas sondas headless.
 No primeiro `0x4B` do jogador tardio, o World agora repete os spawns dos peers já `state=4`. Um E2E
-dedicado drena os frames antecipados e prova que a entrada tardia recebe novamente master e self.
+dedicado drena os frames antecipados e prova que a entrada tardia recebe novamente o master.
+
+A validação gráfica seguinte mostrou duas consequências que o headless anterior não distinguia:
+o callback de `0x45` do próprio seat reiniciava o loading do master, e o movimento inicial do master
+era repetido ao joiner no `0x48`, ainda antes de sua cena aceitar entidades. A síntese acionada pelo
+primeiro `0x4B` agora exclui self e ordena `spawn dos peers → movimento inicial dos peers`. O E2E
+drena tudo que chegou antes do `0x4B`, rejeita qualquer spawn de self e exige o movimento do master
+depois do spawn tardio.
 
 ## Variações que não podem ser copiadas
 

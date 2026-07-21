@@ -450,13 +450,14 @@ namespace RakionServer.World.Network
                 if (f.Mode == 0 && !_server.BeginStageRun(this, f)) return;
                 if (PlayerSpawnMatchId != f.MatchId &&
                     WorldHandlers.Combat_0x45_SpawnInto(
-                        f, FieldSeat, _server.Config.ForceTunneling))
+                        f, FieldSeat, _server.Config.ForceTunneling, this))
                 {
                     PlayerSpawnMatchId = f.MatchId;
                     int peerSpawns = f.ReplayPlayerSpawnsTo(this);
+                    int peerMovements = f.ReplayInitialMovementsTo(this);
                     _server.Bots.SendMatchSpawnsTo(this, f);
-                    Log.Info("field", "[{0}] entrada no stage sincronizou {1} spawn(s) de peer",
-                        Slot, peerSpawns);
+                    Log.Info("field", "[{0}] entrada no stage sincronizou {1} spawn(s) e {2} movimento(s) de peer",
+                        Slot, peerSpawns, peerMovements);
                 }
             }
             Log.Ok("field", "[{0}] sala aplicada ao field {1}: mode={2} map={3} dur={4}s rounds={5}",

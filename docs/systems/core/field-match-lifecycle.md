@@ -54,7 +54,10 @@ encaminhada normalmente e o cache é descartado em todo novo `MatchId`.
 O cliente gráfico também pode receber o `0x45` de um peer durante a troca de cena e não materializar
 esse estado no stage. Como essa build entra diretamente pelo primeiro `0x4B` e não repete o request
 `0x45`, o World reenvia ao jogador que acaba de entrar os spawns `[status=0][seat]` de todos os
-peers já ativos. Assim, a entrada tardia não depende de um frame consumido na cena anterior.
+peers já ativos, seguidos de seus primeiros movimentos armazenados. O spawn sintetizado exclui o
+próprio jogador: o callback de self recria a tela de loading quando o cliente já entrou pelo `0x4B`.
+Assim, a entrada tardia não depende de um frame consumido na cena anterior e nenhum participante
+reinicia localmente o carregamento.
 
 ### Timeout por modo
 

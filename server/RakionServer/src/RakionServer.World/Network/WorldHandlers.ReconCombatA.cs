@@ -164,7 +164,7 @@ namespace RakionServer.World.Network
         ///     broadcast FUN_004061f0 0x45 [result=0][seat] a TODOS + FUN_004066c0 (housekeeping).
         /// </summary>
         internal static bool Combat_0x45_SpawnInto(
-            Field field, int seat, bool forceTunneling)
+            Field field, int seat, bool forceTunneling, ClientSession? except = null)
         {
             var rec = field.RecAt(seat);
             if (rec == null) return false;
@@ -223,7 +223,7 @@ namespace RakionServer.World.Network
             // OK: zera kills/score do registro e broadcast 0x45 [result=0][seat] a TODOS.
             rec.Dead = false;
             rec.RoundScore = 0;
-            field.BroadcastField(0x45, FieldLifecycleFrames.Spawn((byte)seat));
+            field.BroadcastField(0x45, FieldLifecycleFrames.Spawn((byte)seat), except);
             PublishTunnelingPresenceOnSpawn(field, rec, forceTunneling);
             Log.Ok("field", "spawn OK (field {0} seat {1} team {2})", field.Id, seat, rec.Team);
             return true;
