@@ -97,7 +97,7 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
-        public void PlayerExitTransfersMasterToPlayingMember()
+        public void PlayerExitKeepsMasterWhilePlayerRemainsInRoom()
         {
             var (field, master, member) = CreateRoom();
             field.State = 2;
@@ -107,9 +107,9 @@ namespace RakionServer.World.Tests
 
             field.OnPlayerExit(0, cause: 0);
 
-            Assert.NotSame(master, field.Master);
-            Assert.Same(member, field.Master);
-            Assert.Equal(1, field.MasterSlot);
+            Assert.Same(master, field.Master);
+            Assert.NotSame(member, field.Master);
+            Assert.Equal(0, field.MasterSlot);
         }
 
         [Fact]
@@ -272,6 +272,34 @@ namespace RakionServer.World.Tests
                 server.ListJoinableFields(viewer, forward).Select(field => (int)field.FieldId));
             Assert.Equal(new[] { second.Id },
                 server.ListJoinableFields(viewer, backward).Select(field => (int)field.FieldId));
+        }
+
+        [Fact]
+        public void MatchEnd_MakesRoomAvailableAndBotReadyForRematch()
+        {
+            var config = new WorldConfig();
+            var server = new WorldServer(config, new WorldDatabase(config.Db));
+            var master = NewSession(1, server);
+            var viewer = NewSession(2, server);
+            master.CharLevel = viewer.CharLevel = 10;
+            Field field = server.CreateField(
+                RoomOptions("rematch", (byte)GameMode.Deathmatch), master);
+            var bot = new BotPlayer { Name = "Rok", Team = 1 };
+            bot.InitHealth(10);
+            int botSeat = field.AddBot(bot, 1);
+            field.State = 2;
+            field.Slots[0].State = 4;
+            field.Slots[botSeat].State = 4;
+            Assert.True(bot.TakeDamage(bot.MaxHealth));
+
+            field.EndMatch(0);
+
+            Assert.Equal((byte)1, field.State);
+            Assert.Equal((byte)1, field.Slots[0].State);
+            Assert.Equal((byte)2, field.Slots[botSeat].State);
+            Assert.True(bot.Alive);
+            var query = new RoomListQuery(10, 0, true, 1 << 2, false);
+            Assert.Contains(server.ListJoinableFields(viewer, query), room => room.FieldId == field.Id);
         }
 
         [Fact]

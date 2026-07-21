@@ -605,6 +605,7 @@ namespace RakionServer.World
                         break;
                     case Domain.MatchLifecycleEvent.MatchEnded:
                         f.BroadcastLobby(f.BuildMatchEnd(transition.Reason));
+                        Bots.PublishBotLifecycles(f);
                         _fieldStatusBeat.TryRemove(f.Id, out _);
                         break;
                 }

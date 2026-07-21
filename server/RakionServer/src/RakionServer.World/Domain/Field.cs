@@ -79,7 +79,6 @@ namespace RakionServer.World.Domain
         public bool Searchable = true;
         public byte Mode;            // +0x119: 0=stage, 1=Golem, 2=Deathmatch, 3=Team Death, 4=Boss
         public byte MaxPlayers = 8;
-        public bool InGame;          // partida em andamento (legado)
         public ClientSession? Master;
         public int MasterSlot = -1;  // slot do dono (field+0x121 host/owner)
         public byte State;           // field+8: 0=livre, 1=fim-match, 2=em jogo
@@ -319,6 +318,13 @@ namespace RakionServer.World.Domain
             int n = 0;
             foreach (var r in Slots) if (r.Playing && !r.Dead && r.Team == team) n++;
             return n;
+        }
+
+        public bool HasHumanInGameplay()
+        {
+            foreach (PlayerRec record in Slots)
+                if (record.Session?.Status == UserStatus.InField) return true;
+            return false;
         }
 
         // ===================== BROADCAST =====================
@@ -590,25 +596,7 @@ namespace RakionServer.World.Domain
             v.Cause = cause;
             v.State = 1; // eliminado/aguardando respawn
 
-            if (victimSeat == MasterSlot)
-            {
-                PlayerRec? replacement = FindActiveReplacement(victimSeat);
-                if (replacement?.Session != null)
-                {
-                    MasterSlot = replacement.Slot;
-                    Master = replacement.Session;
-                }
-            }
             return wasActive && EndRoundAfterDeparture((byte)victimSeat, wasLeader);
-        }
-
-        private PlayerRec? FindActiveReplacement(int departingSeat)
-        {
-            foreach (byte state in new byte[] { 4, 3 })
-                foreach (PlayerRec record in Slots)
-                    if (record.Slot != departingSeat && record.State == state && record.Session != null)
-                        return record;
-            return null;
         }
 
         public void ArmMatch(long now)
@@ -649,7 +637,17 @@ namespace RakionServer.World.Domain
         {
             State = 1;
             Phase = MatchPhase.Pre;
-            foreach (var r in Slots) if (r.State == 3 || r.State == 4) r.State = 1;
+            foreach (PlayerRec record in Slots)
+            {
+                if (!record.Occupied) continue;
+                record.State = record.Bot == null ? (byte)1 : (byte)2;
+                record.Dead = false;
+                record.Position = default;
+                record.Heading = 0;
+                record.NextBotMeleeAttackMs = 0;
+                record.InitialMovement = null;
+                record.Bot?.ResetForLobby();
+            }
             Log.Ok("field", "field {0} MATCH OVER (motivo={1})", Id, reason);
         }
 

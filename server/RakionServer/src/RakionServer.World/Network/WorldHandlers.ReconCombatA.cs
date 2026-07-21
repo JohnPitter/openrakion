@@ -273,6 +273,8 @@ namespace RakionServer.World.Network
             if (field == null || rec == null) return;
 
             byte flag = ctx.P.CanRead(1) ? ctx.P.Byte() : (byte)0xff;
+            u.Status = UserStatus.FieldLobby;
+            bool matchEnded = false;
             lock (field.SyncRoot)
             {
                 if (flag < 2 && Combat_CanHit(field, rec.Slot))
@@ -288,14 +290,18 @@ namespace RakionServer.World.Network
                     field.BroadcastField(0x55, Array.Empty<byte>());
                 field.BroadcastField(0x46, FieldLifecycleFrames.Exit((byte)rec.Slot));
                 if (roundEnded) field.BroadcastFieldPlaying(0x4a, field.Build0x4a());
-                if (field.CountAlive(0) + field.CountAlive(1) == 0)
+                if (!field.HasHumanInGameplay())
                 {
                     field.EndMatch(0);
                     field.BroadcastLobby(field.BuildMatchEnd(0));
-                    _ = ctx.World.SettleEndedMatchAsync(field);
+                    matchEnded = true;
                 }
             }
-            u.Status = UserStatus.FieldLobby;
+            if (matchEnded)
+            {
+                ctx.World.Bots.PublishBotLifecycles(field);
+                _ = ctx.World.SettleEndedMatchAsync(field);
+            }
             Log.Info("combat", "[{0}] 0x46 saiu da partida para o game room " +
                 "(field {1} seat {2} flag {3}, status=2)", u.Slot, field.Id, rec.Slot, flag);
         }

@@ -50,5 +50,29 @@ namespace RakionServer.World.Tests
             Assert.Equal(Field.NoSeat, bot.TargetSeat);
             Assert.Equal(bot.HitReactionUntilMs, bot.NextAttackReadyMs);
         }
+
+        [Fact]
+        public void ResetForLobby_RevivesAndClearsPreviousMatchState()
+        {
+            var bot = new BotPlayer
+            {
+                Position = new BotVector(100, 20, 300),
+                Velocity = new BotVector(10, 0, 20),
+                TargetSeat = 3,
+                MoveSeq = 25
+            };
+            bot.InitHealth(5);
+            Assert.True(bot.TakeDamage(bot.MaxHealth));
+
+            bot.ResetForLobby();
+
+            Assert.True(bot.Alive);
+            Assert.Equal(bot.MaxHealth, bot.Health);
+            Assert.Equal(BotVector.Zero, bot.Position);
+            Assert.Equal(BotVector.Zero, bot.Velocity);
+            Assert.Equal(Field.NoSeat, bot.TargetSeat);
+            Assert.Equal(0u, bot.MoveSeq);
+            Assert.Equal(3u, bot.LifecycleSequence);
+        }
     }
 }

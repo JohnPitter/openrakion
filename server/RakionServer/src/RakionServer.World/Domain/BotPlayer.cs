@@ -98,6 +98,25 @@ namespace RakionServer.World.Domain
             return true;
         }
 
+        public void ResetForLobby()
+        {
+            bool revive = !Alive;
+            Health = MaxHealth;
+            Alive = true;
+            Position = BotVector.Zero;
+            Velocity = BotVector.Zero;
+            Heading = 0;
+            TargetSeat = Field.NoSeat;
+            MoveSeq = 0;
+            NextAttackReadyMs = 0;
+            HitReactionUntilMs = 0;
+            RespawnAtMs = 0;
+            _attackVariant = 0;
+            _targetVelocityEma = BotVector.Zero;
+            _hasTarget = false;
+            if (revive) LifecycleSequence++;
+        }
+
         // Estado interno da IA: EMA da velocidade do alvo (antecipação) e a última posição observada.
         private BotVector _targetVelocityEma;
         private BotVector _lastTargetPosition;

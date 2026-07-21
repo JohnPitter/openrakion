@@ -56,7 +56,9 @@ cooldown de 250 ms elimina emissões duplicadas do hook durante o mesmo golpe.
 6. Ao zerar o HP, `Field.ApplyReportedDeath` liquida exatamente um kill, publica `0x4F`, a DLL chama
    o lifecycle nativo de morte e o bot permanece sem movimento até o respawn. Deathmatch, Team
    Death e Boss usam respawn autoritativo de sete segundos; Golem segue eliminação por round.
-7. Fim da partida ou saída do último humano remove todos os bots.
+7. No fim da partida ou na saída do último humano do gameplay, o field retorna ao game room. Os
+   humanos voltam a não-pronto, o bot é revivido, tem IA e pose efêmeras zeradas e permanece
+   pronto para o rematch. A liderança da sala só muda quando o master realmente deixa a sala.
 
 ## Movimento e animação
 
@@ -77,6 +79,8 @@ client-authoritative e exige um peer real.
 - `BotMovementSynthTests`: formato, pose/heading, ausência de deltas de câmera e reação estendida.
 - `E2E/BotStageValidationTests`: ataque `0x0311` autenticado reduz HP, publica parada/reação, mata o
   bot com `0x4F` e funciona também por tunneling TCP.
+- `E2E/BotRematchE2ETests`: dois clientes e um bot saem do gameplay, reencontram a sala no filtro
+  Available e iniciam outra partida no mesmo game room.
 - `E2E/AddBotButtonCommandE2ETests` e `BotMovementE2ETests`: comando, roster e movimento no fio.
 
 ## Estado de validação
