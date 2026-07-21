@@ -34,6 +34,19 @@ namespace RakionServer.World.Tests
                 TimeSpan.FromSeconds(6), now, _path));
         }
 
+        [Fact]
+        public void FiltersOnlyOnlineAccountsFromFreshSnapshot()
+        {
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            ActiveAccountSnapshotStore.Write(new ActiveAccountSnapshot(true,
+                [ActiveAccountSnapshotStore.Hash("alice")], now), _path);
+
+            string[] online = ActiveAccountSnapshotStore.FilterOnline(
+                ["alice", "bob"], TimeSpan.FromSeconds(6), now, _path);
+
+            Assert.Equal(["alice"], online);
+        }
+
         public void Dispose()
         {
             if (File.Exists(_path)) File.Delete(_path);

@@ -39,6 +39,7 @@ golden source; este diretório é somente o ambiente de execução.
 | Auto-update de conteúdo | aprovado | smoke HTTP assinado `258→259` atualizou `version.dll` e `RakionClientPatch.dll`, sem resíduos |
 | Abertura sem elevação | aprovado | launcher `asInvoker`; processo legado recebeu `RunAsInvoker`; nenhum processo `consent.exe` foi aberto |
 | Login e render inicial | aprovado | cliente pristine exibiu servidor e `GoHeroi` lvl 40; login `test`, TCP World `40708`, Buddy `8500`, `SuccessUDP`, canal e lista de salas confirmados |
+| Launcher: login e amigos online | aprovado em 21/07/2026 | usuário validou a transição dos inputs para a lista de amigos e os botões Outra conta, Iniciar game e Game options |
 | Messenger F9 | parcial | primeiro login aprovado; o RE de reentrada confirmou destruição/recriação do host, e a DLL agora usa a transição nativa `host+0x24: 0→1` em cada instância; reentrada aguarda reteste |
 | Add Bot | aprovado | botão enviou `0x47` `GoHeroi : /addbot`; `Rok` apareceu no time azul da sala e dentro do stage Mammoth |
 | Ataque humano→bot | aprovado no transporte e lifecycle | DLL registrou o primeiro ataque; World reduziu `500→0`; cliente aplicou `alive seq=1` e `dead seq=2` |

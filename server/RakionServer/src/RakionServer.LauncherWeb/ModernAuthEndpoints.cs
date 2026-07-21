@@ -50,11 +50,15 @@ public static class ModernAuthEndpoints
         IssuedLauncherTicket issued = result.Ticket!;
         Log.Ok("web", "ticket emitido para user={0}, expira em {1:O}",
             account, issued.ExpiresAt);
-        return Results.Ok(new TicketResponse(issued.Ticket, issued.ExpiresAt));
+        return Results.Ok(new TicketResponse(
+            issued.Ticket, issued.ExpiresAt,
+            issued.OnlineFriends.Select(friend => new FriendResponse(friend.DisplayName))));
     }
 
     private sealed record TicketRequest(
         string? User, string? Password, int AppId, int BuildVersion);
-    private sealed record TicketResponse(string Ticket, DateTime ExpiresAt);
+    private sealed record TicketResponse(
+        string Ticket, DateTime ExpiresAt, IEnumerable<FriendResponse> OnlineFriends);
+    private sealed record FriendResponse(string DisplayName);
     private sealed record TicketError(string Error);
 }

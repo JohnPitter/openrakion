@@ -65,7 +65,11 @@ Copie a chave pública para junto do launcher. Se a emissão do ticket falhar, o
 não há fallback silencioso para a senha. A UI distingue login inválido, credenciais inválidas e
 conta já conectada antes de abrir o cliente. O launcher inclui `appId` e a versão persistida em
 `.update/version` no ticket; o World pode exigir esse par com `RequiredAppId` e
-`RequiredBuildVersion`. Para testar somente o updater:
+`RequiredBuildVersion`. O fluxo visual separa autenticação e execução: inicialmente aparecem os
+inputs e **Login**; após autenticar, eles são substituídos pela lista de amigos online e pelos botões
+**Outra conta**, **Iniciar game** e **Game options**. A presença é atualizada a cada 30 segundos sem
+expor a lista global de usuários. O ticket fica somente em memória e é renovado se expirar antes do
+clique em **Iniciar game**. Para testar somente o updater:
 
 ```powershell
 dotnet RakionLauncher.dll --update-only C:\Rakion

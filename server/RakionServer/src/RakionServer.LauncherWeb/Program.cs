@@ -22,6 +22,7 @@ builder.Services.AddRateLimiter(options =>
 {
     AddLoginRateLimit(options, "legacy-login");
     AddLoginRateLimit(options, "ticket-auth");
+    AddLoginRateLimit(options, "friend-status", 10);
 });
 var app = builder.Build();
 if (config.TicketAuthEnabled && config.EnsureTicketSchema)
@@ -30,6 +31,7 @@ app.UseRateLimiter();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapModernAuth();
+app.MapOnlineFriends();
 app.MapModernUpdates();
 app.MapServerStatus();
 
@@ -47,14 +49,15 @@ Log.Ok("web", "LauncherWeb em {0}; legado={1}; auth ticket={2}; updates assinado
     config.Endpoint, config.LegacyEnabled, config.TicketAuthEnabled, config.UpdatesEnabled);
 app.Run();
 
-static void AddLoginRateLimit(RateLimiterOptions options, string policyName)
+static void AddLoginRateLimit(
+    RateLimiterOptions options, string policyName, int permitLimit = 5)
 {
     options.AddPolicy(policyName, context =>
         RateLimitPartition.GetFixedWindowLimiter(
             context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 5,
+                PermitLimit = permitLimit,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0,
                 AutoReplenishment = true

@@ -60,7 +60,7 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
 
 - **RE estático completo** do v258: os 29 domínios do jogo, todas as 10 famílias de NPC + 3 classes especiais, e um **censo de 116 classes de entidade** com veredito por classe. Ver [`docs/audits/entity-class-census.md`](docs/audits/entity-class-census.md) e [`docs/audits/re-status-summary.md`](docs/audits/re-status-summary.md).
 - **Validação dinâmica via backend** com **dois clientes headless** dirigindo o `WorldServer` real (TCP + AES + UDP + banco): login, sala, partida, movimento/combate UDP, settlement persistido, matriz de modos e chat. Ver [`docs/audits/dynamic-validation.md`](docs/audits/dynamic-validation.md).
-- **840 testes do servidor e 14 testes do launcher** verdes, além do build nativo `/W4 /WX` e smoke
+- suítes do servidor e **21 testes do launcher** verdes, além do build nativo `/W4 /WX` e smoke
   das 17 exportações do proxy `version.dll`.
 
 Documentação técnica, mapas de RE e lacunas de validação: [`docs/README.md`](docs/README.md).
@@ -121,7 +121,9 @@ dotnet build -c Release RakionServer.sln
 
 Com o stack ativo, `GET /api/v1/server-status` responde o estado do World, jogadores autenticados e
 capacidade. O launcher consulta esse endpoint ao abrir e a cada dez segundos; snapshots vencidos
-são tratados como offline.
+são tratados como offline. Após o login, os inputs são substituídos pelos amigos online e pelas
+ações de trocar conta, iniciar o jogo e abrir opções; os nomes são atualizados a cada 30 segundos
+por um endpoint autenticado.
 
 ### Credenciais de amostra (open source — troque se precisar)
 

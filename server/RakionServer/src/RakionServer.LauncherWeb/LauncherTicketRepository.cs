@@ -54,8 +54,40 @@ public sealed class LauncherTicketRepository
         command.Parameters.AddWithValue("@build", build.BuildVersion);
         command.Parameters.AddWithValue("@expires", expiresAt);
         await command.ExecuteNonQueryAsync(cancellationToken);
+        IReadOnlyList<OnlineLauncherFriend> friends = await LoadOnlineFriendsAsync(
+            connection, account, cancellationToken);
         return new(LauncherTicketIssueStatus.Success,
-            new IssuedLauncherTicket(token, expiresAt));
+            new IssuedLauncherTicket(token, expiresAt, friends));
+    }
+
+    public async Task<IReadOnlyList<OnlineLauncherFriend>?> AuthenticateFriendsAsync(
+        string account, string password, CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_config.ConnectionString!);
+        await connection.OpenAsync(cancellationToken);
+        string? storedPassword = await ReadPasswordAsync(connection, account, cancellationToken);
+        return storedPassword is not null && PasswordsEqual(storedPassword, password)
+            ? await LoadOnlineFriendsAsync(connection, account, cancellationToken)
+            : null;
+    }
+
+    private async Task<IReadOnlyList<OnlineLauncherFriend>> LoadOnlineFriendsAsync(
+        MySqlConnection connection, string account, CancellationToken cancellationToken)
+    {
+        await using var command = new MySqlCommand(
+            "SELECT r.buddy_account," +
+            "COALESCE(NULLIF(g.buddyname,''),NULLIF(g.charname,''),r.buddy_account) " +
+            "FROM buddy_relation r LEFT JOIN usergameinfo g ON g.name=r.buddy_account " +
+            "WHERE r.owner_account=@account ORDER BY r.created_at LIMIT 500", connection);
+        command.Parameters.AddWithValue("@account", account);
+        var friends = new List<OnlineLauncherFriend>();
+        await using MySqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            friends.Add(new OnlineLauncherFriend(reader.GetString(0), reader.GetString(1)));
+        string[] online = _activeAccounts.FilterOnline(
+            friends.Select(friend => friend.AccountId));
+        var onlineSet = online.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return friends.Where(friend => onlineSet.Contains(friend.AccountId)).ToArray();
     }
 
     private static async Task ExecuteSchemaAsync(
@@ -83,7 +115,9 @@ public sealed class LauncherTicketRepository
     }
 }
 
-public sealed record IssuedLauncherTicket(string Ticket, DateTime ExpiresAt);
+public sealed record OnlineLauncherFriend(string AccountId, string DisplayName);
+public sealed record IssuedLauncherTicket(
+    string Ticket, DateTime ExpiresAt, IReadOnlyList<OnlineLauncherFriend> OnlineFriends);
 public sealed record LauncherTicketIssueResult(
     LauncherTicketIssueStatus Status, IssuedLauncherTicket? Ticket);
 public enum LauncherTicketIssueStatus { Success, InvalidCredentials, AccountInUse }

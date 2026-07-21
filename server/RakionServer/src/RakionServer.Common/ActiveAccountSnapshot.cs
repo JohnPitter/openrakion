@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -37,18 +38,25 @@ public static class ActiveAccountSnapshotStore
 
     public static bool Contains(
         string account, TimeSpan maximumAge, DateTimeOffset now, string? path = null)
+        => FilterOnline([account], maximumAge, now, path).Length != 0;
+
+    public static string[] FilterOnline(
+        IEnumerable<string> accounts, TimeSpan maximumAge, DateTimeOffset now,
+        string? path = null)
     {
         try
         {
             string json = File.ReadAllText(Path.GetFullPath(path ?? DefaultPath));
             ActiveAccountSnapshot? snapshot =
                 JsonSerializer.Deserialize<ActiveAccountSnapshot>(json, JsonOptions);
-            return snapshot?.Online == true && now - snapshot.UpdatedAtUtc <= maximumAge &&
-                snapshot.AccountHashes.Contains(Hash(account), StringComparer.Ordinal);
+            if (snapshot?.Online != true || now - snapshot.UpdatedAtUtc > maximumAge)
+                return [];
+            var online = snapshot.AccountHashes.ToHashSet(StringComparer.Ordinal);
+            return accounts.Where(account => online.Contains(Hash(account))).ToArray();
         }
-        catch (IOException) { return false; }
-        catch (UnauthorizedAccessException) { return false; }
-        catch (JsonException) { return false; }
+        catch (IOException) { return []; }
+        catch (UnauthorizedAccessException) { return []; }
+        catch (JsonException) { return []; }
     }
 
     public static string Hash(string account) => Convert.ToHexString(

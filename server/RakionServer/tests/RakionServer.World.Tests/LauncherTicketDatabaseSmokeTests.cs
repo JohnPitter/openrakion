@@ -20,6 +20,8 @@ public sealed class LauncherTicketDatabaseSmokeTests
 
         var admin = new MySqlConnectionStringBuilder(connectionValue);
         string database = "rakion_ticket_test_" + Guid.NewGuid().ToString("N");
+        string activeAccountsPath = Path.Combine(
+            Path.GetTempPath(), database + "-active.json");
         var scoped = new MySqlConnectionStringBuilder(admin.ConnectionString)
         {
             Database = database
@@ -35,14 +37,28 @@ public sealed class LauncherTicketDatabaseSmokeTests
             await ExecuteAsync(scoped.ConnectionString,
                 "INSERT INTO user VALUES ('test','secret',2,76),('other','other',0,0)");
             await ExecuteAsync(scoped.ConnectionString,
+                "CREATE TABLE usergameinfo (name VARCHAR(16) NOT NULL PRIMARY KEY," +
+                "buddyname VARCHAR(20) NULL,charname VARCHAR(20) NULL) ENGINE=InnoDB");
+            await ExecuteAsync(scoped.ConnectionString,
+                "CREATE TABLE buddy_relation (owner_account VARCHAR(16) NOT NULL," +
+                "buddy_account VARCHAR(16) NOT NULL,created_at DATETIME(6) NOT NULL," +
+                "PRIMARY KEY(owner_account,buddy_account)) ENGINE=InnoDB");
+            await ExecuteAsync(scoped.ConnectionString,
+                "INSERT INTO usergameinfo VALUES ('other','Amigo Online','Amigo Online')");
+            await ExecuteAsync(scoped.ConnectionString,
+                "INSERT INTO buddy_relation VALUES ('test','other',UTC_TIMESTAMP(6))");
+            await ExecuteAsync(scoped.ConnectionString,
                 "CREATE TABLE launcher_ticket (token_hash BINARY(32) NOT NULL PRIMARY KEY," +
                 "account_id VARCHAR(16) NOT NULL,expires_at DATETIME(6) NOT NULL," +
                 "used_at DATETIME(6) NULL,created_at DATETIME(6) NOT NULL) ENGINE=InnoDB");
 
             var webConfig = new LauncherWebConfig(new Uri("http://127.0.0.1/"),
                 false, false, true, true, 60, scoped.ConnectionString, ".", null);
+            ActiveAccountSnapshotStore.Write(new ActiveAccountSnapshot(true,
+                [ActiveAccountSnapshotStore.Hash("other")], DateTimeOffset.UtcNow),
+                activeAccountsPath);
             var issuer = new LauncherTicketRepository(
-                webConfig, new ActiveAccountLookup(Path.Combine(database, "active.json")));
+                webConfig, new ActiveAccountLookup(activeAccountsPath));
             await issuer.EnsureSchemaAsync();
             var world = new WorldDatabase(WorldDbConfig(scoped));
             var build = new LauncherBuildIdentity(11001, 259);
@@ -51,6 +67,7 @@ public sealed class LauncherTicketDatabaseSmokeTests
                 await issuer.IssueAsync("test", "secret", build, default);
             Assert.Equal(LauncherTicketIssueStatus.Success, issuedResult.Status);
             IssuedLauncherTicket issued = Assert.IsType<IssuedLauncherTicket>(issuedResult.Ticket);
+            Assert.Equal("Amigo Online", Assert.Single(issued.OnlineFriends).DisplayName);
             Assert.Null(await world.AuthenticateCredentialAsync(
                 "other", issued.Ticket, allowPasswordLogin: false));
             Assert.Null(await world.AuthenticateCredentialAsync(
@@ -74,6 +91,7 @@ public sealed class LauncherTicketDatabaseSmokeTests
         }
         finally
         {
+            if (File.Exists(activeAccountsPath)) File.Delete(activeAccountsPath);
             await ExecuteAsync(admin.ConnectionString, $"DROP DATABASE IF EXISTS `{database}`");
         }
     }

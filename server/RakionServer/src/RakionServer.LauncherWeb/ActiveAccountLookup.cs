@@ -11,4 +11,8 @@ public sealed class ActiveAccountLookup
 
     public bool Contains(string account) => ActiveAccountSnapshotStore.Contains(
         account, SnapshotMaximumAge, DateTimeOffset.UtcNow, _snapshotPath);
+
+    public string[] FilterOnline(IEnumerable<string> accounts) =>
+        ActiveAccountSnapshotStore.FilterOnline(
+            accounts, SnapshotMaximumAge, DateTimeOffset.UtcNow, _snapshotPath);
 }

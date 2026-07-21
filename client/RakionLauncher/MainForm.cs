@@ -8,7 +8,7 @@ namespace RakionLauncher;
 /// de tela e as game options ficam no <see cref="OptionsForm"/> (GAME OPTION); o START GAME grava o INI
 /// e lança o jogo + aplica o framing da janela.
 /// </summary>
-internal sealed class MainForm : Form
+internal sealed partial class MainForm : Form
 {
     private const string ServerId = "1A";
 
@@ -18,20 +18,31 @@ internal sealed class MainForm : Form
 
     private readonly TextBox _user = new();
     private readonly TextBox _pass = new() { UseSystemPasswordChar = true };
-    private readonly Button _play = new() { Text = "START\nGAME" };
-    private readonly Button _options = new() { Text = "GAME\nOPTION" };
+    private readonly Label _userLabel = new() { Text = "Login ID" };
+    private readonly Label _passLabel = new() { Text = "Password" };
+    private readonly Label _friendsTitle = new();
+    private readonly ListBox _onlineFriends = new();
+    private readonly Button _login = new() { Text = "LOGIN" };
+    private readonly Button _switchAccount = new() { Text = "OUTRA\nCONTA" };
+    private readonly Button _play = new() { Text = "INICIAR\nGAME" };
+    private readonly Button _options = new() { Text = "GAME\nOPTIONS" };
     private readonly Label _status = new();
     private readonly Label _clientStatus = new();
     private readonly Label _serverStatus = new();
     private readonly System.Windows.Forms.Timer _serverStatusTimer = new() { Interval = 10000 };
     private readonly System.Windows.Forms.Timer _clientStatusTimer = new() { Interval = 1000 };
+    private readonly System.Windows.Forms.Timer _friendStatusTimer = new() { Interval = 30000 };
     private readonly ServerStatusClient _serverStatusClient = new();
+    private readonly OnlineFriendsClient _onlineFriendsClient = new();
     private readonly NotifyIcon _trayIcon = new();
     private readonly ContextMenuStrip _trayMenu = new();
 
     private bool _drag; private Point _dragOrigin;
     private bool _exitRequested, _trayHintShown;
     private int _clients;
+    private string? _authenticatedUser, _authenticatedPassword;
+    private int _authenticatedBuildVersion;
+    private LaunchAuthentication? _authentication;
 
     public MainForm()
     {
@@ -55,19 +66,23 @@ internal sealed class MainForm : Form
         BuildBanner();
         BuildStatus();          // antes dos botões: o status fica atrás, os botões na frente
         BuildLoginAndButtons();
+        ShowLoginState();
         Shown += async (_, _) =>
         {
             RefreshClientCount();
             await RefreshServerStatusAsync();
         };
         _serverStatusTimer.Tick += async (_, _) => await RefreshServerStatusAsync();
+        _friendStatusTimer.Tick += async (_, _) => await RefreshOnlineFriendsAsync();
         _clientStatusTimer.Tick += (_, _) => RefreshClientCount();
         _serverStatusTimer.Start();
+        _friendStatusTimer.Start();
         _clientStatusTimer.Start();
         FormClosing += OnFormClosing;
         FormClosed += (_, _) =>
         {
             _serverStatusTimer.Dispose();
+            _friendStatusTimer.Dispose();
             _clientStatusTimer.Dispose();
             _trayIcon.Dispose();
             _trayMenu.Dispose();
@@ -160,8 +175,8 @@ internal sealed class MainForm : Form
         info.Controls.Add(new Label { Text = "Chaos Force", AutoSize = true, Location = new Point(20, 58), ForeColor = Color.Gold, BackColor = Color.Transparent, Font = new Font("Segoe UI", 11f, FontStyle.Italic) });
         info.Controls.Add(new Label
         {
-            Text = "Long awaited totally new game system.\nYou can not run away from the\nextreme strike sensation.",
-            AutoSize = false, Bounds = new Rectangle(18, 96, 256, 48), ForeColor = Color.Gainsboro, BackColor = Color.Transparent, Font = new Font("Segoe UI", 9f)
+            Text = "Long awaited totally new game system.\nExtreme strike sensation.",
+            AutoSize = false, Bounds = new Rectangle(18, 92, 256, 34), ForeColor = Color.Gainsboro, BackColor = Color.Transparent, Font = new Font("Segoe UI", 9f)
         });
         _serverStatus.Text = "Servidor: verificando…";
         _serverStatus.AutoSize = false;
@@ -186,19 +201,6 @@ internal sealed class MainForm : Form
         }
         _serverStatus.Text = $"Servidor: Online   ·   Jogadores: {status.OnlinePlayers}/{status.Capacity}";
         _serverStatus.ForeColor = Color.LightGreen;
-    }
-
-    private void BuildLoginAndButtons()
-    {
-        Controls.Add(new Label { Text = "Login ID", AutoSize = true, Location = new Point(22, 264), ForeColor = Theme.Ink, Font = new Font("Segoe UI", 9f, FontStyle.Bold) });
-        _user.SetBounds(22, 284, 210, 26);
-        Controls.Add(new Label { Text = "Password", AutoSize = true, Location = new Point(22, 316), ForeColor = Theme.Ink, Font = new Font("Segoe UI", 9f, FontStyle.Bold) });
-        _pass.SetBounds(22, 336, 210, 26);
-        Controls.Add(_user); Controls.Add(_pass);
-
-        _play.SetBounds(366, 262, 120, 100); Theme.StyleButton(_play, primary: true); _play.TextAlign = ContentAlignment.MiddleCenter; _play.Click += OnPlay;
-        _options.SetBounds(494, 262, 120, 100); Theme.StyleButton(_options); _options.TextAlign = ContentAlignment.MiddleCenter; _options.Click += OnOptions;
-        Controls.Add(_play); Controls.Add(_options);
     }
 
     private void BuildStatus()
@@ -234,8 +236,11 @@ internal sealed class MainForm : Form
         try
         {
             if (!File.Exists(Path.Combine(_binDir, GameLauncher.GameProcess))) { Status($"rakion.exe não encontrado em {_binDir}", true); return; }
-            if (_user.Text.Trim() == "") { Status("informe o usuário", true); return; }
-            if (_pass.Text == "") { Status("informe a senha", true); return; }
+            if (_authenticatedUser is null || _authenticatedPassword is null)
+            {
+                Status("Faça login antes de iniciar o jogo.", true);
+                return;
+            }
 
             ClientCompatibility.Install(_binDir);
             RefreshClientCount();
@@ -257,13 +262,14 @@ internal sealed class MainForm : Form
             string mode = _settings.DisplayMode;
             // version.dll carrega RakionClientPatch.dll antes do entry point; o launcher mantém o processo
             // suspenso até terminar o bootstrap e então cuida do framing da janela.
-            string user = _user.Text.Trim();
-            string credential = await new LaunchAuthenticator().GetCredentialAsync(
-                _launcherConfig, clientVersion, user, _pass.Text);
+            string user = _authenticatedUser;
+            LaunchAuthentication authentication =
+                await EnsureAuthenticationAsync(clientVersion);
             var (pid, hThread) = GameLauncher.LaunchSuspended(
-                _binDir, user, GameLauncher.HexPass(credential), ServerId);
+                _binDir, user, GameLauncher.HexPass(authentication.Credential), ServerId);
             WindowMode.Log($"launch cliente: abertos={_clients} user='{user}' pid={pid}");
             GameLauncher.Resume(hThread);
+            _authentication = null;
 
             uint upid = (uint)pid;   // frama/patcha por PID -> cada cliente cuida da SUA janela (suporta vários)
             int w = _settings.ScreenWidth, h = _settings.ScreenHeight;   // alvo do framing = resolução escolhida

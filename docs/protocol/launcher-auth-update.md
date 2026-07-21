@@ -126,6 +126,14 @@ capacidade e horário UTC. O LauncherWeb lê esse contrato compartilhado e respo
 modo que encerramentos inesperados não deixam o servidor falsamente online. O launcher consulta o
 endpoint ao abrir e a cada dez segundos, exibindo `Online`, `Offline` e `Jogadores: atual/máximo`.
 
+Após autenticar, a resposta do ticket inclui somente os amigos online daquela conta. O launcher
+substitui os inputs pela lista e apresenta três ações: trocar de conta, iniciar o jogo e abrir as
+opções. Autenticar não inicia o cliente. O ticket permanece apenas em memória até **Iniciar game**
+e é renovado se expirar antes desse clique. A relação é atualizada a cada 30 segundos por
+`POST /api/v1/friends/online`. Esse endpoint exige usuário e senha válidos, é limitado por IP e
+cruza `buddy_relation` com o snapshot de contas online; ele não publica a lista global de jogadores.
+Em acesso remoto, a configuração do LauncherWeb exige HTTPS para proteger as credenciais.
+
 World e LauncherWeb devem receber o mesmo caminho absoluto em
 `RAKION_SERVER_STATUS_PATH` quando executados por contas diferentes. Se ambos forem iniciados pelo
 `start-stack.ps1` sob o mesmo usuário, o caminho temporário padrão já é compartilhado. Para
@@ -243,8 +251,8 @@ dotnet RakionLauncher.dll --update-only $env:RAKION_DIR
 
 ## Evidência de validação
 
-- 840 testes .NET do servidor, incluindo status, formato, migração e vínculo app/build do ticket;
-- 14 testes do launcher, incluindo assinatura, hash, traversal, rollback, DLLs e auth sem downgrade;
+- suíte .NET do servidor, incluindo status, formato, migração e vínculo app/build do ticket;
+- 21 testes do launcher, incluindo amigos online, assinatura, hash, traversal, rollback, DLLs e auth sem downgrade;
 - smoke MariaDB real: conta/build vinculados, uso único, replay recusado e expiração recusada;
 - smoke HTTP real: endpoint em loopback emitiu ticket de 20 caracteres e persistiu app `11001`,
   build `259` e somente o hash de 32 bytes;
