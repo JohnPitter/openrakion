@@ -712,7 +712,8 @@ namespace RakionServer.World
                 }
                 else
                 {
-                    try { s.SendEncryptedFrame(f.Build0x48()); } catch { }
+                    Log.Info("field", "[{0}] field {1}: carregamento confirmado; aguardando {2} player(s)",
+                        s.Slot, f.Id, f.CountReady());
                 }
             }
         }

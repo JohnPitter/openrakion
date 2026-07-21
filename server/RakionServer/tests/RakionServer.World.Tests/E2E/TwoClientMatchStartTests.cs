@@ -127,16 +127,29 @@ namespace RakionServer.World.Tests.E2E
                 Assert.Equal((byte)3, field.FindRec(joinerSession)!.State);
                 Assert.Equal(MatchPhase.Pre, field.Phase);
 
+                int masterFramesBeforeReady = master.DrainReceived();
                 master.RoundStart();
                 WaitUntil(() => field.FindRec(masterSession)?.State == 4, Timeout,
                     "master não confirmou o carregamento");
                 Assert.Equal((byte)3, field.FindRec(joinerSession)!.State);
+                Thread.Sleep(200);
+                master.DrainReceived();
+                Assert.DoesNotContain(master.Received.Skip(masterFramesBeforeReady), IsRoundStart);
+
                 joiner.RoundStart();
                 WaitUntil(() => field.Phase == MatchPhase.Playing, Timeout,
                     "round não iniciou após os dois 0x48");
                 Assert.Equal((byte)4, field.FindRec(joinerSession)!.State);
+                Thread.Sleep(200);
+                master.DrainReceived();
+                joiner.DrainReceived();
+                Assert.Single(master.Received.Skip(masterFramesBeforeReady), IsRoundStart);
+                Assert.Single(joiner.Received, IsRoundStart);
             }
         }
+
+        private static bool IsRoundStart(byte[] frame) =>
+            frame.Length >= 2 && frame[0] == 0x48 && frame[1] == 0;
 
         private static bool IsSpawn(byte[] frame) =>
             frame.Length >= 3 && frame[0] == 0x45 && frame[1] == 0;
