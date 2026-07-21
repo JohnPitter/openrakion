@@ -22,6 +22,7 @@ internal sealed partial class MainForm : Form
     private readonly Label _passLabel = new() { Text = "Password" };
     private readonly Label _friendsTitle = new();
     private readonly ListBox _onlineFriends = new();
+    private readonly ComboBox _accountSwitch = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly Button _login = new() { Text = "LOGIN" };
     private readonly Button _switchAccount = new() { Text = "OUTRA\nCONTA" };
     private readonly Button _play = new() { Text = "INICIAR\nGAME" };
@@ -40,9 +41,8 @@ internal sealed partial class MainForm : Form
     private bool _drag; private Point _dragOrigin;
     private bool _exitRequested, _trayHintShown;
     private int _clients;
-    private string? _authenticatedUser, _authenticatedPassword;
-    private int _authenticatedBuildVersion;
-    private LaunchAuthentication? _authentication;
+    private readonly AuthenticatedAccountStore _accounts = new();
+    private bool _updatingAccountSwitch;
 
     public MainForm()
     {
@@ -233,10 +233,12 @@ internal sealed partial class MainForm : Form
     private async void OnPlay(object? sender, EventArgs e)
     {
         _play.Enabled = false;
+        _accountSwitch.Enabled = false;
         try
         {
             if (!File.Exists(Path.Combine(_binDir, GameLauncher.GameProcess))) { Status($"rakion.exe não encontrado em {_binDir}", true); return; }
-            if (_authenticatedUser is null || _authenticatedPassword is null)
+            AuthenticatedAccount? account = _accounts.Active;
+            if (account is null)
             {
                 Status("Faça login antes de iniciar o jogo.", true);
                 return;
@@ -262,14 +264,13 @@ internal sealed partial class MainForm : Form
             string mode = _settings.DisplayMode;
             // version.dll carrega RakionClientPatch.dll antes do entry point; o launcher mantém o processo
             // suspenso até terminar o bootstrap e então cuida do framing da janela.
-            string user = _authenticatedUser;
             LaunchAuthentication authentication =
-                await EnsureAuthenticationAsync(clientVersion);
+                await EnsureAuthenticationAsync(account, clientVersion);
             var (pid, hThread) = GameLauncher.LaunchSuspended(
-                _binDir, user, GameLauncher.HexPass(authentication.Credential), ServerId);
-            WindowMode.Log($"launch cliente: abertos={_clients} user='{user}' pid={pid}");
+                _binDir, account.User, GameLauncher.HexPass(authentication.Credential), ServerId);
+            WindowMode.Log($"launch cliente: abertos={_clients} user='{account.User}' pid={pid}");
             GameLauncher.Resume(hThread);
-            _authentication = null;
+            account.Authentication = null;
 
             uint upid = (uint)pid;   // frama/patcha por PID -> cada cliente cuida da SUA janela (suporta vários)
             int w = _settings.ScreenWidth, h = _settings.ScreenHeight;   // alvo do framing = resolução escolhida
@@ -280,7 +281,11 @@ internal sealed partial class MainForm : Form
             Status("Rakion iniciado. Pode abrir outro no START GAME.", false);
         }
         catch (Exception ex) { Status(ex.Message, true); }
-        finally { _play.Enabled = true; }
+        finally
+        {
+            _play.Enabled = true;
+            _accountSwitch.Enabled = true;
+        }
     }
 
     private void Status(string msg, bool error) { _status.ForeColor = error ? Color.Firebrick : Theme.Ink; _status.Text = msg; }
