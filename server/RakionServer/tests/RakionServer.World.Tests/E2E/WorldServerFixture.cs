@@ -36,7 +36,7 @@ namespace RakionServer.World.Tests.E2E
 
         private WorldServerFixture() { }
 
-        public static async Task<WorldServerFixture> CreateAsync()
+        public static async Task<WorldServerFixture> CreateAsync(bool forceTunneling = false)
         {
             int basePort = Interlocked.Add(ref _portCursor, 10);
             var fixture = new WorldServerFixture
@@ -60,6 +60,7 @@ namespace RakionServer.World.Tests.E2E
                 AuthType = 0,
                 AllowPasswordLogin = true,
                 MaxUser = 64,
+                ForceTunneling = forceTunneling,
             };
             cfg.Db.Ip = csb.Server;
             cfg.Db.Port = (int)csb.Port;

@@ -197,6 +197,7 @@ Configuração:
 Port1=40708
 Port2=40709
 RelayCompatibilityEnabled=1
+ForceTunneling=1
 RelayPacketsPerSecond=300
 RelayBurst=600
 ```
@@ -210,6 +211,12 @@ Com `RelayCompatibilityEnabled=0`, Port2 mantém apenas o handshake original e i
 `0x83xx`. Esse é o modo mais fiel ao World v258, mas exige que os clientes consigam estabelecer o
 canal direto. O padrão permanece `1` porque o projeto prioriza jogabilidade em localhost enquanto
 a captura gráfica P2P não foi concluída.
+
+`ForceTunneling=1` marca os jogadores da sala para usar o fallback TCP original mesmo quando o
+handshake UDP individual foi concluído. Essa é a configuração de distribuição: evita interpretar
+um endpoint observado pelo World como prova de que os dois clientes conseguem trocar datagramas
+diretamente entre si. Movimento, animação, dano e mensagens reliable passam por `0x56/0x57`. Para
+ambientes com P2P direto comprovado, use `ForceTunneling=0`.
 
 ## Tunneling e ping TCP
 

@@ -21,6 +21,12 @@ namespace RakionServer.World.Network
         // nomeadas em LobbyFrames. A captura original vive só no golden test (LobbyFrameGoldenTests).
         internal bool TryHandleLobbyEntry(ushort opcode, byte[] data)
         {
+            if (IsLateBattlePacket(opcode))
+            {
+                Log.Debug("combat", "[{0}] pacote tardio 0x{1:X2} consumido após sair da partida",
+                    Slot, opcode);
+                return true;
+            }
             RequestGateResult gate = WorldRequestGatePolicy.Evaluate(
                 opcode, GameInfoId, ActiveCharId, Status);
             if (!gate.Allowed)
@@ -352,6 +358,12 @@ namespace RakionServer.World.Network
                 return;
             }
             _ = _server.MarkTutorialClearAsync(this);
+        }
+
+        private bool IsLateBattlePacket(ushort opcode)
+        {
+            return Status == UserStatus.FieldLobby && PendingRoomMode != 0 &&
+                opcode is 0x46 or 0x4b or 0x4f or 0x50;
         }
 
         internal void BeginCharacterIdentityLookup(byte[] data) =>

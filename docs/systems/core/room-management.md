@@ -224,6 +224,11 @@ tabela. Para `0x36`, `0x38`, `0x39` e `0x3B`, a tabela é a única entrada do co
 | `0x3E` | `ClientSession.Rooms` em lobby; dispatcher em stage | alterna entre blocos de time e atualiza seat |
 | `0x3F` | `ClientSession.Rooms` em lobby; dispatcher em stage | host fecha sala e devolve todos à lista |
 | `0x40` | `ClientSession.Rooms` em lobby; dispatcher em stage | host remove membro; os restantes recebem `0x3A` e a vítima recebe lista atualizada |
+
+Na saída voluntária de Battle, `0x46` devolve o jogador ao game room antes de `0x3A` removê-lo da
+sala. Datagramas e reports já enfileirados podem produzir `0x46`, `0x4B`, `0x4F` ou `0x50` depois
+da mudança para `Status=2`; eles são consumidos como frames tardios enquanto a sessão ainda está
+associada à sala. Encaminhá-los aos gates de combate causava disconnect ao clicar em **Previous**.
 | `0x41` | `ClientSession.Rooms` em lobby; dispatcher em stage | host atualiza regra e reseta ready |
 | `0x42` | `ClientSession.Rooms` em lobby; dispatcher em stage | host trava/destrava slot vazio e reseta ready |
 | `0x43` | `ClientSession.Rooms` | valida sala, host e ready dos membros; sucesso fecha novos joins e é broadcast |

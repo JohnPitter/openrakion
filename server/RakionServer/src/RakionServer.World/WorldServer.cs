@@ -141,7 +141,8 @@ namespace RakionServer.World
                 session.FieldId = field.Id;
                 session.FieldSeat = (byte)seat;
                 session.FieldObjectIndex = (ushort)seat;
-                field.Slots[seat].UsesTunneling = session.UdpObservedEndpoint == null;
+                field.Slots[seat].UsesTunneling =
+                    _cfg.ForceTunneling || session.UdpObservedEndpoint == null;
                 session.InField = true;
                 session.FieldSecondary = true;
                 session.SecondActive = true;

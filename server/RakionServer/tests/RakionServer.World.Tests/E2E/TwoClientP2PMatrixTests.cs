@@ -64,6 +64,53 @@ namespace RakionServer.World.Tests.E2E
             AssertTunnel(master.WaitForNext(IsTunnelFrame, JourneyHelper.Timeout), allFromTunnel);
         }
 
+        [Fact]
+        public async Task ForcedTunneling_RelaysGameplayEvenWithTwoAuthenticatedUdpEndpoints()
+        {
+            await using var fixture = await WorldServerFixture.CreateAsync(forceTunneling: true);
+            if (!fixture.Available) return;
+            await using var master = await ConnectAsync(fixture, "forced-master");
+            await using var joiner = await ConnectAsync(fixture, "forced-joiner");
+
+            var (masterSession, joinerSession, field) =
+                DriveToPlayingMatch(fixture, master, joiner, joinerDirect: true);
+            Assert.True(field.HasTunnelingClient);
+            Assert.True(field.FindRec(masterSession)!.UsesTunneling);
+            Assert.True(field.FindRec(joinerSession)!.UsesTunneling);
+
+            byte[] movement = BuildMove(masterSession.FieldSeat, 321, 0, -123);
+            master.SendTunnelAll(movement);
+            AssertTunnel(joiner.WaitForNext(IsTunnelFrame, JourneyHelper.Timeout), movement);
+        }
+
+        [Fact]
+        public async Task BattleExit_LateCombatFramesThenRoomExit_KeepsSessionConnected()
+        {
+            await using var fixture = await WorldServerFixture.CreateAsync(forceTunneling: true);
+            if (!fixture.Available) return;
+            await using var master = await ConnectAsync(fixture, "exit-master");
+            await using var joiner = await ConnectAsync(fixture, "exit-joiner");
+
+            var (_, joinerSession, _) =
+                DriveToPlayingMatch(fixture, master, joiner, joinerDirect: true);
+            joiner.ExitFieldGame();
+            JourneyHelper.WaitUntil(
+                () => joinerSession.Status == UserStatus.FieldLobby,
+                "joiner não voltou ao game room");
+
+            joiner.ReportDeath(0, 0);
+            joiner.Send(0x50, Array.Empty<byte>());
+            joiner.ExitRoom();
+            JourneyHelper.WaitUntil(
+                () => joinerSession.Connected && joinerSession.FieldId < 0,
+                "joiner não voltou à game list conectado");
+            joiner.ReportDeath(0, 0);
+            joiner.Send(0x50, Array.Empty<byte>());
+            JourneyHelper.WaitUntil(
+                () => joinerSession.Connected,
+                "frame tardio desconectou o joiner na game list");
+        }
+
         private static async Task<HeadlessWorldClient> ConnectAsync(
             WorldServerFixture fixture, string name) =>
             await HeadlessWorldClient.ConnectAsync(WorldServerFixture.Host, fixture.TcpPort, name);
@@ -133,6 +180,20 @@ namespace RakionServer.World.Tests.E2E
         {
             Assert.Equal(expected.Length, BinaryPrimitives.ReadUInt16LittleEndian(frame.AsSpan(2)));
             Assert.Equal(expected, frame.AsSpan(4, expected.Length).ToArray());
+        }
+
+        private static byte[] BuildMove(byte sourceSeat, short x, short y, short z)
+        {
+            byte[] packet = new byte[GameplayActionDatagram.MoveSize];
+            BinaryPrimitives.WriteUInt16LittleEndian(packet, GameplayActionDatagram.MoveType);
+            BinaryPrimitives.WriteUInt32LittleEndian(packet.AsSpan(2), 1);
+            packet[6] = sourceSeat;
+            BinaryPrimitives.WriteUInt16LittleEndian(packet.AsSpan(7), 16);
+            packet[9] = sourceSeat;
+            BinaryPrimitives.WriteInt16LittleEndian(packet.AsSpan(11), x);
+            BinaryPrimitives.WriteInt16LittleEndian(packet.AsSpan(13), y);
+            BinaryPrimitives.WriteInt16LittleEndian(packet.AsSpan(15), z);
+            return packet;
         }
 
         private static bool IsHandshakeEcho(byte[] packet) =>

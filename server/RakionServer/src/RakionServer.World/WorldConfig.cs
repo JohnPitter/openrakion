@@ -22,6 +22,7 @@ namespace RakionServer.World
         public int UdpPort1 = 40708;
         public int UdpPort2 = 40709;
         public bool UdpRelayCompatibilityEnabled = true;
+        public bool ForceTunneling;
         public int UdpRelayPacketsPerSecond = 300;
         public int UdpRelayBurst = 600;
 
@@ -127,6 +128,7 @@ namespace RakionServer.World
             cfg.UdpPort2 = ini.GetValue("UDP", "Port2", cfg.Port + 1);
             cfg.UdpRelayCompatibilityEnabled = ini.GetBool(
                 "UDP", "RelayCompatibilityEnabled", cfg.UdpRelayCompatibilityEnabled);
+            cfg.ForceTunneling = ini.GetBool("UDP", "ForceTunneling", cfg.ForceTunneling);
             cfg.UdpRelayPacketsPerSecond = Math.Max(1,
                 ini.GetValue("UDP", "RelayPacketsPerSecond", cfg.UdpRelayPacketsPerSecond));
             cfg.UdpRelayBurst = Math.Max(cfg.UdpRelayPacketsPerSecond,
