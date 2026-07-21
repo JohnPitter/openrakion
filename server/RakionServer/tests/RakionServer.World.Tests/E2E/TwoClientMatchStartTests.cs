@@ -99,8 +99,48 @@ namespace RakionServer.World.Tests.E2E
             }
         }
 
+        [Fact]
+        public async Task GraphicFlow_First4BWithout45_PublishesBothPlayerSpawns()
+        {
+            await using var fixture = await WorldServerFixture.CreateAsync(forceTunneling: true);
+            if (!fixture.Available) return;
+            var (master, joiner, field, joinerSession) = await PrepareRoom(
+                fixture, HeadlessWorldClient.RoomSpec.Deathmatch("e2e-graphic-spawn"));
+            await using (master)
+            await using (joiner)
+            {
+                ClientSession masterSession = field.Master!;
+                joiner.SetReady(true);
+                WaitUntil(() => field.FindRec(joinerSession)?.LobbyReady == true, Timeout,
+                    "joiner não ficou ready");
+                master.StartMatch();
+                WaitUntil(() => field.MatchId != Guid.Empty, Timeout, "partida não armou");
+
+                master.SpawnField();
+                joiner.SpawnField();
+
+                AssertSpawns(master, masterSession.FieldSeat, joinerSession.FieldSeat);
+                AssertSpawns(joiner, masterSession.FieldSeat, joinerSession.FieldSeat);
+                Assert.Equal(field.MatchId, masterSession.PlayerSpawnMatchId);
+                Assert.Equal(field.MatchId, joinerSession.PlayerSpawnMatchId);
+            }
+        }
+
+        private static bool IsSpawn(byte[] frame) =>
+            frame.Length >= 3 && frame[0] == 0x45 && frame[1] == 0;
+
+        private static void AssertSpawns(HeadlessWorldClient client, params byte[] seats)
+        {
+            byte[] received = seats
+                .Select(_ => client.WaitForNext(IsSpawn, Timeout)[2])
+                .OrderBy(seat => seat)
+                .ToArray();
+            Assert.Equal(seats.OrderBy(seat => seat), received);
+        }
+
         private static async Task<(HeadlessWorldClient Master, HeadlessWorldClient Joiner,
-            Field Field, ClientSession JoinerSession)> PrepareRoom(WorldServerFixture fixture)
+            Field Field, ClientSession JoinerSession)> PrepareRoom(
+                WorldServerFixture fixture, HeadlessWorldClient.RoomSpec? room = null)
         {
             WorldServer server = fixture.Server!;
             var master = await HeadlessWorldClient.ConnectAsync(
@@ -119,7 +159,7 @@ namespace RakionServer.World.Tests.E2E
             ClientSession joinerSession = WaitForSession(server, "test2",
                 session => session.ActiveCharId > 0 && session.Status == UserStatus.FieldLobby,
                 Timeout);
-            master.CreateGolemRoom("e2e-slot-ready");
+            master.CreateRoom(room ?? HeadlessWorldClient.RoomSpec.Golem("e2e-slot-ready"));
             WaitUntil(() => masterSession.FieldId >= 0, Timeout, "sala não criada");
             Field field = server.GetField(masterSession.FieldId)!;
             joiner.JoinRoom((ushort)field.Id);

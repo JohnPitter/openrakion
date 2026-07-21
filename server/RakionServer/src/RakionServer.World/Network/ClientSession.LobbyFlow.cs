@@ -448,6 +448,13 @@ namespace RakionServer.World.Network
                 if (PendingRoomDurationSec != 0) f.RoundDurationSec = PendingRoomDurationSec;
                 if (PendingRoomRounds != 0) f.MaxRounds = PendingRoomRounds;
                 if (f.Mode == 0 && !_server.BeginStageRun(this, f)) return;
+                if (PlayerSpawnMatchId != f.MatchId &&
+                    WorldHandlers.Combat_0x45_SpawnInto(
+                        f, FieldSeat, _server.Config.ForceTunneling))
+                {
+                    PlayerSpawnMatchId = f.MatchId;
+                    _server.Bots.SendMatchSpawnsTo(this, f);
+                }
             }
             _server.NotifyPlayerReady(f, this);
             Log.Ok("field", "[{0}] sala aplicada ao field {1}: mode={2} map={3} dur={4}s rounds={5}",

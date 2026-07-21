@@ -147,8 +147,11 @@ namespace RakionServer.World.Network
             if (field == null || rec == null) return;
 
             Log.Info("combat", "[{0}] 0x45 spawn (field {1} seat {2})", u.Slot, field.Id, rec.Slot);
-            Combat_0x45_SpawnInto(field, rec.Slot, ctx.World.Config.ForceTunneling);
-            ctx.World.Bots.SendMatchSpawnsTo(u, field);
+            if (Combat_0x45_SpawnInto(field, rec.Slot, ctx.World.Config.ForceTunneling))
+            {
+                u.PlayerSpawnMatchId = field.MatchId;
+                ctx.World.Bots.SendMatchSpawnsTo(u, field);
+            }
         }
 
         /// <summary>
@@ -160,10 +163,11 @@ namespace RakionServer.World.Network
         ///   - OK (result 0): state=3, zera kills (+0x12d/+0x12e) e score (+0x130),
         ///     broadcast FUN_004061f0 0x45 [seat] a TODOS + FUN_004066c0 (housekeeping).
         /// </summary>
-        private static void Combat_0x45_SpawnInto(Field field, int seat, bool forceTunneling)
+        internal static bool Combat_0x45_SpawnInto(
+            Field field, int seat, bool forceTunneling)
         {
             var rec = field.RecAt(seat);
-            if (rec == null) return;
+            if (rec == null) return false;
 
             sbyte result;
             if (field.State != 2)
@@ -209,7 +213,7 @@ namespace RakionServer.World.Network
                 rec.Session?.SendMessage(0x45,
                     FieldLifecycleFrames.SpawnRejected((byte)seat, (byte)result));
                 Log.Info("field", "spawn recusado (field {0} seat {1} result {2})", field.Id, seat, result);
-                return;
+                return false;
             }
 
             // OK: zera kills/score do registro e broadcast 0x45 [seat] a TODOS.
@@ -218,6 +222,7 @@ namespace RakionServer.World.Network
             field.BroadcastField(0x45, FieldLifecycleFrames.Spawn((byte)seat));
             PublishTunnelingPresenceOnSpawn(field, rec, forceTunneling);
             Log.Ok("field", "spawn OK (field {0} seat {1} team {2})", field.Id, seat, rec.Team);
+            return true;
         }
 
         private static void PublishTunnelingPresenceOnSpawn(
