@@ -203,7 +203,7 @@ namespace RakionServer.World.Tests.E2E
             frame.Length >= 2 && frame[0] == 0x48 && frame[1] == 0;
 
         private static bool IsSpawn(byte[] frame) =>
-            frame.Length >= 3 && frame[0] == 0x45 && frame[1] == 0;
+            frame.Length >= 4 && frame[0] == 0x45 && frame[1] == 0 && frame[2] == 0;
 
         private static bool IsMovementFrom(byte[] frame, byte seat) =>
             frame.Length >= 5 && frame[0] == 0x4b && frame[1] == 0 && frame[2] == seat;
@@ -211,7 +211,7 @@ namespace RakionServer.World.Tests.E2E
         private static void AssertSpawns(HeadlessWorldClient client, params byte[] seats)
         {
             byte[] received = seats
-                .Select(_ => client.WaitForNext(IsSpawn, Timeout)[2])
+                .Select(_ => client.WaitForNext(IsSpawn, Timeout)[3])
                 .OrderBy(seat => seat)
                 .ToArray();
             Assert.Equal(seats.OrderBy(seat => seat), received);

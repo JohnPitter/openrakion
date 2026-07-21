@@ -161,7 +161,7 @@ namespace RakionServer.World.Network
         ///   - senao escolhe time pela contagem dos blocos 0..9 (bVar2) vs 10..0x13 (bVar3),
         ///     respeitando host-lock (+0x127); se o time do player nao for o menos cheio -> result=2.
         ///   - OK (result 0): state=3, zera kills (+0x12d/+0x12e) e score (+0x130),
-        ///     broadcast FUN_004061f0 0x45 [seat] a TODOS + FUN_004066c0 (housekeeping).
+        ///     broadcast FUN_004061f0 0x45 [result=0][seat] a TODOS + FUN_004066c0 (housekeeping).
         /// </summary>
         internal static bool Combat_0x45_SpawnInto(
             Field field, int seat, bool forceTunneling)
@@ -213,14 +213,14 @@ namespace RakionServer.World.Network
 
             if (result != 0)
             {
-                // FUN_0041b8a0(self, 0x45, [seat,result]) len 4 — so ao proprio
+                // FUN_0041b8a0(self, 0x45, [result,seat]) len 4 — so ao proprio
                 rec.Session?.SendMessage(0x45,
                     FieldLifecycleFrames.SpawnRejected((byte)seat, (byte)result));
                 Log.Info("field", "spawn recusado (field {0} seat {1} result {2})", field.Id, seat, result);
                 return false;
             }
 
-            // OK: zera kills/score do registro e broadcast 0x45 [seat] a TODOS.
+            // OK: zera kills/score do registro e broadcast 0x45 [result=0][seat] a TODOS.
             rec.Dead = false;
             rec.RoundScore = 0;
             field.BroadcastField(0x45, FieldLifecycleFrames.Spawn((byte)seat));

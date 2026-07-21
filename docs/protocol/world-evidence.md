@@ -1536,6 +1536,13 @@ produzia o `0x57` correto de 21 bytes, enquanto o espelho `0xB07A` da DLL era re
 como telemetria autoritativa para bots; a comunicação humano-humano permanece exclusivamente no
 caminho canônico `0x56 → 0x57`.
 
+Com movimento e dano validados graficamente, o aviso remanescente foi isolado no frame de spawn.
+`worldserv.exe:FUN_00407C70` monta quatro bytes lógicos `[0x45:u16][status:u8][seat:u8]`, tanto no
+broadcast de sucesso quanto na rejeição dirigida. O parser `engine.dll:0x36193CC0` confirma a ordem
+ao chamar o callback com `payload[0]` e `payload[1]`. O .NET enviava sucesso como somente `[seat]`:
+o jogador no seat `1` interpretava esse valor como status de erro e exibia `Not Playing`, apesar do
+combate ativo. O golden e o E2E agora exigem `[0, seat]`; rejeições usam `[status, seat]`.
+
 ## Variações que não podem ser copiadas
 
 - handles/ponteiros vistos em `0x0E` e `0x2C` pertencem à sessão; `0x14` leva apenas o personagem,

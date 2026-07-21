@@ -65,7 +65,8 @@ derivado, o vencedor do modo 2 é calculado pelo score individual, não pelo blo
 - o adaptador de sala exige todos os membros prontos antes do start;
 - `0x4B` confirma a entrada individual no stage;
 - quando todos os registros esperados chegam, o World publica `0x48` e inicia o round;
-- `0x45 [seat]` publica spawn e zera o score individual daquele registro.
+- `0x45 [status][seat]` publica spawn e zera o score individual daquele registro; `status=0`
+  indica sucesso.
 
 Esses contratos foram exercitados com duas sessões. O ready não deve ser novamente misturado
 com weapon state nem com o lock de slot `0x42`.

@@ -9,8 +9,8 @@ namespace RakionServer.World.Tests
         [Fact]
         public void SpawnAndExitBodies_MatchOriginalSeatLayouts()
         {
-            Assert.Equal(new byte[] { 10 }, FieldLifecycleFrames.Spawn(10));
-            Assert.Equal(new byte[] { 10, 2 }, FieldLifecycleFrames.SpawnRejected(10, 2));
+            Assert.Equal(new byte[] { 0, 10 }, FieldLifecycleFrames.Spawn(10));
+            Assert.Equal(new byte[] { 2, 10 }, FieldLifecycleFrames.SpawnRejected(10, 2));
             Assert.Equal(new byte[] { 10 }, FieldLifecycleFrames.Exit(10));
         }
 

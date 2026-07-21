@@ -232,7 +232,7 @@ movimento e inseria no callback tunnel os cinco bytes de sequence/source que nã
 `0x56`.
 
 O cliente gráfico v258 entra na Battle diretamente pelo primeiro `0x4B`, sem enviar o `0x45`
-observado nas sondas headless. Nesse fluxo, o World publica o spawn `0x45 [seat]` de cada jogador
+observado nas sondas headless. Nesse fluxo, o World publica o spawn `0x45 [status=0][seat]` de cada jogador
 antes de iniciar seu relógio. Isso cria a entidade remota nos dois clientes e também ativa o
 agregado de tunneling `0x54`; sem essa compatibilidade, o master via o adversário congelado e o
 segundo cliente não criava o master no stage.

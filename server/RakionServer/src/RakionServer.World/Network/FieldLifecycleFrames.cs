@@ -4,9 +4,9 @@ namespace RakionServer.World.Network
 {
     public static class FieldLifecycleFrames
     {
-        public static byte[] Spawn(byte seat) => new[] { seat };
+        public static byte[] Spawn(byte seat) => new byte[] { 0, seat };
 
-        public static byte[] SpawnRejected(byte seat, byte status) => new[] { seat, status };
+        public static byte[] SpawnRejected(byte seat, byte status) => new[] { status, seat };
 
         public static byte[] Exit(byte seat) => new[] { seat };
 

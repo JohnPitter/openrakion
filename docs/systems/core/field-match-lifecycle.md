@@ -82,6 +82,7 @@ Player ativo significa registro em `state=3` ou `state=4`, exatamente como a var
 |---:|---|---|
 | `0x43` | `[u16 type][u8 status]` | autorização do start |
 | `0x44` PvP | `[u16 type][u8 reason]` | fim do match |
+| `0x45` | `[u16 type][u8 status][u8 seat]` | entrada; `status=0` indica sucesso |
 | `0x48` | `[u16][round][remaining:u16][wins0][wins1][mvp0][mvp1]` | início após engage/spawn |
 | `0x49` | `[u16][round][mvp0][mvp1]` | próximo round |
 | `0x4A` | FIELD body `[reason][losingSide][wins0][wins1]` | fim de round |
