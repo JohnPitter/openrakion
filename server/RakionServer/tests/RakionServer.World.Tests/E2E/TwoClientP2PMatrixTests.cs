@@ -84,26 +84,31 @@ namespace RakionServer.World.Tests.E2E
         }
 
         [Fact]
-        public async Task CompatibilityTelemetry_RelaysMovementAndAttackInBothDirections()
+        public async Task CompatibilityTelemetry_UpdatesServerWithoutDuplicatingNativeTunnel()
         {
             await using var fixture = await WorldServerFixture.CreateAsync(forceTunneling: true);
             if (!fixture.Available) return;
             await using var master = await ConnectAsync(fixture, "compat-master");
             await using var joiner = await ConnectAsync(fixture, "compat-joiner");
 
-            var (masterSession, joinerSession, _) =
+            var (masterSession, joinerSession, field) =
                 DriveToPlayingMatch(fixture, master, joiner, joinerDirect: true);
-            byte[] masterMove = master.SendBotTelemetryMove(
+            master.SendBotTelemetryMove(
                 fixture.UdpPort2, masterSession.FieldSeat, 321, 0, -123);
-            AssertTunnel(joiner.WaitForNext(IsTunnelFrame, JourneyHelper.Timeout), masterMove);
+            JourneyHelper.WaitUntil(
+                () => field.FindRec(masterSession)?.Position == new BotVector(321, 0, -123),
+                "telemetria do master não atualizou o estado autoritativo");
+            AssertNoTunnelFrame(joiner);
 
-            byte[] joinerMove = joiner.SendBotTelemetryMove(
+            joiner.SendBotTelemetryMove(
                 fixture.UdpPort2, joinerSession.FieldSeat, -222, 0, 456);
-            AssertTunnel(master.WaitForNext(IsTunnelFrame, JourneyHelper.Timeout), joinerMove);
+            JourneyHelper.WaitUntil(
+                () => field.FindRec(joinerSession)?.Position == new BotVector(-222, 0, 456),
+                "telemetria do joiner não atualizou o estado autoritativo");
+            AssertNoTunnelFrame(master);
 
-            byte[] attack = master.SendBotTelemetryAttack(
-                fixture.UdpPort2, masterSession.FieldSeat);
-            AssertTunnel(joiner.WaitForNext(IsTunnelFrame, JourneyHelper.Timeout), attack);
+            master.SendBotTelemetryAttack(fixture.UdpPort2, masterSession.FieldSeat);
+            AssertNoTunnelFrame(joiner);
         }
 
         [Fact]

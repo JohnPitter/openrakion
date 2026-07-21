@@ -219,12 +219,11 @@ diretamente entre si. Movimento, animação, dano e mensagens reliable passam po
 ambientes com P2P direto comprovado, use `ForceTunneling=0`.
 
 A DLL de compatibilidade também espelha `0x030A` (movimento) e `0x0311` (ataque) ao World no
-envelope autenticado `0xB07A`. Esse caminho é necessário porque o cliente que cria a sala não
-recebe um roster contendo seu próprio flag individual de tunneling. O World valida seat, endpoint
-e field, remove o envelope e entrega o datagrama original aos demais humanos pelo callback TCP
-`0x57`. A entrega não pode usar UDP a partir de `40709`: o socket P2P conectado aceita somente o
-endpoint remoto anunciado e descarta essa origem. O mesmo input continua alimentando o combate
-contra bots.
+envelope autenticado `0xB07A`. Esse espelho alimenta apenas o estado autoritativo usado por bots;
+ele não é devolvido aos clientes. A engine já envia o payload canônico pelo request `0x56`, e o
+World o entrega aos peers por `0x57`. Reembrulhar também o datagrama direto espelhado duplicava o
+movimento e inseria no callback tunnel os cinco bytes de sequence/source que não pertencem ao blob
+`0x56`.
 
 O cliente gráfico v258 entra na Battle diretamente pelo primeiro `0x4B`, sem enviar o `0x45`
 observado nas sondas headless. Nesse fluxo, o World publica o spawn `0x45 [seat]` de cada jogador

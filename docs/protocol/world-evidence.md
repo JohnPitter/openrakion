@@ -1523,6 +1523,13 @@ inicial do joiner não alcançou o master e a UI permaneceu em `Waiting other pl
 mantém agora o primeiro blob `0x4B` por jogador e o reproduz quando o peer atrasado é promovido.
 O E2E `FasterJoiner_InitialMovementIsReplayedWhenMasterFinishesLoading` fixa essa ordem no fio.
 
+Na validação gráfica seguinte, o replay ocorreu (`replay 0x4B=1`) e ambos chegaram a `state=4`, mas
+o peer ainda ficou em `Not Playing`. O log mostrou cada `0x030A` duplicado: o request nativo `0x56`
+produzia o `0x57` correto de 21 bytes, enquanto o espelho `0xB07A` da DLL era reenviado como outro
+`0x57` de 26 bytes contendo o cabeçalho do datagrama P2P. O espelho passou a ser consumido somente
+como telemetria autoritativa para bots; a comunicação humano-humano permanece exclusivamente no
+caminho canônico `0x56 → 0x57`.
+
 ## Variações que não podem ser copiadas
 
 - handles/ponteiros vistos em `0x0E` e `0x2C` pertencem à sessão; `0x14` leva apenas o personagem,

@@ -216,7 +216,8 @@ namespace RakionServer.World.Network
             }
             if (!_relayLimits.TryConsume(sender.Slot, sender.UdpKey, Environment.TickCount64)) return;
             ApplyBotInput(sender, type, packet);
-            RelayTelemetryToTcpPeers(sender, packet, type);
+            Log.Debug("udp", "telemetria 0x{0:X4} aplicada somente no servidor para slot {1}",
+                type, sender.Slot);
         }
 
         private void RelayToUdpPeers(
@@ -236,28 +237,6 @@ namespace RakionServer.World.Network
                 }
             }
             Log.Debug("udp", "datagrama 0x{0:X4} relay p/ {1} peer(s) do field {2}",
-                type, relayed, sender.FieldId);
-        }
-
-        private void RelayTelemetryToTcpPeers(
-            ClientSession sender, ReadOnlySpan<byte> packet, ushort type)
-        {
-            using var writer = new PacketWriter();
-            writer.WriteWord(packet.Length).WriteBytes(packet.ToArray());
-            byte[] payload = writer.ToArray();
-            int relayed = 0;
-            foreach (ClientSession session in _world.Sessions)
-            {
-                if (!session.InField || session == sender || session.FieldId != sender.FieldId)
-                    continue;
-                try { session.SendMessage(0x57, payload); relayed++; }
-                catch (Exception ex)
-                {
-                    Log.Debug("udp", "tunnel TCP 0x{0:X4} para slot {1}: {2}",
-                        type, session.Slot, ex.Message);
-                }
-            }
-            Log.Debug("udp", "telemetria 0x{0:X4} tunnel TCP p/ {1} peer(s) do field {2}",
                 type, relayed, sender.FieldId);
         }
 
