@@ -10,23 +10,28 @@ namespace
 {
 constexpr uintptr_t BuddyLoginCallbackAddress = 0x0048a5d0;
 constexpr uintptr_t CharacterSelectCallbackAddress = 0x0047cb40;
+constexpr uintptr_t MessengerShowAddress = 0x00489120;
 constexpr uintptr_t RakionApplicationAddress = 0x004feed0;
 constexpr BYTE ExpectedBuddyLoginCallback[] = { 0x6a, 0xff, 0x68, 0xc3, 0xe3, 0x4c, 0x00 };
 constexpr BYTE ExpectedCharacterSelectCallback[] = { 0x64, 0xa1, 0x00, 0x00, 0x00, 0x00 };
+constexpr BYTE ExpectedMessengerShow[] = { 0x56, 0x8b, 0xf1, 0x8a, 0x46, 0x24 };
 constexpr size_t BuddyInterfaceOffset = 0x20;
 constexpr size_t BuddyLoginStateOffset = 0x24;
 constexpr size_t BuddyNicknameOffset = 0x13b30;
+constexpr size_t MessengerVisibleOffset = 0x124;
 constexpr size_t MessengerHostOffset = 0x4a60;
 constexpr size_t SetNicknameVtableIndex = 3;
 constexpr size_t MaxNicknameLength = 20;
 
 using BuddyLoginCallback = void (__thiscall*)(void*, uint32_t, uint32_t);
 using CharacterSelectCallback = void (__thiscall*)(void*, uint32_t);
+using MessengerShow = void (__thiscall*)(void*);
 using SetNickname = void (__thiscall*)(void*, const wchar_t*);
 
 BuddyLoginCallback OriginalBuddyLogin{};
 CharacterSelectCallback OriginalCharacterSelect{};
-PVOID volatile PendingRefreshHost{};
+MessengerShow OriginalMessengerShow{};
+volatile LONG RefreshRequested{};
 void* ActiveSessionHost{};
 wchar_t LastRequestedNickname[MaxNicknameLength + 1]{};
 
@@ -75,12 +80,12 @@ const wchar_t* CurrentBuddyNickname(void* ui, void** buddyResult)
     return wcsnlen_s(nickname, MaxNicknameLength) > 0 ? nickname : nullptr;
 }
 
-bool RefreshBuddyNickname(void* ui)
+bool RefreshBuddyNickname(void* ui, bool force)
 {
     void* buddy{};
     const wchar_t* nickname = CurrentBuddyNickname(ui, &buddy);
     if (!nickname) return false;
-    if (ActiveSessionHost == ui &&
+    if (!force && ActiveSessionHost == ui &&
         wcsncmp(LastRequestedNickname, nickname, MaxNicknameLength) == 0)
         return true;
     auto** vtable = *reinterpret_cast<void***>(buddy);
@@ -101,18 +106,20 @@ bool IsBuddyLoggedIn(void* ui)
         *(static_cast<BYTE*>(ui) + BuddyLoginStateOffset) != 0;
 }
 
-void RefreshAfterCharacterSelection(void* ui)
+void TryRefreshBuddyNickname(void* ui, bool force = false)
 {
-    if (!ui) return;
+    if (InterlockedCompareExchange(&RefreshRequested, 0, 0) == 0) return;
+    if (!ui)
+    {
+        CompatLog("SetNick do Messenger aguardando criacao do host");
+        return;
+    }
     if (!IsBuddyLoggedIn(ui))
     {
-        InterlockedExchangePointer(&PendingRefreshHost, ui);
         CompatLog("SetNick do Messenger aguardando login Buddy");
         return;
     }
-
-    InterlockedCompareExchangePointer(&PendingRefreshHost, nullptr, ui);
-    RefreshBuddyNickname(ui);
+    if (RefreshBuddyNickname(ui, force)) InterlockedExchange(&RefreshRequested, 0);
 }
 
 void __fastcall BuddyLoginCallbackHook(void* self, void*, uint32_t result, uint32_t context)
@@ -121,15 +128,25 @@ void __fastcall BuddyLoginCallbackHook(void* self, void*, uint32_t result, uint3
     if ((result & 0xffff) != 0) return;
     ActiveSessionHost = self;
     LastRequestedNickname[0] = L'\0';
-    if (InterlockedCompareExchangePointer(&PendingRefreshHost, nullptr, self) == self)
-        RefreshBuddyNickname(self);
+    TryRefreshBuddyNickname(self);
 }
 
 void __fastcall CharacterSelectCallbackHook(void* self, void*, uint32_t result)
 {
     OriginalCharacterSelect(self, result);
     if ((result & 0xff) != 0) return;
-    RefreshAfterCharacterSelection(CurrentMessengerHost());
+    InterlockedExchange(&RefreshRequested, 1);
+    TryRefreshBuddyNickname(CurrentMessengerHost());
+}
+
+void __fastcall MessengerShowHook(void* self, void*)
+{
+    const bool opening = IsReadable(self, MessengerVisibleOffset + 1) &&
+        *(static_cast<BYTE*>(self) + MessengerVisibleOffset) == 0;
+    OriginalMessengerShow(self);
+    if (!opening) return;
+    InterlockedExchange(&RefreshRequested, 1);
+    TryRefreshBuddyNickname(self, true);
 }
 
 bool InstallHook(uintptr_t address, const BYTE* expected, size_t length,
@@ -167,7 +184,9 @@ bool InstallBuddyRefreshHooks()
     if (std::memcmp(reinterpret_cast<const void*>(BuddyLoginCallbackAddress),
             ExpectedBuddyLoginCallback, sizeof(ExpectedBuddyLoginCallback)) != 0 ||
         std::memcmp(reinterpret_cast<const void*>(CharacterSelectCallbackAddress),
-            ExpectedCharacterSelectCallback, sizeof(ExpectedCharacterSelectCallback)) != 0)
+            ExpectedCharacterSelectCallback, sizeof(ExpectedCharacterSelectCallback)) != 0 ||
+        std::memcmp(reinterpret_cast<const void*>(MessengerShowAddress),
+            ExpectedMessengerShow, sizeof(ExpectedMessengerShow)) != 0)
         return false;
 
     void* loginTrampoline{};
@@ -183,5 +202,12 @@ bool InstallBuddyRefreshHooks()
             reinterpret_cast<void*>(&CharacterSelectCallbackHook), &selectionTrampoline))
         return false;
     OriginalCharacterSelect = reinterpret_cast<CharacterSelectCallback>(selectionTrampoline);
+
+    void* showTrampoline{};
+    if (!InstallHook(MessengerShowAddress, ExpectedMessengerShow,
+            sizeof(ExpectedMessengerShow), reinterpret_cast<void*>(&MessengerShowHook),
+            &showTrampoline))
+        return false;
+    OriginalMessengerShow = reinterpret_cast<MessengerShow>(showTrampoline);
     return true;
 }

@@ -17,12 +17,15 @@ Em 19–20/07/2026 foi reproduzida outra falha: após entrar no servidor ou troc
 modelo social podia ser reinicializado sem que o cliente repetisse `SVC_SET_NICK`; a lista só surgia
 depois de selecionar manualmente **Nick Change**. O `RET_SET_NICK` contém somente o resultado da
 operação; enviá-lo sem um `SVC_SET_NICK` anterior não informa o nome ao cliente e não substitui o
-fluxo nativo. A correção mínima na DLL chama `SetNickname` do próprio `Buddy2.dll` uma vez por
-personagem em cada sessão. Se `host+0x24` ainda indica que o login Buddy não terminou, a chamada
-fica pendente e é executada pelo primeiro `RET_LOGIN` bem-sucedido. O servidor responde somente
+fluxo nativo. A correção mínima na DLL chama `SetNickname` do próprio `Buddy2.dll` após a seleção
+e novamente ao abrir o F9. A solicitação é global à sessão até o host existir, em vez de guardar um
+ponteiro que ainda pode ser nulo no primeiro processo. Se `host+0x24` indica que o login Buddy não
+terminou, ela fica pendente e é executada pelo primeiro `RET_LOGIN` bem-sucedido. O servidor
+responde somente
 `RET_SET_NICK(result=0)`, como espera o callback original `0x004785B0`: ele aplica o nome solicitado
-e reconstrói a janela. Um segundo `RET_LOGIN` reinicializava o modelo recém-configurado e tornava o
-F9 intermitente.
+e reconstrói a janela. O gancho do F9 não escreve no store nem cria linhas: apenas repete essa API
+nativa quando a janela vai abrir. Um segundo `RET_LOGIN` reinicializava o modelo recém-configurado
+e tornava o F9 intermitente, por isso não é usado como refresh.
 
 O lifecycle completo explica a falha de reentrada. `WorldLoginSuccess (0x0047BCE0)` cria o host em
 `application+0x4A60`, inicia `Buddy2::Login` e recebe a lista em `0x0048A5D0`. Ao sair do servidor,
@@ -99,6 +102,8 @@ Os traces Frida [`buddy_login_trace.js`](../../tools/frida/buddy_login_trace.js)
 login, inspecionam `RET_LOGIN`/`NTF_USER_STATE` e auditam a passagem para o modelo do `rakion.exe`.
 O último confirmou um registro interno de `0x116` bytes e `modelCount=1` depois do callback, sem
 alterar pacotes ou estado. Assim, a pendência observada no F9 está depois da inserção no modelo.
+O endereço `0x00489120` é o toggle nativo do F9; a DLL valida seu prólogo antes de instalar o gancho
+e só solicita `SetNickname` quando `host+0x124` indica uma transição de fechado para aberto.
 
 ## Arquitetura
 

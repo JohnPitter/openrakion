@@ -57,8 +57,8 @@ python client\RakionClientCompat\verify_legacy_client_patch.py `
 - adicionar o botão nativo `Buy Cash` ao lado de `Potion slot` (command `0x18B`); o hook registra
   todas as instâncias criadas pela tela, consome somente o clique desses controles e abre a mesma
   `cash-shop.url`;
-- disparar uma única vez o `SetNickname` nativo do `Buddy2.dll` após cada seleção de personagem,
-  aguardando o `RET_LOGIN` quando a autenticação Buddy ainda não terminou;
+- disparar o `SetNickname` nativo do `Buddy2.dll` após cada seleção de personagem e ao abrir o F9,
+  mantendo a solicitação pendente enquanto o host ou a autenticação Buddy ainda não estiver pronto;
 - manter HIT/SHOT, lifecycle e ground-snap visual dos bots;
 - ler o IPv4 de `server.host` e redirecionar somente `40706`, `40708` e `40709`, em TCP/UDP;
 - espelhar movimento e ataque P2P humano ao World pelo envelope `0xB07A`. Movimento e ataque são
@@ -71,8 +71,9 @@ selecionando `windowed`, `borderless` ou `fullscreen`. São preferências do jog
 O servidor continua como autoridade do Messenger. O World fixa o primeiro personagem por slot como
 identidade inicial, e o Buddy fornece a lista no `RET_LOGIN`. A DLL cobre apenas uma limitação do
 cliente: ele precisa chamar sua API nativa `SetNickname` para inicializar o nome próprio. Esse envio
-  gera `SVC_SET_NICK`; o servidor responde somente `RET_SET_NICK`, que confirma o nome e atualiza
-  a janela sem reinicializar a lista recebida no login.
+gera `SVC_SET_NICK`; o servidor responde somente `RET_SET_NICK`, que confirma o nome e atualiza
+a janela sem reinicializar a lista recebida no login. A abertura do F9 repete a mesma API nativa
+para eliminar a corrida do primeiro processo; não há escrita direta no store ou nas linhas da UI.
 
 ## Build
 

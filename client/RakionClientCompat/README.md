@@ -6,8 +6,8 @@ Bootstrap x86 `version.dll`, carregado pelo fluxo normal antes do entry point. E
 no-GameGuard, janela/multi-instância/Alt+Tab, IP do servidor, HIT/SHOT, lifecycle, ground-snap e
 telemetria de ataque humano contra bot. O lifecycle original da tela de personagens é restaurado em
 conjunto com o unlink seguro dos componentes do `uitoolkit.dll`. Para o Messenger, a DLL dispara o
-`SetNickname` já existente no `Buddy2.dll` após cada seleção, aguardando o primeiro `RET_LOGIN`
-quando necessário e sem duplicar a solicitação entre os dois callbacks. Os dados e a lista
+`SetNickname` já existente no `Buddy2.dll` após cada seleção e abertura do F9, aguardando o
+primeiro `RET_LOGIN` quando necessário e sem duplicar a solicitação entre os dois callbacks. Os dados e a lista
 continuam sendo montados pelo Buddy server. Em saldo
 insuficiente na compra de Power User, ela abre a URL HTTP(S) de `cash-shop.url`. A loja também recebe
 um botão nativo `Buy Cash`, ao lado de `Potion slot`, apontando para a mesma URL; nenhuma carteira é
