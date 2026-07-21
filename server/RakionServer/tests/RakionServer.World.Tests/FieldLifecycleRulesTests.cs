@@ -1,4 +1,6 @@
+using System.Net.Sockets;
 using RakionServer.World.Domain;
+using RakionServer.World.Network;
 using Xunit;
 
 namespace RakionServer.World.Tests
@@ -148,7 +150,65 @@ namespace RakionServer.World.Tests
             Assert.Equal((byte)3, field.Slots[10].State);
         }
 
+        [Fact]
+        public void DuplicateReady_FromPlayingPlayer_IsIgnoredWithoutChangingState()
+        {
+            Field field = PlayingField(GameMode.Deathmatch);
+            ClientSession session = AddSession(field, 1);
+            PlayerRec record = field.FindRec(session)!;
+            record.State = 4;
+            record.Dead = true;
+
+            PlayerReadyTransition transition = field.OnPlayerReady(session, 1000);
+
+            Assert.Equal(PlayerReadyTransition.Ignored, transition);
+            Assert.Equal((byte)4, record.State);
+            Assert.True(record.Dead);
+        }
+
+        [Fact]
+        public void Ready_DuringPlaying_JoinsCurrentRound()
+        {
+            Field field = PlayingField(GameMode.Deathmatch);
+            ClientSession session = AddSession(field, 1);
+            PlayerRec record = field.FindRec(session)!;
+            record.State = 3;
+            record.Dead = true;
+
+            PlayerReadyTransition transition = field.OnPlayerReady(session, 1000);
+
+            Assert.Equal(PlayerReadyTransition.JoinedPlaying, transition);
+            Assert.Equal((byte)4, record.State);
+            Assert.False(record.Dead);
+        }
+
+        [Fact]
+        public void Ready_DuringRoundEnd_SynchronizesResultAndCounter()
+        {
+            Field field = RoundEndField(GameMode.TeamDeath);
+            field.LosingSideWire = 1;
+            ClientSession session = AddSession(field, 1);
+            PlayerRec record = field.FindRec(session)!;
+            record.State = 3;
+            record.CounterB = 2;
+
+            PlayerReadyTransition transition = field.OnPlayerReady(session, 1000);
+
+            Assert.Equal(PlayerReadyTransition.JoinedRoundEnd, transition);
+            Assert.Equal((byte)4, record.State);
+            Assert.Equal((byte)3, record.CounterB);
+        }
+
         private static Field NewField(GameMode mode) => new(7) { Mode = (byte)mode };
+
+        private static ClientSession AddSession(Field field, ushort slot)
+        {
+            var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            var session = new ClientSession(socket, slot, null!);
+            field.Add(session);
+            field.AssignSeat(session);
+            return session;
+        }
 
         private static Field NewSoloField() => new(7)
         {

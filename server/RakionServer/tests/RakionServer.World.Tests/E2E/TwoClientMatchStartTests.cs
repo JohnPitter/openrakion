@@ -154,12 +154,10 @@ namespace RakionServer.World.Tests.E2E
                 int masterRoundStarts = master.Received.Count(IsRoundStart);
                 int joinerRoundStarts = joiner.Received.Count(IsRoundStart);
                 master.RoundStart();
-                WaitUntil(() =>
-                {
-                    master.DrainReceived();
-                    return master.Received.Count(IsRoundStart) == masterRoundStarts + 1;
-                }, Timeout, "0x48 repetido do master não foi confirmado");
+                Thread.Sleep(200);
+                master.DrainReceived();
                 joiner.DrainReceived();
+                Assert.Equal(masterRoundStarts, master.Received.Count(IsRoundStart));
                 Assert.Equal(joinerRoundStarts, joiner.Received.Count(IsRoundStart));
             }
         }

@@ -5,6 +5,15 @@ using RakionServer.World.Network;
 
 namespace RakionServer.World.Domain
 {
+    public enum PlayerReadyTransition : byte
+    {
+        Ignored,
+        Waiting,
+        Started,
+        JoinedPlaying,
+        JoinedRoundEnd
+    }
+
     /// <summary>
     /// Estado do player dentro de um Field (espelha o registro de 0x14 bytes em
     /// field+0x124 + i*0x14 do worldserv.exe). state: 0=vazio, 1=aguardando,
@@ -398,28 +407,34 @@ namespace RakionServer.World.Domain
         }
 
         /// <summary>
-        /// FUN_00408440: o player marcou ready/spawnou (handler 0x48). Marca state=4; em fase Pre,
-        /// inicia o round quando nao restam mais 'ready' (todos spawnaram), ou imediatamente se solo.
-        /// Devolve true se a partida (re)iniciou nesta chamada.
+        /// FUN_00408440: processa 0x48 apenas para field ativo e registro state=3.
         /// </summary>
-        public bool OnPlayerReady(ClientSession s) => OnPlayerReady(s, Environment.TickCount64);
+        public PlayerReadyTransition OnPlayerReady(ClientSession s) =>
+            OnPlayerReady(s, Environment.TickCount64);
 
-        public bool OnPlayerReady(ClientSession s, long now)
+        public PlayerReadyTransition OnPlayerReady(ClientSession s, long now)
         {
             var rec = FindRec(s);
-            if (rec == null) return false;
-            if (State != 2) State = 2; // garante field ativo
-            if (Phase == MatchPhase.Pre)
-            {
-                rec.State = 4;
-                rec.Dead = false;
-                if (CountReady() == 0) { StartRound(now); return true; }
-                return false;
-            }
-            // ja em jogo: spawn tardio entra direto como playing
+            if (State != 2 || rec?.State != 3) return PlayerReadyTransition.Ignored;
+
             rec.State = 4;
             rec.Dead = false;
-            return false;
+            if (Phase == MatchPhase.Pre)
+            {
+                if (CountReady() != 0) return PlayerReadyTransition.Waiting;
+                StartRound(now);
+                return PlayerReadyTransition.Started;
+            }
+
+            if (Phase == MatchPhase.Playing) return PlayerReadyTransition.JoinedPlaying;
+            if (Phase != MatchPhase.RoundEnd) return PlayerReadyTransition.Ignored;
+
+            if (LosingSideWire is 0 or 1)
+            {
+                if (rec.Slot < 10) rec.CounterB = AddByte(rec.CounterB, 1);
+                else rec.CounterA = AddByte(rec.CounterA, 1);
+            }
+            return PlayerReadyTransition.JoinedRoundEnd;
         }
 
         /// <summary>Inicia o round 1 / reinicia o relogio da partida (transicao Pre/RoundEnd -> Playing).</summary>

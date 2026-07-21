@@ -1498,6 +1498,24 @@ O E2E `RankingJobWireE2ETests` executa o job one-shot real, publica os sete snap
 transporte AES e confirma os quatro campos nesses offsets do `0x0C`. A fixture restaura canônicos e
 as sete tabelas depois do teste.
 
+### Ready duplicado no ciclo battle `0x48` — 2026-07-21
+
+A captura gráfica com duas sessões mostrou o primeiro `0x48` de cada jogador iniciando corretamente
+o round. Cinco segundos depois, o master repetiu `0x48`; a resposta adicional que o servidor .NET
+enviava somente a ele provocou um segundo ciclo local de entrada e um novo `0x4B`, desestabilizando
+o combate enquanto o outro cliente permanecia no ciclo original.
+
+O RE de `worldserv.exe:FUN_00408440` confirmou que o handler aceita `0x48` apenas quando o field está
+ativo (`state=2`) e o registro do jogador está em `state=3`. Em `Pre`, o último jogador pendente
+inicia o round e o servidor envia `0x48` a todos os registros promovidos para `state=4`. Em
+`Playing`, somente um jogador tardio ainda em `state=3` recebe a sincronização atual. Em `RoundEnd`,
+esse jogador recebe `0x4A`. Um jogador já em `state=4` tem o request duplicado ignorado, sem resposta
+e sem alteração de vida ou contadores.
+
+O World .NET agora representa essas saídas como transições explícitas e não responde ao `0x48`
+duplicado. Os testes cobrem o início conjunto, a entrada tardia, a intermissão e a preservação do
+estado de um jogador já ativo.
+
 ## Variações que não podem ser copiadas
 
 - handles/ponteiros vistos em `0x0E` e `0x2C` pertencem à sessão; `0x14` leva apenas o personagem,

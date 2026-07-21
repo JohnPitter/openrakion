@@ -702,26 +702,33 @@ namespace RakionServer.World
             lock (f.SyncRoot)
             {
                 long now = Environment.TickCount64;
-                bool alreadyPlaying = f.Phase == Domain.MatchPhase.Playing &&
-                    f.FindRec(s)?.Playing == true;
-                bool started = f.OnPlayerReady(s, now);
-                if (started)
+                Domain.PlayerReadyTransition transition = f.OnPlayerReady(s, now);
+                switch (transition)
                 {
-                    _fieldStatusBeat[f.Id] = now;
-                    f.BroadcastLobby(f.Build0x48());
-                    Log.Ok("field", "[{0}] partida iniciada no field {1} (0x48 a {2} player(s))",
-                        s.Slot, f.Id, f.CountPlaying());
-                }
-                else if (alreadyPlaying)
-                {
-                    s.SendEncryptedFrame(f.Build0x48());
-                    Log.Info("field", "[{0}] field {1}: 0x48 repetido confirmado ao cliente",
-                        s.Slot, f.Id);
-                }
-                else
-                {
-                    Log.Info("field", "[{0}] field {1}: carregamento confirmado; aguardando {2} player(s)",
-                        s.Slot, f.Id, f.CountReady());
+                    case Domain.PlayerReadyTransition.Started:
+                        _fieldStatusBeat[f.Id] = now;
+                        f.BroadcastLobby(f.Build0x48());
+                        Log.Ok("field", "[{0}] partida iniciada no field {1} (0x48 a {2} player(s))",
+                            s.Slot, f.Id, f.CountPlaying());
+                        break;
+                    case Domain.PlayerReadyTransition.JoinedPlaying:
+                        s.SendEncryptedFrame(f.Build0x48());
+                        Log.Info("field", "[{0}] entrou no round em andamento do field {1}",
+                            s.Slot, f.Id);
+                        break;
+                    case Domain.PlayerReadyTransition.JoinedRoundEnd:
+                        s.SendMessage(0x4a, f.Build0x4a());
+                        Log.Info("field", "[{0}] sincronizou intermissão do field {1}", s.Slot, f.Id);
+                        break;
+                    case Domain.PlayerReadyTransition.Waiting:
+                        Log.Info("field", "[{0}] field {1}: carregamento confirmado; aguardando {2} player(s)",
+                            s.Slot, f.Id, f.CountReady());
+                        break;
+                    default:
+                        string playerState = f.FindRec(s)?.State.ToString() ?? "ausente";
+                        Log.Info("field", "[{0}] field {1}: 0x48 ignorado para state={2} fase={3}",
+                            s.Slot, f.Id, playerState, f.Phase);
+                        break;
                 }
             }
         }

@@ -36,9 +36,11 @@ clientes reais spawn, respawn, troca de round, resultado e retorno à sala.
 | `RoundEnd=2` | 15 s | incrementa round, valida população e envia apenas `0x49`, ou encerra o match |
 
 `ArmMatch(now)` cria um novo `MatchId`, limpa placares e marca os ocupantes como `state=3`.
-`OnPlayerReady` move somente o próprio registro para `state=4`. Se não resta player aguardando,
-inicia imediatamente; após 40 segundos, o motor também pode iniciar com quem já spawnou, sem
-promover artificialmente os atrasados.
+`OnPlayerReady` aceita somente registro `state=3` em field ativo e move apenas esse registro para
+`state=4`. Na fase `Pre`, inicia quando não resta player aguardando. Em `Playing`, sincroniza o
+`0x48` somente ao jogador atrasado; em `RoundEnd`, devolve o `0x4A` vigente. Um `0x48` repetido de
+registro já `state=4` é ignorado, como em `FUN_00408440`, sem reiniciar o lifecycle local. Após 40
+segundos, o motor também pode iniciar com quem já spawnou, sem promover artificialmente os atrasados.
 
 ### Timeout por modo
 
