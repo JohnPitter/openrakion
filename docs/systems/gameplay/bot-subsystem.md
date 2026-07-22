@@ -94,7 +94,7 @@ o peer sintético permanece como fallback até esse caminho passar no gate visua
 ## Captura reproduzível das ações
 
 A DLL possui captura opt-in do produtor real. Inicie o launcher com
-`OPENRAKION_CAPTURE_ACTIONS=1`; cada processo grava em
+`OPENRAKION_CAPTURE_ACTIONS=1` ou crie `Bin/action.capture`; cada processo grava em
 `%TEMP%\openrakion_action_capture_<pid>.csv` os payloads `0x030A`, `0x030F` e `0x0311` antes do
 transporte P2P. A sequência mínima de captura é idle, avançar, recuar, strafe, giro, salto,
 aterrissagem, ataque básico, ataque especial, guarda, dano, queda, levantar, morte e respawn.

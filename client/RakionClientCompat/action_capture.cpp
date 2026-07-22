@@ -3,11 +3,23 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 #include "action_capture.h"
 
 namespace
 {
+bool HasCaptureMarker()
+{
+    char path[MAX_PATH]{};
+    if (GetModuleFileNameA(nullptr, path, static_cast<DWORD>(sizeof(path))) == 0) return false;
+    char* separator = std::strrchr(path, '\\');
+    if (!separator) return false;
+    strcpy_s(separator + 1, MAX_PATH - static_cast<size_t>(separator + 1 - path),
+        "action.capture");
+    return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
+}
+
 bool CaptureEnabled()
 {
     static const bool enabled = []
@@ -15,7 +27,7 @@ bool CaptureEnabled()
         char value[8]{};
         DWORD length = GetEnvironmentVariableA(
             "OPENRAKION_CAPTURE_ACTIONS", value, static_cast<DWORD>(sizeof(value)));
-        return length == 1 && value[0] == '1';
+        return (length == 1 && value[0] == '1') || HasCaptureMarker();
     }();
     return enabled;
 }
