@@ -48,13 +48,15 @@ cooldown de 250 ms elimina emissões duplicadas do hook durante o mesmo golpe.
 2. O roster recebe o member-join `0x38`; o primeiro snapshot `0x4B` humano é replicado com o seat do
    bot para o engine criar a entidade no stage.
 3. A cada 150 ms em partida, `BotManager.TickField` encontra o humano inimigo vivo mais próximo,
-   avança a IA e sintetiza o movimento `0x030A` e o keystate `0x030F` de caminhar/parar.
+   avança a IA e sintetiza o movimento `0x030A` e o keystate `0x030F`. Nas transições ele também
+   publica `0x0311 kind=Normal`: `MoveForward` ao começar a andar e `Stand` ao parar.
 4. Ao atacar, a DLL envia o `0x0311` local dentro do `0xB07A`. O World autentica endpoint e seat,
    aplica rate limit e chama `BotCombat.TryResolveMeleeAttack`.
 5. Em um acerto, o World zera velocidade e alvo da IA, publica `0x030A`/`0x030F` de parada e a
-   reação `0x0311 kind=Damage`. Ele grava uma sequência monotônica de dano por cliente UDP; a DLL
+   reação `0x0311 kind=Damage` com o shape real `0F 07 <attackerSeat>`. Ele grava uma sequência monotônica de dano por cliente UDP; a DLL
    executa a reação nativa e incrementa HIT somente para o atacante confirmado. A IA permanece
-   suspensa por 1,8 s, portanto o bot não persegue nem desliza enquanto está caído.
+   suspensa por 1,8 s, portanto o bot não persegue nem desliza enquanto está caído. Ao terminar a
+   janela, o World emite `Rise` antes de voltar a aceitar movimento.
 6. Ao zerar o HP, `Field.ApplyReportedDeath` liquida exatamente um kill, publica `0x4F`, a DLL chama
    o lifecycle nativo de morte e o bot permanece sem movimento até o respawn. Deathmatch, Team
    Death e Boss usam respawn autoritativo de sete segundos; Golem segue eliminação por round.
@@ -77,7 +79,24 @@ O RE de `CPlayerSource::SendAction @ engine.dll+0x103940` e
 - o snapshot idle capturado de `0x030F` termina em `00 03`; o de caminhada termina em `00 01`.
   Inverter esses dois bytes impede o animator remoto de entrar no estado correto.
 
-Antes de cada reação de dano, o servidor publica `0x030A` e `0x030F` em estado parado. O tick de
+O switch `ExecNormalAnim @ 0x3513E570` e duas capturas reais fecharam os IDs usados neste fluxo:
+
+| ID | animação |
+|---:|---|
+| `01` | `Stand` |
+| `02` / `03` | `idle01` / `idle02` |
+| `04`..`0B` | frente, trás, esquerda, direita e quatro diagonais |
+| `0C` | `Jump` |
+| `0E` | `Rise` |
+| `0F` / `10` | `RollFront` / `RollBack` |
+| `11` / `12` | `Guard` / `Struck_Guard` |
+| `13`..`1A` | oito direções em guarda |
+| `1B` / `1C` | troca para arma 1 / 2 |
+
+O valor `0D` não possui case no switch dessa build. Queda/dano não deve ser simulada com esse ID:
+ela entra por `0x0311 kind=Damage`, cujo payload humano observado foi `0F 07 <attackerSeat>`.
+
+Antes de cada reação de dano, o servidor publica `0x030A`, `0x030F` e `Stand`. O tick de
 IA fica suspenso durante a queda; morto também não produz ação até o respawn. Assim, movimento
 novo não sobrescreve a reação nativa.
 
@@ -122,7 +141,8 @@ e [anúncio da Croteam](https://www.croteam.com/serious-sam-source-code-released
 ## Estado de validação
 
 Build e testes automatizados validam protocolo e regra de negócio. Em 22/07/2026, o RE corrigiu o
-estado `Attack` indevido no movimento, heading em escala errada e bytes invertidos do `0x030F`.
+estado `Attack` indevido no movimento, heading em escala errada, bytes invertidos do `0x030F`,
+locomoção sem `MoveForward` e reação genérica no lugar do payload humano `0F 07 <attackerSeat>`.
 O gate final permanece visual:
 confirmar no cliente gráfico que cada golpe frontal próximo reduz HP, que a queda interrompe a
 perseguição, que o bot morre uma vez, incrementa um kill e só volta a andar após o respawn.

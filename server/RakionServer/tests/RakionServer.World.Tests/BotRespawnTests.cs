@@ -49,6 +49,9 @@ namespace RakionServer.World.Tests
             Assert.Equal(BotVector.Zero, bot.Velocity);
             Assert.Equal(Field.NoSeat, bot.TargetSeat);
             Assert.Equal(bot.HitReactionUntilMs, bot.NextAttackReadyMs);
+            Assert.False(bot.TryFinishHitReaction(2799));
+            Assert.True(bot.TryFinishHitReaction(2800));
+            Assert.Equal(0, bot.HitReactionUntilMs);
         }
 
         [Fact]
@@ -73,6 +76,19 @@ namespace RakionServer.World.Tests
             Assert.Equal(Field.NoSeat, bot.TargetSeat);
             Assert.Equal(0u, bot.MoveSeq);
             Assert.Equal(3u, bot.LifecycleSequence);
+        }
+
+        [Fact]
+        public void Locomotion_EmitsOnlyWhenStateChanges()
+        {
+            var bot = new BotPlayer();
+
+            Assert.False(bot.TryChangeLocomotion(false, out _));
+            Assert.True(bot.TryChangeLocomotion(true, out bool moving));
+            Assert.True(moving);
+            Assert.False(bot.TryChangeLocomotion(true, out _));
+            Assert.True(bot.TryChangeLocomotion(false, out moving));
+            Assert.False(moving);
         }
     }
 }

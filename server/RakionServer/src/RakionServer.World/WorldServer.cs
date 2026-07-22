@@ -430,7 +430,10 @@ namespace RakionServer.World
                     botSeat, bot.Position, bot.Heading, ++bot.MoveSeq));
                 publishHit(Network.BotMovement.SynthesizeKeystate(
                     botSeat, ++bot.MoveSeq, moving: false));
-                publishHit(Network.BotMovement.SynthesizeDamage(botSeat, ++bot.MoveSeq));
+                publishHit(Network.BotMovement.SynthesizeNormalAnimation(
+                    botSeat, ++bot.MoveSeq, Network.PlayerNormalAnimation.Stand));
+                publishHit(Network.BotMovement.SynthesizeDamage(
+                    botSeat, ++bot.MoveSeq, (byte)attackerRec.Slot));
                 Bots.PublishBotLifecycles(field);
                 PublishBotHitFeedback(field, attackerRec, bot, botSeat, now, hit.Died);
                 Log.Debug("bot", "melee validado: humano seat {0} -> bot seat {1}: hp={2}/{3}",

@@ -4,22 +4,21 @@ using RakionServer.World.Domain;
 
 namespace RakionServer.World.Network
 {
-    public enum PlayerActionCode : byte
+    /// <summary>IDs do switch ExecNormalAnim do cliente v258, transportados em 0x0311 kind=Normal.</summary>
+    public enum PlayerNormalAnimation : byte
     {
-        None = 0,
         Stand = 1,
-        Idle00 = 2,
-        Idle01 = 3,
-        Forward = 4,
-        Backward = 5,
-        Left = 6,
-        Right = 7,
-        ForwardLeft = 8,
-        ForwardRight = 9,
-        BackwardLeft = 10,
-        BackwardRight = 11,
+        Idle01 = 2,
+        Idle02 = 3,
+        MoveForward = 4,
+        MoveBackward = 5,
+        MoveLeft = 6,
+        MoveRight = 7,
+        MoveForwardLeft = 8,
+        MoveForwardRight = 9,
+        MoveBackwardLeft = 10,
+        MoveBackwardRight = 11,
         Jump = 12,
-        Land = 13,
         Rise = 14,
         RollFront = 15,
         RollBack = 16,
@@ -33,8 +32,8 @@ namespace RakionServer.World.Network
         GuardForwardRight = 24,
         GuardBackwardLeft = 25,
         GuardBackwardRight = 26,
-        Weapon1 = 27,
-        Weapon2 = 28,
+        ChangeToWeapon1 = 27,
+        ChangeToWeapon2 = 28,
         TryHold = 29,
         TurnLeft = 30,
         TurnRight = 31
@@ -55,7 +54,6 @@ namespace RakionServer.World.Network
         /// <summary>Monta o 0x030A do bot: origem = <paramref name="seat"/>, posição/rumo do estado da IA.</summary>
         public static byte[] SynthesizeMove(
             byte seat, BotVector position, float heading, uint sequence,
-            PlayerActionCode action = PlayerActionCode.None,
             PlayerActionState state = PlayerActionState.Normal,
             ushort deltaMs = 150)
         {
@@ -65,7 +63,7 @@ namespace RakionServer.World.Network
             p[6] = seat;
             BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(7), deltaMs);
             p[9] = (byte)(seat | ((byte)state << 5));
-            p[10] = (byte)action;
+            p[10] = 0; // o produtor v258 capturado sempre serializa zero no 0x030A
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(11), ToWire(position.X));
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(13), ToWire(position.Y));
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(15), ToWire(position.Z));
@@ -96,16 +94,21 @@ namespace RakionServer.World.Network
         public const ushort AttackType = 0x0311;
         public const int AttackSize = 10;
 
+        public static byte[] SynthesizeNormalAnimation(
+            byte seat, uint sequence, PlayerNormalAnimation animation)
+        {
+            byte[] packet = CreateAnimationHeader(seat, sequence);
+            packet[8] = (byte)PlayerAnimationKind.Normal;
+            packet[9] = (byte)animation;
+            return packet;
+        }
+
         /// <summary>Sintetiza a animação de ataque do bot (0x0311, kind=Attack). Cosmético: o cliente
         /// vê o bot golpear; o dano bot→humano é client-authoritative (teto RE), não server-side.</summary>
         public static byte[] SynthesizeAttack(
             byte seat, uint sequence, BotAttackVariant variant = BotAttackVariant.VariantA)
         {
-            byte[] p = new byte[AttackSize];
-            BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(0), AttackType);
-            BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(2), sequence);
-            p[6] = seat;
-            p[7] = seat;
+            byte[] p = CreateAnimationHeader(seat, sequence);
             p[8] = 1;   // kind = Attack
             p[9] = variant switch
             {
@@ -117,7 +120,7 @@ namespace RakionServer.World.Network
         }
 
         /// <summary>Reação visual de dano do bot (0x0311 kind=Damage, shape estendido de 12 bytes).</summary>
-        public static byte[] SynthesizeDamage(byte seat, uint sequence)
+        public static byte[] SynthesizeDamage(byte seat, uint sequence, byte attackerSeat)
         {
             byte[] packet = new byte[GameplayActionDatagram.ExtendedAnimationSize];
             BinaryPrimitives.WriteUInt16LittleEndian(packet.AsSpan(0), AttackType);
@@ -125,7 +128,19 @@ namespace RakionServer.World.Network
             packet[6] = seat;
             packet[7] = seat;
             packet[8] = (byte)PlayerAnimationKind.Damage;
-            packet[9] = 1;
+            packet[9] = 0x0f;
+            packet[10] = 0x07;
+            packet[11] = attackerSeat;
+            return packet;
+        }
+
+        private static byte[] CreateAnimationHeader(byte seat, uint sequence)
+        {
+            byte[] packet = new byte[AttackSize];
+            BinaryPrimitives.WriteUInt16LittleEndian(packet.AsSpan(0), AttackType);
+            BinaryPrimitives.WriteUInt32LittleEndian(packet.AsSpan(2), sequence);
+            packet[6] = seat;
+            packet[7] = seat;
             return packet;
         }
 

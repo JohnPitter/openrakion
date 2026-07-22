@@ -38,6 +38,7 @@ namespace RakionServer.World.Domain
         public long HitReactionUntilMs;  // evita que o próximo 0x030A apague imediatamente a reação visual
         public long RespawnAtMs { get; private set; }
         private byte _attackVariant;
+        private bool _isMoving;
 
         /// <summary>HP inicial derivado de level/classe (curva simples; server-authoritative p/ o bot).</summary>
         public void InitHealth(byte level)
@@ -69,10 +70,18 @@ namespace RakionServer.World.Domain
         {
             HitReactionUntilMs = nowMs + DamageReactionMs;
             Velocity = BotVector.Zero;
+            _isMoving = false;
             TargetSeat = Field.NoSeat;
             NextAttackReadyMs = Math.Max(NextAttackReadyMs, HitReactionUntilMs);
             _targetVelocityEma = BotVector.Zero;
             _hasTarget = false;
+        }
+
+        public bool TryFinishHitReaction(long nowMs)
+        {
+            if (HitReactionUntilMs == 0 || nowMs < HitReactionUntilMs) return false;
+            HitReactionUntilMs = 0;
+            return Alive;
         }
 
         public BotAttackVariant NextAttackVariant()
@@ -80,6 +89,14 @@ namespace RakionServer.World.Domain
             BotAttackVariant variant = (BotAttackVariant)(_attackVariant % 3);
             _attackVariant++;
             return variant;
+        }
+
+        public bool TryChangeLocomotion(bool moving, out bool current)
+        {
+            current = moving;
+            if (_isMoving == moving) return false;
+            _isMoving = moving;
+            return true;
         }
 
         public void ScheduleRespawn(long nowMs, int delayMs)
@@ -98,6 +115,7 @@ namespace RakionServer.World.Domain
             NextAttackReadyMs = 0;
             HitReactionUntilMs = 0;
             _attackVariant = 0;
+            _isMoving = false;
             LastAttackerSeat = Field.NoSeat;
             LastAttackerHitSequence = 0;
             _targetVelocityEma = BotVector.Zero;
@@ -120,6 +138,7 @@ namespace RakionServer.World.Domain
             HitReactionUntilMs = 0;
             RespawnAtMs = 0;
             _attackVariant = 0;
+            _isMoving = false;
             LastAttackerSeat = Field.NoSeat;
             LastAttackerHitSequence = 0;
             _targetVelocityEma = BotVector.Zero;

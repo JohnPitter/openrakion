@@ -26,6 +26,12 @@ namespace RakionServer.World
                     if (!bot.Alive && !TryRespawn(field, botRec, bot, now)) continue;
                     if (botRec.State == 3) botRec.State = 4;   // ready -> playing (vítima válida do 0x4f)
                     if (now < bot.HitReactionUntilMs) continue;
+                    if (bot.TryFinishHitReaction(now))
+                    {
+                        Broadcast(field, send, BotMovement.SynthesizeNormalAnimation(
+                            (byte)botRec.Slot, ++bot.MoveSeq, PlayerNormalAnimation.Rise));
+                        continue;
+                    }
 
                     if (!TryFindEnemyTarget(field, bot, out BotVector target, out byte targetSeat))
                         continue;
@@ -39,6 +45,14 @@ namespace RakionServer.World
                     Broadcast(field, send, move);
                     Broadcast(field, send, BotMovement.SynthesizeKeystate(
                         (byte)botRec.Slot, ++bot.MoveSeq, moving));
+                    if (bot.TryChangeLocomotion(moving, out bool locomotionMoving))
+                    {
+                        PlayerNormalAnimation animation = locomotionMoving
+                            ? PlayerNormalAnimation.MoveForward
+                            : PlayerNormalAnimation.Stand;
+                        Broadcast(field, send, BotMovement.SynthesizeNormalAnimation(
+                            (byte)botRec.Slot, ++bot.MoveSeq, animation));
+                    }
 
                     // Ataque do bot: sintetiza a animação 0x0311 (cosmético — o dano bot->humano é
                     // client-authoritative, teto RE). Cooldown p/ não floodar.

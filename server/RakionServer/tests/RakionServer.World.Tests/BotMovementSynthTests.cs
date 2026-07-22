@@ -96,7 +96,7 @@ namespace RakionServer.World.Tests
         [Fact]
         public void SynthesizeDamage_ProducesExtendedBotReaction()
         {
-            byte[] packet = BotMovement.SynthesizeDamage(10, 99);
+            byte[] packet = BotMovement.SynthesizeDamage(10, 99, 1);
 
             Assert.True(GameplayActionDatagram.TryParseAnimation(packet, out var action));
             Assert.Equal(10, action.Header.SourceSlot);
@@ -104,6 +104,23 @@ namespace RakionServer.World.Tests
             Assert.Equal(99u, action.Header.Sequence);
             Assert.Equal(PlayerAnimationKind.Damage, action.Kind);
             Assert.True(action.HasExtendedPayload);
+            Assert.Equal(0x0f, packet[9]);
+            Assert.Equal(0x07, packet[10]);
+            Assert.Equal(1, packet[11]);
+        }
+
+        [Theory]
+        [InlineData(PlayerNormalAnimation.Stand, 1)]
+        [InlineData(PlayerNormalAnimation.MoveForward, 4)]
+        [InlineData(PlayerNormalAnimation.Jump, 12)]
+        [InlineData(PlayerNormalAnimation.Rise, 14)]
+        public void SynthesizeNormalAnimation_UsesExecNormalAnimIds(
+            PlayerNormalAnimation animation, byte expected)
+        {
+            byte[] packet = BotMovement.SynthesizeNormalAnimation(10, 100, animation);
+
+            Assert.Equal((byte)PlayerAnimationKind.Normal, packet[8]);
+            Assert.Equal(expected, packet[9]);
         }
 
         [Theory]

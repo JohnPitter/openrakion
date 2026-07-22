@@ -268,6 +268,14 @@ bytes com `kind=1` também é aceita porque o receiver consome só o primeiro ar
 dois bytes finais. HP e morte não estão nesse pacote. A animação isolada não comprova hit: dano
 autoritativo ainda exige correlação com sequência, arma, posição, orientação, janela, alvo e match.
 
+A captura do produtor v258 fecha ainda dois contratos usados pelo bot sintético:
+
+- locomoção remota não nasce do `actionCode` de `0x030A`, que permaneceu zero; ela usa
+  `kind=0`, com `01=Stand`, `04=MoveForward`, `0C=Jump` e `0E=Rise`;
+- a reação de dano observada usa `kind=2` e argumentos `0F 07 <attackerSeat>`. Em particular,
+  vítima seat 0 atingida pelo seat 1 produziu `00 02 0F 07 01`, e a direção inversa produziu
+  `01 02 0F 07 00`.
+
 ## Controle TCP de morte e saída
 
 ### `0x4F` — morte reportada
