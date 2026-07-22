@@ -68,7 +68,9 @@ O RE de `CPlayerSource::SendAction @ engine.dll+0x103940` e
 `CSessionState::GetActionFromMessage @ engine.dll+0x10AFE0` fecha estes invariantes:
 
 - `0x030A+9` compacta `seat` nos cinco bits baixos e `PlayerActionState` nos bits 5–6. `0x20`
-  significa `Attack`, não deslocamento. Caminhar usa estado `Normal` e `actionCode=Forward`;
+  significa `Attack`, não deslocamento. Caminhar usa estado `Normal`;
+- o receiver reconhece 32 valores de `ePlayerAction`, mas o produtor v258 grava explicitamente
+  `actionCode=0` em `CPlayerSource::SendAction`. Locomoção não deve ser inventada nesse byte;
 - `0x030A+17` é o heading absoluto nativo em graus inteiros. Não é um ângulo normalizado para toda
   a faixa de `i16`. O domínio mantém radianos e converte radianos↔graus somente na borda do codec;
 - `0x030A+20/+22/+24` são deltas acumuláveis de câmera e permanecem zerados no bot;

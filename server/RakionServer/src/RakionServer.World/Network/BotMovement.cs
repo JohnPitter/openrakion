@@ -55,7 +55,7 @@ namespace RakionServer.World.Network
         /// <summary>Monta o 0x030A do bot: origem = <paramref name="seat"/>, posição/rumo do estado da IA.</summary>
         public static byte[] SynthesizeMove(
             byte seat, BotVector position, float heading, uint sequence,
-            PlayerActionCode action = PlayerActionCode.Stand,
+            PlayerActionCode action = PlayerActionCode.None,
             PlayerActionState state = PlayerActionState.Normal,
             ushort deltaMs = 150)
         {
