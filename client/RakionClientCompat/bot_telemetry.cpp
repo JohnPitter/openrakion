@@ -7,6 +7,7 @@
 #include <fstream>
 #include <string>
 
+#include "action_capture.h"
 #include "bot_telemetry.h"
 #include "compat_log.h"
 
@@ -164,12 +165,14 @@ int WSAAPI SendToHook(
 
 void __stdcall MirrorLocalAction(uint32_t type, const void* message)
 {
-    if ((type != 0x030a && type != 0x0311) || !message || !OriginalSendTo) return;
+    if (!message) return;
     __try
     {
         const auto* bytes = static_cast<const BYTE*>(message);
         const uint16_t payloadLength = *reinterpret_cast<const uint16_t*>(bytes + 0x3ea);
         const BYTE* payload = bytes + 2;
+        CapturePeerAction(static_cast<uint16_t>(type), payload, payloadLength);
+        if ((type != 0x030a && type != 0x0311) || !OriginalSendTo) return;
         const bool movement = type == 0x030a && payloadLength == 19;
         const bool attack = type == 0x0311 && payloadLength == 3 && payload[1] == 1;
         if (!movement && !attack) return;

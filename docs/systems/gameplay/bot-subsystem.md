@@ -64,19 +64,46 @@ cooldown de 250 ms elimina emissões duplicadas do hook durante o mesmo golpe.
 
 ## Movimento e animação
 
-No `0x030A`, o word `+17` contém heading absoluto. Os words `+20/+22/+24` são deltas acumuláveis de
-câmera e ficam zerados; repetir heading nesses campos faz o modelo girar no próprio eixo. O flag
-`0x20|seat` indica deslocamento e o companheiro `0x030F` usa a cauda `00 01` para caminhar ou
-`03 00` para parar. Antes de cada reação de dano o servidor publica ambos em estado parado, para
-impedir que a interpolação continue durante a queda.
+O RE de `CPlayerSource::SendAction @ engine.dll+0x103940` e
+`CSessionState::GetActionFromMessage @ engine.dll+0x10AFE0` fecha estes invariantes:
+
+- `0x030A+9` compacta `seat` nos cinco bits baixos e `PlayerActionState` nos bits 5–6. `0x20`
+  significa `Attack`, não deslocamento. Caminhar usa estado `Normal` e `actionCode=Forward`;
+- `0x030A+17` é o heading absoluto nativo em graus inteiros. Não é um ângulo normalizado para toda
+  a faixa de `i16`. O domínio mantém radianos e converte radianos↔graus somente na borda do codec;
+- `0x030A+20/+22/+24` são deltas acumuláveis de câmera e permanecem zerados no bot;
+- o snapshot idle capturado de `0x030F` termina em `00 03`; o de caminhada termina em `00 01`.
+  Inverter esses dois bytes impede o animator remoto de entrar no estado correto.
+
+Antes de cada reação de dano, o servidor publica `0x030A` e `0x030F` em estado parado. O tick de
+IA fica suspenso durante a queda; morto também não produz ação até o respawn. Assim, movimento
+novo não sobrescreve a reação nativa.
 
 O lifecycle usa um snapshot isolado por porta UDP autenticada. A DLL o consome na thread do jogo e
 aplica `ExecDamageAnim`, `SetDead`, `SetAlive` e `AddHitCount` somente após a confirmação do World.
 Assim, salas simultâneas não compartilham o estado visual de bots.
 
 O ataque do bot alterna as três animações observadas (`0x1B`, `0x1A`, `0x12`) e usa cooldown por
-dificuldade. O dano bot→humano continua fora do modelo sintético: o cliente trata essa colisão como
-client-authoritative e exige um peer real.
+dificuldade. O dano bot→humano, salto com física, colisão nativa, queda e morte integralmente
+dirigidas pelo engine continuam fora do modelo sintético: o cliente exige um peer real para esse
+pipeline. O caminho de lançamento para equivalência completa é um cliente v258 controlado pela IA;
+o peer sintético permanece como fallback até esse caminho passar no gate visual.
+
+## Captura reproduzível das ações
+
+A DLL possui captura opt-in do produtor real. Inicie o launcher com
+`OPENRAKION_CAPTURE_ACTIONS=1`; cada processo grava em
+`%TEMP%\openrakion_action_capture_<pid>.csv` os payloads `0x030A`, `0x030F` e `0x0311` antes do
+transporte P2P. A sequência mínima de captura é idle, avançar, recuar, strafe, giro, salto,
+aterrissagem, ataque básico, ataque especial, guarda, dano, queda, levantar, morte e respawn.
+Os bytes capturados são a golden source para o driver do cliente real; não se inferem botões ou
+animações por tentativa e erro.
+
+Como referência estrutural, o código público do Serious Engine mostra o fluxo
+`CControls::CreateAction → CPlayerSource::SetAction → CPlayerSource::SendAction`. Rakion v258
+estende a estrutura e o wire, portanto a referência serve para localizar responsabilidades, não
+para copiar offsets ou valores. Fontes: [Serious Engine oficial](https://github.com/Croteam-official/Serious-Engine)
+e [anúncio da Croteam](https://www.croteam.com/serious-sam-source-code-released/).
 
 ## Testes
 
@@ -92,6 +119,8 @@ client-authoritative e exige um peer real.
 
 ## Estado de validação
 
-Build e testes automatizados validam protocolo e regra de negócio. O gate final permanece visual:
+Build e testes automatizados validam protocolo e regra de negócio. Em 22/07/2026, o RE corrigiu o
+estado `Attack` indevido no movimento, heading em escala errada e bytes invertidos do `0x030F`.
+O gate final permanece visual:
 confirmar no cliente gráfico que cada golpe frontal próximo reduz HP, que a queda interrompe a
 perseguição, que o bot morre uma vez, incrementa um kill e só volta a andar após o respawn.

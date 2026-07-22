@@ -26,10 +26,10 @@ namespace RakionServer.World.Tests
         public void SynthesizeMove_EncodesWalkingActionAndCompanionKeystate()
         {
             byte[] movement = BotMovement.SynthesizeMove(
-                10, new BotVector(100, 0, 250), 0f, 7, moving: true);
+                10, new BotVector(100, 0, 250), 0f, 7, PlayerActionCode.Forward);
             byte[] keystate = BotMovement.SynthesizeKeystate(10, 8, moving: true);
 
-            Assert.Equal(0x20, movement[9] & 0x20);
+            Assert.Equal((byte)PlayerActionState.Normal, movement[9] >> 5);
             Assert.Equal(4, movement[10]);
             Assert.True(GameplayActionDatagram.TryParseSync(keystate, out var sync));
             Assert.Equal(10, sync.Header.SourceSlot);
@@ -45,8 +45,8 @@ namespace RakionServer.World.Tests
             byte[] keystate = BotMovement.SynthesizeKeystate(10, 9, moving: false);
 
             Assert.True(GameplayActionDatagram.TryParseSync(keystate, out var sync));
-            Assert.Equal(3, sync.ControlMode);
-            Assert.Equal(0, sync.ControlDetail);
+            Assert.Equal(0, sync.ControlMode);
+            Assert.Equal(3, sync.ControlDetail);
         }
 
         [Fact]
@@ -79,6 +79,7 @@ namespace RakionServer.World.Tests
                 10, new BotVector(100, 0, 250), MathF.PI / 2, 8);
 
             Assert.NotEqual(0, BinaryPrimitives.ReadInt16LittleEndian(packet.AsSpan(17)));
+            Assert.Equal(90, BinaryPrimitives.ReadInt16LittleEndian(packet.AsSpan(17)));
             Assert.Equal(0, BinaryPrimitives.ReadInt16LittleEndian(packet.AsSpan(20)));
             Assert.Equal(0, BinaryPrimitives.ReadInt16LittleEndian(packet.AsSpan(22)));
             Assert.Equal(0, BinaryPrimitives.ReadInt16LittleEndian(packet.AsSpan(24)));

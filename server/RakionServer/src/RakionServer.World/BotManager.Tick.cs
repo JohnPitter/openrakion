@@ -33,9 +33,12 @@ namespace RakionServer.World
                     bool inMelee = bot.Tick(target, dt);
                     botRec.Position = bot.Position;
                     bool moving = MathF.Abs(bot.Velocity.X) + MathF.Abs(bot.Velocity.Z) > 1f;
+                    PlayerActionCode action = moving
+                        ? PlayerActionCode.Forward
+                        : PlayerActionCode.Stand;
 
                     byte[] move = BotMovement.SynthesizeMove(
-                        (byte)botRec.Slot, bot.Position, bot.Heading, ++bot.MoveSeq, moving);
+                        (byte)botRec.Slot, bot.Position, bot.Heading, ++bot.MoveSeq, action);
                     Broadcast(field, send, move);
                     Broadcast(field, send, BotMovement.SynthesizeKeystate(
                         (byte)botRec.Slot, ++bot.MoveSeq, moving));

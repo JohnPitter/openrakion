@@ -34,6 +34,7 @@ $patchSources = @(
     'client_patches.cpp',
     'ui_lifecycle_patch.cpp',
     'bot_telemetry.cpp',
+    'action_capture.cpp',
     'compat_log.cpp'
 ) | ForEach-Object { '"{0}"' -f (Join-Path $PSScriptRoot $_) }
 $patch = 'call "{0}" >nul && cl /nologo /std:c++20 /O2 /MT /EHsc /LD /W4 /WX {1} /link /Brepro /OUT:"{2}"' -f `

@@ -45,7 +45,7 @@ golden source; este diretório é somente o ambiente de execução.
 | Refresh e filtros da Game List | aprovado em 21/07/2026 | usuário confirmou que a sala permanece visível após refresh; servidor limita ambas as bordas, e E2E cobre setas, cinco filtros, Available e Stage público |
 | Rematch e lista Available | reteste pendente em 21/07/2026 | E2E aprovou saída dos dois humanos, preservação do master, bot pronto, sala novamente listável e segunda partida no mesmo game room |
 | Ataque humano→bot | reteste pendente em 21/07/2026 | o World valida alvo único por rumo, cone, alcance e cooldown; cada acerto confirmado agora publica reação e sequência de HIT isoladas por cliente UDP |
-| HUD/animação final do bot | reteste pendente em 21/07/2026 | build atual envia `0x030A` + `0x030F` de caminhada/parada e aplica reação, HIT, morte e respawn nativos na thread do jogo |
+| HUD/animação final do bot | reteste pendente em 22/07/2026 | codec corrigido para estado `Normal`, heading em graus e cauda real do `0x030F`; reação, HIT, morte e respawn continuam dependendo do gate visual |
 
 Na captura de 18/07/2026, o primeiro uso da porta UDP exibiu o diálogo do Windows Firewall. Ele
 não é UAC nem falha do launcher; permitir acesso é necessário para P2P fora de localhost. A janela

@@ -427,7 +427,7 @@ namespace RakionServer.World
                 bot.BeginHitReaction(now);
                 byte botSeat = (byte)hit.BotRecord.Slot;
                 publishHit(Network.BotMovement.SynthesizeMove(
-                    botSeat, bot.Position, bot.Heading, ++bot.MoveSeq, moving: false));
+                    botSeat, bot.Position, bot.Heading, ++bot.MoveSeq));
                 publishHit(Network.BotMovement.SynthesizeKeystate(
                     botSeat, ++bot.MoveSeq, moving: false));
                 publishHit(Network.BotMovement.SynthesizeDamage(botSeat, ++bot.MoveSeq));

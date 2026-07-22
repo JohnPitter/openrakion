@@ -4,6 +4,42 @@ using RakionServer.World.Domain;
 
 namespace RakionServer.World.Network
 {
+    public enum PlayerActionCode : byte
+    {
+        None = 0,
+        Stand = 1,
+        Idle00 = 2,
+        Idle01 = 3,
+        Forward = 4,
+        Backward = 5,
+        Left = 6,
+        Right = 7,
+        ForwardLeft = 8,
+        ForwardRight = 9,
+        BackwardLeft = 10,
+        BackwardRight = 11,
+        Jump = 12,
+        Land = 13,
+        Rise = 14,
+        RollFront = 15,
+        RollBack = 16,
+        Guard = 17,
+        StruckGuard = 18,
+        GuardForward = 19,
+        GuardBackward = 20,
+        GuardLeft = 21,
+        GuardRight = 22,
+        GuardForwardLeft = 23,
+        GuardForwardRight = 24,
+        GuardBackwardLeft = 25,
+        GuardBackwardRight = 26,
+        Weapon1 = 27,
+        Weapon2 = 28,
+        TryHold = 29,
+        TurnLeft = 30,
+        TurnRight = 31
+    }
+
     /// <summary>
     /// Sintetiza o datagrama de movimento 0x030A (26 bytes) DO BOT, no MESMO formato do peer humano
     /// (<see cref="GameplayActionDatagram"/>): o servidor é a FONTE — o bot não tem endpoint. O pacote
@@ -19,15 +55,17 @@ namespace RakionServer.World.Network
         /// <summary>Monta o 0x030A do bot: origem = <paramref name="seat"/>, posição/rumo do estado da IA.</summary>
         public static byte[] SynthesizeMove(
             byte seat, BotVector position, float heading, uint sequence,
-            bool moving = false, ushort deltaMs = 150)
+            PlayerActionCode action = PlayerActionCode.Stand,
+            PlayerActionState state = PlayerActionState.Normal,
+            ushort deltaMs = 150)
         {
             byte[] p = new byte[MoveSize];
             BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(0), MoveType);
             BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(2), sequence);
             p[6] = seat;
             BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(7), deltaMs);
-            p[9] = (byte)(seat | (moving ? 0x20 : 0));
-            p[10] = moving ? (byte)4 : (byte)1; // Forward / Stand
+            p[9] = (byte)(seat | ((byte)state << 5));
+            p[10] = (byte)action;
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(11), ToWire(position.X));
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(13), ToWire(position.Y));
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(15), ToWire(position.Z));
@@ -50,8 +88,8 @@ namespace RakionServer.World.Network
             packet[7] = seat;
             packet[8] = 0x08;
             packet[10] = 0x01;
-            packet[12] = moving ? (byte)0 : (byte)3;
-            packet[13] = moving ? (byte)1 : (byte)0;
+            packet[12] = 0;
+            packet[13] = moving ? (byte)1 : (byte)3;
             return packet;
         }
 
@@ -103,10 +141,8 @@ namespace RakionServer.World.Network
                 BinaryPrimitives.ReadInt16LittleEndian(packet[11..]),
                 BinaryPrimitives.ReadInt16LittleEndian(packet[13..]),
                 BinaryPrimitives.ReadInt16LittleEndian(packet[15..]));
-            float normalized = Math.Clamp(
-                BinaryPrimitives.ReadInt16LittleEndian(packet[17..]) / (float)short.MaxValue,
-                -1f, 1f);
-            heading = normalized * MathF.PI;
+            short degrees = BinaryPrimitives.ReadInt16LittleEndian(packet[17..]);
+            heading = degrees * MathF.PI / 180f;
             return true;
         }
 
@@ -121,9 +157,10 @@ namespace RakionServer.World.Network
 
         private static short HeadingToWire(float radians)
         {
-            // rumo (-π..π) -> i16 (-32767..32767)
-            float norm = radians / MathF.PI;
-            return (short)Math.Clamp(MathF.Round(norm * short.MaxValue), short.MinValue, short.MaxValue);
+            float degrees = radians * 180f / MathF.PI;
+            while (degrees > 180f) degrees -= 360f;
+            while (degrees < -180f) degrees += 360f;
+            return (short)MathF.Round(degrees);
         }
     }
 }
