@@ -299,6 +299,23 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
+        public void RoomListQuery_ClampsCursorAtBothPageBoundaries()
+        {
+            var config = new WorldConfig();
+            var server = new WorldServer(config, new WorldDatabase(config.Db));
+            var viewer = NewSession(20, server);
+            viewer.CharLevel = 10;
+            Field field = server.CreateField(RoomOptions("only-room", 2), NewSession(1, server));
+            var next = new RoomListQuery(10, (ushort)field.Id, true, 1 << 2, false);
+            var previous = next with { Forward = false };
+
+            Assert.Equal(new[] { field.Id },
+                server.ListJoinableFields(viewer, next).Select(room => (int)room.FieldId));
+            Assert.Equal(new[] { field.Id },
+                server.ListJoinableFields(viewer, previous).Select(room => (int)room.FieldId));
+        }
+
+        [Fact]
         public void AvailableFilterKeepsPlayingBattleButHidesUnavailableStage()
         {
             var config = new WorldConfig();

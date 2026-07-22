@@ -267,7 +267,7 @@ Consequências observáveis atuais:
 
 | Função | Estado | Evidência/problema |
 |---|---|---|
-| listar salas | RE estático + headless | refresh repetido preserva a primeira página; filtros isolados de Stage, Golem, Solo Death, Team Death e Boss retornam somente o modo correspondente |
+| listar salas | RE estático + headless + runtime | refresh repetido preserva a página; cursores após a última ou antes da primeira sala são limitados à borda em vez de limpar a UI; os cinco filtros isolados retornam somente o modo correspondente |
 | filtro Available | RE estático + headless | marcado exige vaga e nível compatível; Battle em andamento continua visível com Status, enquanto Stage ativo só aparece ao desmarcar Available |
 | criar sala de Stage | RE estático + headless | `mode=0` responde `[0x3B][status][fieldId]`, usa a capacidade de `stageinfo` e aparece na lista pública conforme o filtro Available |
 | criar sala pesquisável | headless validada | segunda sessão encontrou a sala pelo wire |

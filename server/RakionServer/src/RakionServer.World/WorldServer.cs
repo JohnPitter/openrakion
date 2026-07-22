@@ -195,18 +195,22 @@ namespace RakionServer.World
         {
             Domain.Field[] fields;
             lock (Fields) fields = Fields.ToArray();
-            IEnumerable<Domain.RoomListSnapshot> candidates = fields
+            Domain.RoomListSnapshot[] candidates = fields
                 .Where(field => field.Searchable)
-                .Select(field => field.CaptureRoomListSnapshot());
-            candidates = query.Forward
-                ? candidates.Where(field => field.FieldId > query.Cursor)
-                    .OrderBy(field => field.FieldId)
-                : candidates.Where(field => field.FieldId < query.Cursor)
-                    .OrderByDescending(field => field.FieldId);
-            return candidates
+                .Select(field => field.CaptureRoomListSnapshot())
                 .Where(field => query.Includes(field, session.CharLevel))
+                .OrderBy(field => field.FieldId)
+                .ToArray();
+            Domain.RoomListSnapshot[] page = (query.Forward
+                ? candidates.Where(field => field.FieldId > query.Cursor)
+                : candidates.Where(field => field.FieldId < query.Cursor)
+                    .OrderByDescending(field => field.FieldId))
                 .Take(query.MaxCount)
                 .ToArray();
+            if (page.Length > 0 || query.Cursor == 0 || candidates.Length == 0) return page;
+            return query.Forward
+                ? candidates.TakeLast(query.MaxCount).ToArray()
+                : candidates.Take(query.MaxCount).ToArray();
         }
 
         public bool TryQuickJoinField(ClientSession session, out Domain.Field? joinedField)

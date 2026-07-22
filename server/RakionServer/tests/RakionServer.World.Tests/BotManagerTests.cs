@@ -1,3 +1,5 @@
+using System;
+using System.IO;
 using System.Net.Sockets;
 using RakionServer.World;
 using RakionServer.World.Domain;
@@ -9,6 +11,13 @@ namespace RakionServer.World.Tests
     /// <summary>Roster/lifecycle do bot: adição pelo host, time oposto, gates e limpeza efêmera.</summary>
     public sealed class BotManagerTests
     {
+        private static BotManager NewManager()
+        {
+            string path = Path.Combine(
+                Path.GetTempPath(), "openrakion-tests", $"bot-lifecycle-{Environment.ProcessId}.txt");
+            return new BotManager(path);
+        }
+
         private static ClientSession NewSession(ushort slot)
         {
             var server = new WorldServer(new WorldConfig(), new Database.WorldDatabase(new WorldConfig().Db));
@@ -34,7 +43,7 @@ namespace RakionServer.World.Tests
         public void AddBot_ByHost_LandsInOppositeTeamSeat()
         {
             var (field, host) = GolemRoomWithHost();
-            var mgr = new BotManager();
+            BotManager mgr = NewManager();
 
             var result = mgr.AddBotToField(field, host, BotDifficulty.Normal);
 
@@ -55,7 +64,7 @@ namespace RakionServer.World.Tests
             field.Slots[1].Session = intruder;
             field.Slots[1].State = 3;
             field.Add(intruder);
-            var mgr = new BotManager();
+            BotManager mgr = NewManager();
 
             var result = mgr.AddBotToField(field, intruder, BotDifficulty.Normal);
 
@@ -68,7 +77,7 @@ namespace RakionServer.World.Tests
         {
             var (field, host) = GolemRoomWithHost();
             field.Phase = MatchPhase.Playing;
-            var mgr = new BotManager();
+            BotManager mgr = NewManager();
 
             Assert.False(mgr.AddBotToField(field, host, BotDifficulty.Normal).Ok);
         }
@@ -78,7 +87,7 @@ namespace RakionServer.World.Tests
         {
             var (field, host) = GolemRoomWithHost();
             field.Mode = 0; // stage PvE
-            var mgr = new BotManager();
+            BotManager mgr = NewManager();
 
             Assert.False(mgr.AddBotToField(field, host, BotDifficulty.Normal).Ok);
         }
@@ -87,7 +96,7 @@ namespace RakionServer.World.Tests
         public void RemoveAllBots_ClearsSeatsAndKeepsHumans()
         {
             var (field, host) = GolemRoomWithHost();
-            var mgr = new BotManager();
+            BotManager mgr = NewManager();
             mgr.AddBotToField(field, host, BotDifficulty.Hard);
             mgr.AddBotToField(field, host, BotDifficulty.Easy);
             Assert.Equal(2, field.BotCount);
@@ -104,7 +113,7 @@ namespace RakionServer.World.Tests
         public void AddBot_FillsTeamThenRejectsWhenFull()
         {
             var (field, host) = GolemRoomWithHost();
-            var mgr = new BotManager();
+            BotManager mgr = NewManager();
             int ok = 0;
             for (int i = 0; i < 12; i++)
                 if (mgr.AddBotToField(field, host, BotDifficulty.Normal).Ok) ok++;

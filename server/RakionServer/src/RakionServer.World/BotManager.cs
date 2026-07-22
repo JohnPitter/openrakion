@@ -25,7 +25,17 @@ namespace RakionServer.World
 
         private int _nameSeq;
         private readonly object _lifecycleFileLock = new();
-        private const string LifecyclePath = @"C:\temp\bot_lifecycle.txt";
+        private readonly string _lifecyclePath;
+        private const string DefaultLifecyclePath = @"C:\temp\bot_lifecycle.txt";
+
+        public BotManager() : this(DefaultLifecyclePath)
+        {
+        }
+
+        internal BotManager(string lifecyclePath)
+        {
+            _lifecyclePath = lifecyclePath;
+        }
 
         public readonly record struct AddBotResult(bool Ok, string Message, int Seat, BotPlayer? Bot);
 
@@ -171,15 +181,19 @@ namespace RakionServer.World
             {
                 try
                 {
-                    string? directory = Path.GetDirectoryName(LifecyclePath);
+                    string? directory = Path.GetDirectoryName(_lifecyclePath);
                     if (directory != null) Directory.CreateDirectory(directory);
-                    string temporary = LifecyclePath + ".tmp";
+                    string temporary = _lifecyclePath + ".tmp";
                     File.WriteAllText(temporary, content.ToString(), Encoding.ASCII);
-                    File.Move(temporary, LifecyclePath, true);
+                    File.Move(temporary, _lifecyclePath, true);
                 }
                 catch (IOException ex)
                 {
                     Log.Warn("bot", "falha ao publicar lifecycle: {0}", ex.Message);
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    Log.Warn("bot", "acesso negado ao publicar lifecycle: {0}", ex.Message);
                 }
             }
         }

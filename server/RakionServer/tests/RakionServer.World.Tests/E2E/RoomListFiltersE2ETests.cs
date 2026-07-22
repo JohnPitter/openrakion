@@ -59,8 +59,14 @@ namespace RakionServer.World.Tests.E2E
                     }, master);
                 }
 
-                AssertSingleMode(Query(viewer, 1 << 0, availableOnly: false), 0);
-                AssertSingleMode(Query(viewer, 1 << 0, availableOnly: false), 0);
+                byte[] stagePage = Query(viewer, 1 << 0, availableOnly: false);
+                AssertSingleMode(stagePage, 0);
+                ushort stageFieldId = System.Buffers.Binary.BinaryPrimitives
+                    .ReadUInt16LittleEndian(stagePage.AsSpan(3));
+                AssertSingleMode(Query(viewer, 1 << 0, availableOnly: false,
+                    stageFieldId, forward: true), 0);
+                AssertSingleMode(Query(viewer, 1 << 0, availableOnly: false,
+                    stageFieldId, forward: false), 0);
                 AssertEmptyRoomList(Query(viewer, 1 << 0, availableOnly: true));
                 for (byte mode = 1; mode < 5; mode++)
                     AssertSingleMode(Query(viewer, 1 << mode, availableOnly: true), mode);
@@ -72,10 +78,11 @@ namespace RakionServer.World.Tests.E2E
         }
 
         private static byte[] Query(
-            HeadlessWorldClient client, int modeMask, bool availableOnly)
+            HeadlessWorldClient client, int modeMask, bool availableOnly,
+            ushort cursor = 0, bool forward = true)
         {
             client.DrainReceived();
-            client.RequestRoomList((byte)modeMask, availableOnly);
+            client.RequestRoomList((byte)modeMask, availableOnly, cursor, forward);
             return client.WaitForNext(frame =>
                 frame.Length >= 3 && frame[0] == 0x36 && frame[1] == 0,
                 JourneyHelper.Timeout);
