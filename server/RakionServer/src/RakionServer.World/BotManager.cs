@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Threading;
 using RakionServer.Common;
 using RakionServer.World.Domain;
 using RakionServer.World.Network;
@@ -14,7 +16,7 @@ namespace RakionServer.World
     /// pela IA (<see cref="BotSteering"/>) e tem o movimento sintetizado no fio (0x030A, fase de rede).
     ///
     /// Teto do RE (respeitado): entrega oponente FUNCIONAL (roster, movimento, dano/morte server-side)
-    /// mas NÃO o número cosmético HIT×N nativo (limite type-7; exige peer de sessão real). Nenhum
+    /// e publica a confirmação necessária para a camada visual da DLL. Nenhum
     /// pacote do bot fala direto com o cliente — só via o socket do <see cref="UdpGameplay"/>.
     /// Ciclo efêmero: bots somem no fim do match ou quando o último humano sai.
     /// </summary>
@@ -165,6 +167,7 @@ namespace RakionServer.World
         public void PublishBotLifecycles(Field field)
         {
             var content = new StringBuilder();
+            var clientPorts = new HashSet<int>();
             lock (field.SyncRoot)
             {
                 foreach (PlayerRec record in field.BotSlots)
@@ -173,27 +176,50 @@ namespace RakionServer.World
                     content.Append(record.Slot).Append(' ')
                         .Append(field.Id).Append(' ')
                         .Append(bot.LifecycleSequence).Append(' ')
-                        .Append(bot.Alive ? 0 : 1).AppendLine();
+                        .Append(bot.Alive ? 0 : 1).Append(' ')
+                        .Append(bot.DamageSequence).Append(' ')
+                        .Append(bot.LastAttackerSeat).Append(' ')
+                        .Append(bot.LastAttackerHitSequence).AppendLine();
                 }
+                foreach (PlayerRec record in field.Slots)
+                    if (record.Session?.UdpEndpoint is { } endpoint)
+                        clientPorts.Add(endpoint.Port);
             }
 
             lock (_lifecycleFileLock)
             {
+                foreach (int port in clientPorts)
+                    PublishLifecycleSnapshot(ClientLifecyclePath(_lifecyclePath, port), content.ToString());
+            }
+        }
+
+        internal static string ClientLifecyclePath(string basePath, int port)
+        {
+            string? directory = Path.GetDirectoryName(basePath);
+            string name = Path.GetFileNameWithoutExtension(basePath);
+            string extension = Path.GetExtension(basePath);
+            return Path.Combine(directory ?? "", $"{name}_{port}{extension}");
+        }
+
+        private static void PublishLifecycleSnapshot(string path, string content)
+        {
+            for (int attempt = 1; attempt <= 3; attempt++)
+            {
                 try
                 {
-                    string? directory = Path.GetDirectoryName(_lifecyclePath);
+                    string? directory = Path.GetDirectoryName(path);
                     if (directory != null) Directory.CreateDirectory(directory);
-                    string temporary = _lifecyclePath + ".tmp";
-                    File.WriteAllText(temporary, content.ToString(), Encoding.ASCII);
-                    File.Move(temporary, _lifecyclePath, true);
+                    string temporary = path + ".tmp";
+                    File.WriteAllText(temporary, content, Encoding.ASCII);
+                    File.Move(temporary, path, true);
+                    return;
                 }
-                catch (IOException ex)
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    Log.Warn("bot", "falha ao publicar lifecycle: {0}", ex.Message);
-                }
-                catch (UnauthorizedAccessException ex)
-                {
-                    Log.Warn("bot", "acesso negado ao publicar lifecycle: {0}", ex.Message);
+                    if (attempt == 3)
+                        Log.Warn("bot", "falha ao publicar lifecycle '{0}': {1}", path, ex.Message);
+                    else
+                        Thread.Sleep(3);
                 }
             }
         }

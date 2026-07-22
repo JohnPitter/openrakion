@@ -315,6 +315,28 @@ bool InstallConnectHook(HMODULE module, const char* expectedLibrary)
 }
 }
 
+bool TryGetWorldLocalPort(uint16_t& port)
+{
+    port = 0;
+    const SOCKET socket = static_cast<SOCKET>(
+        InterlockedCompareExchange(&WorldSocketValue, -1, -1));
+    if (socket == INVALID_SOCKET) return false;
+    HMODULE ws2 = GetModuleHandleW(L"ws2_32.dll");
+    using GetSockNameFn = int(WSAAPI*)(SOCKET, sockaddr*, int*);
+    auto getSocketName = ws2
+        ? reinterpret_cast<GetSockNameFn>(GetProcAddress(ws2, "getsockname"))
+        : nullptr;
+    if (!getSocketName) return false;
+    sockaddr_in endpoint{};
+    int length = sizeof(endpoint);
+    if (getSocketName(socket, reinterpret_cast<sockaddr*>(&endpoint), &length) == SOCKET_ERROR ||
+        endpoint.sin_family != AF_INET)
+        return false;
+    const auto* bytes = reinterpret_cast<const BYTE*>(&endpoint.sin_port);
+    port = static_cast<uint16_t>(bytes[0] << 8 | bytes[1]);
+    return port != 0;
+}
+
 bool LoadServerAddress()
 {
     char path[MAX_PATH]{};

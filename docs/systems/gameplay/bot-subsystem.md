@@ -13,9 +13,10 @@ canal humano↔humano.
 ## Limite confirmado no cliente
 
 A entidade remota sintética não percorre o mesmo caminho local de colisão/dano de um peer real.
-Por isso não existe uma confirmação nativa de vítima disponível para esse modelo e o contador
-cosmético **HIT×N** não é produzido. A inspeção do endereço antes atribuído a esse gate mostrou que
-ele pertence a outra transição de estado; essa atribuição foi removida da documentação.
+Por isso a colisão nativa não pode decidir o HP do bot. O World continua sendo a única autoridade:
+ele valida alvo, alcance, cone, cooldown, dano, morte e respawn. Depois de cada acerto confirmado,
+a DLL apenas chama, na thread do jogo, as rotinas nativas de reação e contador **HIT×N**. A DLL não
+transforma uma animação local em dano e não altera HP.
 
 Para manter o bot funcional para lançamento, o World resolve o golpe a partir de dados que o
 cliente realmente fornece:
@@ -38,7 +39,7 @@ cooldown de 250 ms elimina emissões duplicadas do hook durante o mesmo golpe.
 | Field | `Domain/Field.Bots.cs` e `PlayerRec` | assentos, pose humana e estado efêmero do bot |
 | Serviço | `BotManager.cs`, `BotManager.Tick.cs`, `WorldServer.ResolveBotMeleeAttack` | tick, feedback visual, lifecycle e placar |
 | Rede | `Network/BotMovement.cs`, `BotTelemetryDatagram.cs`, `UdpGameplay.cs` | síntese, validação e transporte |
-| Cliente | `client/RakionClientCompat/bot_telemetry.cpp` | espelho de movimento/ataque ao World, sem regra de dano |
+| Cliente | `client/RakionClientCompat/bot_telemetry.cpp`, `rakion_client_patch.cpp` | espelho de movimento/ataque e apresentação do resultado confirmado, sem regra de dano |
 
 ## Fluxo
 
@@ -47,12 +48,13 @@ cooldown de 250 ms elimina emissões duplicadas do hook durante o mesmo golpe.
 2. O roster recebe o member-join `0x38`; o primeiro snapshot `0x4B` humano é replicado com o seat do
    bot para o engine criar a entidade no stage.
 3. A cada 150 ms em partida, `BotManager.TickField` encontra o humano inimigo vivo mais próximo,
-   avança a IA e sintetiza o `0x030A` do bot.
+   avança a IA e sintetiza o movimento `0x030A` e o keystate `0x030F` de caminhar/parar.
 4. Ao atacar, a DLL envia o `0x0311` local dentro do `0xB07A`. O World autentica endpoint e seat,
    aplica rate limit e chama `BotCombat.TryResolveMeleeAttack`.
-5. Em um acerto, o World zera velocidade e alvo da IA, publica um `0x030A` de parada e depois a
-   reação `0x0311 kind=Damage`. A IA permanece suspensa por 1,8 s, portanto o bot não persegue nem
-   desliza enquanto está caído.
+5. Em um acerto, o World zera velocidade e alvo da IA, publica `0x030A`/`0x030F` de parada e a
+   reação `0x0311 kind=Damage`. Ele grava uma sequência monotônica de dano por cliente UDP; a DLL
+   executa a reação nativa e incrementa HIT somente para o atacante confirmado. A IA permanece
+   suspensa por 1,8 s, portanto o bot não persegue nem desliza enquanto está caído.
 6. Ao zerar o HP, `Field.ApplyReportedDeath` liquida exatamente um kill, publica `0x4F`, a DLL chama
    o lifecycle nativo de morte e o bot permanece sem movimento até o respawn. Deathmatch, Team
    Death e Boss usam respawn autoritativo de sete segundos; Golem segue eliminação por round.
@@ -63,9 +65,14 @@ cooldown de 250 ms elimina emissões duplicadas do hook durante o mesmo golpe.
 ## Movimento e animação
 
 No `0x030A`, o word `+17` contém heading absoluto. Os words `+20/+22/+24` são deltas acumuláveis de
-câmera e ficam zerados; repetir heading nesses campos faz o modelo girar no próprio eixo. Antes de
-cada reação de dano o servidor também publica a posição atual com velocidade lógica zerada, para
-impedir que o último movimento continue sendo interpolado durante a queda.
+câmera e ficam zerados; repetir heading nesses campos faz o modelo girar no próprio eixo. O flag
+`0x20|seat` indica deslocamento e o companheiro `0x030F` usa a cauda `00 01` para caminhar ou
+`03 00` para parar. Antes de cada reação de dano o servidor publica ambos em estado parado, para
+impedir que a interpolação continue durante a queda.
+
+O lifecycle usa um snapshot isolado por porta UDP autenticada. A DLL o consome na thread do jogo e
+aplica `ExecDamageAnim`, `SetDead`, `SetAlive` e `AddHitCount` somente após a confirmação do World.
+Assim, salas simultâneas não compartilham o estado visual de bots.
 
 O ataque do bot alterna as três animações observadas (`0x1B`, `0x1A`, `0x12`) e usa cooldown por
 dificuldade. O dano bot→humano continua fora do modelo sintético: o cliente trata essa colisão como

@@ -23,6 +23,9 @@ constexpr uintptr_t PlayerUpdateAddress = 0x35165170;
 constexpr uintptr_t PlayerUpdateContinueAddress = PlayerUpdateAddress + 8;
 constexpr uintptr_t SetAliveAddress = 0x35130b70;
 constexpr uintptr_t SetDeadAddress = 0x35135810;
+constexpr uintptr_t ExecDamageAnimAddress = 0x3514a6c0;
+constexpr uintptr_t AddHitCountAddress = 0x35153ce0;
+constexpr uintptr_t LocalPlayerGetterAddress = 0x352b3630;
 // CEntity::FallDownToFloor @ engine.dll (base 0x36000000). void __thiscall(this): casta 4 raios p/ baixo
 // dos cantos da collision-box, acha o chão mais alto e ajusta SÓ o Y ao piso real (mantém X/Z) via
 // SetPlacement — sem tocar velocidade/eventos. É a geometry query do invariante #7 da golden capture,
@@ -34,11 +37,16 @@ constexpr BYTE Expected[] = { 0x68, 0x30, 0xa6, 0x2b, 0x35 };
 constexpr BYTE ExpectedPlayerUpdate[] = { 0x6a, 0xff, 0x64, 0xa1, 0x00, 0x00, 0x00, 0x00 };
 constexpr int MaxPlayerSeats = 20;
 volatile LONG GroundSnapEnabled = 0;   // 1 só após verificar o prólogo de FallDownToFloor (fail-closed)
-constexpr const char* LifecyclePath = "C:\\temp\\bot_lifecycle.txt";
 volatile LONG DesiredLifecycleSequence[MaxPlayerSeats]{};
 volatile LONG DesiredDeadState[MaxPlayerSeats]{};
+volatile LONG DesiredDamageSequence[MaxPlayerSeats]{};
+volatile LONG DesiredLocalHitSequence[MaxPlayerSeats]{};
 volatile LONG AppliedLifecycleSequence[MaxPlayerSeats]{};
+volatile LONG AppliedDamageSequence[MaxPlayerSeats]{};
+volatile LONG AppliedLocalHitSequence[MaxPlayerSeats]{};
 volatile LONG LoggedLifecycleSequence[MaxPlayerSeats]{};
+volatile LONG LoggedDamageSequence[MaxPlayerSeats]{};
+volatile LONG LoggedLocalHitSequence[MaxPlayerSeats]{};
 uintptr_t PlayerUpdateContinue = PlayerUpdateContinueAddress;
 bool IsRakionProcess()
 {
@@ -79,23 +87,44 @@ void EmitJump(std::vector<BYTE>& code, uintptr_t source, uintptr_t target)
 
 void LoadLifecycleSnapshot()
 {
-    std::ifstream input(LifecyclePath);
+    uint16_t localPort{};
+    if (!TryGetWorldLocalPort(localPort)) return;
+    char path[MAX_PATH]{};
+    _snprintf_s(path, _countof(path), _TRUNCATE,
+        "C:\\temp\\bot_lifecycle_%u.txt", static_cast<unsigned>(localPort));
+    std::ifstream input(path);
+    if (!input) return;
     LONG nextSequence[MaxPlayerSeats]{};
     LONG nextDeadState[MaxPlayerSeats]{};
+    LONG nextDamageSequence[MaxPlayerSeats]{};
+    LONG nextLocalHitSequence[MaxPlayerSeats]{};
     int seat{};
     int generation{};
     unsigned long sequence{};
     int dead{};
-    while (input >> seat >> generation >> sequence >> dead)
+    unsigned long damageSequence{};
+    int attackerSeat{};
+    unsigned long attackerHitSequence{};
+    while (input >> seat >> generation >> sequence >> dead >> damageSequence >>
+           attackerSeat >> attackerHitSequence)
     {
         if (seat < 0 || seat >= MaxPlayerSeats || generation < 0 || sequence == 0) continue;
         nextDeadState[seat] = dead == 0 ? 0 : 1;
         nextSequence[seat] = static_cast<LONG>(sequence);
+        nextDamageSequence[seat] = static_cast<LONG>(damageSequence);
+        if (attackerSeat >= 0 && attackerSeat < MaxPlayerSeats)
+        {
+            LONG hitSequence = static_cast<LONG>(attackerHitSequence);
+            if (hitSequence > nextLocalHitSequence[attackerSeat])
+                nextLocalHitSequence[attackerSeat] = hitSequence;
+        }
     }
     for (int index = 0; index < MaxPlayerSeats; ++index)
     {
         InterlockedExchange(&DesiredDeadState[index], nextDeadState[index]);
         InterlockedExchange(&DesiredLifecycleSequence[index], nextSequence[index]);
+        InterlockedExchange(&DesiredDamageSequence[index], nextDamageSequence[index]);
+        InterlockedExchange(&DesiredLocalHitSequence[index], nextLocalHitSequence[index]);
     }
 }
 
@@ -105,13 +134,36 @@ void LogAppliedLifecycles()
     {
         LONG applied = InterlockedCompareExchange(&AppliedLifecycleSequence[seat], 0, 0);
         LONG logged = InterlockedCompareExchange(&LoggedLifecycleSequence[seat], 0, 0);
-        if (applied == 0 || applied == logged) continue;
-        InterlockedExchange(&LoggedLifecycleSequence[seat], applied);
-        LONG dead = InterlockedCompareExchange(&DesiredDeadState[seat], 0, 0);
         char message[96]{};
-        _snprintf_s(message, _countof(message), _TRUNCATE,
-            "lifecycle seat=%d seq=%ld state=%s aplicado", seat, applied, dead != 0 ? "dead" : "alive");
-        CompatLog(message);
+        if (applied != 0 && applied != logged)
+        {
+            InterlockedExchange(&LoggedLifecycleSequence[seat], applied);
+            LONG dead = InterlockedCompareExchange(&DesiredDeadState[seat], 0, 0);
+            _snprintf_s(message, _countof(message), _TRUNCATE,
+                "lifecycle seat=%d seq=%ld state=%s aplicado",
+                seat, applied, dead != 0 ? "dead" : "alive");
+            CompatLog(message);
+        }
+
+        LONG damage = InterlockedCompareExchange(&AppliedDamageSequence[seat], 0, 0);
+        LONG loggedDamage = InterlockedCompareExchange(&LoggedDamageSequence[seat], 0, 0);
+        if (damage != 0 && damage != loggedDamage)
+        {
+            InterlockedExchange(&LoggedDamageSequence[seat], damage);
+            _snprintf_s(message, _countof(message), _TRUNCATE,
+                "reacao de dano seat=%d seq=%ld aplicada", seat, damage);
+            CompatLog(message);
+        }
+
+        LONG hit = InterlockedCompareExchange(&AppliedLocalHitSequence[seat], 0, 0);
+        LONG loggedHit = InterlockedCompareExchange(&LoggedLocalHitSequence[seat], 0, 0);
+        if (hit != 0 && hit != loggedHit)
+        {
+            InterlockedExchange(&LoggedLocalHitSequence[seat], hit);
+            _snprintf_s(message, _countof(message), _TRUNCATE,
+                "HIT local seat=%d seq=%ld aplicado", seat, hit);
+            CompatLog(message);
+        }
     }
 }
 
@@ -122,6 +174,24 @@ void __stdcall ApplyLifecycleOnGameThread(void* player)
         if (!player) return;
         int seat = *reinterpret_cast<BYTE*>(static_cast<BYTE*>(player) + 0x264);
         if (seat < 0 || seat >= MaxPlayerSeats) return;
+
+        LONG desiredHit = InterlockedCompareExchange(&DesiredLocalHitSequence[seat], 0, 0);
+        LONG appliedHit = InterlockedCompareExchange(&AppliedLocalHitSequence[seat], 0, 0);
+        if (desiredHit != 0 && desiredHit != appliedHit)
+        {
+            using LocalPlayerFn = void*(__cdecl*)();
+            auto localPlayer = *reinterpret_cast<LocalPlayerFn*>(LocalPlayerGetterAddress);
+            if (localPlayer && localPlayer() == player)
+            {
+                using AddHitCountFn = void(__thiscall*)(void*, int);
+                int count = desiredHit > appliedHit ? desiredHit - appliedHit : 1;
+                if (count > 8) count = 8;
+                for (int index = 0; index < count; ++index)
+                    reinterpret_cast<AddHitCountFn>(AddHitCountAddress)(player, 1);
+                InterlockedExchange(&AppliedLocalHitSequence[seat], desiredHit);
+            }
+        }
+
         LONG desired = InterlockedCompareExchange(&DesiredLifecycleSequence[seat], 0, 0);
         if (desired == 0) return;   // seat sem lifecycle publicado = não é um bot: não tocar
         LONG dead = InterlockedCompareExchange(&DesiredDeadState[seat], 0, 0);
@@ -139,11 +209,22 @@ void __stdcall ApplyLifecycleOnGameThread(void* player)
         }
 
         LONG applied = InterlockedCompareExchange(&AppliedLifecycleSequence[seat], 0, 0);
-        if (desired == applied) return;
-        using LifecycleFn = void(__thiscall*)(void*);
-        auto transition = reinterpret_cast<LifecycleFn>(dead != 0 ? SetDeadAddress : SetAliveAddress);
-        transition(player);
-        InterlockedExchange(&AppliedLifecycleSequence[seat], desired);
+        if (desired != applied)
+        {
+            using LifecycleFn = void(__thiscall*)(void*);
+            auto transition = reinterpret_cast<LifecycleFn>(dead != 0 ? SetDeadAddress : SetAliveAddress);
+            transition(player);
+            InterlockedExchange(&AppliedLifecycleSequence[seat], desired);
+        }
+
+        LONG desiredDamage = InterlockedCompareExchange(&DesiredDamageSequence[seat], 0, 0);
+        LONG appliedDamage = InterlockedCompareExchange(&AppliedDamageSequence[seat], 0, 0);
+        if (dead == 0 && desiredDamage != 0 && desiredDamage != appliedDamage)
+        {
+            using DamageAnimFn = void(__thiscall*)(void*, long, long, int);
+            reinterpret_cast<DamageAnimFn>(ExecDamageAnimAddress)(player, 1, 0, 0);
+            InterlockedExchange(&AppliedDamageSequence[seat], desiredDamage);
+        }
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {

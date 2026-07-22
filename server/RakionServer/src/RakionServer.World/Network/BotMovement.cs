@@ -17,15 +17,17 @@ namespace RakionServer.World.Network
         public const int MoveSize = 26;
 
         /// <summary>Monta o 0x030A do bot: origem = <paramref name="seat"/>, posição/rumo do estado da IA.</summary>
-        public static byte[] SynthesizeMove(byte seat, BotVector position, float heading, uint sequence, ushort deltaMs = 150)
+        public static byte[] SynthesizeMove(
+            byte seat, BotVector position, float heading, uint sequence,
+            bool moving = false, ushort deltaMs = 150)
         {
             byte[] p = new byte[MoveSize];
             BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(0), MoveType);
             BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(2), sequence);
             p[6] = seat;
             BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(7), deltaMs);
-            p[9] = seat;   // state Normal + source echo no low 5 bits
-            p[10] = 0;  // actionCode
+            p[9] = (byte)(seat | (moving ? 0x20 : 0));
+            p[10] = moving ? (byte)4 : (byte)1; // Forward / Stand
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(11), ToWire(position.X));
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(13), ToWire(position.Y));
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(15), ToWire(position.Z));
@@ -36,6 +38,21 @@ namespace RakionServer.World.Network
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(22), 0);
             BinaryPrimitives.WriteInt16LittleEndian(p.AsSpan(24), 0);
             return p;
+        }
+
+        public static byte[] SynthesizeKeystate(byte seat, uint sequence, bool moving)
+        {
+            byte[] packet = new byte[GameplayActionDatagram.SyncSize];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                packet.AsSpan(0), GameplayActionDatagram.SyncType);
+            BinaryPrimitives.WriteUInt32LittleEndian(packet.AsSpan(2), sequence);
+            packet[6] = seat;
+            packet[7] = seat;
+            packet[8] = 0x08;
+            packet[10] = 0x01;
+            packet[12] = moving ? (byte)0 : (byte)3;
+            packet[13] = moving ? (byte)1 : (byte)0;
+            return packet;
         }
 
         public const ushort AttackType = 0x0311;

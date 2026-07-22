@@ -19,7 +19,7 @@ do contrato.
 | Engine golden | SHA-256 `83B20D6C32CD66B95C8F8E41AD6DE13A58E8F5F948CD21CBD118D42EF8CF88F2` |
 | Proxy determinístico | `Bin/version.dll`, SHA-256 `13C1D0CC022D0000FA2E7ED03ABD0107AD41D894E0AF302D74CF3D42B0F33263` |
 | Forwarder oficial | carregado de `%SystemRoot%\SysWOW64\version.dll`; não é distribuído |
-| Patches golden | `Bin/RakionClientPatch.dll`, SHA-256 `6E8A4E507D0C8351F5D2A705ADD9755CEDA393CFF715C6A687EE5BB01926C18F` |
+| Patches golden | `Bin/RakionClientPatch.dll`, SHA-256 `A41BEDEC60DB907A2643B2F5B2E283F3DD9DC0C0BF8087726ED94C2E058CA2F8` |
 | Destino | `server.host=127.0.0.1`, `display.mode=windowed` |
 | Verificação estática | `validation-install.json` atualizado e 14/14 arquivos aprovados em 18/07/2026 |
 
@@ -42,10 +42,10 @@ golden source; este diretório é somente o ambiente de execução.
 | Launcher: login e amigos online | aprovado em 21/07/2026 | usuário validou a transição dos inputs para a lista de amigos e os botões Outra conta, Iniciar game e Game options |
 | Messenger F9 | parcial | primeiro login aprovado; o RE de reentrada confirmou destruição/recriação do host, e a DLL agora usa a transição nativa `host+0x24: 0→1` em cada instância; reentrada aguarda reteste |
 | Add Bot | aprovado | botão enviou `0x47` `GoHeroi : /addbot`; `Rok` apareceu no time azul da sala e dentro do stage Mammoth |
-| Refresh e filtros da Game List | reteste pendente em 21/07/2026 | trace real isolou cursor `1` além da única sala; servidor agora limita ambas as bordas, e E2E aprovou refresh, setas, cinco filtros, Available e Stage público |
+| Refresh e filtros da Game List | aprovado em 21/07/2026 | usuário confirmou que a sala permanece visível após refresh; servidor limita ambas as bordas, e E2E cobre setas, cinco filtros, Available e Stage público |
 | Rematch e lista Available | reteste pendente em 21/07/2026 | E2E aprovou saída dos dois humanos, preservação do master, bot pronto, sala novamente listável e segunda partida no mesmo game room |
-| Ataque humano→bot | reteste pendente em 21/07/2026 | o hook de colisão anterior não emitiu o contrato esperado e foi removido; a build atual espelha o início do ataque e o World valida alvo único por rumo, cone, alcance e cooldown |
-| HUD/animação final do bot | pendente | validar redução de HP, parada imediata durante a queda de 1,8 s, morte, um kill e respawn sem perseguição enquanto caído |
+| Ataque humano→bot | reteste pendente em 21/07/2026 | o World valida alvo único por rumo, cone, alcance e cooldown; cada acerto confirmado agora publica reação e sequência de HIT isoladas por cliente UDP |
+| HUD/animação final do bot | reteste pendente em 21/07/2026 | build atual envia `0x030A` + `0x030F` de caminhada/parada e aplica reação, HIT, morte e respawn nativos na thread do jogo |
 
 Na captura de 18/07/2026, o primeiro uso da porta UDP exibiu o diálogo do Windows Firewall. Ele
 não é UAC nem falha do launcher; permitir acesso é necessário para P2P fora de localhost. A janela

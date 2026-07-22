@@ -32,7 +32,9 @@ namespace RakionServer.World.Domain
             PlayerRec? target = FindNearestTarget(field, attacker);
             if (target?.Bot == null) return false;
 
-            hit = new BotHit(target, target.Bot.TakeDamage(damage));
+            uint hitSequence = ++attacker.BotHitSequence;
+            hit = new BotHit(target, target.Bot.TakeDamage(
+                damage, (byte)attacker.Slot, hitSequence));
             return true;
         }
 

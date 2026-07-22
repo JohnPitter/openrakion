@@ -19,6 +19,34 @@ namespace RakionServer.World.Tests
             Assert.Equal(0x03, p[1]);
             Assert.Equal(12, p[6]);   // assento de origem do bot
             Assert.Equal(12, p[9] & 0x1f);   // eco exigido pelo parser do peer
+            Assert.Equal(1, p[10]);          // Stand quando não há deslocamento
+        }
+
+        [Fact]
+        public void SynthesizeMove_EncodesWalkingActionAndCompanionKeystate()
+        {
+            byte[] movement = BotMovement.SynthesizeMove(
+                10, new BotVector(100, 0, 250), 0f, 7, moving: true);
+            byte[] keystate = BotMovement.SynthesizeKeystate(10, 8, moving: true);
+
+            Assert.Equal(0x20, movement[9] & 0x20);
+            Assert.Equal(4, movement[10]);
+            Assert.True(GameplayActionDatagram.TryParseSync(keystate, out var sync));
+            Assert.Equal(10, sync.Header.SourceSlot);
+            Assert.Equal(10, sync.SourceEcho);
+            Assert.Equal(0x08, sync.LifeState);
+            Assert.Equal(0, sync.ControlMode);
+            Assert.Equal(1, sync.ControlDetail);
+        }
+
+        [Fact]
+        public void SynthesizeKeystate_EncodesIdleAfterMovementStops()
+        {
+            byte[] keystate = BotMovement.SynthesizeKeystate(10, 9, moving: false);
+
+            Assert.True(GameplayActionDatagram.TryParseSync(keystate, out var sync));
+            Assert.Equal(3, sync.ControlMode);
+            Assert.Equal(0, sync.ControlDetail);
         }
 
         [Fact]

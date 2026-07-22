@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Net;
 using System.Net.Sockets;
 using RakionServer.World;
 using RakionServer.World.Domain;
@@ -11,11 +12,12 @@ namespace RakionServer.World.Tests
     /// <summary>Roster/lifecycle do bot: adição pelo host, time oposto, gates e limpeza efêmera.</summary>
     public sealed class BotManagerTests
     {
+        private static string LifecycleBasePath => Path.Combine(
+            Path.GetTempPath(), "openrakion-tests", $"bot-lifecycle-{Environment.ProcessId}.txt");
+
         private static BotManager NewManager()
         {
-            string path = Path.Combine(
-                Path.GetTempPath(), "openrakion-tests", $"bot-lifecycle-{Environment.ProcessId}.txt");
-            return new BotManager(path);
+            return new BotManager(LifecycleBasePath);
         }
 
         private static ClientSession NewSession(ushort slot)
@@ -120,6 +122,39 @@ namespace RakionServer.World.Tests
 
             Assert.Equal(10, ok);              // time oposto tem 10 assentos (10..19)
             Assert.Equal(10, field.BotCount);
+        }
+
+        [Fact]
+        public void LifecycleSnapshot_IsScopedToAuthenticatedClientPortAndCarriesHit()
+        {
+            var (field, host) = GolemRoomWithHost();
+            const int clientPort = 32123;
+            var endpoint = new IPEndPoint(IPAddress.Loopback, clientPort);
+            host.NotifyUdpReady(endpoint, endpoint, 1);
+            BotManager manager = NewManager();
+            string path = BotManager.ClientLifecyclePath(LifecycleBasePath, clientPort);
+
+            try
+            {
+                BotManager.AddBotResult added = manager.AddBotToField(
+                    field, host, BotDifficulty.Normal);
+                Assert.True(added.Ok, added.Message);
+                BotPlayer bot = added.Bot!;
+                bot.TakeDamage(34, attackerSeat: 0, attackerHitSequence: 1);
+                manager.PublishBotLifecycles(field);
+
+                string[] values = File.ReadAllText(path).Trim().Split(' ');
+                Assert.Equal(7, values.Length);
+                Assert.Equal(added.Seat.ToString(), values[0]);
+                Assert.Equal(field.Id.ToString(), values[1]);
+                Assert.Equal("1", values[4]);
+                Assert.Equal("0", values[5]);
+                Assert.Equal("1", values[6]);
+            }
+            finally
+            {
+                File.Delete(path);
+            }
         }
     }
 }

@@ -37,6 +37,9 @@ namespace RakionServer.World.Domain
         public BotVector Position;          // última posição observada (do 0x030A do humano / IA do bot) p/ mira do bot
         public float Heading;               // rumo observado do 0x030A humano, usado no cone de melee
         public long NextBotMeleeAttackMs;   // anti-repetição de hooks do mesmo golpe humano
+        public uint BotHitSequence;          // sequência autoritativa de acertos confirmados em bots
+        public byte BotHitCombo;             // feedback visual de combo contra bot
+        public long LastBotHitFeedbackMs;    // janela do combo exibido ao atacante
         public byte[]? InitialMovement;     // primeiro 0x4B do match, usado para sincronizar peers que carregaram depois
         public byte Team => (byte)(Slot < 10 ? 0 : 1); // slots 0..9 = time0, 10..0x13 = time1
         public int Slot;                 // indice no array (0..0x13)

@@ -45,6 +45,10 @@ namespace RakionServer.World.Tests
             Assert.True(applied);
             Assert.Same(nearest, hit.BotRecord);
             Assert.Equal(fartherHealth, farther.Bot.Health);
+            Assert.Equal(1u, match.Attacker.BotHitSequence);
+            Assert.Equal(1u, nearest.Bot!.DamageSequence);
+            Assert.Equal((byte)match.Attacker.Slot, nearest.Bot.LastAttackerSeat);
+            Assert.Equal(1u, nearest.Bot.LastAttackerHitSequence);
         }
 
         [Fact]

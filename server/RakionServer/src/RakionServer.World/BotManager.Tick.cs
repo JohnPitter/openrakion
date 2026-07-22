@@ -10,7 +10,7 @@ namespace RakionServer.World
     /// cada bot: mira o humano inimigo vivo mais próximo (posição rastreada do 0x030A dele), avança a
     /// IA e SINTETIZA o 0x030A do bot, injetando-o aos peers humanos via <paramref name="send"/>. O
     /// servidor é a FONTE do tráfego do bot — nunca sequestra o canal humano↔humano (aprendizado do RE).
-    /// Teto conhecido: entrega movimento FUNCIONAL; o número cosmético HIT×N exige peer de sessão real.
+    /// O cliente recebe também o keystate 0x030F que seleciona a animação de caminhada/parada.
     /// </summary>
     public sealed partial class BotManager
     {
@@ -32,10 +32,13 @@ namespace RakionServer.World
                     bot.TargetSeat = targetSeat;
                     bool inMelee = bot.Tick(target, dt);
                     botRec.Position = bot.Position;
+                    bool moving = MathF.Abs(bot.Velocity.X) + MathF.Abs(bot.Velocity.Z) > 1f;
 
                     byte[] move = BotMovement.SynthesizeMove(
-                        (byte)botRec.Slot, bot.Position, bot.Heading, ++bot.MoveSeq);
+                        (byte)botRec.Slot, bot.Position, bot.Heading, ++bot.MoveSeq, moving);
                     Broadcast(field, send, move);
+                    Broadcast(field, send, BotMovement.SynthesizeKeystate(
+                        (byte)botRec.Slot, ++bot.MoveSeq, moving));
 
                     // Ataque do bot: sintetiza a animação 0x0311 (cosmético — o dano bot->humano é
                     // client-authoritative, teto RE). Cooldown p/ não floodar.

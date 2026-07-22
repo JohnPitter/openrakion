@@ -427,8 +427,12 @@ namespace RakionServer.World
                 bot.BeginHitReaction(now);
                 byte botSeat = (byte)hit.BotRecord.Slot;
                 publishHit(Network.BotMovement.SynthesizeMove(
-                    botSeat, bot.Position, bot.Heading, ++bot.MoveSeq));
+                    botSeat, bot.Position, bot.Heading, ++bot.MoveSeq, moving: false));
+                publishHit(Network.BotMovement.SynthesizeKeystate(
+                    botSeat, ++bot.MoveSeq, moving: false));
                 publishHit(Network.BotMovement.SynthesizeDamage(botSeat, ++bot.MoveSeq));
+                Bots.PublishBotLifecycles(field);
+                PublishBotHitFeedback(field, attackerRec, bot, botSeat, now, hit.Died);
                 Log.Debug("bot", "melee validado: humano seat {0} -> bot seat {1}: hp={2}/{3}",
                     attackerRec.Slot, botSeat, bot.Health, bot.MaxHealth);
                 if (!hit.Died) return;
@@ -444,6 +448,20 @@ namespace RakionServer.World
                 Log.Ok("bot", "bot seat {0} morto por humano seat {1} (field {2}); respawn={3}ms",
                     botSeat, attackerRec.Slot, field.Id, BotRespawnPolicy.DelayMs(field.Mode));
             }
+        }
+
+        private static void PublishBotHitFeedback(
+            Domain.Field field, PlayerRec attacker, BotPlayer bot,
+            byte botSeat, long now, bool died)
+        {
+            attacker.BotHitCombo = now - attacker.LastBotHitFeedbackMs <= 4000
+                ? (byte)Math.Min(byte.MaxValue, attacker.BotHitCombo + 1)
+                : (byte)1;
+            attacker.LastBotHitFeedbackMs = now;
+            string text = died
+                ? $"HIT x{attacker.BotHitCombo} - KO"
+                : $"HIT x{attacker.BotHitCombo} - HP {bot.Health}/{bot.MaxHealth}";
+            field.BroadcastField(0x47, Network.FieldChatFrames.Message(botSeat, text));
         }
 
         public bool Locked { get; private set; }                 // this+0x50 (servidor fechado p/ GM)
@@ -491,6 +509,8 @@ namespace RakionServer.World
             }
 
             session.NotifyUdpReady(endpoint, handshake.AdvertisedEndpoint, endpointIndex);
+            Domain.Field? field = GetField(session.FieldId);
+            if (field?.BotCount > 0) Bots.PublishBotLifecycles(field);
             if (endpointIndex == 0)
                 _ = _db.UpdateConnectionRealIpAsync(
                     session.ConnectionLogId, handshake.AdvertisedEndpoint.Address.ToString());
