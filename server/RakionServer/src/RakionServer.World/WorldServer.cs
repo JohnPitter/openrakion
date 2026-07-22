@@ -70,7 +70,7 @@ namespace RakionServer.World
         public Domain.Room? GetRoom(int id) => id < 0 ? null : Rooms.Find(r => r.Id == id);
 
         // O paginador de FUN_00422C90 usa zero como cursor/sentinela; fields pesquisáveis
-        // começam em 1. O caminho dedicado mode=0 não ocupa essa lista no World original.
+        // começam em 1. Os cinco modos, inclusive Stage (mode=0), ocupam a lista pública.
         /// <summary>
         /// Aloca um field/sala (espelha a varredura de this+0xe4 por slot livre no
         /// RoomCreate FUN_00423580). Cria a entrada no dominio e devolve o Field.

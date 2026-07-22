@@ -212,6 +212,17 @@ namespace RakionServer.World.Tests.E2E
             Send(0x38, w.ToArray());
         }
 
+        public void RequestRoomList(
+            byte modeMask, bool availableOnly, ushort cursor = 0, bool forward = true)
+        {
+            using var writer = new PacketWriter();
+            writer.WriteByte(10).WriteWord(cursor).WriteByte(forward ? (byte)1 : (byte)0);
+            for (byte mode = 0; mode < 5; mode++)
+                writer.WriteByte((modeMask & (1 << mode)) != 0 ? (byte)1 : (byte)0);
+            writer.WriteByte(availableOnly ? (byte)0 : (byte)1);
+            Send(0x36, writer.ToArray());
+        }
+
         /// <summary>Marca ready/not-ready na sala (0x3d): `[u8 ready]`.</summary>
         public void SetReady(bool ready) => Send(0x3d, new[] { (byte)(ready ? 1 : 0) });
 

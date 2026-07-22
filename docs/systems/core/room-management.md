@@ -71,7 +71,7 @@ abaixo descreve apenas o payload após o opcode.
 
 | Opcode | Export do cliente | Payload confirmado | Estado no World analisado |
 |---:|---|---|---|
-| `0x36` | `SendFieldList` | `[u8 max<=10][u16 cursor][u8 direction][5*u8 includeMode0..4][u8 bypassEligibility]` | fechado em `FUN_00422C90`; implementado |
+| `0x36` | `SendFieldList` | `[u8 max<=10][u16 cursor][u8 direction][5*u8 includeMode0..4][u8 bypassEligibility]` | `bypass=0` corresponde a Available marcado; `bypass!=0` mantém salas cheias e incompatíveis, além de Stage em andamento, visíveis |
 | `0x38` | `SendFieldEnter` | `[u16 fieldId][cstr password<9]` | fechado em `FUN_00423100`; status inválido responde `0x38 status=5` |
 | `0x39` | `SendFieldQuickEnter` | vazio | fechado em `FUN_00423300`; sempre encerra com lobby `0x39` |
 | `0x3A` | `SendFieldExit` | vazio | aceito; interceptado como retorno à lista |
@@ -214,11 +214,11 @@ tabela. Para `0x36`, `0x38`, `0x39` e `0x3B`, a tabela é a única entrada do co
 
 | Opcode | Rota efetiva comum | Resultado |
 |---:|---|---|
-| `0x36` | `Op_FieldList` → `ClientSession.Rooms` | valida os 10 bytes, pagina antes/depois do cursor e filtra modo, nível e capacidade, no máximo 10 |
+| `0x36` | `Op_FieldList` → `ClientSession.Rooms` | valida os 10 bytes, pagina antes/depois do cursor, preserva a última consulta e aplica os cinco modos na ordem wire `0..4`; Available controla estado, nível e capacidade |
 | `0x38` | `Op_FieldEnter` → `ClientSession.Rooms` | valida ID, estado, senha, penalidade e capacidade; em sala competitiva publica `0x38` e entrega `0x37`, sem `0x26` |
 | `0x39` | `Op_FieldQuickEnter` → `ClientSession.Rooms` | escolhe sala pública aberta e não cheia; entrega `0x38/0x37` e conclui com `0x39`, sem `0x26` |
 | `0x3A` | `Op_FieldExit` → `ClientSession.FieldTransitions` | publica `0x3A [seat]`, transfere host com `0x3C [novo]` ou remove vazia e reenvia `0x1F/0x1E/0x36` |
-| `0x3B` | `Op_FieldCreate` → `ClientSession.Rooms` | todos os modos respondem `[0x3B][status][fieldId]`; `mode=0` prepara field interno não pesquisável para o lifecycle solo e modos `1..4` publicam `Field` completo |
+| `0x3B` | `Op_FieldCreate` → `ClientSession.Rooms` | todos os modos respondem `[0x3B][status][fieldId]`; `mode=0` publica sala de Stage com capacidade do catálogo e modos `1..4` publicam a sala Battle |
 | `0x3C` | `ClientSession.Rooms` em lobby | host transfere autoridade ao próximo membro |
 | `0x3D` | interceptado somente em `FieldLobby`; dispatcher em stage | no lobby altera `LobbyReady`; no stage preserva a ação de combate |
 | `0x3E` | `ClientSession.Rooms` em lobby; dispatcher em stage | alterna entre blocos de time e atualiza seat |
@@ -267,8 +267,9 @@ Consequências observáveis atuais:
 
 | Função | Estado | Evidência/problema |
 |---|---|---|
-| listar salas | RE estático + headless | `0x36` retornou a sala ID 1 usando cursor 0, direção forward e filtro mode 1 |
-| criar sala solo | RE estático + headless | `mode=0` responde `[0x3B][status][fieldId]`; o .NET prepara field interno para `0x43`, mas ele nunca entra na lista pública |
+| listar salas | RE estático + headless | refresh repetido preserva a primeira página; filtros isolados de Stage, Golem, Solo Death, Team Death e Boss retornam somente o modo correspondente |
+| filtro Available | RE estático + headless | marcado exige vaga e nível compatível; Battle em andamento continua visível com Status, enquanto Stage ativo só aparece ao desmarcar Available |
+| criar sala de Stage | RE estático + headless | `mode=0` responde `[0x3B][status][fieldId]`, usa a capacidade de `stageinfo` e aparece na lista pública conforme o filtro Available |
 | criar sala pesquisável | headless validada | segunda sessão encontrou a sala pelo wire |
 | entrar por ID | RE estático + headless | `0x38` competitivo alocou seat e entregou `0x38/0x37`, sem o antigo `FIELD 0x26` sintético |
 | quick enter | RE estático + headless | `0x39` selecionou sala pública aberta, entregou `0x38/0x37` e não emitiu `0x26`; visual pendente |

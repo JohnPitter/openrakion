@@ -12,7 +12,7 @@ namespace RakionServer.World.Network
             SecondActive = true;
             Status = 2;
             _server.SendChannelState(this, includeSelfPresence: true);
-            SendEncryptedFrame(LobbyFrames.GameList(_server.ListJoinableFields(0, 10)));
+            SendCurrentRoomList();
             Log.Ok("lobby", "[{0}] 0x3A FieldExit -> lista de games (Status=2)", Slot);
         }
 

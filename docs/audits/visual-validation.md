@@ -42,6 +42,7 @@ golden source; este diretório é somente o ambiente de execução.
 | Launcher: login e amigos online | aprovado em 21/07/2026 | usuário validou a transição dos inputs para a lista de amigos e os botões Outra conta, Iniciar game e Game options |
 | Messenger F9 | parcial | primeiro login aprovado; o RE de reentrada confirmou destruição/recriação do host, e a DLL agora usa a transição nativa `host+0x24: 0→1` em cada instância; reentrada aguarda reteste |
 | Add Bot | aprovado | botão enviou `0x47` `GoHeroi : /addbot`; `Rok` apareceu no time azul da sala e dentro do stage Mammoth |
+| Refresh e filtros da Game List | reteste pendente em 21/07/2026 | E2E aprovou refresh estável, os cinco filtros isolados, Available ligado/desligado e sala Stage pública com capacidade do catálogo |
 | Rematch e lista Available | reteste pendente em 21/07/2026 | E2E aprovou saída dos dois humanos, preservação do master, bot pronto, sala novamente listável e segunda partida no mesmo game room |
 | Ataque humano→bot | reteste pendente em 21/07/2026 | o hook de colisão anterior não emitiu o contrato esperado e foi removido; a build atual espelha o início do ataque e o World valida alvo único por rumo, cone, alcance e cooldown |
 | HUD/animação final do bot | pendente | validar redução de HP, parada imediata durante a queda de 1,8 s, morte, um kill e respawn sem perseguição enquanto caído |

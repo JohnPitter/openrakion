@@ -6,6 +6,8 @@ namespace RakionServer.World.Network
 {
     public sealed partial class ClientSession
     {
+        private RoomListQuery _roomListQuery = RoomListQuery.DefaultAvailable;
+
         internal void BeginFieldList(byte[] data) => HandleRoomList(data);
 
         internal void BeginFieldEnter(byte[] data) => HandleRoomJoin(data);
@@ -29,12 +31,14 @@ namespace RakionServer.World.Network
             byte modeMask = 0;
             for (byte mode = 0; mode < 5; mode++)
                 if (reader.Byte() != 0) modeMask |= (byte)(1 << mode);
-            bool bypassEligibility = reader.Byte() != 0;
-            var query = new RoomListQuery(maxCount, cursor, forward, modeMask, bypassEligibility);
+            bool includeUnavailable = reader.Byte() != 0;
+            var query = new RoomListQuery(maxCount, cursor, forward, modeMask, includeUnavailable);
+            _roomListQuery = query;
             var fields = _server.ListJoinableFields(this, query);
             SendEncryptedFrame(LobbyFrames.GameList(fields));
-            Log.Info("room", "[{0}] lista cursor={1} dir={2} max={3} modos=0x{4:x2} -> {5} sala(s)",
-                Slot, cursor, forward ? "next" : "prev", maxCount, modeMask, fields.Length);
+            Log.Info("room", "[{0}] lista cursor={1} dir={2} max={3} modos=0x{4:x2} " +
+                "available={5} -> {6} sala(s)", Slot, cursor,
+                forward ? "next" : "prev", maxCount, modeMask, !includeUnavailable, fields.Length);
         }
 
         private void HandleRoomCreate(byte[] data)
@@ -43,7 +47,7 @@ namespace RakionServer.World.Network
                 !ValidateRoomCreation(options)) return;
             RoomCreationOptions runtimeOptions = NormalizeRuntimeRoomCreation(options);
             ApplyPendingRoomCreation(runtimeOptions);
-            if (runtimeOptions.Mode == 0) HandleSoloRoomCreate(runtimeOptions);
+            if (runtimeOptions.Mode == 0) HandleStageRoomCreate(runtimeOptions);
             else HandleCompetitiveRoomCreate(runtimeOptions);
         }
 
@@ -75,22 +79,22 @@ namespace RakionServer.World.Network
             return true;
         }
 
-        private void HandleSoloRoomCreate(RoomCreationOptions options)
+        private void HandleStageRoomCreate(RoomCreationOptions options)
         {
             Field field;
             try
             {
-                field = _server.CreateField(options with { Searchable = false }, this);
+                field = _server.CreateField(options, this);
             }
             catch (InvalidOperationException ex)
             {
-                Log.Warn("room", "[{0}] falhou ao preparar stage solo: {1}", Slot, ex.Message);
+                Log.Warn("room", "[{0}] falhou ao criar sala de stage: {1}", Slot, ex.Message);
                 SendEncryptedFrame(LobbyFrames.RoomCreateAck(0, 1));
                 return;
             }
             SendEncryptedFrame(LobbyFrames.RoomCreateAck((ushort)field.Id, 0));
-            Log.Ok("room", "[{0}] criou stage solo field={1} stage={2}",
-                Slot, field.Id, options.MapId);
+            Log.Ok("room", "[{0}] criou sala de stage field={1} stage={2} cap={3}",
+                Slot, field.Id, options.MapId, field.MaxPlayers);
         }
 
         private void HandleCompetitiveRoomCreate(RoomCreationOptions options)
@@ -145,11 +149,12 @@ namespace RakionServer.World.Network
             PendingRoomDurationSec = options.DurationSeconds;
         }
 
-        private static RoomCreationOptions NormalizeRuntimeRoomCreation(RoomCreationOptions options)
+        private RoomCreationOptions NormalizeRuntimeRoomCreation(RoomCreationOptions options)
         {
             if (options.Mode != 0) return options;
             return options with
             {
+                CapacityOverride = _server.StageMaxPlayers(options.MapId),
                 Rounds = options.Rounds is >= 1 and < 0x16 ? options.Rounds : (byte)1,
                 DurationSeconds = options.DurationSeconds is >= 30 and <= 3600
                     ? options.DurationSeconds
@@ -327,7 +332,13 @@ namespace RakionServer.World.Network
             SecondActive = true;
             Status = UserStatus.FieldLobby;
             _server.SendChannelState(this, includeSelfPresence: true);
-            SendEncryptedFrame(LobbyFrames.GameList(_server.ListJoinableFields(0, 10)));
+            SendCurrentRoomList();
+        }
+
+        internal void SendCurrentRoomList()
+        {
+            RoomListQuery query = _roomListQuery with { Cursor = 0, Forward = true };
+            SendEncryptedFrame(LobbyFrames.GameList(_server.ListJoinableFields(this, query)));
         }
 
         private void HandleMatchStart()

@@ -310,7 +310,7 @@ membro de field/sala e usa `FieldId` (`user+0x14A0`). O byte inicial do `0x17` v
 
 | Op | Método do cliente | Payload | Evidência |
 |---:|---|---|---|
-| `36` | `SendFieldList` | `[u8 max<=10][u16 cursor][u8 direction][5*u8 includeMode0..4][u8 bypassEligibility]` | Builder `engine.dll:0x36191BA0`, call site `rakion.bin:0x00421620` e handler `FUN_00422C90`; 12 bytes lógicos, implementado |
+| `36` | `SendFieldList` | `[u8 max<=10][u16 cursor][u8 direction][5*u8 includeMode0..4][u8 bypassEligibility]` | Builder `engine.dll:0x36191BA0`, call site `rakion.bin:0x00421620` e handler `FUN_00422C90`; `bypass=0` é Available marcado; Battle ativo permanece listado e Stage ativo depende do bypass |
 | `38` | `SendFieldEnter` | `[u16 fieldId][cstr password]` | Confirmado |
 | `39` | `SendFieldQuickEnter` | vazio | Confirmado |
 | `3A` | `SendFieldExit` | vazio | Confirmado |

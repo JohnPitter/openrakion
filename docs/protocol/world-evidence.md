@@ -297,6 +297,11 @@ fronteira:
   seletores de modo e o booleano `fieldFilter == 0`. Isso confirma os nomes usados por
   `RoomListQuery` e elimina a antiga hipótese de handles adicionais.
 
+No handler `FUN_00422C90`, o último byte igual a zero ativa o filtro Available: exige vaga e nível
+compatível. Battle em andamento permanece listado com seu Status; somente `mode=0` também exige
+field fora da partida. Valor diferente de zero ignora esses gates e inclui até Stage ativo. Os cinco
+bytes anteriores mapeiam diretamente `0=Stage`, `1=Golem`, `2=Solo Death`, `3=Team Death` e `4=Boss`.
+
 Os retornos W→C com os mesmos opcodes são contratos independentes. O retorno `0x2D` possui somente
 `[opcode:u16][status:u8]`; a referência `0x2C` e o handle vistos depois dele pertencem à área não
 lógica do bloco AES. O status `0x48` continua tendo nove bytes lógicos com round e tempo restante.

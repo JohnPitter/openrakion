@@ -19,6 +19,11 @@ public sealed partial class WorldServer
 
     public int StageCatalogCount => _stageCatalog.Count;
 
+    public byte? StageMaxPlayers(byte stageId) =>
+        _stageCatalog.TryGet(stageId, out StageDefinition stage)
+            ? stage.MaxCharacters
+            : null;
+
     public ushort? StageDurationSeconds(byte stageId) =>
         _stageCatalog.TryGetContent(stageId, out StageContentDefinition? content)
             ? content.TimeLimitSeconds

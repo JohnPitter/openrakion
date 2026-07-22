@@ -275,6 +275,58 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
+        public void RoomListQuery_AppliesEveryModeFilterAndRefreshIsStable()
+        {
+            var config = new WorldConfig();
+            var server = new WorldServer(config, new WorldDatabase(config.Db));
+            var viewer = NewSession(20, server);
+            viewer.CharLevel = 10;
+            var fields = new Field[5];
+            for (byte mode = 0; mode < fields.Length; mode++)
+                fields[mode] = server.CreateField(
+                    RoomOptions($"mode{mode}", mode), NewSession((ushort)(mode + 1), server));
+
+            for (byte mode = 0; mode < fields.Length; mode++)
+            {
+                var query = new RoomListQuery(10, 0, true, (byte)(1 << mode), false);
+                int[] first = server.ListJoinableFields(viewer, query)
+                    .Select(room => (int)room.FieldId).ToArray();
+                int[] refreshed = server.ListJoinableFields(viewer, query)
+                    .Select(room => (int)room.FieldId).ToArray();
+                Assert.Equal(new[] { fields[mode].Id }, first);
+                Assert.Equal(first, refreshed);
+            }
+        }
+
+        [Fact]
+        public void AvailableFilterKeepsPlayingBattleButHidesUnavailableStage()
+        {
+            var config = new WorldConfig();
+            var server = new WorldServer(config, new WorldDatabase(config.Db));
+            var viewer = NewSession(20, server);
+            viewer.CharLevel = 10;
+            Field available = server.CreateField(RoomOptions("available", 1), NewSession(1, server));
+            Field full = server.CreateField(
+                RoomOptions("full", 1) with { CapacityOverride = 1 }, NewSession(2, server));
+            Field playing = server.CreateField(RoomOptions("playing", 1), NewSession(3, server));
+            Field ineligible = server.CreateField(
+                RoomOptions("ineligible", 1) with { MinLevel = 20 }, NewSession(4, server));
+            Field playingStage = server.CreateField(
+                RoomOptions("playing-stage", 0), NewSession(5, server));
+            playing.State = 2;
+            playingStage.State = 2;
+
+            var availableOnly = new RoomListQuery(10, 0, true, 0x1f, false);
+            var allStatuses = availableOnly with { IncludeUnavailable = true };
+
+            Assert.Equal(new[] { available.Id, playing.Id },
+                server.ListJoinableFields(viewer, availableOnly).Select(room => (int)room.FieldId));
+            Assert.Equal(new[]
+                { available.Id, full.Id, playing.Id, ineligible.Id, playingStage.Id },
+                server.ListJoinableFields(viewer, allStatuses).Select(room => (int)room.FieldId));
+        }
+
+        [Fact]
         public void MatchEnd_MakesRoomAvailableAndBotReadyForRematch()
         {
             var config = new WorldConfig();
@@ -337,7 +389,7 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
-        public void SoloCompatibilityField_IsExcludedFromPublicRoomList()
+        public void ExplicitlyHiddenField_IsExcludedFromPublicRoomList()
         {
             var config = new WorldConfig();
             var server = new WorldServer(config, new WorldDatabase(config.Db));
