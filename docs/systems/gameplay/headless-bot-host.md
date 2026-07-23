@@ -68,6 +68,22 @@ O smoke atual valida bootstrap dedicated, ausência de módulos gráficos, shell
 do filho. Login válido, seleção de personagem, registro do field e criação de fontes adicionais
 continuam pendentes.
 
+## Estado da sessão nativa
+
+Em modo headless, a DLL observa `CNetworkLibrary::GetLocalPlayerCount` somente depois de
+`_pNetwork` estar disponível e registra cada transição no log de compatibilidade. Esse diagnóstico
+é restrito ao processo com `OPENRAKION_HEADLESS=1` e não altera o cliente interativo.
+
+O smoke com Broker, World e Buddy locais ativos chegou ao Broker em `127.0.0.1:40706`, porém não
+abriu conexão com o World e permaneceu em `localPlayerCount=0`. Logo, a linha de comando legada
+inicializa o shell, mas não conclui de forma autônoma a seleção do servidor, personagem e field.
+Ocultar a janela não transforma esse fluxo em uma sessão multippeer pronta.
+
+O próximo gate técnico é inicializar a sessão do engine diretamente ou fornecer ao shell uma
+máquina de estados explícita para login e seleção. Fontes adicionais só podem ser criadas depois
+que a fonte primária possuir personagem e sessão válidos; chamar `AddPlayer_t` antes desse ponto
+não é um caminho seguro.
+
 ## Gates de lançamento
 
 1. Processo headless inicia sem dispositivo gráfico, áudio ou janela interativa.

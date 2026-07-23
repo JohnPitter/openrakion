@@ -385,6 +385,7 @@ DWORD WINAPI InstallCompatibility(void*)
     for (;;)
     {
         LoadLifecycleSnapshot();
+        PollHeadlessEngineState();
         LogAppliedLifecycles();
         Sleep(10);
     }
