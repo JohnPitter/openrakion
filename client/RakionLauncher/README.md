@@ -88,6 +88,22 @@ só fica ativo depois de configurar a URL, distribuir `update-public.pem` e defi
 `updatesEnabled: true`. Ele atualiza o conteúdo do cliente, inclusive `version.dll` e
 `RakionClientPatch.dll`; atualizar o próprio launcher em execução exige um bootstrapper externo.
 
+## Cliente controlado para bot
+
+O modo experimental `--puppet` inicia uma conta como cliente real, usando a mesma autenticação,
+compatibilidade nativa e configuração de tela do fluxo visual. A senha não entra na linha de
+comando nem é herdada pelo `rakion.exe`:
+
+```powershell
+$env:RAKION_PUPPET_PASSWORD = 'senha-da-conta-de-bot'
+.\RakionLauncher.exe --puppet bot_01
+Remove-Item Env:\RAKION_PUPPET_PASSWORD
+```
+
+O argumento opcional depois do usuário substitui o `serverId`. Este modo prepara o processo real
+que será dirigido pela IA; seleção de personagem, entrada automática na sala e controle de ações
+ainda dependem do driver e não devem ser considerados prontos apenas porque o cliente abriu.
+
 ## Assets
 
 Os assets de UI (`Assets/*.ico|png|bmp`) são de domínio público e ficam **versionados** — ver

@@ -7,6 +7,8 @@ internal static class Program
     {
         if (args.Length == 2 && args[0].Equals("--update-only", StringComparison.OrdinalIgnoreCase))
             return RunUpdateOnly(args[1]);
+        if (args.Length >= 1 && args[0].Equals("--puppet", StringComparison.OrdinalIgnoreCase))
+            return PuppetLaunch.Run(args);
         ApplicationConfiguration.Initialize();
         Application.Run(new MainForm());
         return 0;

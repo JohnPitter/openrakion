@@ -29,9 +29,14 @@ internal static class GameLauncher
         uint flags, IntPtr env, string? cwd, ref STARTUPINFO si, out PROCESS_INFORMATION pi);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern uint ResumeThread(IntPtr hThread);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool CloseHandle(IntPtr h);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(uint access, bool inherit, int processId);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool TerminateProcess(IntPtr process, uint exitCode);
 
     private const uint CreateSuspended = 0x00000004;
     private const uint CreateUnicodeEnvironment = 0x00000400;
+    private const uint ProcessTerminate = 0x0001;
     private const string CompatibilityLayer = "__COMPAT_LAYER";
     private const string RunAsInvoker = "RunAsInvoker";
 
@@ -70,6 +75,7 @@ internal static class GameLauncher
         var values = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (DictionaryEntry entry in Environment.GetEnvironmentVariables())
             values[(string)entry.Key] = (string?)entry.Value ?? string.Empty;
+        values.Remove(PuppetLaunch.PasswordVariable);
         values[CompatibilityLayer] = RunAsInvoker;
         return string.Join('\0', values.Select(pair => $"{pair.Key}={pair.Value}")) + "\0";
     }
@@ -82,6 +88,15 @@ internal static class GameLauncher
 
     /// <summary>Resume a thread primária do jogo (depois de aplicado o patch) e fecha o handle.</summary>
     public static void Resume(IntPtr hThread) { ResumeThread(hThread); CloseHandle(hThread); }
+
+    public static void AbortSuspended(int pid, IntPtr hThread)
+    {
+        CloseHandle(hThread);
+        IntPtr process = OpenProcess(ProcessTerminate, false, pid);
+        if (process == IntPtr.Zero) return;
+        try { TerminateProcess(process, 1); }
+        finally { CloseHandle(process); }
+    }
 
     /// <summary>Converte a senha em hex ASCII (o esquema que o cliente/world esperam no argv[1]).</summary>
     public static string HexPass(string pass) => Convert.ToHexString(Encoding.ASCII.GetBytes(pass)).ToLowerInvariant();
