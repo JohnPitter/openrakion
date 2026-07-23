@@ -14,6 +14,7 @@
 #include "ui_lifecycle_patch.h"
 #include "compat_log.h"
 #include "headless_mode.h"
+#include "headless_world_session.h"
 
 namespace
 {
@@ -386,6 +387,7 @@ DWORD WINAPI InstallCompatibility(void*)
     {
         LoadLifecycleSnapshot();
         PollHeadlessEngineState();
+        PollHeadlessWorldSession();
         LogAppliedLifecycles();
         Sleep(10);
     }

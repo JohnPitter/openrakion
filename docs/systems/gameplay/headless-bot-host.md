@@ -74,15 +74,24 @@ Em modo headless, a DLL observa `CNetworkLibrary::GetLocalPlayerCount` somente d
 `_pNetwork` estar disponível e registra cada transição no log de compatibilidade. Esse diagnóstico
 é restrito ao processo com `OPENRAKION_HEADLESS=1` e não altera o cliente interativo.
 
-O smoke com Broker, World e Buddy locais ativos chegou ao Broker em `127.0.0.1:40706`, porém não
-abriu conexão com o World e permaneceu em `localPlayerCount=0`. Logo, a linha de comando legada
-inicializa o shell, mas não conclui de forma autônoma a seleção do servidor, personagem e field.
-Ocultar a janela não transforma esse fluxo em uma sessão multippeer pronta.
+O primeiro smoke com Broker, World e Buddy locais ativos chegou apenas ao Broker em
+`127.0.0.1:40706` e permaneceu em `localPlayerCount=0`. Logo, a linha de comando legada inicializa o
+shell, mas não conclui de forma autônoma a seleção do servidor, personagem e field. Ocultar a janela
+não transforma esse fluxo em uma sessão multippeer pronta.
 
-O próximo gate técnico é inicializar a sessão do engine diretamente ou fornecer ao shell uma
-máquina de estados explícita para login e seleção. Fontes adicionais só podem ser criadas depois
-que a fonte primária possuir personagem e sessão válidos; chamar `AddPlayer_t` antes desse ponto
-não é um caminho seguro.
+O bootstrap headless agora usa a ABI exportada do próprio engine para conectar diretamente ao
+World e enviar o login. Ele decodifica a credencial hex recebida na linha de comando antes de chamar
+`IScavengerWorldNet::SendLogin`; não escreve a credencial no log. Esse caminho só existe com
+`OPENRAKION_HEADLESS=1`.
+
+O smoke seguinte comprovou TCP estabelecido em `40708`, `onlinePlayers=1` no status do World,
+identidade na lista de contas ativas e conexão Buddy em `8500`. A resposta de login foi consumida
+pelo cliente, mas `localPlayerCount` continuou em zero porque a seleção de personagem ainda não foi
+automatizada.
+
+Fontes adicionais só podem ser criadas depois que a fonte primária possuir personagem e sessão
+válidos; chamar `AddPlayer_t` antes desse ponto não é um caminho seguro. O próximo gate é selecionar
+o personagem de serviço e entrar no field solicitado pelo supervisor.
 
 ## Gates de lançamento
 

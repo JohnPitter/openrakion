@@ -394,6 +394,14 @@ bool TryGetWorldLocalPort(uint16_t& port)
     return port != 0;
 }
 
+bool TryGetServerAddress(uint32_t& address)
+{
+    const LONG value = InterlockedCompareExchange(&ServerAddress, 0, 0);
+    if (value == 0) return false;
+    address = static_cast<uint32_t>(value);
+    return true;
+}
+
 bool LoadServerAddress()
 {
     char path[MAX_PATH]{};
