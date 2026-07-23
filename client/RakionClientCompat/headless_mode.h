@@ -2,3 +2,4 @@
 
 bool ConfigureHeadlessEngine();
 void PollHeadlessEngineState();
+bool IsHeadlessFieldRosterReady();

@@ -35,14 +35,14 @@ Quando `OPENRAKION_HEADLESS=1`, `RakionClientPatch.dll` resolve o export
 alterado. Se o engine ou o símbolo não corresponderem à build esperada, a DLL falha fechado e o
 processo headless não continua em modo gráfico por engano.
 
-Essa ativação é apenas o primeiro gate. Ainda faltam o supervisor BotHost, registro no World,
-criação das fontes adicionais, associação fonte-seat, entrada automática no field e controle das
-ações. Um processo iniciar com a flag não significa que o combate multippeer esteja validado.
+Essa ativação é apenas o primeiro gate. O supervisor, login, seleção de personagem e entrada no
+field já estão conectados. Ainda faltam a criação das fontes adicionais, associação fonte-seat,
+carregamento da partida e controle das ações. Um processo iniciar com a flag ou entrar na sala não
+significa que o combate multippeer esteja validado.
 
-O smoke local confirmou a mensagem `headless ativado antes do entry point
-(_bDedicatedServer=1)` e o processo permaneceu vivo. A inspeção dos módulos carregados não encontrou
-`d3d`, `ddraw`, `dxgi` nem `opengl`. A aplicação ainda cria uma janela de shell, que o
-`RakionBotHost` oculta assim que o handle aparece.
+O smoke local confirmou o processo dedicado e a ausência de `d3d`, `ddraw`, `dxgi` e `opengl`
+entre os módulos carregados. A aplicação ainda cria uma janela de shell, que o `RakionBotHost`
+oculta assim que o handle aparece.
 
 ## Supervisor
 
@@ -64,9 +64,9 @@ A credencial não é herdada como variável pelo processo filho. O protocolo leg
 credencial codificada no vetor de argumentos do próprio jogo; uma conta de serviço com privilégios
 mínimos e ticket curto deve substituir senha estática antes do rollout remoto.
 
-O smoke atual valida bootstrap dedicated, ausência de módulos gráficos, shell ocultado e limpeza
-do filho. Login válido, seleção de personagem, registro do field e criação de fontes adicionais
-continuam pendentes.
+O smoke atual valida bootstrap dedicated, ausência de módulos gráficos, shell ocultado, limpeza do
+filho, login válido, seleção de personagem e entrada no field. A criação das fontes adicionais e o
+carregamento da partida continuam pendentes.
 
 ## Estado da sessão nativa
 
@@ -98,9 +98,25 @@ O smoke confirmou as mensagens `primeiro personagem selecionado` e `personagem c
 engine`, mantendo as conexões World e Buddy. `localPlayerCount` continua em zero nessa fase porque
 um personagem selecionado ainda não é uma fonte local carregada dentro de uma partida.
 
+O supervisor também publica `OPENRAKION_HEADLESS_FIELD` com o field solicitado. Depois de confirmar
+o personagem, a DLL chama `IScavengerWorldNet::SendFieldEnter`. A resposta `0x37` preenche
+corretamente o roster, mas o cliente v258 tenta construir a tela da sala em seguida. Essa UI depende
+de um componente gráfico ausente no modo dedicado e causava acesso inválido em
+`CTFileName` (`engine.dll+0x16E7`).
+
+O caminho headless valida o prólogo do callback de roster após o executável ser desempacotado e
+desvia somente a cauda que destrói e recria a UI. Todo o parsing do field e dos 20 registros de
+jogadores permanece no fluxo original. O cliente interativo não recebe esse desvio, e uma build
+desconhecida não entra no field sem a validação dos bytes esperados.
+
+No smoke com uma sala competitiva recém-criada, a terceira sessão recebeu a entrada `0x36` com
+`field_id=1`, `players=2`, `capacity=12` e nome `HeadlessHost`. O processo headless permaneceu vivo
+depois da resposta `0x37`. Isso comprova o peer registrado no field; ainda não comprova mapa
+carregado, fonte local ou combate.
+
 Fontes adicionais só podem ser criadas depois que a fonte primária possuir personagem e sessão
-válidos; chamar `AddPlayer_t` antes desse ponto não é um caminho seguro. O próximo gate é entrar no
-lobby e no field solicitado pelo supervisor.
+válidos; chamar `AddPlayer_t` antes desse ponto não é um caminho seguro. O próximo gate é iniciar a
+partida, carregar o mapa e observar a criação da fonte local primária.
 
 ## Gates de lançamento
 

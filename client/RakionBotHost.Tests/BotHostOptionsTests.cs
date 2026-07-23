@@ -49,10 +49,15 @@ public sealed class BotHostOptionsTests
             BotHostOptions.CredentialVariable, "secret");
 
         string block = LegacyClientProcess.BuildEnvironmentBlock(
-            new Dictionary<string, string> { ["OPENRAKION_HEADLESS"] = "1" },
+            new Dictionary<string, string>
+            {
+                ["OPENRAKION_HEADLESS"] = "1",
+                ["OPENRAKION_HEADLESS_FIELD"] = "7"
+            },
             new HashSet<string> { BotHostOptions.CredentialVariable });
 
         Assert.Contains("OPENRAKION_HEADLESS=1", block);
+        Assert.Contains("OPENRAKION_HEADLESS_FIELD=7", block);
         Assert.DoesNotContain(
             $"{BotHostOptions.CredentialVariable}=", block,
             StringComparison.OrdinalIgnoreCase);

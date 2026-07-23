@@ -2,12 +2,14 @@
 
 #include <cctype>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "bot_telemetry.h"
 #include "compat_log.h"
+#include "headless_mode.h"
 #include "headless_world_session.h"
 
 namespace
@@ -20,13 +22,18 @@ constexpr char AccountInfoSymbol[] =
     "?GetAccountInfo@IScavengerWorldNet@@QAEPAUAccountInfo_s@@XZ";
 constexpr char CharacterSelectSymbol[] =
     "?SendCharacterSelect@IScavengerWorldNet@@UAEXK@Z";
+constexpr char FieldEnterSymbol[] =
+    "?SendFieldEnter@IScavengerWorldNet@@UAEXGPAD@Z";
+constexpr char FieldVariable[] = "OPENRAKION_HEADLESS_FIELD";
 constexpr unsigned WorldPortNetworkOrder = 0x049f;
 constexpr unsigned char SkipHashVerification = 4;
 constexpr size_t AccountSlotCountOffset = 0x6c;
 constexpr size_t CharacterRecordsOffset = 0x1338;
 constexpr size_t CharacterRecordSize = 0x424;
 constexpr unsigned char MaximumVisibleCharacters = 4;
+constexpr DWORD FieldEnterDelayMilliseconds = 1500;
 volatile LONG SessionState{};
+volatile LONG CharacterReadyTick{};
 
 bool IsHeadlessRequested()
 {
@@ -167,6 +174,33 @@ bool IsCharacterReady()
     auto** vtable = *reinterpret_cast<void***>(world);
     return vtable && reinterpret_cast<GetSelectedFn>(vtable[3])(world) != nullptr;
 }
+
+bool JoinConfiguredField()
+{
+    char configured[16]{};
+    const DWORD length = GetEnvironmentVariableA(
+        FieldVariable, configured, static_cast<DWORD>(sizeof(configured)));
+    unsigned fieldId{};
+    char tail{};
+    if (length == 0 || length >= sizeof(configured) ||
+        sscanf_s(configured, "%u%c", &fieldId, &tail, 1) != 1 ||
+        fieldId == 0 || fieldId > 0xffff)
+    {
+        CompatLog("headless World recusado: field invalido");
+        return false;
+    }
+
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    void* world = engine ? GetWorld(engine) : nullptr;
+    using FieldEnterFn = void(__thiscall*)(void*, unsigned short, char*);
+    auto enter = engine ? reinterpret_cast<FieldEnterFn>(
+        GetProcAddress(engine, FieldEnterSymbol)) : nullptr;
+    if (!world || !enter) return false;
+    char emptyPassword[] = "";
+    enter(world, static_cast<unsigned short>(fieldId), emptyPassword);
+    CompatLog("headless World: entrada no field enviada");
+    return true;
+}
 }
 
 void PollHeadlessWorldSession()
@@ -186,7 +220,17 @@ void PollHeadlessWorldSession()
     }
     if (state == 3 && IsCharacterReady())
     {
+        InterlockedExchange(&CharacterReadyTick, static_cast<LONG>(GetTickCount()));
         InterlockedExchange(&SessionState, 4);
         CompatLog("headless World: personagem confirmado pelo engine");
+        return;
+    }
+    if (state == 4)
+    {
+        if (!IsHeadlessFieldRosterReady()) return;
+        const DWORD readyAt = static_cast<DWORD>(
+            InterlockedCompareExchange(&CharacterReadyTick, 0, 0));
+        if (GetTickCount() - readyAt < FieldEnterDelayMilliseconds) return;
+        InterlockedExchange(&SessionState, JoinConfiguredField() ? 6 : 5);
     }
 }

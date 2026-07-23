@@ -48,7 +48,9 @@ internal static class Program
         ValidateCompatibility(bin);
         var environment = new Dictionary<string, string>
         {
-            ["OPENRAKION_HEADLESS"] = "1"
+            ["OPENRAKION_HEADLESS"] = "1",
+            ["OPENRAKION_HEADLESS_FIELD"] = options.FieldId.ToString(
+                System.Globalization.CultureInfo.InvariantCulture)
         };
         var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
