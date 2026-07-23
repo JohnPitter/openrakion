@@ -10,7 +10,7 @@ namespace RakionLauncher;
 /// </summary>
 internal sealed partial class MainForm : Form
 {
-    internal const string ServerId = "1A";
+    private const string ServerId = "1A";
 
     private readonly string _clientDir, _binDir, _iniPath, _modeFile;
     private readonly LauncherConfig _launcherConfig;
@@ -296,7 +296,7 @@ internal sealed partial class MainForm : Form
         _clientStatus.Text = $"Clientes abertos: {_clients}";
     }
 
-    internal static string ResolveClientDir()
+    private static string ResolveClientDir()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         for (int i = 0; i < 6 && dir != null; i++, dir = dir.Parent)

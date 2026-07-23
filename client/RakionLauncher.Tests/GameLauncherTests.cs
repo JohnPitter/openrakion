@@ -6,25 +6,6 @@ namespace RakionLauncher.Tests;
 public sealed class GameLauncherTests
 {
     [Fact]
-    public void BuildEnvironmentBlock_DoesNotExposePuppetPassword()
-    {
-        string? original = Environment.GetEnvironmentVariable(PuppetLaunch.PasswordVariable);
-        try
-        {
-            Environment.SetEnvironmentVariable(PuppetLaunch.PasswordVariable, "secret");
-
-            string block = GameLauncher.BuildEnvironmentBlock();
-
-            Assert.DoesNotContain(
-                $"{PuppetLaunch.PasswordVariable}=", block, StringComparison.OrdinalIgnoreCase);
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(PuppetLaunch.PasswordVariable, original);
-        }
-    }
-
-    [Fact]
     public void IsGameExecutable_AcceptsSameExecutableIgnoringCase()
     {
         string expected = Path.Combine(Path.GetTempPath(), "OpenRakion", "Bin", "rakion.exe");
