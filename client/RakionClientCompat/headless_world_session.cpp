@@ -59,11 +59,12 @@ constexpr size_t GamePrimaryPlayerIndexOffset = 0x4b8;
 constexpr size_t StartGameVtableOffset = 0x8c;
 constexpr size_t ApplicationServerWorldOffset = 0x64;
 constexpr int PlayGameMenuState = 0x1d;
-constexpr int PeerToPeerServerMode = 2;
 constexpr int PeerToPeerClientMode = 4;
 constexpr DWORD FieldEnterDelayMilliseconds = 1500;
 constexpr DWORD FieldReadyDelayMilliseconds = 1500;
 constexpr DWORD EngineStartDelayMilliseconds = 500;
+constexpr DWORD EngineRetryDelayMilliseconds = 2000;
+constexpr LONG MaximumEngineStartAttempts = 3;
 constexpr UINT StartEngineMessage = WM_APP + 0x271;
 volatile LONG SessionState{};
 volatile LONG CharacterReadyTick{};
@@ -71,6 +72,7 @@ volatile LONG FieldEnterTick{};
 volatile LONG EngineStartTick{};
 volatile LONG EngineWaitingLogged{};
 volatile LONG EngineStartPending{};
+volatile LONG EngineStartAttempts{};
 HWND GameWindow{};
 WNDPROC OriginalWindowProcedure{};
 char SelectedCharacterName[13]{};
@@ -147,8 +149,7 @@ int GetPeerToPeerMode()
     auto isMaster = engine ? reinterpret_cast<IsMasterFn>(
         GetProcAddress(engine, FieldMasterSymbol)) : nullptr;
     if (!field || !isMaster) return 0;
-    return isMaster(field) != 0
-        ? PeerToPeerServerMode : PeerToPeerClientMode;
+    return isMaster(field) != 0 ? 0 : PeerToPeerClientMode;
 }
 
 bool StartWorldSession()
@@ -478,6 +479,13 @@ bool StartFieldEngine()
         return false;
     }
 
+    char attempt[320]{};
+    _snprintf_s(attempt, _countof(attempt), _TRUNCATE,
+        "headless engine: iniciando mode=%d world=%s session=%s peer=%s",
+        peerMode, worldName, sessionName,
+        peerMode == PeerToPeerClientMode ? joinAddress : "<master>");
+    CompatLog(attempt);
+
     if (startGame(game, peerMode) == 0)
     {
         CompatLog("headless engine recusado: CGame::StartGame falhou");
@@ -497,8 +505,11 @@ LRESULT CALLBACK HeadlessWindowProcedure(
 {
     if (message == StartEngineMessage)
     {
+        const LONG attempt = InterlockedIncrement(&EngineStartAttempts);
         const bool started = StartFieldEngine();
-        InterlockedExchange(&SessionState, started ? 12 : 13);
+        InterlockedExchange(&EngineStartTick, static_cast<LONG>(GetTickCount()));
+        InterlockedExchange(&SessionState,
+            started ? 12 : attempt < MaximumEngineStartAttempts ? 15 : 13);
         InterlockedExchange(&EngineStartPending, 0);
         return 0;
     }
@@ -593,6 +604,11 @@ void PollHeadlessWorldSession()
     }
     if (state == 8 && IsFieldPlaying())
     {
+        if (!RequestFieldRoundStart())
+        {
+            InterlockedExchange(&SessionState, 13);
+            return;
+        }
         InterlockedExchange(&EngineStartTick, static_cast<LONG>(GetTickCount()));
         InterlockedExchange(&SessionState, 10);
         return;
@@ -607,7 +623,14 @@ void PollHeadlessWorldSession()
     }
     if (state == 12)
     {
-        InterlockedExchange(
-            &SessionState, RequestFieldRoundStart() ? 14 : 13);
+        InterlockedExchange(&SessionState, 14);
+        return;
+    }
+    if (state == 15)
+    {
+        const DWORD failedAt = static_cast<DWORD>(
+            InterlockedCompareExchange(&EngineStartTick, 0, 0));
+        if (GetTickCount() - failedAt < EngineRetryDelayMilliseconds) return;
+        if (QueueFieldEngineStart()) InterlockedExchange(&SessionState, 11);
     }
 }

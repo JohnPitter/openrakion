@@ -130,12 +130,15 @@ primária e faz o próprio engine publicar `SendFieldGameAddPlayer`, sem sinteti
 movimento no supervisor.
 
 `CGame::StartGame` não recebe um modo P2P genérico. O caso `2` abre `TCP/IP Server`; o caso `4`
-constrói `CNetworkSession` com o endpoint recebido e entra como `TCP/IP Client`. O host escolhe
-agora `2` apenas quando `FieldInfo::IsMasterSlot()` confirma que seu seat é o master; nos demais
-seats usa `4`. Isso eliminou o acesso inválido causado por um segundo seat tentando abrir outra
-sessão server. O fixture TCP comprova ready/start e falha de join controlada, mas não pode validar
-o primeiro `0x4B` porque não implementa o host P2P do engine. Esse gate exige uma sala cujo master
-seja um cliente Rakion real.
+constrói `CNetworkSession` com o endpoint recebido e entra como `TCP/IP Client`. Neste rollout, o
+BotHost é exclusivamente um segundo cliente controlado: só inicia o engine no caso `4`, depois de
+`FieldInfo::IsMasterSlot()` confirmar que existe outro master. Se for promovido, falha fechado em
+vez de abrir uma sessão server incompleta. Isso eliminou o acesso inválido causado por um segundo
+seat tentando abrir outra sessão server.
+
+O fixture TCP comprova ready/start e falha de join controlada, mas não pode validar o primeiro
+`0x4B`: ele não implementa o host P2P do engine e deixa o placeholder `serveraddress:0`. Esse gate
+exige uma sala cujo master seja um cliente Rakion real.
 
 Fontes adicionais só podem ser criadas depois que a fonte primária possuir personagem e sessão
 válidos; chamar `AddPlayer_t` antes desse ponto não é um caminho seguro. O próximo gate é iniciar a
