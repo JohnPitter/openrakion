@@ -79,10 +79,21 @@ namespace RakionServer.World.Tests
                 10, new BotVector(100, 0, 250), MathF.PI / 2, 8);
 
             Assert.NotEqual(0, BinaryPrimitives.ReadInt16LittleEndian(packet.AsSpan(17)));
-            Assert.Equal(90, BinaryPrimitives.ReadInt16LittleEndian(packet.AsSpan(17)));
+            Assert.Equal(-90, BinaryPrimitives.ReadInt16LittleEndian(packet.AsSpan(17)));
             Assert.Equal(0, BinaryPrimitives.ReadInt16LittleEndian(packet.AsSpan(20)));
             Assert.Equal(0, BinaryPrimitives.ReadInt16LittleEndian(packet.AsSpan(22)));
             Assert.Equal(0, BinaryPrimitives.ReadInt16LittleEndian(packet.AsSpan(24)));
+        }
+
+        [Fact]
+        public void TryReadPose_ConvertsCapturedWireHeadingToVisualFacing()
+        {
+            byte[] packet = BotMovement.SynthesizeMove(
+                10, BotVector.Zero, 0f, sequence: 9);
+
+            Assert.Equal(180, BinaryPrimitives.ReadInt16LittleEndian(packet.AsSpan(17)));
+            Assert.True(BotMovement.TryReadPose(packet, out _, out float heading));
+            Assert.InRange(heading, -0.001f, 0.001f);
         }
 
         [Fact]

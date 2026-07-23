@@ -12,6 +12,7 @@ namespace RakionServer.World.Domain
     public sealed class BotPlayer
     {
         public const int DamageReactionMs = 1800;
+        public const int LocomotionRefreshMs = 1200;
         public string Name { get; init; } = "";
         public byte Level { get; init; } = 1;
         public byte CharClass { get; init; } = 1;
@@ -39,6 +40,7 @@ namespace RakionServer.World.Domain
         public long RespawnAtMs { get; private set; }
         private byte _attackVariant;
         private bool _isMoving;
+        private long _nextLocomotionRefreshMs;
 
         /// <summary>HP inicial derivado de level/classe (curva simples; server-authoritative p/ o bot).</summary>
         public void InitHealth(byte level)
@@ -71,6 +73,7 @@ namespace RakionServer.World.Domain
             HitReactionUntilMs = nowMs + DamageReactionMs;
             Velocity = BotVector.Zero;
             _isMoving = false;
+            _nextLocomotionRefreshMs = 0;
             TargetSeat = Field.NoSeat;
             NextAttackReadyMs = Math.Max(NextAttackReadyMs, HitReactionUntilMs);
             _targetVelocityEma = BotVector.Zero;
@@ -91,11 +94,12 @@ namespace RakionServer.World.Domain
             return variant;
         }
 
-        public bool TryChangeLocomotion(bool moving, out bool current)
+        public bool ShouldPublishLocomotion(bool moving, long nowMs)
         {
-            current = moving;
-            if (_isMoving == moving) return false;
+            bool changed = _isMoving != moving;
             _isMoving = moving;
+            if (!changed && (!moving || nowMs < _nextLocomotionRefreshMs)) return false;
+            _nextLocomotionRefreshMs = moving ? nowMs + LocomotionRefreshMs : 0;
             return true;
         }
 
@@ -116,6 +120,7 @@ namespace RakionServer.World.Domain
             HitReactionUntilMs = 0;
             _attackVariant = 0;
             _isMoving = false;
+            _nextLocomotionRefreshMs = 0;
             LastAttackerSeat = Field.NoSeat;
             LastAttackerHitSequence = 0;
             _targetVelocityEma = BotVector.Zero;
@@ -139,6 +144,7 @@ namespace RakionServer.World.Domain
             RespawnAtMs = 0;
             _attackVariant = 0;
             _isMoving = false;
+            _nextLocomotionRefreshMs = 0;
             LastAttackerSeat = Field.NoSeat;
             LastAttackerHitSequence = 0;
             _targetVelocityEma = BotVector.Zero;

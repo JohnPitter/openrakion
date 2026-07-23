@@ -272,6 +272,9 @@ A captura do produtor v258 fecha ainda dois contratos usados pelo bot sintético
 
 - locomoção remota não nasce do `actionCode` de `0x030A`, que permaneceu zero; ela usa
   `kind=0`, com `01=Stand`, `04=MoveForward`, `0C=Jump` e `0E=Rise`;
+- durante `MoveForward`, o vetor de deslocamento observado aponta para `heading wire ± 180°`.
+  Portanto, o heading do domínio deve ser invertido no codec; usar o valor wire diretamente também
+  inverte o cone frontal de validação de melee;
 - a reação de dano observada usa `kind=2` e argumentos `0F 07 <attackerSeat>`. Em particular,
   vítima seat 0 atingida pelo seat 1 produziu `00 02 0F 07 01`, e a direção inversa produziu
   `01 02 0F 07 00`.

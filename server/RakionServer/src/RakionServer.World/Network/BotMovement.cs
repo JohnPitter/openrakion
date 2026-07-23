@@ -157,7 +157,7 @@ namespace RakionServer.World.Network
                 BinaryPrimitives.ReadInt16LittleEndian(packet[13..]),
                 BinaryPrimitives.ReadInt16LittleEndian(packet[15..]));
             short degrees = BinaryPrimitives.ReadInt16LittleEndian(packet[17..]);
-            heading = degrees * MathF.PI / 180f;
+            heading = NormalizeRadians(degrees * MathF.PI / 180f + MathF.PI);
             return true;
         }
 
@@ -172,10 +172,17 @@ namespace RakionServer.World.Network
 
         private static short HeadingToWire(float radians)
         {
-            float degrees = radians * 180f / MathF.PI;
+            float degrees = (radians + MathF.PI) * 180f / MathF.PI;
             while (degrees > 180f) degrees -= 360f;
             while (degrees < -180f) degrees += 360f;
             return (short)MathF.Round(degrees);
+        }
+
+        private static float NormalizeRadians(float radians)
+        {
+            while (radians > MathF.PI) radians -= 2f * MathF.PI;
+            while (radians < -MathF.PI) radians += 2f * MathF.PI;
+            return radians;
         }
     }
 }

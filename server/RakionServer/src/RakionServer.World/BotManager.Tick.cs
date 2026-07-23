@@ -45,9 +45,9 @@ namespace RakionServer.World
                     Broadcast(field, send, move);
                     Broadcast(field, send, BotMovement.SynthesizeKeystate(
                         (byte)botRec.Slot, ++bot.MoveSeq, moving));
-                    if (bot.TryChangeLocomotion(moving, out bool locomotionMoving))
+                    if (bot.ShouldPublishLocomotion(moving, now))
                     {
-                        PlayerNormalAnimation animation = locomotionMoving
+                        PlayerNormalAnimation animation = moving
                             ? PlayerNormalAnimation.MoveForward
                             : PlayerNormalAnimation.Stand;
                         Broadcast(field, send, BotMovement.SynthesizeNormalAnimation(

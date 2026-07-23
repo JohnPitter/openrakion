@@ -83,12 +83,12 @@ namespace RakionServer.World.Tests
         {
             var bot = new BotPlayer();
 
-            Assert.False(bot.TryChangeLocomotion(false, out _));
-            Assert.True(bot.TryChangeLocomotion(true, out bool moving));
-            Assert.True(moving);
-            Assert.False(bot.TryChangeLocomotion(true, out _));
-            Assert.True(bot.TryChangeLocomotion(false, out moving));
-            Assert.False(moving);
+            Assert.False(bot.ShouldPublishLocomotion(false, 1000));
+            Assert.True(bot.ShouldPublishLocomotion(true, 1000));
+            Assert.False(bot.ShouldPublishLocomotion(true, 2199));
+            Assert.True(bot.ShouldPublishLocomotion(true, 2200));
+            Assert.True(bot.ShouldPublishLocomotion(false, 2201));
+            Assert.False(bot.ShouldPublishLocomotion(false, 5000));
         }
     }
 }

@@ -74,7 +74,9 @@ O RE de `CPlayerSource::SendAction @ engine.dll+0x103940` e
 - o receiver reconhece 32 valores de `ePlayerAction`, mas o produtor v258 grava explicitamente
   `actionCode=0` em `CPlayerSource::SendAction`. Locomoção não deve ser inventada nesse byte;
 - `0x030A+17` é o heading absoluto nativo em graus inteiros. Não é um ângulo normalizado para toda
-  a faixa de `i16`. O domínio mantém radianos e converte radianos↔graus somente na borda do codec;
+  a faixa de `i16`. A frente visual do modelo é o vetor oposto ao ângulo wire: nas capturas em que
+  `MoveForward` estava ativo, o deslocamento ficou concentrado em `heading ± 180°`. O codec aplica
+  essa inversão na entrada e na saída; o domínio continua trabalhando com a direção visual real;
 - `0x030A+20/+22/+24` são deltas acumuláveis de câmera e permanecem zerados no bot;
 - o snapshot idle capturado de `0x030F` termina em `00 03`; o de caminhada termina em `00 01`.
   Inverter esses dois bytes impede o animator remoto de entrar no estado correto.
@@ -95,6 +97,10 @@ O switch `ExecNormalAnim @ 0x3513E570` e duas capturas reais fecharam os IDs usa
 
 O valor `0D` não possui case no switch dessa build. Queda/dano não deve ser simulada com esse ID:
 ela entra por `0x0311 kind=Damage`, cujo payload humano observado foi `0F 07 <attackerSeat>`.
+
+`MoveForward` também não é um comando permanente. Nas capturas humanas ele reaparece durante a
+caminhada, normalmente a cada 1–1,5 s. O World o renova a cada 1,2 s enquanto há velocidade e
+publica `Stand` ao parar; emitir só na primeira transição deixa a animação acabar e o avatar deslizar.
 
 Antes de cada reação de dano, o servidor publica `0x030A`, `0x030F` e `Stand`. O tick de
 IA fica suspenso durante a queda; morto também não produz ação até o respawn. Assim, movimento
@@ -141,8 +147,9 @@ e [anúncio da Croteam](https://www.croteam.com/serious-sam-source-code-released
 ## Estado de validação
 
 Build e testes automatizados validam protocolo e regra de negócio. Em 22/07/2026, o RE corrigiu o
-estado `Attack` indevido no movimento, heading em escala errada, bytes invertidos do `0x030F`,
-locomoção sem `MoveForward` e reação genérica no lugar do payload humano `0F 07 <attackerSeat>`.
+estado `Attack` indevido no movimento, heading em escala e eixo errados, bytes invertidos do
+`0x030F`, renovação ausente de `MoveForward` e reação genérica no lugar do payload humano
+`0F 07 <attackerSeat>`.
 O gate final permanece visual:
 confirmar no cliente gráfico que cada golpe frontal próximo reduz HP, que a queda interrompe a
 perseguição, que o bot morre uma vez, incrementa um kill e só volta a andar após o respawn.
