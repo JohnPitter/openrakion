@@ -121,13 +121,21 @@ peer já não bloqueia a partida por falta de ready.
 A resposta de start constrói o estado `Play Game`, mas três chamadas consecutivas tentavam carregar
 somente texturas de UI sem subsistema gráfico. O caminho headless valida e omite essas três chamadas,
 preservando o restante do construtor: inicialização de sessão, MD5 e transição de estado. Depois
-disso, o processo permaneceu vivo e enviou `SendFieldGameEnter`; o World publicou `0x45
-[status=0][seat=2]`, confirmando a entrada lógica.
+disso, o processo permaneceu vivo.
 
-Esse `0x45` ainda não equivale ao primeiro snapshot de movimento `0x4B`. O
-`CNetworkLibrary::GetLocalPlayerCount` continua em zero, portanto mapa, fonte local primária e
-combate ainda não estão validados. O próximo gate é obter do engine o blob inicial de 72 bytes e
-publicá-lo por `SendFieldGameAddPlayer`, sem sintetizar estado de movimento no supervisor.
+O cliente gráfico v258 não usa `SendFieldGameEnter` nessa transição. O fluxo canônico é
+`0x43 → request 0x48 → primeiro 0x4B`; o host segue agora esse mesmo caminho por
+`SendFieldGameRoundStart`. O próximo gate é confirmar que a resposta `0x48` cria a fonte local
+primária e faz o próprio engine publicar `SendFieldGameAddPlayer`, sem sintetizar estado de
+movimento no supervisor.
+
+`CGame::StartGame` não recebe um modo P2P genérico. O caso `2` abre `TCP/IP Server`; o caso `4`
+constrói `CNetworkSession` com o endpoint recebido e entra como `TCP/IP Client`. O host escolhe
+agora `2` apenas quando `FieldInfo::IsMasterSlot()` confirma que seu seat é o master; nos demais
+seats usa `4`. Isso eliminou o acesso inválido causado por um segundo seat tentando abrir outra
+sessão server. O fixture TCP comprova ready/start e falha de join controlada, mas não pode validar
+o primeiro `0x4B` porque não implementa o host P2P do engine. Esse gate exige uma sala cujo master
+seja um cliente Rakion real.
 
 Fontes adicionais só podem ser criadas depois que a fonte primária possuir personagem e sessão
 válidos; chamar `AddPlayer_t` antes desse ponto não é um caminho seguro. O próximo gate é iniciar a

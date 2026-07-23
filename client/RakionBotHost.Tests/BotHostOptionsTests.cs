@@ -13,13 +13,15 @@ public sealed class BotHostOptionsTests
         string root = Path.Combine(Path.GetTempPath(), "Rakion Original");
 
         BotHostOptions options = BotHostOptions.Parse(
-            ["--client-root", root, "--user", "bot_host", "--field", "7"]);
+            ["--client-root", root, "--user", "bot_host", "--field", "7",
+                "--world", "LevelsSV/Cage/Cage.wld"]);
 
         Assert.Equal(Path.GetFullPath(root), options.ClientRoot);
         Assert.Equal("bot_host", options.User);
         Assert.Equal("secret", options.Credential);
         Assert.Equal("1A", options.ServerId);
         Assert.Equal(7, options.FieldId);
+        Assert.Equal(@"LevelsSV\Cage\Cage.wld", options.WorldName);
     }
 
     [Fact]
@@ -29,7 +31,8 @@ public sealed class BotHostOptionsTests
             BotHostOptions.CredentialVariable, null);
 
         Assert.Throws<InvalidOperationException>(() => BotHostOptions.Parse(
-            ["--client-root", "client", "--user", "bot_host", "--field", "7"]));
+            ["--client-root", "client", "--user", "bot_host", "--field", "7",
+                "--world", @"LevelsSV\Cage\Cage.wld"]));
     }
 
     [Fact]
@@ -39,7 +42,19 @@ public sealed class BotHostOptionsTests
             BotHostOptions.CredentialVariable, "secret");
 
         Assert.Throws<ArgumentException>(() => BotHostOptions.Parse(
-            ["--client-root", "client", "--user", "bot_host", "--field", "0"]));
+            ["--client-root", "client", "--user", "bot_host", "--field", "0",
+                "--world", @"LevelsSV\Cage\Cage.wld"]));
+    }
+
+    [Fact]
+    public void Parse_RejectsWorldOutsideLevelArchive()
+    {
+        using var credential = new EnvironmentVariableScope(
+            BotHostOptions.CredentialVariable, "secret");
+
+        Assert.Throws<ArgumentException>(() => BotHostOptions.Parse(
+            ["--client-root", "client", "--user", "bot_host", "--field", "7",
+                "--world", @"..\Cage.wld"]));
     }
 
     [Fact]

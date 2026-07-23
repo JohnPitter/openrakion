@@ -50,7 +50,8 @@ internal static class Program
         {
             ["OPENRAKION_HEADLESS"] = "1",
             ["OPENRAKION_HEADLESS_FIELD"] = options.FieldId.ToString(
-                System.Globalization.CultureInfo.InvariantCulture)
+                System.Globalization.CultureInfo.InvariantCulture),
+            [BotHostOptions.WorldVariable] = options.WorldName
         };
         var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {

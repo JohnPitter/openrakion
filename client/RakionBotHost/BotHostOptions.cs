@@ -1,10 +1,12 @@
 namespace RakionBotHost;
 
 internal sealed record BotHostOptions(
-    string ClientRoot, string User, string Credential, string ServerId, int FieldId)
+    string ClientRoot, string User, string Credential, string ServerId, int FieldId,
+    string WorldName)
 {
     internal const string ClientRootVariable = "RAKION_CLIENT_ROOT";
     internal const string CredentialVariable = "OPENRAKION_BOT_CREDENTIAL";
+    internal const string WorldVariable = "OPENRAKION_HEADLESS_WORLD";
 
     public static BotHostOptions Parse(string[] args)
     {
@@ -18,15 +20,17 @@ internal sealed record BotHostOptions(
         string server = Read(values, "server", "1A");
         if (!int.TryParse(Read(values, "field"), out int fieldId) || fieldId <= 0)
             throw new ArgumentException("--field deve ser um inteiro positivo.");
+        string worldName = ReadWorld(Read(values, "world"));
         return new BotHostOptions(
-            Path.GetFullPath(clientRoot), user, credential, server, fieldId);
+            Path.GetFullPath(clientRoot), user, credential, server, fieldId, worldName);
     }
 
     private static Dictionary<string, string> ParsePairs(string[] args)
     {
         if (args.Length == 0 || args.Length % 2 != 0)
             throw new ArgumentException(
-                "uso: RakionBotHost --client-root <dir> --user <id> --field <id> [--server <id>]");
+                "uso: RakionBotHost --client-root <dir> --user <id> --field <id> " +
+                "--world <LevelsSV\\...\\map.wld> [--server <id>]");
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         for (int index = 0; index < args.Length; index += 2)
         {
@@ -57,5 +61,16 @@ internal sealed record BotHostOptions(
         if (string.IsNullOrWhiteSpace(value))
             throw new ArgumentException($"--{name} ausente ou inválido.");
         return value;
+    }
+
+    private static string ReadWorld(string value)
+    {
+        string normalized = value.Replace('/', '\\');
+        if (!normalized.StartsWith("LevelsSV\\", StringComparison.OrdinalIgnoreCase) ||
+            !normalized.EndsWith(".wld", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("..", StringComparison.Ordinal) ||
+            Path.IsPathRooted(normalized))
+            throw new ArgumentException("--world deve apontar para LevelsSV\\...\\map.wld.");
+        return normalized;
     }
 }

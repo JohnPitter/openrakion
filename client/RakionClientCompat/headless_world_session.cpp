@@ -3,6 +3,7 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <utility>
 #include <vector>
@@ -26,27 +27,53 @@ constexpr char FieldEnterSymbol[] =
     "?SendFieldEnter@IScavengerWorldNet@@UAEXGPAD@Z";
 constexpr char FieldReadySymbol[] =
     "?SendFieldReady@IScavengerWorldNet@@UAEXE@Z";
-constexpr char FieldInfoSymbol[] =
-    "?GetFieldInfo@IScavengerWorldNet@@UAEPAVFieldInfo@@XZ";
 constexpr char FieldPlayingSymbol[] =
     "?IsGamePlaying@FieldInfo@@QAEHXZ";
-constexpr char FieldGameEnterSymbol[] =
-    "?SendFieldGameEnter@IScavengerWorldNet@@UAEXXZ";
+constexpr char FieldMasterSymbol[] =
+    "?IsMasterSlot@FieldInfo@@QAEHXZ";
+constexpr char FieldRoundStartSymbol[] =
+    "?SendFieldGameRoundStart@IScavengerWorldNet@@UAEXXZ";
 constexpr char FieldVariable[] = "OPENRAKION_HEADLESS_FIELD";
+constexpr char WorldVariable[] = "OPENRAKION_HEADLESS_WORLD";
+constexpr char AssignStringSymbol[] = "??4CTString@@QAEAAV0@PBD@Z";
+constexpr char StringConstructorSymbol[] = "??0CTString@@QAE@PBD@Z";
+constexpr char StringDestructorSymbol[] = "??1CTString@@QAE@XZ";
+constexpr char PlayerConstructorSymbol[] =
+    "??0CPlayerCharacter@@QAE@ABVCTString@@0@Z";
+constexpr char PlayerDestructorSymbol[] = "??1CPlayerCharacter@@QAE@XZ";
 constexpr unsigned WorldPortNetworkOrder = 0x049f;
 constexpr unsigned char SkipHashVerification = 4;
 constexpr size_t AccountSlotCountOffset = 0x6c;
 constexpr size_t CharacterRecordsOffset = 0x1338;
 constexpr size_t CharacterRecordSize = 0x424;
+constexpr size_t CharacterRecordNameOffset = 0x10;
 constexpr unsigned char MaximumVisibleCharacters = 4;
 constexpr uintptr_t ApplicationPointerRva = 0xfeed0;
 constexpr size_t MenuStateOffset = 0x180;
+constexpr size_t GamePointerOffset = 0x198;
+constexpr size_t GameWorldNameOffset = 0x48;
+constexpr size_t GameSessionNameOffset = 0x54;
+constexpr size_t GamePlayerCharactersOffset = 0x130;
+constexpr size_t GameRequestedPlayerCountOffset = 0x478;
+constexpr size_t GamePrimaryPlayerIndexOffset = 0x4b8;
+constexpr size_t StartGameVtableOffset = 0x8c;
+constexpr size_t ApplicationServerWorldOffset = 0x64;
 constexpr int PlayGameMenuState = 0x1d;
+constexpr int PeerToPeerServerMode = 2;
+constexpr int PeerToPeerClientMode = 4;
 constexpr DWORD FieldEnterDelayMilliseconds = 1500;
 constexpr DWORD FieldReadyDelayMilliseconds = 1500;
+constexpr DWORD EngineStartDelayMilliseconds = 500;
+constexpr UINT StartEngineMessage = WM_APP + 0x271;
 volatile LONG SessionState{};
 volatile LONG CharacterReadyTick{};
 volatile LONG FieldEnterTick{};
+volatile LONG EngineStartTick{};
+volatile LONG EngineWaitingLogged{};
+volatile LONG EngineStartPending{};
+HWND GameWindow{};
+WNDPROC OriginalWindowProcedure{};
+char SelectedCharacterName[13]{};
 
 bool IsHeadlessRequested()
 {
@@ -99,6 +126,29 @@ void* GetWorld(HMODULE engine)
 {
     auto** world = reinterpret_cast<void**>(GetProcAddress(engine, WorldNetSymbol));
     return world ? *world : nullptr;
+}
+
+void* GetFieldInfo(void* world)
+{
+    if (!world) return nullptr;
+    using GetFieldInfoFn = void*(__thiscall*)(void*);
+    auto** vtable = *reinterpret_cast<void***>(world);
+    auto getField = vtable
+        ? reinterpret_cast<GetFieldInfoFn>(vtable[2]) : nullptr;
+    return getField ? getField(world) : nullptr;
+}
+
+int GetPeerToPeerMode()
+{
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    void* world = engine ? GetWorld(engine) : nullptr;
+    void* field = GetFieldInfo(world);
+    using IsMasterFn = int(__thiscall*)(void*);
+    auto isMaster = engine ? reinterpret_cast<IsMasterFn>(
+        GetProcAddress(engine, FieldMasterSymbol)) : nullptr;
+    if (!field || !isMaster) return 0;
+    return isMaster(field) != 0
+        ? PeerToPeerServerMode : PeerToPeerClientMode;
 }
 
 bool StartWorldSession()
@@ -170,12 +220,31 @@ int SelectFirstCharacter()
         auto* record = account + CharacterRecordsOffset + slot * CharacterRecordSize;
         const unsigned long characterId = *reinterpret_cast<unsigned long*>(record);
         if (characterId == 0) continue;
+        __try
+        {
+            size_t length{};
+            const char* name = reinterpret_cast<const char*>(
+                record + CharacterRecordNameOffset);
+            while (length < sizeof(SelectedCharacterName) - 1 &&
+                name[length] >= 0x20 && name[length] <= 0x7e)
+                ++length;
+            if (length == 0 || name[length] != '\0') continue;
+            memcpy(SelectedCharacterName, name, length);
+            SelectedCharacterName[length] = '\0';
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            continue;
+        }
         select(world, characterId);
-        CompatLog("headless World: primeiro personagem selecionado");
+        char message[96]{};
+        _snprintf_s(message, _countof(message), _TRUNCATE,
+            "headless World: primeiro personagem selecionado (%s)",
+            SelectedCharacterName);
+        CompatLog(message);
         return 1;
     }
-    CompatLog("headless World recusado: conta sem personagem");
-    return -1;
+    return 0;
 }
 
 bool IsCharacterReady()
@@ -239,28 +308,241 @@ bool IsFieldPlaying()
 
     HMODULE engine = GetModuleHandleW(L"engine.dll");
     void* world = engine ? GetWorld(engine) : nullptr;
-    using GetFieldInfoFn = void*(__thiscall*)(void*);
     using IsPlayingFn = int(__thiscall*)(void*);
-    auto getField = engine ? reinterpret_cast<GetFieldInfoFn>(
-        GetProcAddress(engine, FieldInfoSymbol)) : nullptr;
     auto isPlaying = engine ? reinterpret_cast<IsPlayingFn>(
         GetProcAddress(engine, FieldPlayingSymbol)) : nullptr;
-    if (!world || !getField || !isPlaying) return false;
-    void* field = getField(world);
+    if (!world || !isPlaying) return false;
+    void* field = GetFieldInfo(world);
     return field && isPlaying(field) != 0;
 }
 
-bool EnterFieldGame()
+bool RequestFieldRoundStart()
 {
     HMODULE engine = GetModuleHandleW(L"engine.dll");
     void* world = engine ? GetWorld(engine) : nullptr;
-    using GameEnterFn = void(__thiscall*)(void*);
-    auto enter = engine ? reinterpret_cast<GameEnterFn>(
-        GetProcAddress(engine, FieldGameEnterSymbol)) : nullptr;
-    if (!world || !enter) return false;
-    enter(world);
-    CompatLog("headless World: entrada na partida enviada");
+    using RoundStartFn = void(__thiscall*)(void*);
+    auto request = engine ? reinterpret_cast<RoundStartFn>(
+        GetProcAddress(engine, FieldRoundStartSymbol)) : nullptr;
+    if (!world || !request) return false;
+    request(world);
+    CompatLog("headless World: estado inicial do round solicitado");
     return true;
+}
+
+const char* ReadGameString(BYTE* game, size_t offset)
+{
+    auto** value = reinterpret_cast<const char**>(game + offset);
+    return value ? *value : nullptr;
+}
+
+bool IsValidWorldName(const char* value)
+{
+    if (!value || value[0] == '\0' || strlen(value) >= MAX_PATH) return false;
+    constexpr char Prefix[] = "LevelsSV\\";
+    constexpr char Suffix[] = ".wld";
+    const size_t length = strlen(value);
+    return _strnicmp(value, Prefix, sizeof(Prefix) - 1) == 0 &&
+        length > sizeof(Suffix) - 1 &&
+        _stricmp(value + length - (sizeof(Suffix) - 1), Suffix) == 0 &&
+        strstr(value, "..") == nullptr && strchr(value, ':') == nullptr;
+}
+
+bool AssignGameString(void* target, const char* value)
+{
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    using AssignStringFn = void*(__thiscall*)(void*, const char*);
+    auto assign = engine ? reinterpret_cast<AssignStringFn>(
+        GetProcAddress(engine, AssignStringSymbol)) : nullptr;
+    if (!assign || !value || value[0] == '\0') return false;
+    assign(target, value);
+    return true;
+}
+
+bool EnsureGameWorldName(BYTE* application, BYTE* game)
+{
+    const char* current = ReadGameString(game, GameWorldNameOffset);
+    if (current && current[0] != '\0') return true;
+
+    const char* fromApplication = ReadGameString(
+        application, ApplicationServerWorldOffset);
+    if (IsValidWorldName(fromApplication))
+        return AssignGameString(game + GameWorldNameOffset, fromApplication);
+
+    char configured[MAX_PATH]{};
+    const DWORD length = GetEnvironmentVariableA(
+        WorldVariable, configured, static_cast<DWORD>(sizeof(configured)));
+    if (length == 0 || length >= sizeof(configured) || !IsValidWorldName(configured))
+        return false;
+    return AssignGameString(game + GameWorldNameOffset, configured);
+}
+
+bool PrepareLocalPlayerCharacter(BYTE* game)
+{
+    if (SelectedCharacterName[0] == '\0') return false;
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    if (!engine) return false;
+
+    using StringConstructorFn = void*(__thiscall*)(void*, const char*);
+    using StringDestructorFn = void(__thiscall*)(void*);
+    using PlayerConstructorFn = void*(__thiscall*)(void*, const void*, const void*);
+    using PlayerDestructorFn = void(__thiscall*)(void*);
+    auto stringConstructor = reinterpret_cast<StringConstructorFn>(
+        GetProcAddress(engine, StringConstructorSymbol));
+    auto stringDestructor = reinterpret_cast<StringDestructorFn>(
+        GetProcAddress(engine, StringDestructorSymbol));
+    auto playerConstructor = reinterpret_cast<PlayerConstructorFn>(
+        GetProcAddress(engine, PlayerConstructorSymbol));
+    auto playerDestructor = reinterpret_cast<PlayerDestructorFn>(
+        GetProcAddress(engine, PlayerDestructorSymbol));
+    if (!stringConstructor || !stringDestructor ||
+        !playerConstructor || !playerDestructor)
+        return false;
+
+    void* name{};
+    void* species{};
+    stringConstructor(&name, SelectedCharacterName);
+    stringConstructor(&species, "Human");
+    BYTE* player = game + GamePlayerCharactersOffset;
+    playerDestructor(player);
+    playerConstructor(player, &name, &species);
+    stringDestructor(&species);
+    stringDestructor(&name);
+    CompatLog("headless engine: personagem local preparado");
+    return true;
+}
+
+bool StartFieldEngine()
+{
+    auto* image = reinterpret_cast<BYTE*>(GetModuleHandleW(nullptr));
+    auto** application = image ? reinterpret_cast<BYTE**>(
+        image + ApplicationPointerRva) : nullptr;
+    BYTE* game = application && *application
+        ? *reinterpret_cast<BYTE**>(*application + GamePointerOffset) : nullptr;
+    if (!game)
+    {
+        CompatLog("headless engine recusado: CGame indisponivel");
+        return false;
+    }
+
+    const char* worldName{};
+    const char* sessionName{};
+    const char* joinAddress{};
+    int playerIndex{-1};
+    int peerMode{};
+    using StartGameFn = int(__thiscall*)(void*, int);
+    StartGameFn startGame{};
+    __try
+    {
+        if (!EnsureGameWorldName(*application, game))
+        {
+            if (InterlockedCompareExchange(&EngineWaitingLogged, 1, 0) == 0)
+                CompatLog("headless engine aguardando mundo configurado");
+            return false;
+        }
+        worldName = ReadGameString(game, GameWorldNameOffset);
+        sessionName = ReadGameString(game, GameSessionNameOffset);
+        joinAddress = ReadGameString(game, GameSessionNameOffset + sizeof(void*));
+        playerIndex = *reinterpret_cast<int*>(
+            game + GamePrimaryPlayerIndexOffset);
+        peerMode = GetPeerToPeerMode();
+        if (!worldName || worldName[0] == '\0' ||
+            !sessionName || sessionName[0] == '\0' || playerIndex < 0 ||
+            peerMode == 0 ||
+            (peerMode == PeerToPeerClientMode &&
+                (!joinAddress || joinAddress[0] == '\0')))
+        {
+            if (InterlockedCompareExchange(&EngineWaitingLogged, 1, 0) == 0)
+                CompatLog("headless engine aguardando sessao e jogador local");
+            return false;
+        }
+        *reinterpret_cast<int*>(game + GameRequestedPlayerCountOffset) = 1;
+        *reinterpret_cast<int*>(game + GamePrimaryPlayerIndexOffset) = 0;
+        if (!PrepareLocalPlayerCharacter(game))
+        {
+            CompatLog("headless engine recusado: personagem local invalido");
+            return false;
+        }
+
+        auto** vtable = *reinterpret_cast<void***>(game);
+        startGame = reinterpret_cast<StartGameFn>(
+            vtable[StartGameVtableOffset / sizeof(void*)]);
+        if (!startGame)
+        {
+            CompatLog("headless engine recusado: vtable de CGame incompleta");
+            return false;
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        CompatLog("headless engine recusado: ABI de CGame incompatível");
+        return false;
+    }
+
+    if (startGame(game, peerMode) == 0)
+    {
+        CompatLog("headless engine recusado: CGame::StartGame falhou");
+        return false;
+    }
+
+    char message[256]{};
+    _snprintf_s(message, _countof(message), _TRUNCATE,
+        "headless engine iniciado: mode=%d world=%s session=%s playerIndex=%d",
+        peerMode, worldName, sessionName, playerIndex);
+    CompatLog(message);
+    return true;
+}
+
+LRESULT CALLBACK HeadlessWindowProcedure(
+    HWND window, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    if (message == StartEngineMessage)
+    {
+        const bool started = StartFieldEngine();
+        InterlockedExchange(&SessionState, started ? 12 : 13);
+        InterlockedExchange(&EngineStartPending, 0);
+        return 0;
+    }
+    return CallWindowProcA(
+        OriginalWindowProcedure, window, message, wParam, lParam);
+}
+
+BOOL CALLBACK FindProcessWindow(HWND window, LPARAM)
+{
+    DWORD processId{};
+    GetWindowThreadProcessId(window, &processId);
+    if (processId != GetCurrentProcessId()) return TRUE;
+    GameWindow = window;
+    return FALSE;
+}
+
+bool EnsureMainThreadDispatcher()
+{
+    if (GameWindow && OriginalWindowProcedure) return true;
+    GameWindow = nullptr;
+    EnumWindows(&FindProcessWindow, 0);
+    if (!GameWindow) return false;
+
+    SetLastError(ERROR_SUCCESS);
+    const LONG_PTR original = SetWindowLongPtrA(
+        GameWindow, GWLP_WNDPROC,
+        reinterpret_cast<LONG_PTR>(&HeadlessWindowProcedure));
+    if (original == 0 && GetLastError() != ERROR_SUCCESS)
+    {
+        GameWindow = nullptr;
+        return false;
+    }
+    OriginalWindowProcedure = reinterpret_cast<WNDPROC>(original);
+    CompatLog("headless engine: dispatcher da thread principal instalado");
+    return true;
+}
+
+bool QueueFieldEngineStart()
+{
+    if (!EnsureMainThreadDispatcher()) return false;
+    if (InterlockedCompareExchange(&EngineStartPending, 1, 0) != 0) return true;
+    if (PostMessageA(GameWindow, StartEngineMessage, 0, 0) != FALSE) return true;
+    InterlockedExchange(&EngineStartPending, 0);
+    return false;
 }
 }
 
@@ -311,6 +593,21 @@ void PollHeadlessWorldSession()
     }
     if (state == 8 && IsFieldPlaying())
     {
-        InterlockedExchange(&SessionState, EnterFieldGame() ? 10 : 9);
+        InterlockedExchange(&EngineStartTick, static_cast<LONG>(GetTickCount()));
+        InterlockedExchange(&SessionState, 10);
+        return;
+    }
+    if (state == 10)
+    {
+        const DWORD requestedAt = static_cast<DWORD>(
+            InterlockedCompareExchange(&EngineStartTick, 0, 0));
+        if (GetTickCount() - requestedAt < EngineStartDelayMilliseconds) return;
+        if (QueueFieldEngineStart()) InterlockedExchange(&SessionState, 11);
+        return;
+    }
+    if (state == 12)
+    {
+        InterlockedExchange(
+            &SessionState, RequestFieldRoundStart() ? 14 : 13);
     }
 }
