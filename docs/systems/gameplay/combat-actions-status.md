@@ -279,6 +279,10 @@ A captura do produtor v258 fecha ainda dois contratos usados pelo bot sintético
   vítima seat 0 atingida pelo seat 1 produziu `00 02 0F 07 01`, e a direção inversa produziu
   `01 02 0F 07 00`.
 
+A DLL deve chamar `ExecDamageAnim` com esses três argumentos; usar `(1,0,0)` não seleciona a
+mesma reação e não derruba o avatar. O contador HIT local usa a função exportada em `0x35153CE0`;
+o getter do jogador em `0x352B3630` é uma função direta, não um ponteiro armazenado nesse endereço.
+
 ## Controle TCP de morte e saída
 
 ### `0x4F` — morte reportada

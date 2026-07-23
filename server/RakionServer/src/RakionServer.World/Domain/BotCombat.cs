@@ -11,7 +11,7 @@ namespace RakionServer.World.Domain
     public static class BotCombat
     {
         /// <summary>Alcance de melee em unidades wire (i16 do 0x030A). Aproxima a hitbox do golpe.</summary>
-        public const float MeleeRangeWire = 600f;
+        public const float MeleeRangeWire = 250f;
         public const int MeleeAttackCooldownMs = 250;
         private const float FrontalDotThreshold = 0.258819f; // cos(75°)
 

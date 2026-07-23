@@ -27,7 +27,7 @@ cliente realmente fornece:
 - alcance, cone frontal, alvo mais próximo e cooldown antirrepetição.
 
 Esse contrato não transforma toda animação em dano: no máximo um bot inimigo é escolhido, precisa
-estar a até 600 unidades wire e dentro de um cone de 150 graus centrado no rumo do atacante. O
+estar a até 250 unidades wire e dentro de um cone de 150 graus centrado no rumo do atacante. O
 cooldown de 250 ms elimina emissões duplicadas do hook durante o mesmo golpe.
 
 ## Camadas
@@ -98,9 +98,9 @@ O switch `ExecNormalAnim @ 0x3513E570` e duas capturas reais fecharam os IDs usa
 O valor `0D` não possui case no switch dessa build. Queda/dano não deve ser simulada com esse ID:
 ela entra por `0x0311 kind=Damage`, cujo payload humano observado foi `0F 07 <attackerSeat>`.
 
-`MoveForward` também não é um comando permanente. Nas capturas humanas ele reaparece durante a
-caminhada, normalmente a cada 1–1,5 s. O World o renova a cada 1,2 s enquanto há velocidade e
-publica `Stand` ao parar; emitir só na primeira transição deixa a animação acabar e o avatar deslizar.
+`MoveForward` é publicado quando o bot passa de parado para andando, e `Stand` na transição
+inversa. A tentativa de renová-lo por timer foi descartada no gate visual porque reinicia e corta o
+ciclo no meio; as repetições vistas na captura humana correspondem a novos ciclos de input.
 
 Antes de cada reação de dano, o servidor publica `0x030A`, `0x030F` e `Stand`. O tick de
 IA fica suspenso durante a queda; morto também não produz ação até o respawn. Assim, movimento
@@ -148,7 +148,7 @@ e [anúncio da Croteam](https://www.croteam.com/serious-sam-source-code-released
 
 Build e testes automatizados validam protocolo e regra de negócio. Em 22/07/2026, o RE corrigiu o
 estado `Attack` indevido no movimento, heading em escala e eixo errados, bytes invertidos do
-`0x030F`, renovação ausente de `MoveForward` e reação genérica no lugar do payload humano
+`0x030F`, reinício indevido de `MoveForward` e reação genérica no lugar do payload humano
 `0F 07 <attackerSeat>`.
 O gate final permanece visual:
 confirmar no cliente gráfico que cada golpe frontal próximo reduz HP, que a queda interrompe a

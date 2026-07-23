@@ -56,7 +56,7 @@ namespace RakionServer.World.Tests
         {
             var match = Match();
             match.Attacker.Heading = MathF.PI / 2;
-            PlayerRec target = AddBot(match.Field, 1, new BotVector(300, 0, 0));
+            PlayerRec target = AddBot(match.Field, 1, new BotVector(200, 0, 0));
 
             Assert.True(BotCombat.TryResolveMeleeAttack(
                 match.Field, match.Attacker, 1000, 40, out BotCombat.BotHit hit));
@@ -89,6 +89,16 @@ namespace RakionServer.World.Tests
             Assert.True(BotCombat.TryResolveMeleeAttack(
                 match.Field, match.Attacker, 1250, 20, out _));
             Assert.Equal(target.Bot!.MaxHealth - 40, target.Bot.Health);
+        }
+
+        [Fact]
+        public void MeleeAttack_RejectsTargetOutsideVisualContactRange()
+        {
+            var match = Match();
+            AddBot(match.Field, 1, new BotVector(0, 0, 251));
+
+            Assert.False(BotCombat.TryResolveMeleeAttack(
+                match.Field, match.Attacker, 1000, 40, out _));
         }
 
         [Fact]

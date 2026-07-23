@@ -40,6 +40,7 @@ volatile LONG GroundSnapEnabled = 0;   // 1 só após verificar o prólogo de Fa
 volatile LONG DesiredLifecycleSequence[MaxPlayerSeats]{};
 volatile LONG DesiredDeadState[MaxPlayerSeats]{};
 volatile LONG DesiredDamageSequence[MaxPlayerSeats]{};
+volatile LONG DesiredDamageAttackerSeat[MaxPlayerSeats]{};
 volatile LONG DesiredLocalHitSequence[MaxPlayerSeats]{};
 volatile LONG AppliedLifecycleSequence[MaxPlayerSeats]{};
 volatile LONG AppliedDamageSequence[MaxPlayerSeats]{};
@@ -97,6 +98,7 @@ void LoadLifecycleSnapshot()
     LONG nextSequence[MaxPlayerSeats]{};
     LONG nextDeadState[MaxPlayerSeats]{};
     LONG nextDamageSequence[MaxPlayerSeats]{};
+    LONG nextDamageAttackerSeat[MaxPlayerSeats]{};
     LONG nextLocalHitSequence[MaxPlayerSeats]{};
     int seat{};
     int generation{};
@@ -112,6 +114,7 @@ void LoadLifecycleSnapshot()
         nextDeadState[seat] = dead == 0 ? 0 : 1;
         nextSequence[seat] = static_cast<LONG>(sequence);
         nextDamageSequence[seat] = static_cast<LONG>(damageSequence);
+        nextDamageAttackerSeat[seat] = attackerSeat;
         if (attackerSeat >= 0 && attackerSeat < MaxPlayerSeats)
         {
             LONG hitSequence = static_cast<LONG>(attackerHitSequence);
@@ -124,6 +127,7 @@ void LoadLifecycleSnapshot()
         InterlockedExchange(&DesiredDeadState[index], nextDeadState[index]);
         InterlockedExchange(&DesiredLifecycleSequence[index], nextSequence[index]);
         InterlockedExchange(&DesiredDamageSequence[index], nextDamageSequence[index]);
+        InterlockedExchange(&DesiredDamageAttackerSeat[index], nextDamageAttackerSeat[index]);
         InterlockedExchange(&DesiredLocalHitSequence[index], nextLocalHitSequence[index]);
     }
 }
@@ -180,7 +184,7 @@ void __stdcall ApplyLifecycleOnGameThread(void* player)
         if (desiredHit != 0 && desiredHit != appliedHit)
         {
             using LocalPlayerFn = void*(__cdecl*)();
-            auto localPlayer = *reinterpret_cast<LocalPlayerFn*>(LocalPlayerGetterAddress);
+            auto localPlayer = reinterpret_cast<LocalPlayerFn>(LocalPlayerGetterAddress);
             if (localPlayer && localPlayer() == player)
             {
                 using AddHitCountFn = void(__thiscall*)(void*, int);
@@ -222,7 +226,10 @@ void __stdcall ApplyLifecycleOnGameThread(void* player)
         if (dead == 0 && desiredDamage != 0 && desiredDamage != appliedDamage)
         {
             using DamageAnimFn = void(__thiscall*)(void*, long, long, int);
-            reinterpret_cast<DamageAnimFn>(ExecDamageAnimAddress)(player, 1, 0, 0);
+            int attackerSeat = InterlockedCompareExchange(
+                &DesiredDamageAttackerSeat[seat], 0, 0);
+            reinterpret_cast<DamageAnimFn>(ExecDamageAnimAddress)(
+                player, 0x0f, 0x07, attackerSeat);
             InterlockedExchange(&AppliedDamageSequence[seat], desiredDamage);
         }
     }
