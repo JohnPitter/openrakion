@@ -26,6 +26,12 @@ constexpr char FieldEnterSymbol[] =
     "?SendFieldEnter@IScavengerWorldNet@@UAEXGPAD@Z";
 constexpr char FieldReadySymbol[] =
     "?SendFieldReady@IScavengerWorldNet@@UAEXE@Z";
+constexpr char FieldInfoSymbol[] =
+    "?GetFieldInfo@IScavengerWorldNet@@UAEPAVFieldInfo@@XZ";
+constexpr char FieldPlayingSymbol[] =
+    "?IsGamePlaying@FieldInfo@@QAEHXZ";
+constexpr char FieldGameEnterSymbol[] =
+    "?SendFieldGameEnter@IScavengerWorldNet@@UAEXXZ";
 constexpr char FieldVariable[] = "OPENRAKION_HEADLESS_FIELD";
 constexpr unsigned WorldPortNetworkOrder = 0x049f;
 constexpr unsigned char SkipHashVerification = 4;
@@ -33,6 +39,9 @@ constexpr size_t AccountSlotCountOffset = 0x6c;
 constexpr size_t CharacterRecordsOffset = 0x1338;
 constexpr size_t CharacterRecordSize = 0x424;
 constexpr unsigned char MaximumVisibleCharacters = 4;
+constexpr uintptr_t ApplicationPointerRva = 0xfeed0;
+constexpr size_t MenuStateOffset = 0x180;
+constexpr int PlayGameMenuState = 0x1d;
 constexpr DWORD FieldEnterDelayMilliseconds = 1500;
 constexpr DWORD FieldReadyDelayMilliseconds = 1500;
 volatile LONG SessionState{};
@@ -218,6 +227,41 @@ bool SetFieldReady()
     CompatLog("headless World: estado ready enviado");
     return true;
 }
+
+bool IsFieldPlaying()
+{
+    auto* image = reinterpret_cast<BYTE*>(GetModuleHandleW(nullptr));
+    auto** application = image ? reinterpret_cast<BYTE**>(
+        image + ApplicationPointerRva) : nullptr;
+    if (application && *application &&
+        *reinterpret_cast<int*>(*application + MenuStateOffset) == PlayGameMenuState)
+        return true;
+
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    void* world = engine ? GetWorld(engine) : nullptr;
+    using GetFieldInfoFn = void*(__thiscall*)(void*);
+    using IsPlayingFn = int(__thiscall*)(void*);
+    auto getField = engine ? reinterpret_cast<GetFieldInfoFn>(
+        GetProcAddress(engine, FieldInfoSymbol)) : nullptr;
+    auto isPlaying = engine ? reinterpret_cast<IsPlayingFn>(
+        GetProcAddress(engine, FieldPlayingSymbol)) : nullptr;
+    if (!world || !getField || !isPlaying) return false;
+    void* field = getField(world);
+    return field && isPlaying(field) != 0;
+}
+
+bool EnterFieldGame()
+{
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    void* world = engine ? GetWorld(engine) : nullptr;
+    using GameEnterFn = void(__thiscall*)(void*);
+    auto enter = engine ? reinterpret_cast<GameEnterFn>(
+        GetProcAddress(engine, FieldGameEnterSymbol)) : nullptr;
+    if (!world || !enter) return false;
+    enter(world);
+    CompatLog("headless World: entrada na partida enviada");
+    return true;
+}
 }
 
 void PollHeadlessWorldSession()
@@ -263,5 +307,10 @@ void PollHeadlessWorldSession()
             InterlockedCompareExchange(&FieldEnterTick, 0, 0));
         if (GetTickCount() - enteredAt < FieldReadyDelayMilliseconds) return;
         InterlockedExchange(&SessionState, SetFieldReady() ? 8 : 7);
+        return;
+    }
+    if (state == 8 && IsFieldPlaying())
+    {
+        InterlockedExchange(&SessionState, EnterFieldGame() ? 10 : 9);
     }
 }

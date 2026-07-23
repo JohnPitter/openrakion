@@ -116,9 +116,18 @@ carregado, fonte local ou combate.
 
 Depois da entrada, o host envia `IScavengerWorldNet::SendFieldReady(1)`. Um master controlado
 recebeu a publicação `0x3D` do segundo jogador e o World aceitou o start com `0x43 00 00`; assim, o
-peer já não bloqueia a partida por falta de ready. A resposta de start ainda alcança um segundo
-trecho visual incompatível com dedicated e encerra o processo com `0xC0000005`. Portanto, ready está
-validado, mas carregamento do mapa continua sendo o próximo gate.
+peer já não bloqueia a partida por falta de ready.
+
+A resposta de start constrói o estado `Play Game`, mas três chamadas consecutivas tentavam carregar
+somente texturas de UI sem subsistema gráfico. O caminho headless valida e omite essas três chamadas,
+preservando o restante do construtor: inicialização de sessão, MD5 e transição de estado. Depois
+disso, o processo permaneceu vivo e enviou `SendFieldGameEnter`; o World publicou `0x45
+[status=0][seat=2]`, confirmando a entrada lógica.
+
+Esse `0x45` ainda não equivale ao primeiro snapshot de movimento `0x4B`. O
+`CNetworkLibrary::GetLocalPlayerCount` continua em zero, portanto mapa, fonte local primária e
+combate ainda não estão validados. O próximo gate é obter do engine o blob inicial de 72 bytes e
+publicá-lo por `SendFieldGameAddPlayer`, sem sintetizar estado de movimento no supervisor.
 
 Fontes adicionais só podem ser criadas depois que a fonte primária possuir personagem e sessão
 válidos; chamar `AddPlayer_t` antes desse ponto não é um caminho seguro. O próximo gate é iniciar a
