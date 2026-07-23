@@ -1,7 +1,5 @@
-using System.Collections;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
-using System.Text;
+using RakionClientRuntime;
 
 namespace RakionLauncher;
 
@@ -15,26 +13,6 @@ internal static class GameLauncher
 {
     public const string GameProcess = "rakion.exe";
 
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct STARTUPINFO
-    {
-        public int cb; public string? Reserved, Desktop, Title;
-        public int X, Y, XSize, YSize, XCountChars, YCountChars, FillAttribute, Flags;
-        public short ShowWindow, Reserved2; public IntPtr Reserved3, StdInput, StdOutput, StdError;
-    }
-    [StructLayout(LayoutKind.Sequential)] private struct PROCESS_INFORMATION { public IntPtr hProcess, hThread; public int dwProcessId, dwThreadId; }
-
-    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern bool CreateProcess(string? app, StringBuilder cmd, IntPtr pa, IntPtr ta, bool inherit,
-        uint flags, IntPtr env, string? cwd, ref STARTUPINFO si, out PROCESS_INFORMATION pi);
-    [DllImport("kernel32.dll", SetLastError = true)] private static extern uint ResumeThread(IntPtr hThread);
-    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool CloseHandle(IntPtr h);
-
-    private const uint CreateSuspended = 0x00000004;
-    private const uint CreateUnicodeEnvironment = 0x00000400;
-    private const string CompatibilityLayer = "__COMPAT_LAYER";
-    private const string RunAsInvoker = "RunAsInvoker";
-
     /// <summary>Lança rakion.exe SUSPENSO (argv[0]=user) enquanto o launcher conclui o bootstrap.
     /// A version.dll de compatibilidade é carregada pelo loader antes do entry point e aplica os patches.
     /// Devolve o PID e o handle da thread primária — chame <see cref="Resume"/> ao terminar.</summary>
@@ -46,32 +24,14 @@ internal static class GameLauncher
         ValidateToken(hexPass, nameof(hexPass));
         ValidateToken(serverId, nameof(serverId));
 
-        var cmd = new StringBuilder($"{user} {hexPass} {serverId}");
-        var si = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>() };
-        IntPtr environment = Marshal.StringToHGlobalUni(BuildEnvironmentBlock());
-        try
-        {
-            uint flags = CreateSuspended | CreateUnicodeEnvironment;
-            if (!CreateProcess(exe, cmd, IntPtr.Zero, IntPtr.Zero, false, flags,
-                               environment, binDir, ref si, out var pi))
-                throw new InvalidOperationException(
-                    $"CreateProcess falhou (err {Marshal.GetLastWin32Error()})");
-            CloseHandle(pi.hProcess);
-            return (pi.dwProcessId, pi.hThread);
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(environment);
-        }
+        SuspendedClientProcess process = LegacyClientProcess.StartSuspended(
+            new LegacyClientStartOptions(exe, binDir, [user, hexPass, serverId]));
+        return (process.ProcessId, process.PrimaryThread);
     }
 
     internal static string BuildEnvironmentBlock()
     {
-        var values = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (DictionaryEntry entry in Environment.GetEnvironmentVariables())
-            values[(string)entry.Key] = (string?)entry.Value ?? string.Empty;
-        values[CompatibilityLayer] = RunAsInvoker;
-        return string.Join('\0', values.Select(pair => $"{pair.Key}={pair.Value}")) + "\0";
+        return LegacyClientProcess.BuildEnvironmentBlock();
     }
 
     private static void ValidateToken(string value, string parameter)
@@ -81,10 +41,11 @@ internal static class GameLauncher
     }
 
     /// <summary>Resume a thread primária do jogo (depois de aplicado o patch) e fecha o handle.</summary>
-    public static void Resume(IntPtr hThread) { ResumeThread(hThread); CloseHandle(hThread); }
+    public static void Resume(IntPtr hThread) =>
+        LegacyClientProcess.Resume(new SuspendedClientProcess(0, hThread));
 
     /// <summary>Converte a senha em hex ASCII (o esquema que o cliente/world esperam no argv[1]).</summary>
-    public static string HexPass(string pass) => Convert.ToHexString(Encoding.ASCII.GetBytes(pass)).ToLowerInvariant();
+    public static string HexPass(string pass) => LegacyClientCredentials.EncodeAsciiHex(pass);
 
     public static int CountRunning(string binDir)
     {

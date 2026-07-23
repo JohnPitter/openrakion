@@ -34,6 +34,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\RakionClientRuntime\RakionClientRuntime.csproj" />
     <ProjectReference Include="..\..\server\RakionServer\src\RakionServer.Common\RakionServer.Common.csproj" />
   </ItemGroup>
 

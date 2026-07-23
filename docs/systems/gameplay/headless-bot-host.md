@@ -40,9 +40,33 @@ criação das fontes adicionais, associação fonte-seat, entrada automática no
 ações. Um processo iniciar com a flag não significa que o combate multippeer esteja validado.
 
 O smoke local confirmou a mensagem `headless ativado antes do entry point
-(_bDedicatedServer=1)` e o processo permaneceu vivo. A aplicação ainda criou uma janela principal,
-portanto o primeiro gate está parcial: o modo dedicated do engine foi ativado, mas o supervisor
-ainda precisa ocultar a janela do shell e comprovar que nenhum dispositivo gráfico foi aberto.
+(_bDedicatedServer=1)` e o processo permaneceu vivo. A inspeção dos módulos carregados não encontrou
+`d3d`, `ddraw`, `dxgi` nem `opengl`. A aplicação ainda cria uma janela de shell, que o
+`RakionBotHost` oculta assim que o handle aparece.
+
+## Supervisor
+
+`client/RakionBotHost` inicia o cliente suspenso com a linha de comando especial do Rakion, define
+`OPENRAKION_HEADLESS=1`, associa o processo a um Windows Job Object e só então o libera. O job usa
+`KILL_ON_JOB_CLOSE`: encerramento normal, Ctrl+C ou crash do supervisor não deixa um processo
+órfão. A lógica de `CreateProcess` fica em `RakionClientRuntime` e é compartilhada com o launcher.
+
+Exemplo de smoke administrativo:
+
+```powershell
+$env:OPENRAKION_BOT_CREDENTIAL = 'credencial-da-conta-host'
+$env:RAKION_CLIENT_ROOT = 'C:\Rakion'
+dotnet .\RakionBotHost.dll --user bot_host_01 --field 7
+Remove-Item Env:\OPENRAKION_BOT_CREDENTIAL
+```
+
+A credencial não é herdada como variável pelo processo filho. O protocolo legado ainda exige a
+credencial codificada no vetor de argumentos do próprio jogo; uma conta de serviço com privilégios
+mínimos e ticket curto deve substituir senha estática antes do rollout remoto.
+
+O smoke atual valida bootstrap dedicated, ausência de módulos gráficos, shell ocultado e limpeza
+do filho. Login válido, seleção de personagem, registro do field e criação de fontes adicionais
+continuam pendentes.
 
 ## Gates de lançamento
 
