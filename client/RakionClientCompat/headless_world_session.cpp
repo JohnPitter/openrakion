@@ -16,8 +16,16 @@ constexpr char HeadlessVariable[] = "OPENRAKION_HEADLESS";
 constexpr char WorldNetSymbol[] = "?_pRakionWorldNet@@3PAVIScavengerWorldNet@@A";
 constexpr char ConnectSymbol[] = "?Connect@IScavengerWorldNet@@UAEEKIAAK@Z";
 constexpr char SendLoginSymbol[] = "?SendLogin@IScavengerWorldNet@@UAEXPAD0G0E@Z";
+constexpr char AccountInfoSymbol[] =
+    "?GetAccountInfo@IScavengerWorldNet@@QAEPAUAccountInfo_s@@XZ";
+constexpr char CharacterSelectSymbol[] =
+    "?SendCharacterSelect@IScavengerWorldNet@@UAEXK@Z";
 constexpr unsigned WorldPortNetworkOrder = 0x049f;
 constexpr unsigned char SkipHashVerification = 4;
+constexpr size_t AccountSlotCountOffset = 0x6c;
+constexpr size_t CharacterRecordsOffset = 0x1338;
+constexpr size_t CharacterRecordSize = 0x424;
+constexpr unsigned char MaximumVisibleCharacters = 4;
 volatile LONG SessionState{};
 
 bool IsHeadlessRequested()
@@ -67,12 +75,18 @@ bool DecodeCredential(std::string& credential)
     return true;
 }
 
+void* GetWorld(HMODULE engine)
+{
+    auto** world = reinterpret_cast<void**>(GetProcAddress(engine, WorldNetSymbol));
+    return world ? *world : nullptr;
+}
+
 bool StartWorldSession()
 {
     HMODULE engine = GetModuleHandleW(L"engine.dll");
     if (!engine) return false;
-    auto** world = reinterpret_cast<void**>(GetProcAddress(engine, WorldNetSymbol));
-    if (!world || !*world) return false;
+    void* world = GetWorld(engine);
+    if (!world) return false;
 
     std::vector<std::string> arguments = ReadLegacyArguments();
     if (arguments.size() < 2)
@@ -105,19 +119,74 @@ bool StartWorldSession()
     }
 
     unsigned long localAddress{};
-    connect(*world, address, WorldPortNetworkOrder, localAddress);
+    connect(world, address, WorldPortNetworkOrder, localAddress);
     char emptyHash[] = "";
-    sendLogin(*world, arguments[0].data(), arguments[1].data(), 0,
+    sendLogin(world, arguments[0].data(), arguments[1].data(), 0,
         emptyHash, SkipHashVerification);
     CompatLog("headless World: conexão direta e login enviados");
     return true;
+}
+
+int SelectFirstCharacter()
+{
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    void* world = engine ? GetWorld(engine) : nullptr;
+    using GetAccountFn = void*(__thiscall*)(void*);
+    using SelectFn = void(__thiscall*)(void*, unsigned long);
+    auto getAccount = engine ? reinterpret_cast<GetAccountFn>(
+        GetProcAddress(engine, AccountInfoSymbol)) : nullptr;
+    auto select = engine ? reinterpret_cast<SelectFn>(
+        GetProcAddress(engine, CharacterSelectSymbol)) : nullptr;
+    if (!world || !getAccount || !select) return 0;
+
+    auto* account = static_cast<unsigned char*>(getAccount(world));
+    if (!account) return 0;
+    const unsigned char count = account[AccountSlotCountOffset];
+    if (count == 0) return 0;
+    const unsigned char limit = count < MaximumVisibleCharacters
+        ? count : MaximumVisibleCharacters;
+    for (unsigned char slot = 0; slot < limit; ++slot)
+    {
+        auto* record = account + CharacterRecordsOffset + slot * CharacterRecordSize;
+        const unsigned long characterId = *reinterpret_cast<unsigned long*>(record);
+        if (characterId == 0) continue;
+        select(world, characterId);
+        CompatLog("headless World: primeiro personagem selecionado");
+        return 1;
+    }
+    CompatLog("headless World recusado: conta sem personagem");
+    return -1;
+}
+
+bool IsCharacterReady()
+{
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    void* world = engine ? GetWorld(engine) : nullptr;
+    if (!world) return false;
+    using GetSelectedFn = void*(__thiscall*)(void*);
+    auto** vtable = *reinterpret_cast<void***>(world);
+    return vtable && reinterpret_cast<GetSelectedFn>(vtable[3])(world) != nullptr;
 }
 }
 
 void PollHeadlessWorldSession()
 {
     if (!IsHeadlessRequested()) return;
-    if (InterlockedCompareExchange(&SessionState, 1, 0) != 0) return;
-    if (StartWorldSession()) InterlockedExchange(&SessionState, 2);
-    else InterlockedExchange(&SessionState, 0);
+    const LONG state = InterlockedCompareExchange(&SessionState, 0, 0);
+    if (state == 0 && InterlockedCompareExchange(&SessionState, 1, 0) == 0)
+    {
+        InterlockedExchange(&SessionState, StartWorldSession() ? 2 : 0);
+        return;
+    }
+    if (state == 2)
+    {
+        const int selected = SelectFirstCharacter();
+        if (selected != 0) InterlockedExchange(&SessionState, selected > 0 ? 3 : 5);
+        return;
+    }
+    if (state == 3 && IsCharacterReady())
+    {
+        InterlockedExchange(&SessionState, 4);
+        CompatLog("headless World: personagem confirmado pelo engine");
+    }
 }

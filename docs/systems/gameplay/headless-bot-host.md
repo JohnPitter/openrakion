@@ -86,12 +86,21 @@ World e enviar o login. Ele decodifica a credencial hex recebida na linha de com
 
 O smoke seguinte comprovou TCP estabelecido em `40708`, `onlinePlayers=1` no status do World,
 identidade na lista de contas ativas e conexão Buddy em `8500`. A resposta de login foi consumida
-pelo cliente, mas `localPlayerCount` continuou em zero porque a seleção de personagem ainda não foi
-automatizada.
+pelo cliente.
+
+Depois do login, o bootstrap consulta o `AccountInfo_s` do engine. O consumer v258 mantém a
+quantidade de slots em `+0x6C` e até quatro records visíveis em `+0x1338`, com stride `0x424`; o
+primeiro dword de cada record é o `characterId`. O host seleciona o primeiro ID não nulo por
+`IScavengerWorldNet::SendCharacterSelect` e só considera o gate concluído quando
+`GetSelectedCharacter` deixa de retornar nulo.
+
+O smoke confirmou as mensagens `primeiro personagem selecionado` e `personagem confirmado pelo
+engine`, mantendo as conexões World e Buddy. `localPlayerCount` continua em zero nessa fase porque
+um personagem selecionado ainda não é uma fonte local carregada dentro de uma partida.
 
 Fontes adicionais só podem ser criadas depois que a fonte primária possuir personagem e sessão
-válidos; chamar `AddPlayer_t` antes desse ponto não é um caminho seguro. O próximo gate é selecionar
-o personagem de serviço e entrar no field solicitado pelo supervisor.
+válidos; chamar `AddPlayer_t` antes desse ponto não é um caminho seguro. O próximo gate é entrar no
+lobby e no field solicitado pelo supervisor.
 
 ## Gates de lançamento
 
