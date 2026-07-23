@@ -179,7 +179,8 @@ namespace RakionServer.World
                         .Append(bot.Alive ? 0 : 1).Append(' ')
                         .Append(bot.DamageSequence).Append(' ')
                         .Append(bot.LastAttackerSeat).Append(' ')
-                        .Append(bot.LastAttackerHitSequence).AppendLine();
+                        .Append(bot.LastAttackerHitSequence).Append(' ')
+                        .Append(bot.IsMoving ? 1 : 0).AppendLine();
                 }
                 foreach (PlayerRec record in field.Slots)
                     if (record.Session?.UdpEndpoint is { } endpoint)

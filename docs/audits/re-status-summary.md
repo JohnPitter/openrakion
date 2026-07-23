@@ -80,8 +80,8 @@ A validação **dinâmica** dirige o `WorldServer` real por clientes headless no
   campos no `0x0C` comprovados pelo job e socket reais;
 - **ciclo vivo da partida**: engage `Pre→Playing` pelo deadline, spawn tardio, morte `0x4F`,
   placar, fim de round `0x4A` e fim de match `0x44` pelo motor global;
-- **bots server-side**: movimento, perseguição, convivência com dois humanos, datagrama de reação
-  ao dano e morte no field, provados headless inclusive pela ponte DLL P2P→World; smoke visual pendente.
+- **bots server-side**: roster, movimento, perseguição e convivência com dois humanos comprovados
+  headless. Dano por mera animação foi removido; colisão, HIT, queda e morte aguardam cliente-vítima real.
 
 São **29 testes E2E** e **836 testes World verdes**. Detalhe em
 [`dynamic-validation.md`](dynamic-validation.md).

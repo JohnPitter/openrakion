@@ -24,6 +24,7 @@ constexpr uintptr_t PlayerUpdateContinueAddress = PlayerUpdateAddress + 8;
 constexpr uintptr_t SetAliveAddress = 0x35130b70;
 constexpr uintptr_t SetDeadAddress = 0x35135810;
 constexpr uintptr_t ExecDamageAnimAddress = 0x3514a6c0;
+constexpr uintptr_t ExecNormalAnimAddress = 0x3513e570;
 constexpr uintptr_t AddHitCountAddress = 0x35153ce0;
 constexpr uintptr_t LocalPlayerGetterAddress = 0x352b3630;
 // CEntity::FallDownToFloor @ engine.dll (base 0x36000000). void __thiscall(this): casta 4 raios p/ baixo
@@ -41,10 +42,12 @@ volatile LONG DesiredLifecycleSequence[MaxPlayerSeats]{};
 volatile LONG DesiredDeadState[MaxPlayerSeats]{};
 volatile LONG DesiredDamageSequence[MaxPlayerSeats]{};
 volatile LONG DesiredDamageAttackerSeat[MaxPlayerSeats]{};
+volatile LONG DesiredMovingState[MaxPlayerSeats]{};
 volatile LONG DesiredLocalHitSequence[MaxPlayerSeats]{};
 volatile LONG AppliedLifecycleSequence[MaxPlayerSeats]{};
 volatile LONG AppliedDamageSequence[MaxPlayerSeats]{};
 volatile LONG AppliedLocalHitSequence[MaxPlayerSeats]{};
+volatile LONG AppliedMovingState[MaxPlayerSeats]{};
 volatile LONG LoggedLifecycleSequence[MaxPlayerSeats]{};
 volatile LONG LoggedDamageSequence[MaxPlayerSeats]{};
 volatile LONG LoggedLocalHitSequence[MaxPlayerSeats]{};
@@ -99,6 +102,7 @@ void LoadLifecycleSnapshot()
     LONG nextDeadState[MaxPlayerSeats]{};
     LONG nextDamageSequence[MaxPlayerSeats]{};
     LONG nextDamageAttackerSeat[MaxPlayerSeats]{};
+    LONG nextMovingState[MaxPlayerSeats]{};
     LONG nextLocalHitSequence[MaxPlayerSeats]{};
     int seat{};
     int generation{};
@@ -107,14 +111,16 @@ void LoadLifecycleSnapshot()
     unsigned long damageSequence{};
     int attackerSeat{};
     unsigned long attackerHitSequence{};
+    int moving{};
     while (input >> seat >> generation >> sequence >> dead >> damageSequence >>
-           attackerSeat >> attackerHitSequence)
+           attackerSeat >> attackerHitSequence >> moving)
     {
         if (seat < 0 || seat >= MaxPlayerSeats || generation < 0 || sequence == 0) continue;
         nextDeadState[seat] = dead == 0 ? 0 : 1;
         nextSequence[seat] = static_cast<LONG>(sequence);
         nextDamageSequence[seat] = static_cast<LONG>(damageSequence);
         nextDamageAttackerSeat[seat] = attackerSeat;
+        nextMovingState[seat] = moving == 0 ? 0 : 1;
         if (attackerSeat >= 0 && attackerSeat < MaxPlayerSeats)
         {
             LONG hitSequence = static_cast<LONG>(attackerHitSequence);
@@ -128,6 +134,7 @@ void LoadLifecycleSnapshot()
         InterlockedExchange(&DesiredLifecycleSequence[index], nextSequence[index]);
         InterlockedExchange(&DesiredDamageSequence[index], nextDamageSequence[index]);
         InterlockedExchange(&DesiredDamageAttackerSeat[index], nextDamageAttackerSeat[index]);
+        InterlockedExchange(&DesiredMovingState[index], nextMovingState[index]);
         InterlockedExchange(&DesiredLocalHitSequence[index], nextLocalHitSequence[index]);
     }
 }
@@ -219,6 +226,16 @@ void __stdcall ApplyLifecycleOnGameThread(void* player)
             auto transition = reinterpret_cast<LifecycleFn>(dead != 0 ? SetDeadAddress : SetAliveAddress);
             transition(player);
             InterlockedExchange(&AppliedLifecycleSequence[seat], desired);
+        }
+
+        LONG desiredMoving = InterlockedCompareExchange(&DesiredMovingState[seat], 0, 0);
+        LONG appliedMoving = InterlockedCompareExchange(&AppliedMovingState[seat], 0, 0);
+        if (dead == 0 && desiredMoving != appliedMoving)
+        {
+            using NormalAnimFn = void(__thiscall*)(void*, long);
+            reinterpret_cast<NormalAnimFn>(ExecNormalAnimAddress)(
+                player, desiredMoving != 0 ? 4 : 1);
+            InterlockedExchange(&AppliedMovingState[seat], desiredMoving);
         }
 
         LONG desiredDamage = InterlockedCompareExchange(&DesiredDamageSequence[seat], 0, 0);

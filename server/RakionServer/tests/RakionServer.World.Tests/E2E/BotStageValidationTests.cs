@@ -11,7 +11,7 @@ namespace RakionServer.World.Tests.E2E
     /// Validação do bot NO STAGE, no fio: (1) o bot persegue um humano que se move — a posição do bot
     /// converge para a do humano ao longo dos ticks; (2) convivência com dois humanos — o bot mira o
     /// inimigo e ambos recebem o movimento, sem sequestro do P2P humano; (3) combate — o humano ataca
-    /// perto do bot e o bot MORRE server-side, com o 0x4f transmitido aos humanos.
+    /// perto do bot não é confundido com impacto antes de existir confirmação de colisão.
     /// </summary>
     [Collection("E2E")]
     public sealed class BotStageValidationTests
@@ -77,7 +77,7 @@ namespace RakionServer.World.Tests.E2E
         }
 
         [Fact]
-        public async Task Bot_KilledByHumanAttack_ReportsDeathToField()
+        public async Task Bot_AttackAnimationWithoutContact_DoesNotApplyDamage()
         {
             await using var fixture = await WorldServerFixture.CreateAsync();
             if (!fixture.Available) return;
@@ -86,35 +86,21 @@ namespace RakionServer.World.Tests.E2E
             await using var human = await HeadlessWorldClient.ConnectAsync(WorldServerFixture.Host, fixture.TcpPort, "k");
             var (hs, field, bot) = await SetupBotMatchAsync(server, human, fixture, BotDifficulty.Normal);
 
-            // Coloca humano e bot no mesmo ponto (dentro do alcance de melee).
+            // Mesmo no mesmo ponto, kind=Attack representa somente o início da animação.
             var spot = new BotVector(1000, 0, 1000);
             lock (field.SyncRoot) { field.Slots[hs.FieldSeat].Position = spot; field.Slots[bot.Seat].Position = spot; bot.Position = spot; }
             human.SendMove(fixture.UdpPort2, hs.FieldSeat, (short)spot.X, 0, (short)spot.Z);
 
             int healthBefore = bot.Health;
             human.SendBotTelemetryAttack(fixture.UdpPort2, hs.FieldSeat, kind: 1);
-            byte[] hitReaction = human.WaitForUdp(
-                packet => IsBotDamage(packet, bot.Seat), JourneyHelper.Timeout);
-            Assert.Equal((byte)bot.Seat, hitReaction[6]);
-            Assert.True(bot.Health < healthBefore, "primeiro golpe deve reduzir o HP do bot");
+            await Task.Delay(BotCombat.MeleeAttackCooldownMs + 100);
 
-            // Continua golpeando até o bot morrer (HP base ~ level*10+100; dano 34/golpe).
-            byte[]? death = null;
-            for (int i = 1; i < 20 && death == null; i++)
-            {
-                Thread.Sleep(BotCombat.MeleeAttackCooldownMs + 25);
-                human.SendBotTelemetryAttack(fixture.UdpPort2, hs.FieldSeat, kind: 1);
-                try { death = human.WaitFor(Frame4f, TimeSpan.FromMilliseconds(400)); }
-                catch (TimeoutException) { }
-            }
-
-            Assert.False(bot.Alive, "bot deve estar morto após os golpes");
-            Assert.NotNull(death);
-            Assert.Equal((byte)bot.Seat, death![2]);
+            Assert.Equal(healthBefore, bot.Health);
+            Assert.True(bot.Alive);
         }
 
         [Fact]
-        public async Task Bot_WithForcedTunneling_PublishesMovementAndDamageOverTcp()
+        public async Task Bot_WithForcedTunneling_DoesNotInferDamageFromAttackAnimation()
         {
             await using var fixture = await WorldServerFixture.CreateAsync(forceTunneling: true);
             if (!fixture.Available) return;
@@ -138,22 +124,8 @@ namespace RakionServer.World.Tests.E2E
             Assert.Equal((byte)bot.Seat, (byte)(movement[8] & 0x1f));
 
             human.SendBotTelemetryAttack(fixture.UdpPort2, session.FieldSeat, kind: 1);
-            byte[] damage = human.WaitFor(
-                frame => IsTunneledBotAction(frame, BotMovement.AttackType, 7) &&
-                    frame[7] == (byte)PlayerAnimationKind.Damage,
-                JourneyHelper.Timeout);
-            Assert.Equal((byte)bot.Seat, damage[6]);
-        }
-
-        private static bool IsBotDamage(byte[] packet, byte botSeat) =>
-            packet.Length == GameplayActionDatagram.ExtendedAnimationSize &&
-            packet[0] == 0x11 && packet[1] == 0x03 && packet[6] == botSeat &&
-            packet[8] == (byte)PlayerAnimationKind.Damage;
-
-        private static bool Frame4f(byte[] frame)
-        {
-            // frame de campo do servidor: conteúdo decifrado começa por [u16 msgType=0x4f]...
-            return frame.Length >= 7 && frame[0] == 0x4f && frame[1] == 0x00;
+            await Task.Delay(BotCombat.MeleeAttackCooldownMs + 100);
+            Assert.Equal(bot.MaxHealth, bot.Health);
         }
 
         private static bool IsTunneledBotAction(byte[] frame, ushort type, ushort payloadLength)

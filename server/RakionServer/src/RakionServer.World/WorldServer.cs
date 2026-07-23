@@ -410,63 +410,6 @@ namespace RakionServer.World
             try { target.SendLobby(Network.LobbyFrames.ChannelChat(slot, message)); } catch { }
         }
 
-        public void ResolveBotMeleeAttack(
-            ClientSession attacker, System.Action<byte[]> publishHit, int damage = 34)
-        {
-            var field = GetField(attacker.FieldId);
-            if (field == null || field.State != 2 || field.BotCount == 0) return;
-            lock (field.SyncRoot)
-            {
-                var attackerRec = field.FindRec(attacker);
-                if (attackerRec == null) return;
-                long now = Environment.TickCount64;
-                if (!Domain.BotCombat.TryResolveMeleeAttack(
-                    field, attackerRec, now, damage, out var hit)) return;
-
-                BotPlayer bot = hit.BotRecord.Bot!;
-                bot.BeginHitReaction(now);
-                byte botSeat = (byte)hit.BotRecord.Slot;
-                publishHit(Network.BotMovement.SynthesizeMove(
-                    botSeat, bot.Position, bot.Heading, ++bot.MoveSeq));
-                publishHit(Network.BotMovement.SynthesizeKeystate(
-                    botSeat, ++bot.MoveSeq, moving: false));
-                publishHit(Network.BotMovement.SynthesizeNormalAnimation(
-                    botSeat, ++bot.MoveSeq, Network.PlayerNormalAnimation.Stand));
-                publishHit(Network.BotMovement.SynthesizeDamage(
-                    botSeat, ++bot.MoveSeq, (byte)attackerRec.Slot));
-                Bots.PublishBotLifecycles(field);
-                PublishBotHitFeedback(field, attackerRec, bot, botSeat, now, hit.Died);
-                Log.Debug("bot", "melee validado: humano seat {0} -> bot seat {1}: hp={2}/{3}",
-                    attackerRec.Slot, botSeat, bot.Health, bot.MaxHealth);
-                if (!hit.Died) return;
-
-                if (hit.BotRecord.State != 4) hit.BotRecord.State = 4;
-                var death = field.ApplyReportedDeath(botSeat, attackerRec.Slot, 0);
-                hit.BotRecord.Dead = true;
-                bot.ScheduleRespawn(now, BotRespawnPolicy.DelayMs(field.Mode));
-                Bots.PublishBotLifecycles(field);
-                if (death.Processed)
-                    field.BroadcastFieldPlaying(0x4f,
-                        new byte[] { botSeat, 0, (byte)attackerRec.Slot, death.ScoreA, death.ScoreB });
-                Log.Ok("bot", "bot seat {0} morto por humano seat {1} (field {2}); respawn={3}ms",
-                    botSeat, attackerRec.Slot, field.Id, BotRespawnPolicy.DelayMs(field.Mode));
-            }
-        }
-
-        private static void PublishBotHitFeedback(
-            Domain.Field field, PlayerRec attacker, BotPlayer bot,
-            byte botSeat, long now, bool died)
-        {
-            attacker.BotHitCombo = now - attacker.LastBotHitFeedbackMs <= 4000
-                ? (byte)Math.Min(byte.MaxValue, attacker.BotHitCombo + 1)
-                : (byte)1;
-            attacker.LastBotHitFeedbackMs = now;
-            string text = died
-                ? $"HIT x{attacker.BotHitCombo} - KO"
-                : $"HIT x{attacker.BotHitCombo} - HP {bot.Health}/{bot.MaxHealth}";
-            field.BroadcastField(0x47, Network.FieldChatFrames.Message(botSeat, text));
-        }
-
         public bool Locked { get; private set; }                 // this+0x50 (servidor fechado p/ GM)
         public PuConfig PuConfig { get; private set; } = new();   // pu_config: preço/bônus/multiplicadores do PU (lida no boot)
         public EnchantConfig EnchantConfig { get; private set; } = new();   // enchant_*: coeficientes do refino (lida no boot)

@@ -47,11 +47,7 @@ namespace RakionServer.World
                         (byte)botRec.Slot, ++bot.MoveSeq, moving));
                     if (bot.ShouldPublishLocomotion(moving))
                     {
-                        PlayerNormalAnimation animation = moving
-                            ? PlayerNormalAnimation.MoveForward
-                            : PlayerNormalAnimation.Stand;
-                        Broadcast(field, send, BotMovement.SynthesizeNormalAnimation(
-                            (byte)botRec.Slot, ++bot.MoveSeq, animation));
+                        PublishBotLifecycles(field);
                     }
 
                     // Ataque do bot: sintetiza a animação 0x0311 (cosmético — o dano bot->humano é

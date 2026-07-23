@@ -144,12 +144,13 @@ namespace RakionServer.World.Tests
                 manager.PublishBotLifecycles(field);
 
                 string[] values = File.ReadAllText(path).Trim().Split(' ');
-                Assert.Equal(7, values.Length);
+                Assert.Equal(8, values.Length);
                 Assert.Equal(added.Seat.ToString(), values[0]);
                 Assert.Equal(field.Id.ToString(), values[1]);
                 Assert.Equal("1", values[4]);
                 Assert.Equal("0", values[5]);
                 Assert.Equal("1", values[6]);
+                Assert.Equal("0", values[7]);
             }
             finally
             {

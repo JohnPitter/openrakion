@@ -1,7 +1,8 @@
 # Subsistema de Bots — peer sintético server-side
 
 O bot é um peer sintético controlado pelo World: ocupa um assento do field, aparece no roster,
-recebe movimento e animações no formato do cliente v258 e possui HP, morte e respawn autoritativos.
+recebe movimento e animações no formato do cliente v258. HP, morte e respawn sintéticos existem no
+domínio, mas não são alterados por uma mera animação de ataque.
 A DLL não implementa regra de combate. Ela apenas espelha ao World, pelo envelope autenticado
 `0xB07A`, o movimento `0x030A` e o início do ataque local `0x0311` que o cliente normalmente envia
 somente aos peers.
@@ -13,31 +14,19 @@ canal humano↔humano.
 ## Limite confirmado no cliente
 
 A entidade remota sintética não percorre o mesmo caminho local de colisão/dano de um peer real.
-Por isso a colisão nativa não pode decidir o HP do bot. O World continua sendo a única autoridade:
-ele valida alvo, alcance, cone, cooldown, dano, morte e respawn. Depois de cada acerto confirmado,
-a DLL apenas chama, na thread do jogo, as rotinas nativas de reação e contador **HIT×N**. A DLL não
-transforma uma animação local em dano e não altera HP.
-
-Para manter o bot funcional para lançamento, o World resolve o golpe a partir de dados que o
-cliente realmente fornece:
-
-- início do ataque do humano (`0x0311 kind=Attack`);
-- posição e rumo mais recentes do atacante (`0x030A`);
-- bots inimigos vivos do field;
-- alcance, cone frontal, alvo mais próximo e cooldown antirrepetição.
-
-Esse contrato não transforma toda animação em dano: no máximo um bot inimigo é escolhido, precisa
-estar a até 250 unidades wire e dentro de um cone de 150 graus centrado no rumo do atacante. O
-cooldown de 250 ms elimina emissões duplicadas do hook durante o mesmo golpe.
+Por isso ela não produz a confirmação de impacto que um cliente-vítima real enviaria. O contrato
+anterior que aproximava impacto por alcance e cone foi removido: fazia o bot perder HP ao carregar
+`kind=Attack`, antes de qualquer contato. Sem cliente-vítima ou evento nativo de colisão comprovado,
+o fallback sintético permanece invulnerável. Movimento humano autenticado ainda atualiza a pose,
+mas `0x0311 kind=Attack` nunca chama `TakeDamage`, publica HIT ou gera morte.
 
 ## Camadas
 
 | Camada | Arquivos | Responsabilidade |
 |---|---|---|
 | Domínio/IA | `Domain/BotProfile.cs`, `BotVector.cs`, `BotSteering.cs`, `BotPlayer.cs` | dificuldade, perseguição, HP, reação, morte e respawn |
-| Combate | `Domain/BotCombat.cs` | alvo único, time, alcance, cone frontal, cooldown e dano |
 | Field | `Domain/Field.Bots.cs` e `PlayerRec` | assentos, pose humana e estado efêmero do bot |
-| Serviço | `BotManager.cs`, `BotManager.Tick.cs`, `WorldServer.ResolveBotMeleeAttack` | tick, feedback visual, lifecycle e placar |
+| Serviço | `BotManager.cs`, `BotManager.Tick.cs` | tick, movimento e lifecycle |
 | Rede | `Network/BotMovement.cs`, `BotTelemetryDatagram.cs`, `UdpGameplay.cs` | síntese, validação e transporte |
 | Cliente | `client/RakionClientCompat/bot_telemetry.cpp`, `rakion_client_patch.cpp` | espelho de movimento/ataque e apresentação do resultado confirmado, sem regra de dano |
 
@@ -48,19 +37,11 @@ cooldown de 250 ms elimina emissões duplicadas do hook durante o mesmo golpe.
 2. O roster recebe o member-join `0x38`; o primeiro snapshot `0x4B` humano é replicado com o seat do
    bot para o engine criar a entidade no stage.
 3. A cada 150 ms em partida, `BotManager.TickField` encontra o humano inimigo vivo mais próximo,
-   avança a IA e sintetiza o movimento `0x030A` e o keystate `0x030F`. Nas transições ele também
-   publica `0x0311 kind=Normal`: `MoveForward` ao começar a andar e `Stand` ao parar.
-4. Ao atacar, a DLL envia o `0x0311` local dentro do `0xB07A`. O World autentica endpoint e seat,
-   aplica rate limit e chama `BotCombat.TryResolveMeleeAttack`.
-5. Em um acerto, o World zera velocidade e alvo da IA, publica `0x030A`/`0x030F` de parada e a
-   reação `0x0311 kind=Damage` com o shape real `0F 07 <attackerSeat>`. Ele grava uma sequência monotônica de dano por cliente UDP; a DLL
-   executa a reação nativa e incrementa HIT somente para o atacante confirmado. A IA permanece
-   suspensa por 1,8 s, portanto o bot não persegue nem desliza enquanto está caído. Ao terminar a
-   janela, o World emite `Rise` antes de voltar a aceitar movimento.
-6. Ao zerar o HP, `Field.ApplyReportedDeath` liquida exatamente um kill, publica `0x4F`, a DLL chama
-   o lifecycle nativo de morte e o bot permanece sem movimento até o respawn. Deathmatch, Team
-   Death e Boss usam respawn autoritativo de sete segundos; Golem segue eliminação por round.
-7. No fim da partida ou na saída do último humano do gameplay, o field retorna ao game room. Os
+   avança a IA e sintetiza o movimento `0x030A` e o keystate `0x030F`.
+4. Nas transições, o World publica o estado de locomoção no snapshot por porta UDP. Na thread de
+   `CPlayer`, a DLL chama `ExecNormalAnim(4)` ao andar e `ExecNormalAnim(1)` ao parar, uma vez.
+5. `0x0311 kind=Attack` pode ser espelhado para diagnóstico, mas não altera HP ou lifecycle.
+6. No fim da partida ou na saída do último humano do gameplay, o field retorna ao game room. Os
    humanos voltam a não-pronto, o bot é revivido, tem IA e pose efêmeras zeradas e permanece
    pronto para o rematch. A liderança da sala só muda quando o master realmente deixa a sala.
 
@@ -102,13 +83,9 @@ ela entra por `0x0311 kind=Damage`, cujo payload humano observado foi `0F 07 <at
 inversa. A tentativa de renová-lo por timer foi descartada no gate visual porque reinicia e corta o
 ciclo no meio; as repetições vistas na captura humana correspondem a novos ciclos de input.
 
-Antes de cada reação de dano, o servidor publica `0x030A`, `0x030F` e `Stand`. O tick de
-IA fica suspenso durante a queda; morto também não produz ação até o respawn. Assim, movimento
-novo não sobrescreve a reação nativa.
-
-O lifecycle usa um snapshot isolado por porta UDP autenticada. A DLL o consome na thread do jogo e
-aplica `ExecDamageAnim`, `SetDead`, `SetAlive` e `AddHitCount` somente após a confirmação do World.
-Assim, salas simultâneas não compartilham o estado visual de bots.
+O lifecycle usa um snapshot isolado por porta UDP autenticada. A DLL o consome na thread do jogo;
+o mesmo canal transporta a transição de locomoção. Dano, HIT e morte só poderão ser ativados
+novamente quando houver uma fonte de impacto diferente de `kind=Attack`.
 
 O ataque do bot alterna as três animações observadas (`0x1B`, `0x1A`, `0x12`) e usa cooldown por
 dificuldade. O dano bot→humano, salto com física, colisão nativa, queda e morte integralmente
@@ -134,12 +111,10 @@ e [anúncio da Croteam](https://www.croteam.com/serious-sam-source-code-released
 
 ## Testes
 
-- `BotCombatTests`: alvo inimigo mais próximo, rumo, cone frontal, alcance, time, cooldown, dano e
-  morte de um único bot.
 - `BotRespawnTests`: parada durante a reação, lifecycle, prazo e restauração do respawn.
 - `BotMovementSynthTests`: formato, pose/heading, ausência de deltas de câmera e reação estendida.
-- `E2E/BotStageValidationTests`: ataque `0x0311` autenticado reduz HP, publica parada/reação, mata o
-  bot com `0x4F` e funciona também por tunneling TCP.
+- `E2E/BotStageValidationTests`: `kind=Attack` autenticado não reduz HP nem por UDP direto nem por
+  tunneling; movimento e perseguição continuam no fio.
 - `E2E/BotRematchE2ETests`: dois clientes e um bot saem do gameplay, reencontram a sala no filtro
   Available e iniciam outra partida no mesmo game room.
 - `E2E/AddBotButtonCommandE2ETests` e `BotMovementE2ETests`: comando, roster e movimento no fio.
@@ -147,9 +122,6 @@ e [anúncio da Croteam](https://www.croteam.com/serious-sam-source-code-released
 ## Estado de validação
 
 Build e testes automatizados validam protocolo e regra de negócio. Em 22/07/2026, o RE corrigiu o
-estado `Attack` indevido no movimento, heading em escala e eixo errados, bytes invertidos do
-`0x030F`, reinício indevido de `MoveForward` e reação genérica no lugar do payload humano
-`0F 07 <attackerSeat>`.
-O gate final permanece visual:
-confirmar no cliente gráfico que cada golpe frontal próximo reduz HP, que a queda interrompe a
-perseguição, que o bot morre uma vez, incrementa um kill e só volta a andar após o respawn.
+heading em escala/eixo errados e moveu a animação de locomoção para a thread nativa do jogador.
+O gate visual imediato é confirmar caminhada contínua sem cortes. Colisão, HIT, queda e morte não
+são considerados implementados no peer sintético.

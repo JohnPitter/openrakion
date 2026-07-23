@@ -39,6 +39,7 @@ namespace RakionServer.World.Domain
         public long RespawnAtMs { get; private set; }
         private byte _attackVariant;
         private bool _isMoving;
+        public bool IsMoving => _isMoving;
 
         /// <summary>HP inicial derivado de level/classe (curva simples; server-authoritative p/ o bot).</summary>
         public void InitHealth(byte level)

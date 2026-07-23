@@ -287,10 +287,8 @@ namespace RakionServer.World.Network
                 UpdateHumanPose(sender, position, heading);
                 return;
             }
-            if (type == BotMovement.AttackType && packet.Length >= BotMovement.AttackSize &&
-                packet[8] == (byte)PlayerAnimationKind.Attack)
-                _world.ResolveBotMeleeAttack(sender,
-                    feedback => BroadcastBotFeedback(sender.FieldId, feedback));
+            // 0x0311 kind=Attack confirma apenas o início da animação. Não prova contato e nunca
+            // pode reduzir HP. O dano do bot exige um evento de impacto separado do cliente-vítima.
         }
 
         private void UpdateHumanPose(ClientSession sender, BotVector position, float heading)
@@ -306,15 +304,5 @@ namespace RakionServer.World.Network
             }
         }
 
-        private void BroadcastBotFeedback(int fieldId, byte[] datagram)
-        {
-            Field? field = _world.GetField(fieldId);
-            if (field == null) return;
-            lock (field.SyncRoot)
-            {
-                foreach (PlayerRec target in field.Slots)
-                    SendBotGameplay(target, datagram);
-            }
-        }
     }
 }
