@@ -114,6 +114,12 @@ No smoke com uma sala competitiva recém-criada, a terceira sessão recebeu a en
 depois da resposta `0x37`. Isso comprova o peer registrado no field; ainda não comprova mapa
 carregado, fonte local ou combate.
 
+Depois da entrada, o host envia `IScavengerWorldNet::SendFieldReady(1)`. Um master controlado
+recebeu a publicação `0x3D` do segundo jogador e o World aceitou o start com `0x43 00 00`; assim, o
+peer já não bloqueia a partida por falta de ready. A resposta de start ainda alcança um segundo
+trecho visual incompatível com dedicated e encerra o processo com `0xC0000005`. Portanto, ready está
+validado, mas carregamento do mapa continua sendo o próximo gate.
+
 Fontes adicionais só podem ser criadas depois que a fonte primária possuir personagem e sessão
 válidos; chamar `AddPlayer_t` antes desse ponto não é um caminho seguro. O próximo gate é iniciar a
 partida, carregar o mapa e observar a criação da fonte local primária.

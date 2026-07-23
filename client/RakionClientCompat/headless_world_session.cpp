@@ -24,6 +24,8 @@ constexpr char CharacterSelectSymbol[] =
     "?SendCharacterSelect@IScavengerWorldNet@@UAEXK@Z";
 constexpr char FieldEnterSymbol[] =
     "?SendFieldEnter@IScavengerWorldNet@@UAEXGPAD@Z";
+constexpr char FieldReadySymbol[] =
+    "?SendFieldReady@IScavengerWorldNet@@UAEXE@Z";
 constexpr char FieldVariable[] = "OPENRAKION_HEADLESS_FIELD";
 constexpr unsigned WorldPortNetworkOrder = 0x049f;
 constexpr unsigned char SkipHashVerification = 4;
@@ -32,8 +34,10 @@ constexpr size_t CharacterRecordsOffset = 0x1338;
 constexpr size_t CharacterRecordSize = 0x424;
 constexpr unsigned char MaximumVisibleCharacters = 4;
 constexpr DWORD FieldEnterDelayMilliseconds = 1500;
+constexpr DWORD FieldReadyDelayMilliseconds = 1500;
 volatile LONG SessionState{};
 volatile LONG CharacterReadyTick{};
+volatile LONG FieldEnterTick{};
 
 bool IsHeadlessRequested()
 {
@@ -201,6 +205,19 @@ bool JoinConfiguredField()
     CompatLog("headless World: entrada no field enviada");
     return true;
 }
+
+bool SetFieldReady()
+{
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    void* world = engine ? GetWorld(engine) : nullptr;
+    using FieldReadyFn = void(__thiscall*)(void*, unsigned char);
+    auto ready = engine ? reinterpret_cast<FieldReadyFn>(
+        GetProcAddress(engine, FieldReadySymbol)) : nullptr;
+    if (!world || !ready) return false;
+    ready(world, 1);
+    CompatLog("headless World: estado ready enviado");
+    return true;
+}
 }
 
 void PollHeadlessWorldSession()
@@ -231,6 +248,20 @@ void PollHeadlessWorldSession()
         const DWORD readyAt = static_cast<DWORD>(
             InterlockedCompareExchange(&CharacterReadyTick, 0, 0));
         if (GetTickCount() - readyAt < FieldEnterDelayMilliseconds) return;
-        InterlockedExchange(&SessionState, JoinConfiguredField() ? 6 : 5);
+        if (!JoinConfiguredField())
+        {
+            InterlockedExchange(&SessionState, 5);
+            return;
+        }
+        InterlockedExchange(&FieldEnterTick, static_cast<LONG>(GetTickCount()));
+        InterlockedExchange(&SessionState, 6);
+        return;
+    }
+    if (state == 6)
+    {
+        const DWORD enteredAt = static_cast<DWORD>(
+            InterlockedCompareExchange(&FieldEnterTick, 0, 0));
+        if (GetTickCount() - enteredAt < FieldReadyDelayMilliseconds) return;
+        InterlockedExchange(&SessionState, SetFieldReady() ? 8 : 7);
     }
 }
