@@ -103,6 +103,12 @@ aterrissagem, ataque básico, ataque especial, guarda, dano, queda, levantar, mo
 Os bytes capturados são a golden source para o driver do cliente real; não se inferem botões ou
 animações por tentativa e erro.
 
+No mesmo modo opt-in, a DLL intercepta `CPlayerSource::SetAction` somente depois de validar o
+prólogo da função e grava `%TEMP%\openrakion_player_action_<pid>.csv`. Cada linha contém o relógio,
+o endereço da fonte local e os 72 bytes de `CPlayerAction` produzidos pelo próprio engine. Essa
+captura correlaciona os controles locais com os pacotes de rede sem alterar a ação aplicada. Se a
+assinatura da build não corresponder, o hook falha fechado e o cliente segue sem instrumentação.
+
 Como referência estrutural, o código público do Serious Engine mostra o fluxo
 `CControls::CreateAction → CPlayerSource::SetAction → CPlayerSource::SendAction`. Rakion v258
 estende a estrutura e o wire, portanto a referência serve para localizar responsabilidades, não

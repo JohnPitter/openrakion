@@ -16,6 +16,8 @@ namespace
 constexpr uint16_t BotTelemetryType = 0xb07a;
 constexpr uint32_t SendToOtherClientRva = 0x00100780;
 constexpr BYTE ExpectedSendToOtherClient[] = { 0x83, 0xec, 0x0c, 0x55, 0x8b, 0xe9 };
+constexpr uint32_t SetActionRva = 0x00102fa0;
+constexpr BYTE ExpectedSetAction[] = { 0x83, 0xec, 0x0c, 0x56, 0x57, 0x8b, 0xf1 };
 using SendToFn = int(WSAAPI*)(SOCKET, const char*, int, int, const sockaddr*, int);
 using ConnectFn = int(WSAAPI*)(SOCKET, const sockaddr*, int);
 SendToFn OriginalSendTo{};
@@ -29,6 +31,7 @@ volatile LONG LocalActionHookEnabled{};
 volatile LONG LocalAttackLogged{};
 alignas(8) volatile LONG64 LastTelemetryKey{};
 uintptr_t SendToOtherClientContinue{};
+uintptr_t SetActionContinue{};
 
 bool IsRakionServerPort(u_short networkPort)
 {
@@ -245,6 +248,57 @@ bool InstallLocalActionHook(HMODULE engine)
     return true;
 }
 
+void __stdcall CaptureSetAction(const void* source, const void* action)
+{
+    CapturePlayerAction(source, action);
+}
+
+__declspec(naked) void SetActionHook()
+{
+    __asm
+    {
+        pushfd
+        pushad
+        mov eax, dword ptr [esp + 24]
+        mov edx, dword ptr [esp + 40]
+        push edx
+        push eax
+        call CaptureSetAction
+        popad
+        popfd
+        sub esp, 0x0c
+        push esi
+        push edi
+        mov esi, ecx
+        jmp dword ptr [SetActionContinue]
+    }
+}
+
+bool InstallSetActionCaptureHook(HMODULE engine)
+{
+    if (!IsActionCaptureEnabled()) return true;
+    auto* patch = reinterpret_cast<BYTE*>(engine) + SetActionRva;
+    if (std::memcmp(patch, ExpectedSetAction, sizeof(ExpectedSetAction)) != 0)
+        return false;
+    SetActionContinue = reinterpret_cast<uintptr_t>(patch + sizeof(ExpectedSetAction));
+    DWORD oldProtection{};
+    if (!VirtualProtect(
+            patch, sizeof(ExpectedSetAction), PAGE_EXECUTE_READWRITE, &oldProtection))
+        return false;
+
+    BYTE detour[sizeof(ExpectedSetAction)]{ 0xe9 };
+    const int32_t displacement = static_cast<int32_t>(
+        reinterpret_cast<uintptr_t>(&SetActionHook) -
+        (reinterpret_cast<uintptr_t>(patch) + 5));
+    std::memcpy(detour + 1, &displacement, sizeof(displacement));
+    detour[5] = 0x90;
+    detour[6] = 0x90;
+    std::memcpy(patch, detour, sizeof(detour));
+    VirtualProtect(patch, sizeof(ExpectedSetAction), oldProtection, &oldProtection);
+    FlushInstructionCache(GetCurrentProcess(), patch, sizeof(ExpectedSetAction));
+    return true;
+}
+
 bool InstallSendToHook(HMODULE module)
 {
     auto* base = reinterpret_cast<BYTE*>(module);
@@ -380,7 +434,7 @@ bool InstallBotTelemetryHook()
         {
             if (!InstallConnectHook(engine, "wsock32.dll") || !InstallSendToHook(engine))
                 return false;
-            return InstallLocalActionHook(engine);
+            return InstallLocalActionHook(engine) && InstallSetActionCaptureHook(engine);
         }
         Sleep(100);
     }
