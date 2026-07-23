@@ -33,6 +33,7 @@ $patchSources = @(
     'cash_store.cpp',
     'client_patches.cpp',
     'ui_lifecycle_patch.cpp',
+    'headless_mode.cpp',
     'bot_telemetry.cpp',
     'action_capture.cpp',
     'compat_log.cpp'

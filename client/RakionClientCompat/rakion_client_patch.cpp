@@ -13,6 +13,7 @@
 #include "client_patches.h"
 #include "ui_lifecycle_patch.h"
 #include "compat_log.h"
+#include "headless_mode.h"
 
 namespace
 {
@@ -394,6 +395,7 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID)
 {
     if (reason != DLL_PROCESS_ATTACH) return TRUE;
     if (!IsRakionProcess()) return TRUE;
+    if (!ConfigureHeadlessEngine()) return FALSE;
     if (!ApplyFinalClientPatches()) return FALSE;
     ApplyLauncherPatches();
     CompatLog(LoadServerAddress()
