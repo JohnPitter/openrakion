@@ -43,6 +43,12 @@ constexpr char StringDestructorSymbol[] = "??1CTString@@QAE@XZ";
 constexpr char PlayerConstructorSymbol[] =
     "??0CPlayerCharacter@@QAE@ABVCTString@@0@Z";
 constexpr char PlayerDestructorSymbol[] = "??1CPlayerCharacter@@QAE@XZ";
+constexpr char NetworkSessionConstructorSymbol[] =
+    "??0CNetworkSession@@QAE@ABVCTString@@J@Z";
+constexpr char NetworkSessionDestructorSymbol[] =
+    "??1CNetworkSession@@QAE@XZ";
+constexpr char FileNameCopyConstructorSymbol[] =
+    "??0CTFileName@@QAE@ABV0@@Z";
 constexpr unsigned WorldPortNetworkOrder = 0x049f;
 constexpr unsigned char SkipHashVerification = 4;
 constexpr size_t AccountSlotCountOffset = 0x6c;
@@ -56,7 +62,8 @@ constexpr size_t GamePointerOffset = 0x198;
 constexpr size_t GameWorldNameOffset = 0x48;
 constexpr size_t GameSessionNameOffset = 0x54;
 constexpr size_t GamePlayerCharactersOffset = 0x130;
-constexpr size_t GameRequestedPlayerCountOffset = 0x478;
+constexpr size_t GameMenuSplitScreenConfigOffset = 0x478;
+constexpr size_t GameStartSplitScreenConfigOffset = 0x47c;
 constexpr size_t GamePrimaryPlayerIndexOffset = 0x4b8;
 constexpr size_t FieldPlayerRecordsOffset = 0x1ac;
 constexpr size_t FieldPlayerRecordSize = 0x378;
@@ -64,7 +71,7 @@ constexpr size_t FieldPlayerAddressOffset = 0x34;
 constexpr size_t FieldPlayerObservedPortOffset = 0x38;
 constexpr size_t FieldPlayerAdvertisedPortOffset = 0x3a;
 constexpr unsigned char FieldPlayerCount = 20;
-constexpr size_t StartGameVtableOffset = 0x8c;
+constexpr size_t JoinGameVtableOffset = 0x9c;
 constexpr size_t ApplicationServerWorldOffset = 0x64;
 constexpr int PlayGameMenuState = 0x1d;
 constexpr int PeerToPeerClientMode = 4;
@@ -471,6 +478,44 @@ bool PrepareLocalPlayerCharacter(BYTE* game)
     return true;
 }
 
+struct FileNameValue
+{
+    void* string{};
+    void* preloaded{};
+};
+
+bool JoinFieldEngine(BYTE* game)
+{
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    if (!engine) return false;
+
+    using NetworkSessionConstructorFn =
+        void*(__thiscall*)(void*, const void*, long);
+    using NetworkSessionDestructorFn = void(__thiscall*)(void*);
+    using FileNameCopyConstructorFn = void*(__thiscall*)(void*, const void*);
+    using JoinGameFn = int(__thiscall*)(void*, const void*, FileNameValue);
+    auto constructSession = reinterpret_cast<NetworkSessionConstructorFn>(
+        GetProcAddress(engine, NetworkSessionConstructorSymbol));
+    auto destroySession = reinterpret_cast<NetworkSessionDestructorFn>(
+        GetProcAddress(engine, NetworkSessionDestructorSymbol));
+    auto copyFileName = reinterpret_cast<FileNameCopyConstructorFn>(
+        GetProcAddress(engine, FileNameCopyConstructorSymbol));
+    auto** vtable = *reinterpret_cast<void***>(game);
+    auto joinGame = vtable ? reinterpret_cast<JoinGameFn>(
+        vtable[JoinGameVtableOffset / sizeof(void*)]) : nullptr;
+    if (!constructSession || !destroySession || !copyFileName || !joinGame)
+        return false;
+
+    alignas(void*) BYTE session[512]{};
+    FileNameValue world{};
+    constructSession(session,
+        game + GameSessionNameOffset + sizeof(void*), 0);
+    copyFileName(&world, game + GameWorldNameOffset);
+    const int joined = joinGame(game, session, world);
+    destroySession(session);
+    return joined != 0;
+}
+
 bool StartFieldEngine()
 {
     auto* image = reinterpret_cast<BYTE*>(GetModuleHandleW(nullptr));
@@ -489,8 +534,6 @@ bool StartFieldEngine()
     const char* joinAddress{};
     int playerIndex{-1};
     int peerMode{};
-    using StartGameFn = int(__thiscall*)(void*, int);
-    StartGameFn startGame{};
     __try
     {
         if (!EnsureGameWorldName(*application, game))
@@ -522,7 +565,8 @@ bool StartFieldEngine()
                 CompatLog("headless engine aguardando sessao e jogador local");
             return false;
         }
-        *reinterpret_cast<int*>(game + GameRequestedPlayerCountOffset) = 1;
+        *reinterpret_cast<int*>(game + GameMenuSplitScreenConfigOffset) = 0;
+        *reinterpret_cast<int*>(game + GameStartSplitScreenConfigOffset) = 0;
         *reinterpret_cast<int*>(game + GamePrimaryPlayerIndexOffset) = 0;
         if (!PrepareLocalPlayerCharacter(game))
         {
@@ -530,14 +574,6 @@ bool StartFieldEngine()
             return false;
         }
 
-        auto** vtable = *reinterpret_cast<void***>(game);
-        startGame = reinterpret_cast<StartGameFn>(
-            vtable[StartGameVtableOffset / sizeof(void*)]);
-        if (!startGame)
-        {
-            CompatLog("headless engine recusado: vtable de CGame incompleta");
-            return false;
-        }
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
@@ -552,9 +588,19 @@ bool StartFieldEngine()
         peerMode == PeerToPeerClientMode ? joinAddress : "<master>");
     CompatLog(attempt);
 
-    if (startGame(game, peerMode) == 0)
+    bool joined{};
+    __try
     {
-        CompatLog("headless engine recusado: CGame::StartGame falhou");
+        joined = JoinFieldEngine(game);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        CompatLog("headless engine recusado: ABI de CGame::JoinGame incompatível");
+        return false;
+    }
+    if (!joined)
+    {
+        CompatLog("headless engine recusado: CGame::JoinGame falhou");
         return false;
     }
 

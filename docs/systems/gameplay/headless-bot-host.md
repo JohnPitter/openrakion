@@ -146,12 +146,19 @@ vez de abrir uma sessão server incompleta. Isso eliminou o acesso inválido cau
 seat tentando abrir outra sessão server.
 
 O primeiro smoke com master gráfico comprovou que o cliente chegava ao início do round, mas
-`CGame::StartGame` recebia o placeholder `serveraddress` e falhava três vezes. O roster original já
+o bootstrap recebia o placeholder `serveraddress` e falhava três vezes. O roster original já
 mantém, em cada record de `FieldInfo`, o IPv4 observado e as portas observada/anunciada. A DLL agora
 localiza o master pela API `FieldInfo::IsMasterSlot(seat)`, prefere a porta anunciada e preenche o
 `gam_strJoinAddress` antes do modo `4`. Endpoint ausente mantém o processo em espera; não existe
-fallback para endereço inventado. O carregamento e o combate após esse join ainda exigem novo smoke
-gráfico.
+fallback para endereço inventado.
+
+O smoke seguinte confirmou `127.0.0.1:2301` tanto no `FieldInfo` quanto no socket UDP aberto pelo
+master, mas expôs uma chamada virtual incorreta no bootstrap: `CGame+vtable[0x8C]` é uma rotina de
+LCD nesta variante, não o início de sessão. O RE do `gamemp.dll` localizou `CGame::JoinGame` em
+`vtable[0x9C]`. Essa função chama `CNetworkLibrary::JoinSession_t`, configura e adiciona os jogadores
+locais e marca o jogo ativo. O headless agora constrói o `CNetworkSession` com o endpoint do master,
+passa o mundo como `CTFileName` pela ABI de oito bytes e fixa `SSC_PLAY1`. O carregamento e o combate
+após esse join ainda exigem novo smoke gráfico.
 
 Fontes adicionais só podem ser criadas depois que a fonte primária possuir personagem e sessão
 válidos; chamar `AddPlayer_t` antes desse ponto não é um caminho seguro. O próximo gate é iniciar a
