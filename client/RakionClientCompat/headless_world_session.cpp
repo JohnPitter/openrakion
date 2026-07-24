@@ -31,6 +31,8 @@ constexpr char FieldPlayingSymbol[] =
     "?IsGamePlaying@FieldInfo@@QAEHXZ";
 constexpr char FieldMasterSymbol[] =
     "?IsMasterSlot@FieldInfo@@QAEHXZ";
+constexpr char FieldSeatMasterSymbol[] =
+    "?IsMasterSlot@FieldInfo@@QAEHE@Z";
 constexpr char FieldRoundStartSymbol[] =
     "?SendFieldGameRoundStart@IScavengerWorldNet@@UAEXXZ";
 constexpr char FieldVariable[] = "OPENRAKION_HEADLESS_FIELD";
@@ -56,6 +58,12 @@ constexpr size_t GameSessionNameOffset = 0x54;
 constexpr size_t GamePlayerCharactersOffset = 0x130;
 constexpr size_t GameRequestedPlayerCountOffset = 0x478;
 constexpr size_t GamePrimaryPlayerIndexOffset = 0x4b8;
+constexpr size_t FieldPlayerRecordsOffset = 0x1ac;
+constexpr size_t FieldPlayerRecordSize = 0x378;
+constexpr size_t FieldPlayerAddressOffset = 0x34;
+constexpr size_t FieldPlayerObservedPortOffset = 0x38;
+constexpr size_t FieldPlayerAdvertisedPortOffset = 0x3a;
+constexpr unsigned char FieldPlayerCount = 20;
 constexpr size_t StartGameVtableOffset = 0x8c;
 constexpr size_t ApplicationServerWorldOffset = 0x64;
 constexpr int PlayGameMenuState = 0x1d;
@@ -73,6 +81,7 @@ volatile LONG EngineStartTick{};
 volatile LONG EngineWaitingLogged{};
 volatile LONG EngineStartPending{};
 volatile LONG EngineStartAttempts{};
+volatile LONG EngineEndpointWaitingLogged{};
 HWND GameWindow{};
 WNDPROC OriginalWindowProcedure{};
 char SelectedCharacterName[13]{};
@@ -359,6 +368,56 @@ bool AssignGameString(void* target, const char* value)
     return true;
 }
 
+bool IsPlaceholderJoinAddress(const char* value)
+{
+    return !value || value[0] == '\0' ||
+        _stricmp(value, "serveraddress") == 0 ||
+        _stricmp(value, "serveraddress:0") == 0;
+}
+
+unsigned ReadNetworkPort(const BYTE* value)
+{
+    return static_cast<unsigned>(value[0]) << 8 | value[1];
+}
+
+bool EnsureGameJoinAddress(BYTE* game)
+{
+    void* target = game + GameSessionNameOffset + sizeof(void*);
+    if (!IsPlaceholderJoinAddress(ReadGameString(game,
+        GameSessionNameOffset + sizeof(void*))))
+        return true;
+
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    void* field = engine ? GetFieldInfo(GetWorld(engine)) : nullptr;
+    using IsMasterFn = int(__thiscall*)(void*, unsigned char);
+    auto isMaster = engine ? reinterpret_cast<IsMasterFn>(
+        GetProcAddress(engine, FieldSeatMasterSymbol)) : nullptr;
+    if (!field || !isMaster) return false;
+
+    for (unsigned char seat = 0; seat < FieldPlayerCount; ++seat)
+    {
+        if (isMaster(field, seat) == 0) continue;
+        auto* record = static_cast<BYTE*>(field) +
+            FieldPlayerRecordsOffset + seat * FieldPlayerRecordSize;
+        const BYTE* address = record + FieldPlayerAddressOffset;
+        unsigned port = ReadNetworkPort(
+            record + FieldPlayerAdvertisedPortOffset);
+        if (port == 0)
+            port = ReadNetworkPort(record + FieldPlayerObservedPortOffset);
+        if (port == 0 || (address[0] | address[1] | address[2] | address[3]) == 0)
+            return false;
+
+        char endpoint[32]{};
+        _snprintf_s(endpoint, _countof(endpoint), _TRUNCATE,
+            "%u.%u.%u.%u:%u", address[0], address[1],
+            address[2], address[3], port);
+        if (!AssignGameString(target, endpoint)) return false;
+        CompatLog("headless engine: endpoint P2P do master aplicado");
+        return true;
+    }
+    return false;
+}
+
 bool EnsureGameWorldName(BYTE* application, BYTE* game)
 {
     const char* current = ReadGameString(game, GameWorldNameOffset);
@@ -440,12 +499,19 @@ bool StartFieldEngine()
                 CompatLog("headless engine aguardando mundo configurado");
             return false;
         }
+        peerMode = GetPeerToPeerMode();
+        if (peerMode == PeerToPeerClientMode && !EnsureGameJoinAddress(game))
+        {
+            if (InterlockedCompareExchange(
+                &EngineEndpointWaitingLogged, 1, 0) == 0)
+                CompatLog("headless engine aguardando endpoint P2P do master");
+            return false;
+        }
         worldName = ReadGameString(game, GameWorldNameOffset);
         sessionName = ReadGameString(game, GameSessionNameOffset);
         joinAddress = ReadGameString(game, GameSessionNameOffset + sizeof(void*));
         playerIndex = *reinterpret_cast<int*>(
             game + GamePrimaryPlayerIndexOffset);
-        peerMode = GetPeerToPeerMode();
         if (!worldName || worldName[0] == '\0' ||
             !sessionName || sessionName[0] == '\0' || playerIndex < 0 ||
             peerMode == 0 ||

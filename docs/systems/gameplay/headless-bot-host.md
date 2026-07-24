@@ -145,9 +145,13 @@ BotHost é exclusivamente um segundo cliente controlado: só inicia o engine no 
 vez de abrir uma sessão server incompleta. Isso eliminou o acesso inválido causado por um segundo
 seat tentando abrir outra sessão server.
 
-O fixture TCP comprova ready/start e falha de join controlada, mas não pode validar o primeiro
-`0x4B`: ele não implementa o host P2P do engine e deixa o placeholder `serveraddress:0`. Esse gate
-exige uma sala cujo master seja um cliente Rakion real.
+O primeiro smoke com master gráfico comprovou que o cliente chegava ao início do round, mas
+`CGame::StartGame` recebia o placeholder `serveraddress` e falhava três vezes. O roster original já
+mantém, em cada record de `FieldInfo`, o IPv4 observado e as portas observada/anunciada. A DLL agora
+localiza o master pela API `FieldInfo::IsMasterSlot(seat)`, prefere a porta anunciada e preenche o
+`gam_strJoinAddress` antes do modo `4`. Endpoint ausente mantém o processo em espera; não existe
+fallback para endereço inventado. O carregamento e o combate após esse join ainda exigem novo smoke
+gráfico.
 
 Fontes adicionais só podem ser criadas depois que a fonte primária possuir personagem e sessão
 válidos; chamar `AddPlayer_t` antes desse ponto não é um caminho seguro. O próximo gate é iniciar a
