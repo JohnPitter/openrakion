@@ -155,10 +155,12 @@ fallback para endereço inventado.
 O smoke seguinte confirmou `127.0.0.1:2301` tanto no `FieldInfo` quanto no socket UDP aberto pelo
 master, mas expôs uma chamada virtual incorreta no bootstrap: `CGame+vtable[0x8C]` é uma rotina de
 LCD nesta variante, não o início de sessão. O RE do `gamemp.dll` localizou `CGame::JoinGame` em
-`vtable[0x9C]`. Essa função chama `CNetworkLibrary::JoinSession_t`, configura e adiciona os jogadores
+`vtable[0x94]`. A tabela virtual começa em `gamemp.dll+0x295F8`; considerar os oito bytes de RTTI que
+antecedem a tabela como slots deslocava a chamada para `0x9C`. Essa função chama
+`CNetworkLibrary::JoinSession_t`, configura e adiciona os jogadores
 locais e marca o jogo ativo. O headless agora constrói o `CNetworkSession` com o endpoint do master,
 constrói o mundo com `CTFileName(const char*)` pela ABI de oito bytes e fixa `SSC_PLAY1`. Antes da
-chamada, a DLL também confirma que `vtable[0x9C]` aponta para `gamemp.dll+0x15610`; uma variante de
+chamada, a DLL também confirma que `vtable[0x94]` aponta para `gamemp.dll+0x15610`; uma variante de
 cliente incompatível falha fechada. Exceções registram fase, código e endereço do bootstrap para
 separar falhas na construção de `CNetworkSession`, `CTFileName`, `JoinGame` ou destruição da sessão.
 O carregamento e o combate após esse join ainda exigem novo smoke gráfico.
