@@ -47,8 +47,8 @@ constexpr char NetworkSessionConstructorSymbol[] =
     "??0CNetworkSession@@QAE@ABVCTString@@J@Z";
 constexpr char NetworkSessionDestructorSymbol[] =
     "??1CNetworkSession@@QAE@XZ";
-constexpr char FileNameCopyConstructorSymbol[] =
-    "??0CTFileName@@QAE@ABV0@@Z";
+constexpr char FileNameConstructorSymbol[] =
+    "??0CTFileName@@QAE@PBD@Z";
 constexpr unsigned WorldPortNetworkOrder = 0x049f;
 constexpr unsigned char SkipHashVerification = 4;
 constexpr size_t AccountSlotCountOffset = 0x6c;
@@ -72,6 +72,7 @@ constexpr size_t FieldPlayerObservedPortOffset = 0x38;
 constexpr size_t FieldPlayerAdvertisedPortOffset = 0x3a;
 constexpr unsigned char FieldPlayerCount = 20;
 constexpr size_t JoinGameVtableOffset = 0x9c;
+constexpr uintptr_t JoinGameRva = 0x15610;
 constexpr size_t ApplicationServerWorldOffset = 0x64;
 constexpr int PlayGameMenuState = 0x1d;
 constexpr int PeerToPeerClientMode = 4;
@@ -89,9 +90,25 @@ volatile LONG EngineWaitingLogged{};
 volatile LONG EngineStartPending{};
 volatile LONG EngineStartAttempts{};
 volatile LONG EngineEndpointWaitingLogged{};
+volatile LONG EngineJoinPhase{};
 HWND GameWindow{};
 WNDPROC OriginalWindowProcedure{};
 char SelectedCharacterName[13]{};
+
+int LogEngineJoinException(EXCEPTION_POINTERS* exception)
+{
+    const DWORD code = exception && exception->ExceptionRecord
+        ? exception->ExceptionRecord->ExceptionCode : 0;
+    const void* address = exception && exception->ExceptionRecord
+        ? exception->ExceptionRecord->ExceptionAddress : nullptr;
+    const LONG phase = InterlockedCompareExchange(&EngineJoinPhase, 0, 0);
+    char message[160]{};
+    _snprintf_s(message, _countof(message), _TRUNCATE,
+        "headless engine: excecao no join phase=%ld code=%08lX address=%p",
+        phase, code, address);
+    CompatLog(message);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
 
 bool IsHeadlessRequested()
 {
@@ -492,27 +509,35 @@ bool JoinFieldEngine(BYTE* game)
     using NetworkSessionConstructorFn =
         void*(__thiscall*)(void*, const void*, long);
     using NetworkSessionDestructorFn = void(__thiscall*)(void*);
-    using FileNameCopyConstructorFn = void*(__thiscall*)(void*, const void*);
+    using FileNameConstructorFn = void*(__thiscall*)(void*, const char*);
     using JoinGameFn = int(__thiscall*)(void*, const void*, FileNameValue);
     auto constructSession = reinterpret_cast<NetworkSessionConstructorFn>(
         GetProcAddress(engine, NetworkSessionConstructorSymbol));
     auto destroySession = reinterpret_cast<NetworkSessionDestructorFn>(
         GetProcAddress(engine, NetworkSessionDestructorSymbol));
-    auto copyFileName = reinterpret_cast<FileNameCopyConstructorFn>(
-        GetProcAddress(engine, FileNameCopyConstructorSymbol));
+    auto constructFileName = reinterpret_cast<FileNameConstructorFn>(
+        GetProcAddress(engine, FileNameConstructorSymbol));
     auto** vtable = *reinterpret_cast<void***>(game);
     auto joinGame = vtable ? reinterpret_cast<JoinGameFn>(
         vtable[JoinGameVtableOffset / sizeof(void*)]) : nullptr;
-    if (!constructSession || !destroySession || !copyFileName || !joinGame)
+    auto* gameModule = reinterpret_cast<BYTE*>(GetModuleHandleW(L"gamemp.dll"));
+    if (!constructSession || !destroySession || !constructFileName ||
+        !joinGame || !gameModule ||
+        reinterpret_cast<BYTE*>(joinGame) != gameModule + JoinGameRva)
         return false;
 
     alignas(void*) BYTE session[512]{};
     FileNameValue world{};
+    InterlockedExchange(&EngineJoinPhase, 1);
     constructSession(session,
         game + GameSessionNameOffset + sizeof(void*), 0);
-    copyFileName(&world, game + GameWorldNameOffset);
+    InterlockedExchange(&EngineJoinPhase, 2);
+    constructFileName(&world, ReadGameString(game, GameWorldNameOffset));
+    InterlockedExchange(&EngineJoinPhase, 3);
     const int joined = joinGame(game, session, world);
+    InterlockedExchange(&EngineJoinPhase, 4);
     destroySession(session);
+    InterlockedExchange(&EngineJoinPhase, 5);
     return joined != 0;
 }
 
@@ -575,7 +600,7 @@ bool StartFieldEngine()
         }
 
     }
-    __except (EXCEPTION_EXECUTE_HANDLER)
+    __except (LogEngineJoinException(GetExceptionInformation()))
     {
         CompatLog("headless engine recusado: ABI de CGame incompatível");
         return false;

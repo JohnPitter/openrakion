@@ -157,8 +157,11 @@ master, mas expôs uma chamada virtual incorreta no bootstrap: `CGame+vtable[0x8
 LCD nesta variante, não o início de sessão. O RE do `gamemp.dll` localizou `CGame::JoinGame` em
 `vtable[0x9C]`. Essa função chama `CNetworkLibrary::JoinSession_t`, configura e adiciona os jogadores
 locais e marca o jogo ativo. O headless agora constrói o `CNetworkSession` com o endpoint do master,
-passa o mundo como `CTFileName` pela ABI de oito bytes e fixa `SSC_PLAY1`. O carregamento e o combate
-após esse join ainda exigem novo smoke gráfico.
+constrói o mundo com `CTFileName(const char*)` pela ABI de oito bytes e fixa `SSC_PLAY1`. Antes da
+chamada, a DLL também confirma que `vtable[0x9C]` aponta para `gamemp.dll+0x15610`; uma variante de
+cliente incompatível falha fechada. Exceções registram fase, código e endereço do bootstrap para
+separar falhas na construção de `CNetworkSession`, `CTFileName`, `JoinGame` ou destruição da sessão.
+O carregamento e o combate após esse join ainda exigem novo smoke gráfico.
 
 Fontes adicionais só podem ser criadas depois que a fonte primária possuir personagem e sessão
 válidos; chamar `AddPlayer_t` antes desse ponto não é um caminho seguro. O próximo gate é iniciar a
