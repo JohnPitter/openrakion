@@ -175,8 +175,8 @@ bytes do stream e recebe `C0000005`. O buffer estava em `MEM_RESERVE/PAGE_NOACCE
 engine só confirma as páginas quando a leitura passa por `CTStream::Read_t`, mas o CRC acessava o
 ponteiro diretamente. No processo gráfico, a UI aquece `Player.ecl` antes da sessão e mascara o
 defeito; o headless não passa por essa UI. Exclusivamente no headless, a chamada interna do CRC usa
-agora `Read_t` em blocos e mantém a posição e a tabela CRC originais. O arquivo continua vindo do
-XFS e a validação não é ignorada.
+agora `CTFileStream::FileCommitPage` antes de `Read_t`, em blocos, e mantém a posição e a tabela CRC
+originais. O arquivo continua vindo do XFS e a validação não é ignorada.
 
 A comparação de memória entre o master gráfico e o headless também encontrou uma divergência:
 o construtor do `CGame` inicializa os quatro índices de jogadores locais com zero. No fluxo
