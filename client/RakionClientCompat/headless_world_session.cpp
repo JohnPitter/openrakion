@@ -519,33 +519,23 @@ struct FileNameValue
 
 void* OriginalJoinSession{};
 void* OriginalAddPlayer{};
-volatile PVOID LastLocalPlayerSource{};
 
-void __fastcall TraceJoinSession(
-    void* network, void*, const void* session, long localPlayers,
-    FileNameValue world)
+__declspec(naked) void TraceJoinSession()
 {
-    using JoinSessionFn =
-        void(__thiscall*)(void*, const void*, long, FileNameValue);
-    InterlockedExchange(&EngineJoinPhase, 20);
-    CompatLog("headless engine: entrando em JoinSession_t");
-    reinterpret_cast<JoinSessionFn>(OriginalJoinSession)(
-        network, session, localPlayers, world);
-    InterlockedExchange(&EngineJoinPhase, 21);
-    CompatLog("headless engine: JoinSession_t concluido");
+    __asm
+    {
+        mov dword ptr [EngineJoinPhase], 20
+        jmp dword ptr [OriginalJoinSession]
+    }
 }
 
-void* __fastcall TraceAddPlayer(void* network, void*, void* character)
+__declspec(naked) void TraceAddPlayer()
 {
-    using AddPlayerFn = void*(__thiscall*)(void*, void*);
-    InterlockedExchange(&EngineJoinPhase, 30);
-    CompatLog("headless engine: entrando em AddPlayer_t");
-    void* source = reinterpret_cast<AddPlayerFn>(OriginalAddPlayer)(
-        network, character);
-    InterlockedExchangePointer(&LastLocalPlayerSource, source);
-    InterlockedExchange(&EngineJoinPhase, 31);
-    CompatLog("headless engine: AddPlayer_t concluido");
-    return source;
+    __asm
+    {
+        mov dword ptr [EngineJoinPhase], 30
+        jmp dword ptr [OriginalAddPlayer]
+    }
 }
 
 bool ReplaceImport(void** slot, void* replacement, void*& original)
@@ -611,15 +601,12 @@ bool JoinFieldEngine(BYTE* game)
     InterlockedExchange(&EngineJoinPhase, 2);
     constructFileName(&world, ReadGameString(game, GameWorldNameOffset));
     InterlockedExchange(&EngineJoinPhase, 10);
-    InterlockedExchangePointer(&LastLocalPlayerSource, nullptr);
     const int joined = joinGame(game, session, world);
     const LONG phase = InterlockedCompareExchange(&EngineJoinPhase, 0, 0);
-    void* source = InterlockedCompareExchangePointer(
-        &LastLocalPlayerSource, nullptr, nullptr);
     char result[160]{};
     _snprintf_s(result, _countof(result), _TRUNCATE,
-        "headless engine: JoinGame retornou=%d phase=%ld source=%p",
-        joined, phase, source);
+        "headless engine: JoinGame retornou=%d phase=%ld",
+        joined, phase);
     CompatLog(result);
     InterlockedExchange(&EngineJoinPhase, 40);
     destroySession(session);
