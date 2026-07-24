@@ -104,11 +104,19 @@ int LogEngineJoinException(EXCEPTION_POINTERS* exception)
         ? exception->ExceptionRecord->ExceptionCode : 0;
     const void* address = exception && exception->ExceptionRecord
         ? exception->ExceptionRecord->ExceptionAddress : nullptr;
+    const ULONG_PTR accessAddress =
+        exception && exception->ExceptionRecord &&
+        exception->ExceptionRecord->NumberParameters > 1
+        ? exception->ExceptionRecord->ExceptionInformation[1] : 0;
+    const CONTEXT* context = exception ? exception->ContextRecord : nullptr;
     const LONG phase = InterlockedCompareExchange(&EngineJoinPhase, 0, 0);
-    char message[160]{};
+    char message[280]{};
     _snprintf_s(message, _countof(message), _TRUNCATE,
-        "headless engine: excecao no join phase=%ld code=%08lX address=%p",
-        phase, code, address);
+        "headless engine: excecao no join phase=%ld code=%08lX "
+        "address=%p access=%p esi=%08lX edi=%08lX ecx=%08lX edx=%08lX",
+        phase, code, address, reinterpret_cast<void*>(accessAddress),
+        context ? context->Esi : 0, context ? context->Edi : 0,
+        context ? context->Ecx : 0, context ? context->Edx : 0);
     CompatLog(message);
     return EXCEPTION_EXECUTE_HANDLER;
 }
