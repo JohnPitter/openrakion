@@ -74,6 +74,8 @@ constexpr size_t FieldPlayerAdvertisedPortOffset = 0x3a;
 constexpr unsigned char FieldPlayerCount = 20;
 constexpr size_t JoinGameVtableOffset = 0x94;
 constexpr uintptr_t JoinGameRva = 0x15610;
+constexpr uintptr_t JoinSessionIatRva = 0x26150;
+constexpr uintptr_t AddPlayerIatRva = 0x261d0;
 constexpr size_t ApplicationServerWorldOffset = 0x64;
 constexpr int PlayGameMenuState = 0x1d;
 constexpr int PeerToPeerClientMode = 4;
@@ -515,6 +517,61 @@ struct FileNameValue
     void* preloaded{};
 };
 
+void* OriginalJoinSession{};
+void* OriginalAddPlayer{};
+volatile PVOID LastLocalPlayerSource{};
+
+void __fastcall TraceJoinSession(
+    void* network, void*, const void* session, long localPlayers,
+    FileNameValue world)
+{
+    using JoinSessionFn =
+        void(__thiscall*)(void*, const void*, long, FileNameValue);
+    InterlockedExchange(&EngineJoinPhase, 20);
+    reinterpret_cast<JoinSessionFn>(OriginalJoinSession)(
+        network, session, localPlayers, world);
+    InterlockedExchange(&EngineJoinPhase, 21);
+}
+
+void* __fastcall TraceAddPlayer(void* network, void*, void* character)
+{
+    using AddPlayerFn = void*(__thiscall*)(void*, void*);
+    InterlockedExchange(&EngineJoinPhase, 30);
+    void* source = reinterpret_cast<AddPlayerFn>(OriginalAddPlayer)(
+        network, character);
+    InterlockedExchangePointer(&LastLocalPlayerSource, source);
+    InterlockedExchange(&EngineJoinPhase, 31);
+    return source;
+}
+
+bool ReplaceImport(void** slot, void* replacement, void*& original)
+{
+    if (*slot == replacement) return original != nullptr;
+    DWORD protection{};
+    if (!VirtualProtect(slot, sizeof(*slot), PAGE_READWRITE, &protection))
+        return false;
+    original = *slot;
+    *slot = replacement;
+    DWORD ignored{};
+    VirtualProtect(slot, sizeof(*slot), protection, &ignored);
+    FlushInstructionCache(GetCurrentProcess(), slot, sizeof(*slot));
+    return original != nullptr;
+}
+
+bool InstallJoinTraceHooks(BYTE* gameModule)
+{
+    auto** joinSlot = reinterpret_cast<void**>(
+        gameModule + JoinSessionIatRva);
+    auto** addPlayerSlot = reinterpret_cast<void**>(
+        gameModule + AddPlayerIatRva);
+    return ReplaceImport(
+        joinSlot, reinterpret_cast<void*>(&TraceJoinSession),
+        OriginalJoinSession) &&
+        ReplaceImport(
+            addPlayerSlot, reinterpret_cast<void*>(&TraceAddPlayer),
+            OriginalAddPlayer);
+}
+
 bool JoinFieldEngine(BYTE* game)
 {
     HMODULE engine = GetModuleHandleW(L"engine.dll");
@@ -539,6 +596,8 @@ bool JoinFieldEngine(BYTE* game)
         !joinGame || !gameModule ||
         reinterpret_cast<BYTE*>(joinGame) != gameModule + JoinGameRva)
         return false;
+    if (!InstallJoinTraceHooks(gameModule))
+        CompatLog("headless engine: telemetria interna do join indisponivel");
 
     alignas(void*) BYTE session[512]{};
     FileNameValue world{};
@@ -547,11 +606,20 @@ bool JoinFieldEngine(BYTE* game)
         game + GameSessionNameOffset + sizeof(void*), 0);
     InterlockedExchange(&EngineJoinPhase, 2);
     constructFileName(&world, ReadGameString(game, GameWorldNameOffset));
-    InterlockedExchange(&EngineJoinPhase, 3);
+    InterlockedExchange(&EngineJoinPhase, 10);
+    InterlockedExchangePointer(&LastLocalPlayerSource, nullptr);
     const int joined = joinGame(game, session, world);
-    InterlockedExchange(&EngineJoinPhase, 4);
+    const LONG phase = InterlockedCompareExchange(&EngineJoinPhase, 0, 0);
+    void* source = InterlockedCompareExchangePointer(
+        &LastLocalPlayerSource, nullptr, nullptr);
+    char result[160]{};
+    _snprintf_s(result, _countof(result), _TRUNCATE,
+        "headless engine: JoinGame retornou=%d phase=%ld source=%p",
+        joined, phase, source);
+    CompatLog(result);
+    InterlockedExchange(&EngineJoinPhase, 40);
     destroySession(session);
-    InterlockedExchange(&EngineJoinPhase, 5);
+    InterlockedExchange(&EngineJoinPhase, 41);
     return joined != 0;
 }
 
