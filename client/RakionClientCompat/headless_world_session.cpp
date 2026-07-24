@@ -528,19 +528,23 @@ void __fastcall TraceJoinSession(
     using JoinSessionFn =
         void(__thiscall*)(void*, const void*, long, FileNameValue);
     InterlockedExchange(&EngineJoinPhase, 20);
+    CompatLog("headless engine: entrando em JoinSession_t");
     reinterpret_cast<JoinSessionFn>(OriginalJoinSession)(
         network, session, localPlayers, world);
     InterlockedExchange(&EngineJoinPhase, 21);
+    CompatLog("headless engine: JoinSession_t concluido");
 }
 
 void* __fastcall TraceAddPlayer(void* network, void*, void* character)
 {
     using AddPlayerFn = void*(__thiscall*)(void*, void*);
     InterlockedExchange(&EngineJoinPhase, 30);
+    CompatLog("headless engine: entrando em AddPlayer_t");
     void* source = reinterpret_cast<AddPlayerFn>(OriginalAddPlayer)(
         network, character);
     InterlockedExchangePointer(&LastLocalPlayerSource, source);
     InterlockedExchange(&EngineJoinPhase, 31);
+    CompatLog("headless engine: AddPlayer_t concluido");
     return source;
 }
 
@@ -698,7 +702,7 @@ bool StartFieldEngine()
     {
         joined = JoinFieldEngine(game);
     }
-    __except (EXCEPTION_EXECUTE_HANDLER)
+    __except (LogEngineJoinException(GetExceptionInformation()))
     {
         CompatLog("headless engine recusado: ABI de CGame::JoinGame incompatível");
         return false;
