@@ -60,7 +60,7 @@ headless falha fechado em vez de disputar a entrada.
 `KILL_ON_JOB_CLOSE`: encerramento normal, Ctrl+C ou crash do supervisor não deixa um processo
 órfão. A lógica de `CreateProcess` fica em `RakionClientRuntime` e é compartilhada com o launcher.
 
-Exemplo de smoke administrativo:
+Exemplo de entrada em um field conhecido:
 
 ```powershell
 $env:OPENRAKION_BOT_CREDENTIAL = 'credencial-da-conta-host'
@@ -69,13 +69,47 @@ dotnet .\RakionBotHost.dll --user bot_host_01 --field 7
 Remove-Item Env:\OPENRAKION_BOT_CREDENTIAL
 ```
 
+O supervisor também aceita dois modos voltados à validação nativa:
+
+```powershell
+# Master nativo: cria a sala, aguarda o joiner, inicia a partida e abre o servidor P2P.
+dotnet .\RakionBotHost.dll --user test --role master --room native-headless `
+  --world 'LevelsSV\Mammoth\Mammoth.wld'
+
+# Joiner nativo: localiza uma sala disponível, marca ready e entra na sessão P2P.
+dotnet .\RakionBotHost.dll --user test2 --role joiner --field quick `
+  --world 'LevelsSV\Mammoth\Mammoth.wld'
+```
+
 A credencial não é herdada como variável pelo processo filho. O protocolo legado ainda exige a
 credencial codificada no vetor de argumentos do próprio jogo; uma conta de serviço com privilégios
 mínimos e ticket curto deve substituir senha estática antes do rollout remoto.
 
-O smoke atual valida bootstrap dedicated, ausência de módulos gráficos, shell ocultado, limpeza do
-filho, login válido, seleção de personagem e entrada no field. A criação das fontes adicionais e o
-carregamento da partida continuam pendentes.
+## Teste nativo automatizado
+
+`test-native-headless.ps1` substitui o procedimento manual de abrir dois clientes, criar a sala,
+marcar ready e pressionar F10. Ele compila e instala as DLLs no baseline informado, inicia dois
+peers nativos ocultos, cria uma sala Deathmatch exclusiva, faz quick-join e valida no log:
+
+- `CGame::StartGame(2)` no master;
+- `CGame::JoinGame` no joiner;
+- engine ativo nos modos P2P `0` e `4`;
+- ausência de exceção de ABI, CRC ou bootstrap.
+
+As duas credenciais são lidas somente do ambiente do runner e removidas do ambiente herdado pelo
+cliente:
+
+```powershell
+$env:OPENRAKION_HEADLESS_MASTER_CREDENTIAL = '<credencial-master>'
+$env:OPENRAKION_HEADLESS_JOINER_CREDENTIAL = '<credencial-joiner>'
+.\test-native-headless.ps1 -ClientRoot '<cliente-v258-original>'
+Remove-Item Env:\OPENRAKION_HEADLESS_MASTER_CREDENTIAL
+Remove-Item Env:\OPENRAKION_HEADLESS_JOINER_CREDENTIAL
+```
+
+O teste termina os dois Job Objects ao concluir, portanto não deixa clientes ocultos. Os testes de
+protocolo do World continuam separados: eles são mais rápidos e cobrem regras de sala e combate,
+enquanto este smoke executa o engine proprietário e detecta regressões específicas da sessão P2P.
 
 ## Estado da sessão nativa
 

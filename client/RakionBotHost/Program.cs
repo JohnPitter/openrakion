@@ -24,15 +24,19 @@ internal static class Program
             job.Assign(process);
             LegacyClientProcess.Resume(suspended);
             suspended = default;
+            string target = options.Role == HeadlessPeerRole.Master
+                ? $"room={options.RoomName}"
+                : options.FieldId is int fieldId ? $"field={fieldId}" : "field=quick";
             Console.WriteLine(
-                $"bot-host field={options.FieldId} pid={process.Id} dedicated=1 iniciado");
+                $"bot-host role={options.Role.ToString().ToLowerInvariant()} {target} " +
+                $"pid={process.Id} dedicated=1 iniciado");
             ConsoleCancelEventHandler cancel = (_, eventArgs) =>
             {
                 eventArgs.Cancel = true;
                 if (!process.HasExited) process.Kill(entireProcessTree: true);
             };
             Console.CancelKeyPress += cancel;
-            try { Monitor(process, options.FieldId, foregroundWindow); }
+            try { Monitor(process, options.Role, target, foregroundWindow); }
             finally { Console.CancelKeyPress -= cancel; }
             return process.ExitCode;
         }
@@ -53,10 +57,16 @@ internal static class Program
         var environment = new Dictionary<string, string>
         {
             ["OPENRAKION_HEADLESS"] = "1",
-            ["OPENRAKION_HEADLESS_FIELD"] = options.FieldId.ToString(
-                System.Globalization.CultureInfo.InvariantCulture),
+            [BotHostOptions.RoleVariable] = options.Role.ToString().ToLowerInvariant(),
             [BotHostOptions.WorldVariable] = options.WorldName
         };
+        if (options.Role == HeadlessPeerRole.Master)
+            environment[BotHostOptions.RoomVariable] = options.RoomName;
+        else if (options.FieldId is int fieldId)
+            environment["OPENRAKION_HEADLESS_FIELD"] = fieldId.ToString(
+                System.Globalization.CultureInfo.InvariantCulture);
+        else
+            environment[BotHostOptions.QuickJoinVariable] = "1";
         var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             BotHostOptions.CredentialVariable
@@ -78,7 +88,8 @@ internal static class Program
         }
     }
 
-    private static void Monitor(Process process, int fieldId, IntPtr foregroundWindow)
+    private static void Monitor(
+        Process process, HeadlessPeerRole role, string target, IntPtr foregroundWindow)
     {
         bool windowHidden = false;
         while (!process.WaitForExit(250))
@@ -89,9 +100,13 @@ internal static class Program
             IsolateInput(window, foregroundWindow);
             if (windowHidden) continue;
             windowHidden = true;
-            Console.WriteLine($"bot-host field={fieldId} shell e input isolados");
+            Console.WriteLine(
+                $"bot-host role={role.ToString().ToLowerInvariant()} {target} " +
+                "shell e input isolados");
         }
-        Console.WriteLine($"bot-host field={fieldId} encerrado code={process.ExitCode}");
+        Console.WriteLine(
+            $"bot-host role={role.ToString().ToLowerInvariant()} {target} " +
+            $"encerrado code={process.ExitCode}");
     }
 
     private static void IsolateInput(IntPtr window, IntPtr foregroundWindow)

@@ -26,8 +26,14 @@ constexpr char CharacterSelectSymbol[] =
     "?SendCharacterSelect@IScavengerWorldNet@@UAEXK@Z";
 constexpr char FieldEnterSymbol[] =
     "?SendFieldEnter@IScavengerWorldNet@@UAEXGPAD@Z";
+constexpr char FieldQuickEnterSymbol[] =
+    "?SendFieldQuickEnter@IScavengerWorldNet@@UAEXXZ";
+constexpr char FieldCreateSymbol[] =
+    "?SendFieldCreate@IScavengerWorldNet@@UAEXPAD00EEEGEEEE@Z";
 constexpr char FieldReadySymbol[] =
     "?SendFieldReady@IScavengerWorldNet@@UAEXE@Z";
+constexpr char FieldGameStartSymbol[] =
+    "?SendFieldGameStart@IScavengerWorldNet@@UAEXXZ";
 constexpr char FieldPlayingSymbol[] =
     "?IsGamePlaying@FieldInfo@@QAEHXZ";
 constexpr char FieldMasterSymbol[] =
@@ -38,6 +44,9 @@ constexpr char FieldRoundStartSymbol[] =
     "?SendFieldGameRoundStart@IScavengerWorldNet@@UAEXXZ";
 constexpr char FieldVariable[] = "OPENRAKION_HEADLESS_FIELD";
 constexpr char WorldVariable[] = "OPENRAKION_HEADLESS_WORLD";
+constexpr char RoleVariable[] = "OPENRAKION_HEADLESS_ROLE";
+constexpr char RoomVariable[] = "OPENRAKION_HEADLESS_ROOM";
+constexpr char QuickJoinVariable[] = "OPENRAKION_HEADLESS_QUICK_JOIN";
 constexpr char AssignStringSymbol[] = "??4CTString@@QAEAAV0@PBD@Z";
 constexpr char StringConstructorSymbol[] = "??0CTString@@QAE@PBD@Z";
 constexpr char StringDestructorSymbol[] = "??1CTString@@QAE@XZ";
@@ -75,6 +84,7 @@ constexpr size_t FieldPlayerAdvertisedPortOffset = 0x3a;
 constexpr unsigned char FieldPlayerCount = 20;
 constexpr size_t JoinGameVtableOffset = 0x94;
 constexpr uintptr_t JoinGameRva = 0x15610;
+constexpr uintptr_t StartGameRva = 0x150c0;
 constexpr uintptr_t JoinSessionIatRva = 0x26150;
 constexpr uintptr_t AddPlayerIatRva = 0x261d0;
 constexpr size_t ApplicationServerWorldOffset = 0x64;
@@ -82,6 +92,8 @@ constexpr int PlayGameMenuState = 0x1d;
 constexpr int PeerToPeerClientMode = 4;
 constexpr DWORD FieldEnterDelayMilliseconds = 1500;
 constexpr DWORD FieldReadyDelayMilliseconds = 1500;
+constexpr DWORD MatchStartInitialDelayMilliseconds = 6000;
+constexpr DWORD MatchStartRetryMilliseconds = 1500;
 constexpr DWORD EngineStartDelayMilliseconds = 500;
 constexpr DWORD EngineRetryDelayMilliseconds = 2000;
 constexpr LONG MaximumEngineStartAttempts = 3;
@@ -89,15 +101,23 @@ constexpr UINT StartEngineMessage = WM_APP + 0x271;
 volatile LONG SessionState{};
 volatile LONG CharacterReadyTick{};
 volatile LONG FieldEnterTick{};
+volatile LONG MatchStartTick{};
 volatile LONG EngineStartTick{};
 volatile LONG EngineWaitingLogged{};
 volatile LONG EngineStartPending{};
 volatile LONG EngineStartAttempts{};
 volatile LONG EngineEndpointWaitingLogged{};
 volatile LONG EngineJoinPhase{};
+volatile LONG MasterFieldLogged{};
 HWND GameWindow{};
 WNDPROC OriginalWindowProcedure{};
 char SelectedCharacterName[13]{};
+
+enum class HeadlessRole
+{
+    Joiner,
+    Master
+};
 
 struct EngineExceptionDetails
 {
@@ -186,6 +206,15 @@ bool IsHeadlessRequested()
     return length == 1 && value[0] == '1';
 }
 
+HeadlessRole GetHeadlessRole()
+{
+    char value[16]{};
+    const DWORD length = GetEnvironmentVariableA(
+        RoleVariable, value, static_cast<DWORD>(sizeof(value)));
+    return length == 6 && _stricmp(value, "master") == 0
+        ? HeadlessRole::Master : HeadlessRole::Joiner;
+}
+
 std::vector<std::string> ReadLegacyArguments()
 {
     std::vector<std::string> values;
@@ -241,7 +270,7 @@ void* GetFieldInfo(void* world)
     return getField ? getField(world) : nullptr;
 }
 
-int GetPeerToPeerMode()
+bool IsFieldMaster()
 {
     HMODULE engine = GetModuleHandleW(L"engine.dll");
     void* world = engine ? GetWorld(engine) : nullptr;
@@ -249,8 +278,7 @@ int GetPeerToPeerMode()
     using IsMasterFn = int(__thiscall*)(void*);
     auto isMaster = engine ? reinterpret_cast<IsMasterFn>(
         GetProcAddress(engine, FieldMasterSymbol)) : nullptr;
-    if (!field || !isMaster) return 0;
-    return isMaster(field) != 0 ? 0 : PeerToPeerClientMode;
+    return field && isMaster && isMaster(field) != 0;
 }
 
 bool StartWorldSession()
@@ -361,6 +389,24 @@ bool IsCharacterReady()
 
 bool JoinConfiguredField()
 {
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    void* world = engine ? GetWorld(engine) : nullptr;
+    if (!world) return false;
+
+    char quick[8]{};
+    const DWORD quickLength = GetEnvironmentVariableA(
+        QuickJoinVariable, quick, static_cast<DWORD>(sizeof(quick)));
+    if (quickLength == 1 && quick[0] == '1')
+    {
+        using FieldQuickEnterFn = void(__thiscall*)(void*);
+        auto enter = reinterpret_cast<FieldQuickEnterFn>(
+            GetProcAddress(engine, FieldQuickEnterSymbol));
+        if (!enter) return false;
+        enter(world);
+        CompatLog("headless World: quick enter enviado");
+        return true;
+    }
+
     char configured[16]{};
     const DWORD length = GetEnvironmentVariableA(
         FieldVariable, configured, static_cast<DWORD>(sizeof(configured)));
@@ -374,8 +420,6 @@ bool JoinConfiguredField()
         return false;
     }
 
-    HMODULE engine = GetModuleHandleW(L"engine.dll");
-    void* world = engine ? GetWorld(engine) : nullptr;
     using FieldEnterFn = void(__thiscall*)(void*, unsigned short, char*);
     auto enter = engine ? reinterpret_cast<FieldEnterFn>(
         GetProcAddress(engine, FieldEnterSymbol)) : nullptr;
@@ -383,6 +427,32 @@ bool JoinConfiguredField()
     char emptyPassword[] = "";
     enter(world, static_cast<unsigned short>(fieldId), emptyPassword);
     CompatLog("headless World: entrada no field enviada");
+    return true;
+}
+
+bool CreateConfiguredField()
+{
+    char room[41]{};
+    const DWORD length = GetEnvironmentVariableA(
+        RoomVariable, room, static_cast<DWORD>(sizeof(room)));
+    if (length == 0 || length >= sizeof(room))
+    {
+        CompatLog("headless World recusado: nome da sala invalido");
+        return false;
+    }
+
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    void* world = engine ? GetWorld(engine) : nullptr;
+    using FieldCreateFn = void(__thiscall*)(
+        void*, char*, char*, char*, unsigned char, unsigned char, unsigned char,
+        unsigned short, unsigned char, unsigned char, unsigned char, unsigned char);
+    auto create = engine ? reinterpret_cast<FieldCreateFn>(
+        GetProcAddress(engine, FieldCreateSymbol)) : nullptr;
+    if (!world || !create) return false;
+
+    char empty[] = "";
+    create(world, room, empty, empty, 0, 2, 1, 432, 20, 1, 99, 0);
+    CompatLog("headless World: criacao da sala master enviada");
     return true;
 }
 
@@ -396,6 +466,19 @@ bool SetFieldReady()
     if (!world || !ready) return false;
     ready(world, 1);
     CompatLog("headless World: estado ready enviado");
+    return true;
+}
+
+bool RequestMatchStart()
+{
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    void* world = engine ? GetWorld(engine) : nullptr;
+    using MatchStartFn = void(__thiscall*)(void*);
+    auto start = engine ? reinterpret_cast<MatchStartFn>(
+        GetProcAddress(engine, FieldGameStartSymbol)) : nullptr;
+    if (!world || !start) return false;
+    start(world);
+    CompatLog("headless World: start da partida solicitado pelo master");
     return true;
 }
 
@@ -631,6 +714,33 @@ bool InstallJoinTraceHooks(BYTE* gameModule)
             OriginalAddPlayer);
 }
 
+bool StartMasterFieldEngine(BYTE* game)
+{
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    auto* gameModule = reinterpret_cast<BYTE*>(GetModuleHandleW(L"gamemp.dll"));
+    if (!engine || !gameModule || !InstallSafeStreamCrc(engine)) return false;
+
+    constexpr BYTE ExpectedStartGamePrefix[]{
+        0x6a, 0xff, 0x68, 0x07, 0x3f, 0x02, 0x10
+    };
+    BYTE* address = gameModule + StartGameRva;
+    if (memcmp(address, ExpectedStartGamePrefix, sizeof(ExpectedStartGamePrefix)) != 0)
+        return false;
+    if (!InstallJoinTraceHooks(gameModule))
+        CompatLog("headless engine: telemetria interna do master indisponivel");
+
+    using StartGameFn = int(__thiscall*)(void*, int);
+    InterlockedExchange(&EngineJoinPhase, 100);
+    const int started = reinterpret_cast<StartGameFn>(address)(game, 2);
+    const LONG phase = InterlockedCompareExchange(&EngineJoinPhase, 0, 0);
+    char result[160]{};
+    _snprintf_s(result, _countof(result), _TRUNCATE,
+        "headless engine: StartGame master retornou=%d phase=%ld",
+        started, phase);
+    CompatLog(result);
+    return started != 0;
+}
+
 bool JoinFieldEngine(BYTE* game)
 {
     HMODULE engine = GetModuleHandleW(L"engine.dll");
@@ -697,6 +807,7 @@ bool StartFieldEngine()
     const char* joinAddress{};
     int playerIndex{-1};
     int peerMode{};
+    bool fieldMaster{};
     __try
     {
         if (!EnsureGameWorldName(*application, game))
@@ -705,7 +816,8 @@ bool StartFieldEngine()
                 CompatLog("headless engine aguardando mundo configurado");
             return false;
         }
-        peerMode = GetPeerToPeerMode();
+        fieldMaster = IsFieldMaster();
+        peerMode = fieldMaster ? 0 : PeerToPeerClientMode;
         if (peerMode == PeerToPeerClientMode && !EnsureGameJoinAddress(game))
         {
             if (InterlockedCompareExchange(
@@ -720,7 +832,6 @@ bool StartFieldEngine()
             game + GameMenuPlayerIndicesOffset);
         if (!worldName || worldName[0] == '\0' ||
             !sessionName || sessionName[0] == '\0' || playerIndex < 0 ||
-            peerMode == 0 ||
             (peerMode == PeerToPeerClientMode &&
                 (!joinAddress || joinAddress[0] == '\0')))
         {
@@ -752,16 +863,21 @@ bool StartFieldEngine()
     bool joined{};
     __try
     {
-        joined = JoinFieldEngine(game);
+        joined = fieldMaster
+            ? StartMasterFieldEngine(game) : JoinFieldEngine(game);
     }
     __except (LogEngineJoinException(GetExceptionInformation()))
     {
-        CompatLog("headless engine recusado: ABI de CGame::JoinGame incompatível");
+        CompatLog(fieldMaster
+            ? "headless engine recusado: ABI de CGame::StartGame incompatível"
+            : "headless engine recusado: ABI de CGame::JoinGame incompatível");
         return false;
     }
     if (!joined)
     {
-        CompatLog("headless engine recusado: CGame::JoinGame falhou");
+        CompatLog(fieldMaster
+            ? "headless engine recusado: CGame::StartGame master falhou"
+            : "headless engine recusado: CGame::JoinGame falhou");
         return false;
     }
 
@@ -858,13 +974,14 @@ void PollHeadlessWorldSession()
         const DWORD readyAt = static_cast<DWORD>(
             InterlockedCompareExchange(&CharacterReadyTick, 0, 0));
         if (GetTickCount() - readyAt < FieldEnterDelayMilliseconds) return;
-        if (!JoinConfiguredField())
+        const bool master = GetHeadlessRole() == HeadlessRole::Master;
+        if (!(master ? CreateConfiguredField() : JoinConfiguredField()))
         {
             InterlockedExchange(&SessionState, 5);
             return;
         }
         InterlockedExchange(&FieldEnterTick, static_cast<LONG>(GetTickCount()));
-        InterlockedExchange(&SessionState, 6);
+        InterlockedExchange(&SessionState, master ? 20 : 6);
         return;
     }
     if (state == 6)
@@ -873,6 +990,33 @@ void PollHeadlessWorldSession()
             InterlockedCompareExchange(&FieldEnterTick, 0, 0));
         if (GetTickCount() - enteredAt < FieldReadyDelayMilliseconds) return;
         InterlockedExchange(&SessionState, SetFieldReady() ? 8 : 7);
+        return;
+    }
+    if (state == 20)
+    {
+        if (IsFieldPlaying())
+        {
+            InterlockedExchange(&SessionState, 8);
+            return;
+        }
+        if (!IsFieldMaster()) return;
+        if (InterlockedCompareExchange(&MasterFieldLogged, 1, 0) == 0)
+            CompatLog("headless World: sala master confirmada pelo engine");
+        const DWORD requestedAt = static_cast<DWORD>(
+            InterlockedCompareExchange(&MatchStartTick, 0, 0));
+        const DWORD fieldCreatedAt = static_cast<DWORD>(
+            InterlockedCompareExchange(&FieldEnterTick, 0, 0));
+        const DWORD delay = requestedAt == 0
+            ? MatchStartInitialDelayMilliseconds : MatchStartRetryMilliseconds;
+        const DWORD baseline = requestedAt == 0 ? fieldCreatedAt : requestedAt;
+        if (GetTickCount() - baseline < delay)
+            return;
+        if (!RequestMatchStart())
+        {
+            InterlockedExchange(&SessionState, 13);
+            return;
+        }
+        InterlockedExchange(&MatchStartTick, static_cast<LONG>(GetTickCount()));
         return;
     }
     if (state == 8 && IsFieldPlaying())

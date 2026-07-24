@@ -21,6 +21,7 @@ public sealed class BotHostOptionsTests
         Assert.Equal("secret", options.Credential);
         Assert.Equal("1A", options.ServerId);
         Assert.Equal(7, options.FieldId);
+        Assert.Equal(HeadlessPeerRole.Joiner, options.Role);
         Assert.Equal(@"LevelsSV\Cage\Cage.wld", options.WorldName);
     }
 
@@ -44,6 +45,35 @@ public sealed class BotHostOptionsTests
         Assert.Throws<ArgumentException>(() => BotHostOptions.Parse(
             ["--client-root", "client", "--user", "bot_host", "--field", "0",
                 "--world", @"LevelsSV\Cage\Cage.wld"]));
+    }
+
+    [Fact]
+    public void Parse_AcceptsMasterRoomWithoutField()
+    {
+        using var credential = new EnvironmentVariableScope(
+            BotHostOptions.CredentialVariable, "secret");
+
+        BotHostOptions options = BotHostOptions.Parse(
+            ["--client-root", "client", "--user", "master", "--role", "master",
+                "--room", "native-headless", "--world", @"LevelsSV\Cage\Cage.wld"]);
+
+        Assert.Equal(HeadlessPeerRole.Master, options.Role);
+        Assert.Null(options.FieldId);
+        Assert.Equal("native-headless", options.RoomName);
+    }
+
+    [Fact]
+    public void Parse_AcceptsQuickJoin()
+    {
+        using var credential = new EnvironmentVariableScope(
+            BotHostOptions.CredentialVariable, "secret");
+
+        BotHostOptions options = BotHostOptions.Parse(
+            ["--client-root", "client", "--user", "joiner", "--field", "quick",
+                "--world", @"LevelsSV\Cage\Cage.wld"]);
+
+        Assert.Equal(HeadlessPeerRole.Joiner, options.Role);
+        Assert.Null(options.FieldId);
     }
 
     [Fact]

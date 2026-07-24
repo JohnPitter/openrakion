@@ -1,12 +1,21 @@
 namespace RakionBotHost;
 
+internal enum HeadlessPeerRole
+{
+    Joiner,
+    Master
+}
+
 internal sealed record BotHostOptions(
-    string ClientRoot, string User, string Credential, string ServerId, int FieldId,
-    string WorldName)
+    string ClientRoot, string User, string Credential, string ServerId,
+    HeadlessPeerRole Role, int? FieldId, string RoomName, string WorldName)
 {
     internal const string ClientRootVariable = "RAKION_CLIENT_ROOT";
     internal const string CredentialVariable = "OPENRAKION_BOT_CREDENTIAL";
     internal const string WorldVariable = "OPENRAKION_HEADLESS_WORLD";
+    internal const string RoleVariable = "OPENRAKION_HEADLESS_ROLE";
+    internal const string RoomVariable = "OPENRAKION_HEADLESS_ROOM";
+    internal const string QuickJoinVariable = "OPENRAKION_HEADLESS_QUICK_JOIN";
 
     public static BotHostOptions Parse(string[] args)
     {
@@ -18,19 +27,24 @@ internal sealed record BotHostOptions(
             throw new InvalidOperationException($"{CredentialVariable} não configurada.");
         string user = Read(values, "user");
         string server = Read(values, "server", "1A");
-        if (!int.TryParse(Read(values, "field"), out int fieldId) || fieldId <= 0)
-            throw new ArgumentException("--field deve ser um inteiro positivo.");
+        HeadlessPeerRole role = ReadRole(values);
+        int? fieldId = role == HeadlessPeerRole.Joiner ? ReadField(values) : null;
+        string roomName = role == HeadlessPeerRole.Master
+            ? ReadRoom(values) : string.Empty;
         string worldName = ReadWorld(Read(values, "world"));
         return new BotHostOptions(
-            Path.GetFullPath(clientRoot), user, credential, server, fieldId, worldName);
+            Path.GetFullPath(clientRoot), user, credential, server,
+            role, fieldId, roomName, worldName);
     }
 
     private static Dictionary<string, string> ParsePairs(string[] args)
     {
         if (args.Length == 0 || args.Length % 2 != 0)
             throw new ArgumentException(
-                "uso: RakionBotHost --client-root <dir> --user <id> --field <id> " +
-                "--world <LevelsSV\\...\\map.wld> [--server <id>]");
+                "uso joiner: RakionBotHost --client-root <dir> --user <id> " +
+                "--field <id|quick> --world <LevelsSV\\...\\map.wld>; uso master: " +
+                "--client-root <dir> --user <id> --role master --room <nome> " +
+                "--world <LevelsSV\\...\\map.wld>");
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         for (int index = 0; index < args.Length; index += 2)
         {
@@ -41,6 +55,34 @@ internal sealed record BotHostOptions(
             values[name[2..]] = args[index + 1];
         }
         return values;
+    }
+
+    private static HeadlessPeerRole ReadRole(IReadOnlyDictionary<string, string> values)
+    {
+        string value = Read(values, "role", "joiner");
+        if (value.Equals("joiner", StringComparison.OrdinalIgnoreCase))
+            return HeadlessPeerRole.Joiner;
+        if (value.Equals("master", StringComparison.OrdinalIgnoreCase))
+            return HeadlessPeerRole.Master;
+        throw new ArgumentException("--role deve ser master ou joiner.");
+    }
+
+    private static int? ReadField(IReadOnlyDictionary<string, string> values)
+    {
+        string value = Read(values, "field");
+        if (value.Equals("quick", StringComparison.OrdinalIgnoreCase)) return null;
+        if (!int.TryParse(value, out int fieldId) || fieldId <= 0 || fieldId > ushort.MaxValue)
+            throw new ArgumentException("--field deve ser quick ou um inteiro entre 1 e 65535.");
+        return fieldId;
+    }
+
+    private static string ReadRoom(IReadOnlyDictionary<string, string> values)
+    {
+        string value = values.TryGetValue("room", out string? configured)
+            ? configured.Trim() : "";
+        if (value.Length is < 1 or > 40 || value.Any(char.IsControl))
+            throw new ArgumentException("--room deve ter entre 1 e 40 caracteres.");
+        return value;
     }
 
     private static string Read(
