@@ -46,6 +46,13 @@ desabilita e oculta assim que o handle aparece. O supervisor também envia a des
 de foco e restaura a janela que estava ativa antes do bootstrap, impedindo o processo dedicado de
 capturar teclado ou mouse do cliente gráfico.
 
+O engine pode tentar reativar o DirectInput durante a troca para o stage. Por isso, o isolamento
+também existe dentro da DLL: exclusivamente com `OPENRAKION_HEADLESS=1`, ela resolve `_pInput` e as
+APIs públicas `CInput::IsInputEnabled`, `DisableInput` e `ClearInput`. A captura é desativada e o
+estado de teclas e eixos é limpo sempre que o engine a reabre. Isso libera mouse e teclado para o
+cliente interativo durante toda a partida. Se esses exports não existirem na build carregada, o
+headless falha fechado em vez de disputar a entrada.
+
 ## Supervisor
 
 `client/RakionBotHost` inicia o cliente suspenso com a linha de comando especial do Rakion, define

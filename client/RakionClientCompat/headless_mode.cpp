@@ -15,6 +15,11 @@ constexpr char DedicatedServerSymbol[] = "?_bDedicatedServer@@3HA";
 constexpr char NetworkSymbol[] = "?_pNetwork@@3PAVCNetworkLibrary@@A";
 constexpr char LocalPlayerCountSymbol[] =
     "?GetLocalPlayerCount@CNetworkLibrary@@QAEJXZ";
+constexpr char InputSymbol[] = "?_pInput@@3PAVCInput@@A";
+constexpr char IsInputEnabledSymbol[] =
+    "?IsInputEnabled@CInput@@QBEHXZ";
+constexpr char DisableInputSymbol[] = "?DisableInput@CInput@@QAEXXZ";
+constexpr char ClearInputSymbol[] = "?ClearInput@CInput@@QAEXXZ";
 constexpr uintptr_t FieldRosterUiTailRva = 0x7a4fc;
 constexpr uintptr_t FieldRosterEpilogueRva = 0x7a57e;
 constexpr uintptr_t PlayGameUiPrimaryRva = 0x60ef1;
@@ -38,6 +43,7 @@ constexpr std::array<BYTE, 5> NoOperationCall{
 volatile LONG HeadlessActive{};
 volatile LONG LastLocalPlayerCount{-1};
 volatile LONG FieldRosterUiBypassInstalled{};
+volatile LONG HeadlessInputSuppressed{};
 
 bool IsHeadlessRequested()
 {
@@ -88,6 +94,49 @@ bool InstallFieldRosterUiBypass()
     InterlockedExchange(&FieldRosterUiBypassInstalled, 1);
     return true;
 }
+
+bool HasHeadlessInputApi(HMODULE engine)
+{
+    return GetProcAddress(engine, InputSymbol) &&
+        GetProcAddress(engine, IsInputEnabledSymbol) &&
+        GetProcAddress(engine, DisableInputSymbol) &&
+        GetProcAddress(engine, ClearInputSymbol);
+}
+
+void SuppressHeadlessInput(HMODULE engine)
+{
+    auto** input = reinterpret_cast<void**>(GetProcAddress(engine, InputSymbol));
+    if (!input || !*input) return;
+
+    using IsInputEnabledFn = int(__thiscall*)(const void*);
+    using InputActionFn = void(__thiscall*)(void*);
+    auto isEnabled = reinterpret_cast<IsInputEnabledFn>(
+        GetProcAddress(engine, IsInputEnabledSymbol));
+    auto disable = reinterpret_cast<InputActionFn>(
+        GetProcAddress(engine, DisableInputSymbol));
+    auto clear = reinterpret_cast<InputActionFn>(
+        GetProcAddress(engine, ClearInputSymbol));
+    if (!isEnabled || !disable || !clear) return;
+
+    bool disabled{};
+    __try
+    {
+        if (isEnabled(*input) != 0)
+        {
+            disable(*input);
+            disabled = true;
+        }
+        clear(*input);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        return;
+    }
+
+    if (disabled &&
+        InterlockedCompareExchange(&HeadlessInputSuppressed, 1, 0) == 0)
+        CompatLog("headless: input do engine desativado e liberado ao cliente interativo");
+}
 }
 
 bool ConfigureHeadlessEngine()
@@ -108,6 +157,11 @@ bool ConfigureHeadlessEngine()
         CompatLog("headless recusado: _bDedicatedServer ausente");
         return false;
     }
+    if (!HasHeadlessInputApi(engine))
+    {
+        CompatLog("headless recusado: API CInput necessaria para isolamento ausente");
+        return false;
+    }
 
     InterlockedExchange(dedicated, 1);
     InterlockedExchange(&HeadlessActive, 1);
@@ -118,11 +172,12 @@ bool ConfigureHeadlessEngine()
 void PollHeadlessEngineState()
 {
     if (InterlockedCompareExchange(&HeadlessActive, 0, 0) == 0) return;
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    if (!engine) return;
+    SuppressHeadlessInput(engine);
     if (InterlockedCompareExchange(&FieldRosterUiBypassInstalled, 0, 0) == 0 &&
         InstallFieldRosterUiBypass())
         CompatLog("headless: roster e Play Game prontos sem texturas da UI");
-    HMODULE engine = GetModuleHandleW(L"engine.dll");
-    if (!engine) return;
     auto** network = reinterpret_cast<void**>(GetProcAddress(engine, NetworkSymbol));
     using GetLocalPlayerCountFn = int(__thiscall*)(void*);
     auto getCount = reinterpret_cast<GetLocalPlayerCountFn>(
