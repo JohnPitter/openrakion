@@ -163,6 +163,13 @@ cliente incompatível falha fechada. Exceções registram fase, código e endere
 separar falhas na construção de `CNetworkSession`, `CTFileName`, `JoinGame` ou destruição da sessão.
 O carregamento e o combate após esse join ainda exigem novo smoke gráfico.
 
+O primeiro diagnóstico com retorno normal de `JoinGame` mostrou que a falha ocorria em
+`AddPlayers`: o construtor do `CGame` inicializa os quatro índices de jogadores locais com zero.
+No fluxo gráfico, o menu converte os slots não usados para `-1` antes do join; o bootstrap headless
+não passava por essa etapa e tentava adicionar o mesmo `CPlayerCharacter` quatro vezes. O modo
+headless agora configura explicitamente os arrays de menu (`CGame+0x4B8`) e início
+(`CGame+0x4C8`) como `[0, -1, -1, -1]`, mantendo apenas uma fonte local.
+
 Fontes adicionais só podem ser criadas depois que a fonte primária possuir personagem e sessão
 válidos; chamar `AddPlayer_t` antes desse ponto não é um caminho seguro. O próximo gate é iniciar a
 partida, carregar o mapa e observar a criação da fonte local primária.

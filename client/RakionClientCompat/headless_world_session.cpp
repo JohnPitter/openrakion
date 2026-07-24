@@ -64,7 +64,8 @@ constexpr size_t GameSessionNameOffset = 0x54;
 constexpr size_t GamePlayerCharactersOffset = 0x130;
 constexpr size_t GameMenuSplitScreenConfigOffset = 0x478;
 constexpr size_t GameStartSplitScreenConfigOffset = 0x47c;
-constexpr size_t GamePrimaryPlayerIndexOffset = 0x4b8;
+constexpr size_t GameMenuPlayerIndicesOffset = 0x4b8;
+constexpr size_t GameStartPlayerIndicesOffset = 0x4c8;
 constexpr size_t FieldPlayerRecordsOffset = 0x1ac;
 constexpr size_t FieldPlayerRecordSize = 0x378;
 constexpr size_t FieldPlayerAddressOffset = 0x34;
@@ -495,6 +496,19 @@ bool PrepareLocalPlayerCharacter(BYTE* game)
     return true;
 }
 
+void ConfigureSingleLocalPlayer(BYTE* game)
+{
+    *reinterpret_cast<int*>(game + GameMenuSplitScreenConfigOffset) = 0;
+    *reinterpret_cast<int*>(game + GameStartSplitScreenConfigOffset) = 0;
+    auto* menuIndices = reinterpret_cast<int*>(
+        game + GameMenuPlayerIndicesOffset);
+    auto* startIndices = reinterpret_cast<int*>(
+        game + GameStartPlayerIndicesOffset);
+    menuIndices[0] = startIndices[0] = 0;
+    for (size_t index = 1; index < 4; ++index)
+        menuIndices[index] = startIndices[index] = -1;
+}
+
 struct FileNameValue
 {
     void* string{};
@@ -579,7 +593,7 @@ bool StartFieldEngine()
         sessionName = ReadGameString(game, GameSessionNameOffset);
         joinAddress = ReadGameString(game, GameSessionNameOffset + sizeof(void*));
         playerIndex = *reinterpret_cast<int*>(
-            game + GamePrimaryPlayerIndexOffset);
+            game + GameMenuPlayerIndicesOffset);
         if (!worldName || worldName[0] == '\0' ||
             !sessionName || sessionName[0] == '\0' || playerIndex < 0 ||
             peerMode == 0 ||
@@ -590,9 +604,7 @@ bool StartFieldEngine()
                 CompatLog("headless engine aguardando sessao e jogador local");
             return false;
         }
-        *reinterpret_cast<int*>(game + GameMenuSplitScreenConfigOffset) = 0;
-        *reinterpret_cast<int*>(game + GameStartSplitScreenConfigOffset) = 0;
-        *reinterpret_cast<int*>(game + GamePrimaryPlayerIndexOffset) = 0;
+        ConfigureSingleLocalPlayer(game);
         if (!PrepareLocalPlayerCharacter(game))
         {
             CompatLog("headless engine recusado: personagem local invalido");
