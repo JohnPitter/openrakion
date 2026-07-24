@@ -10,6 +10,7 @@
 
 #include "bot_telemetry.h"
 #include "compat_log.h"
+#include "headless_crc.h"
 #include "headless_mode.h"
 #include "headless_world_session.h"
 
@@ -633,7 +634,7 @@ bool InstallJoinTraceHooks(BYTE* gameModule)
 bool JoinFieldEngine(BYTE* game)
 {
     HMODULE engine = GetModuleHandleW(L"engine.dll");
-    if (!engine) return false;
+    if (!engine || !InstallSafeStreamCrc(engine)) return false;
 
     using NetworkSessionConstructorFn =
         void*(__thiscall*)(void*, const void*, long);

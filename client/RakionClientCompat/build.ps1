@@ -34,6 +34,7 @@ $patchSources = @(
     'client_patches.cpp',
     'ui_lifecycle_patch.cpp',
     'headless_mode.cpp',
+    'headless_crc.cpp',
     'headless_world_session.cpp',
     'bot_telemetry.cpp',
     'action_capture.cpp',

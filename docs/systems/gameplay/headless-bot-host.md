@@ -171,10 +171,12 @@ sessão P2P concluída e fonte local retornada; os hooks existem somente na inst
 
 O primeiro bloqueio comprovado dentro de `JoinSession_t` ocorre no CRC de
 `Classes\Player.ecl`, lido de `Classes.xfs`: `CTFileStream::GetStreamCRC32_t` tenta copiar os 48
-bytes do stream e recebe `C0000005`. O arquivo e o conteúdo existem no pacote, portanto o fluxo não
-ignora o CRC nem classifica o erro como arquivo ausente. O diagnóstico registra tipo do acesso,
-estado/proteção da página e até cinco retornos da pilha para identificar se o mapeamento é
-temporariamente inválido ou se o `CTFileStream` foi construído em um estado incompatível.
+bytes do stream e recebe `C0000005`. O buffer estava em `MEM_RESERVE/PAGE_NOACCESS`: o próprio
+engine só confirma as páginas quando a leitura passa por `CTStream::Read_t`, mas o CRC acessava o
+ponteiro diretamente. No processo gráfico, a UI aquece `Player.ecl` antes da sessão e mascara o
+defeito; o headless não passa por essa UI. Exclusivamente no headless, a chamada interna do CRC usa
+agora `Read_t` em blocos e mantém a posição e a tabela CRC originais. O arquivo continua vindo do
+XFS e a validação não é ignorada.
 
 A comparação de memória entre o master gráfico e o headless também encontrou uma divergência:
 o construtor do `CGame` inicializa os quatro índices de jogadores locais com zero. No fluxo
