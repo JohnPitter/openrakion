@@ -42,7 +42,9 @@ significa que o combate multippeer esteja validado.
 
 O smoke local confirmou o processo dedicado e a ausência de `d3d`, `ddraw`, `dxgi` e `opengl`
 entre os módulos carregados. A aplicação ainda cria uma janela de shell, que o `RakionBotHost`
-oculta assim que o handle aparece.
+desabilita e oculta assim que o handle aparece. O supervisor também envia a desativação explícita
+de foco e restaura a janela que estava ativa antes do bootstrap, impedindo o processo dedicado de
+capturar teclado ou mouse do cliente gráfico.
 
 ## Supervisor
 

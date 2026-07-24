@@ -7,6 +7,9 @@ namespace RakionBotHost;
 internal static class Program
 {
     private const int HideWindow = 0;
+    private const uint WindowActivate = 0x0006;
+    private const uint KillFocus = 0x0008;
+    private const uint ActivateApplication = 0x001C;
 
     public static int Main(string[] args)
     {
@@ -14,6 +17,7 @@ internal static class Program
         try
         {
             BotHostOptions options = BotHostOptions.Parse(args);
+            IntPtr foregroundWindow = GetForegroundWindow();
             using ChildProcessJob job = ChildProcessJob.Create();
             suspended = Start(options);
             using Process process = Process.GetProcessById(suspended.ProcessId);
@@ -28,7 +32,7 @@ internal static class Program
                 if (!process.HasExited) process.Kill(entireProcessTree: true);
             };
             Console.CancelKeyPress += cancel;
-            try { Monitor(process, options.FieldId); }
+            try { Monitor(process, options.FieldId, foregroundWindow); }
             finally { Console.CancelKeyPress -= cancel; }
             return process.ExitCode;
         }
@@ -74,7 +78,7 @@ internal static class Program
         }
     }
 
-    private static void Monitor(Process process, int fieldId)
+    private static void Monitor(Process process, int fieldId, IntPtr foregroundWindow)
     {
         bool windowHidden = false;
         while (!process.WaitForExit(250))
@@ -82,14 +86,38 @@ internal static class Program
             process.Refresh();
             IntPtr window = process.MainWindowHandle;
             if (window == IntPtr.Zero) continue;
-            ShowWindow(window, HideWindow);
+            IsolateInput(window, foregroundWindow);
             if (windowHidden) continue;
             windowHidden = true;
-            Console.WriteLine($"bot-host field={fieldId} shell ocultado");
+            Console.WriteLine($"bot-host field={fieldId} shell e input isolados");
         }
         Console.WriteLine($"bot-host field={fieldId} encerrado code={process.ExitCode}");
     }
 
+    private static void IsolateInput(IntPtr window, IntPtr foregroundWindow)
+    {
+        EnableWindow(window, false);
+        PostMessage(window, WindowActivate, IntPtr.Zero, IntPtr.Zero);
+        PostMessage(window, KillFocus, IntPtr.Zero, IntPtr.Zero);
+        PostMessage(window, ActivateApplication, IntPtr.Zero, IntPtr.Zero);
+        ShowWindow(window, HideWindow);
+        if (foregroundWindow != IntPtr.Zero && GetForegroundWindow() == window)
+            SetForegroundWindow(foregroundWindow);
+    }
+
     [DllImport("user32.dll")]
     private static extern bool ShowWindow(IntPtr window, int command);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnableWindow(IntPtr window, bool enabled);
+
+    [DllImport("user32.dll")]
+    private static extern bool PostMessage(
+        IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr window);
 }
