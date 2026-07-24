@@ -98,6 +98,53 @@ HWND GameWindow{};
 WNDPROC OriginalWindowProcedure{};
 char SelectedCharacterName[13]{};
 
+struct EngineExceptionDetails
+{
+    ULONG_PTR accessType{};
+    DWORD memoryState{};
+    DWORD memoryProtect{};
+    uintptr_t returns[5]{};
+};
+
+void CaptureEngineExceptionDetails(
+    const EXCEPTION_POINTERS* exception, EngineExceptionDetails& details)
+{
+    if (!exception || !exception->ExceptionRecord || !exception->ContextRecord)
+        return;
+
+    const EXCEPTION_RECORD* record = exception->ExceptionRecord;
+    if (record->NumberParameters > 0)
+        details.accessType = record->ExceptionInformation[0];
+    if (record->NumberParameters > 1)
+    {
+        MEMORY_BASIC_INFORMATION memory{};
+        if (VirtualQuery(
+            reinterpret_cast<void*>(record->ExceptionInformation[1]),
+            &memory, sizeof(memory)) != 0)
+        {
+            details.memoryState = memory.State;
+            details.memoryProtect = memory.Protect;
+        }
+    }
+
+    __try
+    {
+        uintptr_t frame = exception->ContextRecord->Ebp;
+        for (size_t index = 0; index < _countof(details.returns); ++index)
+        {
+            if (frame == 0 || (frame & (sizeof(uintptr_t) - 1)) != 0) break;
+            const auto* values = reinterpret_cast<const uintptr_t*>(frame);
+            details.returns[index] = values[1];
+            const uintptr_t next = values[0];
+            if (next <= frame) break;
+            frame = next;
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+    }
+}
+
 int LogEngineJoinException(EXCEPTION_POINTERS* exception)
 {
     const DWORD code = exception && exception->ExceptionRecord
@@ -109,14 +156,23 @@ int LogEngineJoinException(EXCEPTION_POINTERS* exception)
         exception->ExceptionRecord->NumberParameters > 1
         ? exception->ExceptionRecord->ExceptionInformation[1] : 0;
     const CONTEXT* context = exception ? exception->ContextRecord : nullptr;
+    EngineExceptionDetails details{};
+    CaptureEngineExceptionDetails(exception, details);
     const LONG phase = InterlockedCompareExchange(&EngineJoinPhase, 0, 0);
-    char message[280]{};
+    char message[520]{};
     _snprintf_s(message, _countof(message), _TRUNCATE,
         "headless engine: excecao no join phase=%ld code=%08lX "
-        "address=%p access=%p esi=%08lX edi=%08lX ecx=%08lX edx=%08lX",
-        phase, code, address, reinterpret_cast<void*>(accessAddress),
+        "address=%p accessType=%llu access=%p state=%08lX protect=%08lX "
+        "esi=%08lX edi=%08lX ecx=%08lX edx=%08lX ebp=%08lX esp=%08lX "
+        "returns=%08IX,%08IX,%08IX,%08IX,%08IX",
+        phase, code, address, static_cast<unsigned long long>(details.accessType),
+        reinterpret_cast<void*>(accessAddress),
+        details.memoryState, details.memoryProtect,
         context ? context->Esi : 0, context ? context->Edi : 0,
-        context ? context->Ecx : 0, context ? context->Edx : 0);
+        context ? context->Ecx : 0, context ? context->Edx : 0,
+        context ? context->Ebp : 0, context ? context->Esp : 0,
+        details.returns[0], details.returns[1], details.returns[2],
+        details.returns[3], details.returns[4]);
     CompatLog(message);
     return EXCEPTION_EXECUTE_HANDLER;
 }

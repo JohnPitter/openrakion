@@ -169,6 +169,13 @@ Para diagnosticar rollback sem alterar o protocolo, o processo headless observa 
 importadas de `JoinSession_t` e `AddPlayer_t`. O log distingue preparação anterior ao join,
 sessão P2P concluída e fonte local retornada; os hooks existem somente na instância headless.
 
+O primeiro bloqueio comprovado dentro de `JoinSession_t` ocorre no CRC de
+`Classes\Player.ecl`, lido de `Classes.xfs`: `CTFileStream::GetStreamCRC32_t` tenta copiar os 48
+bytes do stream e recebe `C0000005`. O arquivo e o conteúdo existem no pacote, portanto o fluxo não
+ignora o CRC nem classifica o erro como arquivo ausente. O diagnóstico registra tipo do acesso,
+estado/proteção da página e até cinco retornos da pilha para identificar se o mapeamento é
+temporariamente inválido ou se o `CTFileStream` foi construído em um estado incompatível.
+
 A comparação de memória entre o master gráfico e o headless também encontrou uma divergência:
 o construtor do `CGame` inicializa os quatro índices de jogadores locais com zero. No fluxo
 gráfico, o menu converte os slots não usados para `-1`; o bootstrap headless não passava por essa
