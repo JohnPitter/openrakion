@@ -84,21 +84,21 @@ A credencial não é herdada como variável pelo processo filho. O protocolo leg
 credencial codificada no vetor de argumentos do próprio jogo; uma conta de serviço com privilégios
 mínimos e ticket curto deve substituir senha estática antes do rollout remoto.
 
-## Fluxo de validação pelo launcher
+## Fluxo de validação assistido
 
-O fluxo de lançamento não usa um master headless. O jogador gráfico cria ou entra na sala e
-permanece como master; o launcher inicia somente a segunda conta como joiner headless:
+O fluxo de validação não usa um master headless. O jogador gráfico cria ou entra na sala e
+permanece como master; o operador inicia somente a segunda conta como joiner:
 
-1. autenticar no launcher a conta gráfica e uma segunda conta;
-2. selecionar a conta gráfica, iniciar o jogo e entrar no game room;
-3. manter apenas uma sala disponível durante o teste;
-4. clicar em **Iniciar bot** no launcher;
-5. aguardar o segundo peer aparecer como ready e iniciar a partida no cliente gráfico;
-6. validar visualmente movimento, hit nos dois sentidos, queda, morte e respawn.
+1. iniciar o jogo pelo launcher e entrar no game room com a conta gráfica;
+2. manter apenas uma sala disponível durante o teste;
+3. iniciar o `RakionBotHost` com uma segunda conta, `--field quick` e o world desejado;
+4. aguardar o segundo peer aparecer como ready e iniciar a partida no cliente gráfico;
+5. validar visualmente movimento, hit nos dois sentidos, queda, morte e respawn.
 
-O launcher consome um ticket curto da conta adicional, ativa `OPENRAKION_HEADLESS_QUICK_JOIN=1`,
-isola janela e input e mantém o processo em um Job Object. Fechar a janela do launcher apenas o
-move para a bandeja; a opção **Fechar** da bandeja encerra também todos os peers headless.
+O `RakionBotHost` recebe a credencial de curta duração por
+`OPENRAKION_BOT_CREDENTIAL`, ativa `OPENRAKION_HEADLESS_QUICK_JOIN=1`, isola janela e input e
+mantém o processo em um Job Object. A credencial deve ser removida do ambiente logo após o
+bootstrap.
 
 O experimento de criar e iniciar a sala com dois peers headless foi retirado do gate: o callback
 de criação da sala já é seguro, mas `CGame::StartGame(2)` no master nativo ainda não possui ABI

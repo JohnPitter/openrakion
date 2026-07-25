@@ -67,27 +67,13 @@ conta já conectada antes de abrir o cliente. O launcher inclui `appId` e a vers
 `.update/version` no ticket; o World pode exigir esse par com `RequiredAppId` e
 `RequiredBuildVersion`. O fluxo visual separa autenticação e execução: inicialmente aparecem os
 inputs e **Login**; após autenticar, eles são substituídos pela lista de amigos online e pelos botões
-**Outra conta**, **Iniciar game**, **Game options** e **Iniciar bot**. A presença é atualizada a cada 30 segundos sem
+**Outra conta**, **Iniciar game** e **Game options**. A presença é atualizada a cada 30 segundos sem
 expor a lista global de usuários. Ao autenticar duas ou mais contas na mesma execução, aparece um
 seletor de conta acima da lista de amigos; a troca altera a conta usada no próximo **Iniciar game**.
 As credenciais permanecem somente na memória e são descartadas ao fechar o launcher. O cabeçalho
 identifica explicitamente a conta autenticada para
 evitar confusão entre launchers simultâneos. O ticket fica somente em memória e é renovado se expirar antes do
 clique em **Iniciar game**. Para testar somente o updater:
-
-### Bot headless pela sala do jogador
-
-O fluxo suportado mantém o jogador em um cliente gráfico e inicia o bot como um segundo peer real:
-
-1. autentique a conta do jogador e pelo menos uma conta adicional;
-2. selecione a conta do jogador, clique em **Iniciar game** e entre em um game room;
-3. volte ao launcher e clique em **Iniciar bot**;
-4. o launcher escolhe uma conta adicional livre, faz quick-join na sala disponível e mantém o
-   processo headless supervisionado até ele encerrar ou o launcher ser fechado pela bandeja.
-
-Para evitar que o peer entre na sala errada durante a validação, deixe somente um game room
-disponível. Cada conta só pode possuir uma instância headless ativa. O processo usa um Windows Job
-Object, permanece sem janela e sem input, e é encerrado junto com o launcher pela opção **Fechar**.
 
 ```powershell
 dotnet RakionLauncher.dll --update-only C:\Rakion

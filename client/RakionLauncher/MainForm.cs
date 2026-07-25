@@ -27,7 +27,6 @@ internal sealed partial class MainForm : Form
     private readonly Button _switchAccount = new() { Text = "OUTRA\nCONTA" };
     private readonly Button _play = new() { Text = "INICIAR\nGAME" };
     private readonly Button _options = new() { Text = "GAME\nOPTIONS" };
-    private readonly Button _startBot = new() { Text = "INICIAR\nBOT" };
     private readonly Label _status = new();
     private readonly Label _clientStatus = new();
     private readonly Label _serverStatus = new();
@@ -44,7 +43,6 @@ internal sealed partial class MainForm : Form
     private int _clients;
     private readonly AuthenticatedAccountStore _accounts = new();
     private bool _updatingAccountSwitch;
-    private readonly List<HeadlessBotSession> _headlessBots = [];
 
     public MainForm()
     {
@@ -83,7 +81,6 @@ internal sealed partial class MainForm : Form
         FormClosing += OnFormClosing;
         FormClosed += (_, _) =>
         {
-            StopHeadlessBots();
             _serverStatusTimer.Dispose();
             _friendStatusTimer.Dispose();
             _clientStatusTimer.Dispose();

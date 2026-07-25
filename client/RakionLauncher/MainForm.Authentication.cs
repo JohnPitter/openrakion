@@ -48,13 +48,11 @@ internal sealed partial class MainForm
         Controls.AddRange([_friendsTitle, _onlineFriends]);
 
         ConfigureActionButton(_login, new Rectangle(366, 262, 120, 100), true, OnLogin);
-        ConfigureActionButton(_switchAccount, new Rectangle(322, 262, 68, 100), false,
+        ConfigureActionButton(_switchAccount, new Rectangle(330, 262, 88, 100), false,
             OnChangeAccountMode);
-        ConfigureActionButton(_play, new Rectangle(396, 262, 68, 100), true, OnPlay);
-        ConfigureActionButton(_options, new Rectangle(470, 262, 68, 100), false, OnOptions);
-        ConfigureActionButton(_startBot, new Rectangle(544, 262, 68, 100), false,
-            OnStartBot);
-        Controls.AddRange([_login, _switchAccount, _play, _options, _startBot]);
+        ConfigureActionButton(_play, new Rectangle(426, 262, 88, 100), true, OnPlay);
+        ConfigureActionButton(_options, new Rectangle(522, 262, 92, 100), false, OnOptions);
+        Controls.AddRange([_login, _switchAccount, _play, _options]);
     }
 
     private void ConfigureInputLabel(Label label, int y)
@@ -133,7 +131,7 @@ internal sealed partial class MainForm
         _switchAccount.Text = "VOLTAR";
         _switchAccount.Visible = canReturn;
         _accountSwitch.Visible = _friendsTitle.Visible = _onlineFriends.Visible = false;
-        _play.Visible = _options.Visible = _startBot.Visible = false;
+        _play.Visible = _options.Visible = false;
         if (clearCredentials) _user.Focus();
     }
 
@@ -143,7 +141,7 @@ internal sealed partial class MainForm
         _login.Visible = false;
         _friendsTitle.Visible = _onlineFriends.Visible = true;
         _switchAccount.Text = "OUTRA\nCONTA";
-        _switchAccount.Visible = _play.Visible = _options.Visible = _startBot.Visible = true;
+        _switchAccount.Visible = _play.Visible = _options.Visible = true;
         RefreshAccountSwitch();
     }
 
@@ -179,7 +177,6 @@ internal sealed partial class MainForm
         _accountSwitch.Items.AddRange(_accounts.Users.Cast<object>().ToArray());
         _accountSwitch.SelectedItem = _accounts.Active?.User;
         _accountSwitch.Visible = _accounts.HasMultiple;
-        UpdateStartBotEnabled();
         if (_accounts.HasMultiple)
         {
             _friendsTitle.SetBounds(22, 290, 292, 22);

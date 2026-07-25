@@ -61,13 +61,4 @@ internal sealed class AuthenticatedAccountStore
         Active = account;
         return true;
     }
-
-    public AuthenticatedAccount? GetAvailableOtherThan(
-        AuthenticatedAccount account, IEnumerable<string> unavailableUsers)
-    {
-        var unavailable = unavailableUsers.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return _accounts.Values.FirstOrDefault(candidate =>
-            !ReferenceEquals(candidate, account) &&
-            !unavailable.Contains(candidate.User));
-    }
 }
