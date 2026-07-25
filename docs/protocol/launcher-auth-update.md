@@ -258,7 +258,8 @@ dotnet RakionLauncher.dll --update-only $env:RAKION_DIR
 ## Evidência de validação
 
 - suíte .NET do servidor, incluindo status, formato, migração e vínculo app/build do ticket;
-- 21 testes do launcher, incluindo amigos online, assinatura, hash, traversal, rollback, DLLs e auth sem downgrade;
+- 23 testes do launcher, incluindo amigos online, contas múltiplas, assinatura, hash, traversal,
+  rollback, DLLs e auth sem downgrade;
 - smoke MariaDB real: conta/build vinculados, uso único, replay recusado e expiração recusada;
 - smoke HTTP real: endpoint em loopback emitiu ticket de 20 caracteres e persistiu app `11001`,
   build `259` e somente o hash de 32 bytes;

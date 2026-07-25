@@ -22,11 +22,16 @@ constexpr char DisableInputSymbol[] = "?DisableInput@CInput@@QAEXXZ";
 constexpr char ClearInputSymbol[] = "?ClearInput@CInput@@QAEXXZ";
 constexpr uintptr_t FieldRosterUiTailRva = 0x7a4fc;
 constexpr uintptr_t FieldRosterEpilogueRva = 0x7a57e;
+constexpr uintptr_t FieldCreateUiTailRva = 0x7d080;
+constexpr uintptr_t FieldCreateContinuationRva = 0x7d105;
 constexpr uintptr_t PlayGameUiPrimaryRva = 0x60ef1;
 constexpr uintptr_t PlayGameUiControlsRva = 0x60ef8;
 constexpr uintptr_t PlayGameUiSecondaryRva = 0x60eff;
 constexpr std::array<BYTE, 6> ExpectedFieldRosterUiTail{
     0x8b, 0x0d, 0xd0, 0xee, 0x4f, 0x00
+};
+constexpr std::array<BYTE, 6> ExpectedFieldCreateUiTail{
+    0x8b, 0x15, 0xd0, 0xee, 0x4f, 0x00
 };
 constexpr std::array<BYTE, 5> ExpectedPlayGameUiPrimary{
     0xe8, 0x4a, 0xaf, 0xff, 0xff
@@ -44,6 +49,7 @@ volatile LONG HeadlessActive{};
 volatile LONG LastLocalPlayerCount{-1};
 volatile LONG FieldRosterUiBypassInstalled{};
 volatile LONG HeadlessInputSuppressed{};
+volatile LONG HeadlessExceptionCount{};
 
 bool IsHeadlessRequested()
 {
@@ -53,12 +59,80 @@ bool IsHeadlessRequested()
     return length == 1 && value[0] == '1';
 }
 
+LONG CALLBACK TraceHeadlessException(EXCEPTION_POINTERS* exception)
+{
+    auto* engine = reinterpret_cast<BYTE*>(GetModuleHandleW(L"engine.dll"));
+    if (!exception || !exception->ExceptionRecord || !exception->ContextRecord ||
+        exception->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION ||
+        !engine ||
+        exception->ExceptionRecord->ExceptionAddress != engine + 0x16e7 ||
+        InterlockedIncrement(&HeadlessExceptionCount) > 3)
+        return EXCEPTION_CONTINUE_SEARCH;
+
+    uintptr_t returns[8]{};
+    __try
+    {
+        uintptr_t frame = exception->ContextRecord->Ebp;
+        for (size_t index = 0; index < _countof(returns); ++index)
+        {
+            if (frame == 0 || (frame & 3) != 0) break;
+            const auto* values = reinterpret_cast<const uintptr_t*>(frame);
+            returns[index] = values[1];
+            const uintptr_t next = values[0];
+            if (next <= frame) break;
+            frame = next;
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+    }
+
+    char message[420]{};
+    _snprintf_s(message, _countof(message), _TRUNCATE,
+        "headless AV trace address=%p access=%p ebp=%08lX esp=%08lX "
+        "returns=%08IX,%08IX,%08IX,%08IX,%08IX,%08IX,%08IX,%08IX",
+        exception->ExceptionRecord->ExceptionAddress,
+        reinterpret_cast<void*>(
+            exception->ExceptionRecord->ExceptionInformation[1]),
+        exception->ContextRecord->Ebp, exception->ContextRecord->Esp,
+        returns[0], returns[1], returns[2], returns[3],
+        returns[4], returns[5], returns[6], returns[7]);
+    CompatLog(message);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+template<size_t Length>
+bool InstallRelativeJump(
+    BYTE* image, uintptr_t sourceRva, uintptr_t targetRva,
+    const std::array<BYTE, Length>& expected)
+{
+    static_assert(Length >= 5);
+    BYTE* source = image + sourceRva;
+    if (memcmp(source, expected.data(), expected.size()) != 0) return false;
+
+    std::array<BYTE, Length> jump{};
+    jump.fill(0x90);
+    jump[0] = 0xe9;
+    const auto displacement = static_cast<int32_t>(targetRva - sourceRva - 5);
+    memcpy(jump.data() + 1, &displacement, sizeof(displacement));
+
+    DWORD oldProtection{};
+    if (!VirtualProtect(source, jump.size(), PAGE_EXECUTE_READWRITE, &oldProtection))
+        return false;
+    memcpy(source, jump.data(), jump.size());
+    FlushInstructionCache(GetCurrentProcess(), source, jump.size());
+    VirtualProtect(source, jump.size(), oldProtection, &oldProtection);
+    return true;
+}
+
 bool InstallFieldRosterUiBypass()
 {
     auto* image = reinterpret_cast<BYTE*>(GetModuleHandleW(nullptr));
     if (!image) return false;
     if (memcmp(image + FieldRosterUiTailRva, ExpectedFieldRosterUiTail.data(),
             ExpectedFieldRosterUiTail.size()) != 0 ||
+        memcmp(image + FieldCreateUiTailRva, ExpectedFieldCreateUiTail.data(),
+            ExpectedFieldCreateUiTail.size()) != 0 ||
         memcmp(image + PlayGameUiPrimaryRva, ExpectedPlayGameUiPrimary.data(),
             ExpectedPlayGameUiPrimary.size()) != 0 ||
         memcmp(image + PlayGameUiControlsRva, ExpectedPlayGameUiControls.data(),
@@ -67,21 +141,17 @@ bool InstallFieldRosterUiBypass()
             ExpectedPlayGameUiSecondary.size()) != 0)
         return false;
 
-    std::array<BYTE, 6> jump{0xe9, 0, 0, 0, 0, 0x90};
-    const auto displacement = static_cast<int32_t>(
-        FieldRosterEpilogueRva - FieldRosterUiTailRva - 5);
-    memcpy(jump.data() + 1, &displacement, sizeof(displacement));
-
     DWORD oldProtection{};
-    BYTE* rosterPatch = image + FieldRosterUiTailRva;
     BYTE* playGamePatch = image + PlayGameUiPrimaryRva;
     constexpr size_t PlayGamePatchLength =
         PlayGameUiSecondaryRva - PlayGameUiPrimaryRva + NoOperationCall.size();
-    if (!VirtualProtect(rosterPatch, jump.size(), PAGE_EXECUTE_READWRITE, &oldProtection))
+    if (!InstallRelativeJump(
+            image, FieldRosterUiTailRva, FieldRosterEpilogueRva,
+            ExpectedFieldRosterUiTail) ||
+        !InstallRelativeJump(
+            image, FieldCreateUiTailRva, FieldCreateContinuationRva,
+            ExpectedFieldCreateUiTail))
         return false;
-    memcpy(rosterPatch, jump.data(), jump.size());
-    FlushInstructionCache(GetCurrentProcess(), rosterPatch, jump.size());
-    VirtualProtect(rosterPatch, jump.size(), oldProtection, &oldProtection);
 
     if (!VirtualProtect(
         playGamePatch, PlayGamePatchLength, PAGE_EXECUTE_READWRITE, &oldProtection))
@@ -165,6 +235,7 @@ bool ConfigureHeadlessEngine()
 
     InterlockedExchange(dedicated, 1);
     InterlockedExchange(&HeadlessActive, 1);
+    AddVectoredExceptionHandler(1, &TraceHeadlessException);
     CompatLog("headless ativado antes do entry point (_bDedicatedServer=1)");
     return true;
 }

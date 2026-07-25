@@ -27,5 +27,11 @@ public sealed class MainFormAuthenticationTests
         Assert.Equal("account2", store.Active?.User);
         Assert.True(store.Activate("ACCOUNT1"));
         Assert.Equal("account1", store.Active?.User);
+        AuthenticatedAccount? other = store.GetAvailableOtherThan(
+            store.Active!, Array.Empty<string>());
+        Assert.NotNull(other);
+        Assert.Equal("account2", other.User);
+        Assert.Null(store.GetAvailableOtherThan(
+            store.Active!, ["ACCOUNT2"]));
     }
 }

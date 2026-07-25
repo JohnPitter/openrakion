@@ -1,15 +1,15 @@
-# BotHost headless multippeer
+# BotHost headless como peer real
 
 ## Objetivo e fallback
 
-O BotHost executa uma instância nativa sem renderização por field ativo e controla os bots daquele
-field como jogadores locais do engine. O `BotManager` sintético continua disponível como fallback
+O BotHost executa uma instância nativa sem renderização como um peer real do field. O
+`BotManager` sintético continua disponível como fallback
 quando não houver BotHost saudável. O World permanece responsável por roster, autorização, HP,
 pontuação, morte e respawn; o engine headless fornece física, colisão, animações e eventos de arma.
 
-O alvo inicial é uma instância por field, não uma instância por bot. Um único world/mapa é global
-dentro do engine, portanto compartilhar a mesma instância entre fields diferentes ainda não está
-comprovado e não faz parte do primeiro rollout.
+Na fase atual, cada conta headless corresponde a um processo e a uma fonte local primária. A
+consolidação de vários bots em uma instância por field depende de comprovar fontes locais
+adicionais e continua como gate de escalabilidade.
 
 ## Evidência nativa da build v258
 
@@ -35,10 +35,9 @@ Quando `OPENRAKION_HEADLESS=1`, `RakionClientPatch.dll` resolve o export
 alterado. Se o engine ou o símbolo não corresponderem à build esperada, a DLL falha fechado e o
 processo headless não continua em modo gráfico por engano.
 
-Essa ativação é apenas o primeiro gate. O supervisor, login, seleção de personagem e entrada no
-field já estão conectados. Ainda faltam a criação das fontes adicionais, associação fonte-seat,
-carregamento da partida e controle das ações. Um processo iniciar com a flag ou entrar na sala não
-significa que o combate multippeer esteja validado.
+O supervisor, login, seleção de personagem, entrada no field e bootstrap do joiner P2P estão
+conectados. Um processo iniciar com a flag ou aparecer como ready não comprova o combate; a
+validação visual do movimento, hit, morte e respawn continua obrigatória.
 
 O smoke local confirmou o processo dedicado e a ausência de `d3d`, `ddraw`, `dxgi` e `opengl`
 entre os módulos carregados. A aplicação ainda cria uma janela de shell, que o `RakionBotHost`
@@ -69,10 +68,10 @@ dotnet .\RakionBotHost.dll --user bot_host_01 --field 7
 Remove-Item Env:\OPENRAKION_BOT_CREDENTIAL
 ```
 
-O supervisor também aceita dois modos voltados à validação nativa:
+O supervisor também aceita dois modos de diagnóstico nativo:
 
 ```powershell
-# Master nativo: cria a sala, aguarda o joiner, inicia a partida e abre o servidor P2P.
+# Master nativo experimental; não é o fluxo de lançamento.
 dotnet .\RakionBotHost.dll --user test --role master --room native-headless `
   --world 'LevelsSV\Mammoth\Mammoth.wld'
 
@@ -85,31 +84,25 @@ A credencial não é herdada como variável pelo processo filho. O protocolo leg
 credencial codificada no vetor de argumentos do próprio jogo; uma conta de serviço com privilégios
 mínimos e ticket curto deve substituir senha estática antes do rollout remoto.
 
-## Teste nativo automatizado
+## Fluxo de validação pelo launcher
 
-`test-native-headless.ps1` substitui o procedimento manual de abrir dois clientes, criar a sala,
-marcar ready e pressionar F10. Ele compila e instala as DLLs no baseline informado, inicia dois
-peers nativos ocultos, cria uma sala Deathmatch exclusiva, faz quick-join e valida no log:
+O fluxo de lançamento não usa um master headless. O jogador gráfico cria ou entra na sala e
+permanece como master; o launcher inicia somente a segunda conta como joiner headless:
 
-- `CGame::StartGame(2)` no master;
-- `CGame::JoinGame` no joiner;
-- engine ativo nos modos P2P `0` e `4`;
-- ausência de exceção de ABI, CRC ou bootstrap.
+1. autenticar no launcher a conta gráfica e uma segunda conta;
+2. selecionar a conta gráfica, iniciar o jogo e entrar no game room;
+3. manter apenas uma sala disponível durante o teste;
+4. clicar em **Iniciar bot** no launcher;
+5. aguardar o segundo peer aparecer como ready e iniciar a partida no cliente gráfico;
+6. validar visualmente movimento, hit nos dois sentidos, queda, morte e respawn.
 
-As duas credenciais são lidas somente do ambiente do runner e removidas do ambiente herdado pelo
-cliente:
+O launcher consome um ticket curto da conta adicional, ativa `OPENRAKION_HEADLESS_QUICK_JOIN=1`,
+isola janela e input e mantém o processo em um Job Object. Fechar a janela do launcher apenas o
+move para a bandeja; a opção **Fechar** da bandeja encerra também todos os peers headless.
 
-```powershell
-$env:OPENRAKION_HEADLESS_MASTER_CREDENTIAL = '<credencial-master>'
-$env:OPENRAKION_HEADLESS_JOINER_CREDENTIAL = '<credencial-joiner>'
-.\test-native-headless.ps1 -ClientRoot '<cliente-v258-original>'
-Remove-Item Env:\OPENRAKION_HEADLESS_MASTER_CREDENTIAL
-Remove-Item Env:\OPENRAKION_HEADLESS_JOINER_CREDENTIAL
-```
-
-O teste termina os dois Job Objects ao concluir, portanto não deixa clientes ocultos. Os testes de
-protocolo do World continuam separados: eles são mais rápidos e cobrem regras de sala e combate,
-enquanto este smoke executa o engine proprietário e detecta regressões específicas da sessão P2P.
+O experimento de criar e iniciar a sala com dois peers headless foi retirado do gate: o callback
+de criação da sala já é seguro, mas `CGame::StartGame(2)` no master nativo ainda não possui ABI
+comprovada nessa build. Apresentá-lo como smoke aprovado mascararia o limite real da validação.
 
 ## Estado da sessão nativa
 

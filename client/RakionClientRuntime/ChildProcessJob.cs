@@ -2,7 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-namespace RakionBotHost;
+namespace RakionClientRuntime;
 
 internal sealed class ChildProcessJob : IDisposable
 {
