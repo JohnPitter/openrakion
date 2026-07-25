@@ -53,12 +53,6 @@ constexpr char StringDestructorSymbol[] = "??1CTString@@QAE@XZ";
 constexpr char PlayerConstructorSymbol[] =
     "??0CPlayerCharacter@@QAE@ABVCTString@@0@Z";
 constexpr char PlayerDestructorSymbol[] = "??1CPlayerCharacter@@QAE@XZ";
-constexpr char NetworkSessionConstructorSymbol[] =
-    "??0CNetworkSession@@QAE@ABVCTString@@J@Z";
-constexpr char NetworkSessionDestructorSymbol[] =
-    "??1CNetworkSession@@QAE@XZ";
-constexpr char FileNameConstructorSymbol[] =
-    "??0CTFileName@@QAE@PBD@Z";
 constexpr unsigned WorldPortNetworkOrder = 0x049f;
 constexpr unsigned char SkipHashVerification = 4;
 constexpr size_t AccountSlotCountOffset = 0x6c;
@@ -71,6 +65,8 @@ constexpr size_t MenuStateOffset = 0x180;
 constexpr size_t GamePointerOffset = 0x198;
 constexpr size_t GameWorldNameOffset = 0x48;
 constexpr size_t GameSessionNameOffset = 0x54;
+constexpr size_t GameJoinAddressOffset = 0x58;
+constexpr size_t GameJoinPortOffset = 0x5c;
 constexpr size_t GamePlayerCharactersOffset = 0x130;
 constexpr size_t GameMenuSplitScreenConfigOffset = 0x478;
 constexpr size_t GameStartSplitScreenConfigOffset = 0x47c;
@@ -82,8 +78,6 @@ constexpr size_t FieldPlayerAddressOffset = 0x34;
 constexpr size_t FieldPlayerObservedPortOffset = 0x38;
 constexpr size_t FieldPlayerAdvertisedPortOffset = 0x3a;
 constexpr unsigned char FieldPlayerCount = 20;
-constexpr size_t JoinGameVtableOffset = 0x94;
-constexpr uintptr_t JoinGameRva = 0x15610;
 constexpr uintptr_t StartGameRva = 0x150c0;
 constexpr uintptr_t JoinSessionIatRva = 0x26150;
 constexpr uintptr_t AddPlayerIatRva = 0x261d0;
@@ -557,9 +551,9 @@ unsigned ReadNetworkPort(const BYTE* value)
 
 bool EnsureGameJoinAddress(BYTE* game)
 {
-    void* target = game + GameSessionNameOffset + sizeof(void*);
-    if (!IsPlaceholderJoinAddress(ReadGameString(game,
-        GameSessionNameOffset + sizeof(void*))))
+    const char* currentAddress = ReadGameString(game, GameJoinAddressOffset);
+    const long currentPort = *reinterpret_cast<long*>(game + GameJoinPortOffset);
+    if (!IsPlaceholderJoinAddress(currentAddress) && currentPort > 0)
         return true;
 
     HMODULE engine = GetModuleHandleW(L"engine.dll");
@@ -582,11 +576,14 @@ bool EnsureGameJoinAddress(BYTE* game)
         if (port == 0 || (address[0] | address[1] | address[2] | address[3]) == 0)
             return false;
 
-        char endpoint[32]{};
-        _snprintf_s(endpoint, _countof(endpoint), _TRUNCATE,
-            "%u.%u.%u.%u:%u", address[0], address[1],
-            address[2], address[3], port);
-        if (!AssignGameString(target, endpoint)) return false;
+        char host[16]{};
+        _snprintf_s(host, _countof(host), _TRUNCATE,
+            "%u.%u.%u.%u", address[0], address[1],
+            address[2], address[3]);
+        if (!AssignGameString(game + GameJoinAddressOffset, host))
+            return false;
+        *reinterpret_cast<long*>(game + GameJoinPortOffset) =
+            static_cast<long>(port);
         CompatLog("headless engine: endpoint P2P do master aplicado");
         return true;
     }
@@ -659,12 +656,6 @@ void ConfigureSingleLocalPlayer(BYTE* game)
         menuIndices[index] = startIndices[index] = -1;
 }
 
-struct FileNameValue
-{
-    void* string{};
-    void* preloaded{};
-};
-
 void* OriginalJoinSession{};
 void* OriginalAddPlayer{};
 
@@ -714,7 +705,7 @@ bool InstallJoinTraceHooks(BYTE* gameModule)
             OriginalAddPlayer);
 }
 
-bool StartMasterFieldEngine(BYTE* game)
+bool StartNativeFieldEngine(BYTE* game, int mode)
 {
     HMODULE engine = GetModuleHandleW(L"engine.dll");
     auto* gameModule = reinterpret_cast<BYTE*>(GetModuleHandleW(L"gamemp.dll"));
@@ -731,62 +722,14 @@ bool StartMasterFieldEngine(BYTE* game)
 
     using StartGameFn = int(__thiscall*)(void*, int);
     InterlockedExchange(&EngineJoinPhase, 100);
-    const int started = reinterpret_cast<StartGameFn>(address)(game, 2);
+    const int started = reinterpret_cast<StartGameFn>(address)(game, mode);
     const LONG phase = InterlockedCompareExchange(&EngineJoinPhase, 0, 0);
     char result[160]{};
     _snprintf_s(result, _countof(result), _TRUNCATE,
-        "headless engine: StartGame master retornou=%d phase=%ld",
-        started, phase);
+        "headless engine: StartGame mode=%d retornou=%d phase=%ld",
+        mode, started, phase);
     CompatLog(result);
     return started != 0;
-}
-
-bool JoinFieldEngine(BYTE* game)
-{
-    HMODULE engine = GetModuleHandleW(L"engine.dll");
-    if (!engine || !InstallSafeStreamCrc(engine)) return false;
-
-    using NetworkSessionConstructorFn =
-        void*(__thiscall*)(void*, const void*, long);
-    using NetworkSessionDestructorFn = void(__thiscall*)(void*);
-    using FileNameConstructorFn = void*(__thiscall*)(void*, const char*);
-    using JoinGameFn = int(__thiscall*)(void*, const void*, FileNameValue);
-    auto constructSession = reinterpret_cast<NetworkSessionConstructorFn>(
-        GetProcAddress(engine, NetworkSessionConstructorSymbol));
-    auto destroySession = reinterpret_cast<NetworkSessionDestructorFn>(
-        GetProcAddress(engine, NetworkSessionDestructorSymbol));
-    auto constructFileName = reinterpret_cast<FileNameConstructorFn>(
-        GetProcAddress(engine, FileNameConstructorSymbol));
-    auto** vtable = *reinterpret_cast<void***>(game);
-    auto joinGame = vtable ? reinterpret_cast<JoinGameFn>(
-        vtable[JoinGameVtableOffset / sizeof(void*)]) : nullptr;
-    auto* gameModule = reinterpret_cast<BYTE*>(GetModuleHandleW(L"gamemp.dll"));
-    if (!constructSession || !destroySession || !constructFileName ||
-        !joinGame || !gameModule ||
-        reinterpret_cast<BYTE*>(joinGame) != gameModule + JoinGameRva)
-        return false;
-    if (!InstallJoinTraceHooks(gameModule))
-        CompatLog("headless engine: telemetria interna do join indisponivel");
-
-    alignas(void*) BYTE session[512]{};
-    FileNameValue world{};
-    InterlockedExchange(&EngineJoinPhase, 1);
-    constructSession(session,
-        game + GameSessionNameOffset + sizeof(void*), 0);
-    InterlockedExchange(&EngineJoinPhase, 2);
-    constructFileName(&world, ReadGameString(game, GameWorldNameOffset));
-    InterlockedExchange(&EngineJoinPhase, 10);
-    const int joined = joinGame(game, session, world);
-    const LONG phase = InterlockedCompareExchange(&EngineJoinPhase, 0, 0);
-    char result[160]{};
-    _snprintf_s(result, _countof(result), _TRUNCATE,
-        "headless engine: JoinGame retornou=%d phase=%ld",
-        joined, phase);
-    CompatLog(result);
-    InterlockedExchange(&EngineJoinPhase, 40);
-    destroySession(session);
-    InterlockedExchange(&EngineJoinPhase, 41);
-    return joined != 0;
 }
 
 bool StartFieldEngine()
@@ -827,7 +770,7 @@ bool StartFieldEngine()
         }
         worldName = ReadGameString(game, GameWorldNameOffset);
         sessionName = ReadGameString(game, GameSessionNameOffset);
-        joinAddress = ReadGameString(game, GameSessionNameOffset + sizeof(void*));
+        joinAddress = ReadGameString(game, GameJoinAddressOffset);
         playerIndex = *reinterpret_cast<int*>(
             game + GameMenuPlayerIndicesOffset);
         if (!worldName || worldName[0] == '\0' ||
@@ -863,8 +806,8 @@ bool StartFieldEngine()
     bool joined{};
     __try
     {
-        joined = fieldMaster
-            ? StartMasterFieldEngine(game) : JoinFieldEngine(game);
+        joined = StartNativeFieldEngine(
+            game, fieldMaster ? 2 : PeerToPeerClientMode);
     }
     __except (LogEngineJoinException(GetExceptionInformation()))
     {

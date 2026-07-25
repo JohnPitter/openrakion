@@ -176,8 +176,9 @@ O primeiro smoke com master gráfico comprovou que o cliente chegava ao início 
 o bootstrap recebia o placeholder `serveraddress` e falhava três vezes. O roster original já
 mantém, em cada record de `FieldInfo`, o IPv4 observado e as portas observada/anunciada. A DLL agora
 localiza o master pela API `FieldInfo::IsMasterSlot(seat)`, prefere a porta anunciada e preenche o
-`gam_strJoinAddress` antes do modo `4`. Endpoint ausente mantém o processo em espera; não existe
-fallback para endereço inventado.
+`gam_strJoinAddress` e `gam_iJoinPort` antes do modo `4`. O endereço e a porta permanecem em
+campos separados, como exige `CNetworkSession(const CTString&, long)`. Endpoint ausente mantém o
+processo em espera; não existe fallback para endereço inventado.
 
 O smoke seguinte confirmou `127.0.0.1:2301` tanto no `FieldInfo` quanto no socket UDP aberto pelo
 master, mas expôs uma chamada virtual incorreta no bootstrap: `CGame+vtable[0x8C]` é uma rotina de
@@ -186,11 +187,11 @@ LCD nesta variante, não o início de sessão. O RE do `gamemp.dll` localizou `C
 antecedem a tabela como slots deslocava a chamada para `0x9C`. Essa função chama
 `CNetworkLibrary::JoinSession_t`, configura e adiciona os jogadores
 locais e marca o jogo ativo. O headless agora constrói o `CNetworkSession` com o endpoint do master,
-constrói o mundo com `CTFileName(const char*)` pela ABI de oito bytes e fixa `SSC_PLAY1`. Antes da
-chamada, a DLL também confirma que `vtable[0x94]` aponta para `gamemp.dll+0x15610`; uma variante de
-cliente incompatível falha fechada. Exceções registram fase, código e endereço do bootstrap para
-separar falhas na construção de `CNetworkSession`, `CTFileName`, `JoinGame` ou destruição da sessão.
-O carregamento e o combate após esse join ainda exigem novo smoke gráfico.
+fixa `SSC_PLAY1`. A entrada final usa o fluxo canônico `CGame::StartGame(4)`, que constrói
+`CNetworkSession` com `gam_strJoinAddress` e `gam_iJoinPort` e delega para `JoinGame`. A DLL valida
+o prólogo de `StartGame` antes da chamada; uma variante incompatível falha fechada. Exceções
+registram fase, código e endereço do bootstrap para separar falhas durante a sessão P2P. O
+carregamento e o combate após esse join ainda exigem novo smoke gráfico.
 
 Para diagnosticar rollback sem alterar o protocolo, o processo headless observa as chamadas
 importadas de `JoinSession_t` e `AddPlayer_t`. O log distingue preparação anterior ao join,
