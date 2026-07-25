@@ -359,12 +359,14 @@ namespace RakionServer.World.Tests
             field.State = 2;
             field.Slots[0].State = 4;
             field.Slots[botSeat].State = 4;
+            master.Status = UserStatus.InField;
             Assert.True(bot.TakeDamage(bot.MaxHealth));
 
             field.EndMatch(0);
 
             Assert.Equal((byte)1, field.State);
             Assert.Equal((byte)1, field.Slots[0].State);
+            Assert.Equal(UserStatus.FieldLobby, master.Status);
             Assert.Equal((byte)2, field.Slots[botSeat].State);
             Assert.True(bot.Alive);
             var query = new RoomListQuery(10, 0, true, 1 << 2, false);

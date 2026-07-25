@@ -644,6 +644,8 @@ namespace RakionServer.World.Domain
             {
                 if (!record.Occupied) continue;
                 record.State = record.Bot == null ? (byte)1 : (byte)2;
+                if (record.Session != null)
+                    record.Session.Status = UserStatus.FieldLobby;
                 record.Dead = false;
                 record.Position = default;
                 record.Heading = 0;
