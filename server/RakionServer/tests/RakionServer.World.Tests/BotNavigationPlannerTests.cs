@@ -59,6 +59,26 @@ namespace RakionServer.World.Tests
             Assert.Equal(BotControls.Attack, action.Controls);
         }
 
+        [Fact]
+        public void Update_WhenCollisionBlocksMovement_BypassesImmediately()
+        {
+            var planner = new BotNavigationPlanner();
+            Update(planner, 0);
+
+            BotNavigationAction action = planner.Update(new BotNavigationInput(
+                150,
+                1,
+                BotVector.Zero,
+                Target,
+                250,
+                100,
+                true,
+                MovementBlocked: true));
+
+            Assert.Equal(BotNavigationMode.BypassDiagonal, action.Mode);
+            Assert.True(action.Controls.HasFlag(BotControls.Space));
+        }
+
         private static BotNavigationAction Update(
             BotNavigationPlanner planner,
             long nowMs)

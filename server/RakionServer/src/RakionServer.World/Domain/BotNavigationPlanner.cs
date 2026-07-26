@@ -51,7 +51,8 @@ namespace RakionServer.World.Domain
 
             if (IsBypassing())
                 CompleteManeuver(input, distance);
-            else if (!moved && input.NowMs - _lastProgressAt >= StuckMilliseconds)
+            else if (input.MovementBlocked ||
+                     !moved && input.NowMs - _lastProgressAt >= StuckMilliseconds)
             {
                 StartBypass(input, distance);
                 return BuildManeuverAction(input);

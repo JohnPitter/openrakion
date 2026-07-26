@@ -82,7 +82,7 @@ namespace RakionServer.World
                 (byte)record.Slot, bot.Position, bot.Heading, ++bot.MoveSeq));
             Broadcast(context.Field, context.Send, BotMovement.SynthesizeKeystate(
                 (byte)record.Slot, ++bot.MoveSeq, moving));
-            if (!bot.ShouldPublishControls(action.Controls)) return;
+            if (!bot.ShouldPublishControls(action.Controls, context.Now)) return;
 
             Broadcast(context.Field, context.Send,
                 BotMovement.SynthesizeNormalAnimation(

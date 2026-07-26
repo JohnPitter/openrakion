@@ -80,8 +80,9 @@ O valor `0D` não possui case no switch dessa build. Queda/dano não deve ser si
 ela entra por `0x0311 kind=Damage`, cujo payload humano observado foi `0F 07 <attackerSeat>`.
 
 `MoveForward` é publicado quando o bot passa de parado para andando, e `Stand` na transição
-inversa. A tentativa de renová-lo por timer foi descartada no gate visual porque reinicia e corta o
-ciclo no meio; as repetições vistas na captura humana correspondem a novos ciclos de input.
+inversa. Enquanto há controle de locomoção, o World renova a animação a cada 800 ms. Essa cadência
+acompanha as repetições de `kind=Normal` observadas na captura humana e evita que o avatar remoto
+volte a `Stand` enquanto os snapshots de posição continuam chegando.
 
 O lifecycle usa um snapshot isolado por porta UDP autenticada. A DLL o consome na thread do jogo;
 o mesmo canal transporta a transição de locomoção. Dano, HIT e morte só poderão ser ativados
@@ -100,10 +101,12 @@ inversão de `A/D` observada quando dois peers cruzam o mesmo eixo. O lado é tr
 manobra não desloca o bot ou aumenta a distância.
 
 `IBotNavigationSurface` é o contrato entre domínio e geometria do mapa. O primeiro perfil é Cage
-(`mapId=209`): a separação central bloqueia a passagem direta e a abertura leste permanece
-transitável. Mapas ainda não catalogados usam superfície aberta, preservando a perseguição anterior
-como fallback. O golden do Cage exige bloqueio, `Space`, strafe, passagem pela abertura e retorno ao
-alcance de ataque.
+(`mapId=209`): o obstáculo central usa o volume observado nas trajetórias nativas, expandido pelo
+raio do avatar. A resolução é separada por eixo para bloquear entrada e permitir deslizamento
+tangencial pela borda. Passos grandes também são barrados, impedindo tunneling. A colisão entra como
+feedback explícito do planner e inicia o contorno imediatamente; ela nunca libera movimento direto
+como fallback. Mapas ainda não catalogados usam superfície aberta. O golden do Cage exige bloqueio,
+`Space`, strafe, saída do volume sólido antes do cruzamento e retorno ao alcance de ataque.
 
 As combinações são convertidas para as animações capturadas do humano: frente, trás, esquerda,
 direita, quatro diagonais e pulo. A trajetória vertical é calculada no World, mas ainda precisa do
@@ -152,5 +155,7 @@ e [anúncio da Croteam](https://www.croteam.com/serious-sam-source-code-released
 Build e testes automatizados validam protocolo e regra de negócio. Em 22/07/2026, o RE corrigiu o
 heading em escala/eixo errados e moveu a animação de locomoção para a thread nativa do jogador.
 Em 26/07/2026, o golden server-side do Cage passou usando controles, colisão, contorno e pulo. O
-gate visual imediato é confirmar a mesma trajetória no cliente sem deslize ou corte. HIT, queda por
-dano e morte ainda não são considerados implementados no peer sintético.
+primeiro gate visual confirmou spawn, mas revelou animação sem renovação e passagem por obstáculo
+quando o contorno falhava. O World passou a renovar a locomoção e a usar volume sólido com reação
+imediata à colisão. O gate visual dessas duas correções ainda está pendente. HIT, queda por dano e
+morte ainda não são considerados implementados no peer sintético.

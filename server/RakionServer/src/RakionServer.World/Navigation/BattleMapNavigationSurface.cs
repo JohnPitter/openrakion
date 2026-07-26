@@ -7,9 +7,11 @@ namespace RakionServer.World.Navigation
         public const byte CageMapId = 209;
         public static BattleMapNavigationSurface Instance { get; } = new();
 
-        private const float CageBarrierMaximumX = 3900f;
-        private const float CageBarrierMinimumZ = -1250f;
-        private const float CageBarrierMaximumZ = -550f;
+        private const float BotRadius = 80f;
+        private const float CageObstacleMinimumX = 1950f - BotRadius;
+        private const float CageObstacleMaximumX = 3050f + BotRadius;
+        private const float CageObstacleMinimumZ = -1250f - BotRadius;
+        private const float CageObstacleMaximumZ = -550f + BotRadius;
 
         private BattleMapNavigationSurface()
         {
@@ -20,36 +22,55 @@ namespace RakionServer.World.Navigation
             BotVector current,
             BotVector proposed)
         {
-            if (mapId != CageMapId || proposed.X > CageBarrierMaximumX)
+            if (mapId != CageMapId)
                 return new BotMoveResolution(proposed, false);
-            return ResolveCageBarrier(current, proposed);
+            return ResolveCageObstacle(current, proposed);
         }
 
-        private static BotMoveResolution ResolveCageBarrier(
+        private static BotMoveResolution ResolveCageObstacle(
             BotVector current,
             BotVector proposed)
         {
-            if (current.Z >= CageBarrierMaximumZ &&
-                proposed.Z < CageBarrierMaximumZ)
-            {
-                BotVector constrained = proposed with { Z = CageBarrierMaximumZ };
-                return new BotMoveResolution(constrained, true);
-            }
-            if (current.Z <= CageBarrierMinimumZ &&
-                proposed.Z > CageBarrierMinimumZ)
-            {
-                BotVector constrained = proposed with { Z = CageBarrierMinimumZ };
-                return new BotMoveResolution(constrained, true);
-            }
-            if (proposed.Z > CageBarrierMinimumZ &&
-                proposed.Z < CageBarrierMaximumZ)
-            {
-                float z = current.Z >= CageBarrierMaximumZ
-                    ? CageBarrierMaximumZ
-                    : CageBarrierMinimumZ;
-                return new BotMoveResolution(proposed with { Z = z }, true);
-            }
-            return new BotMoveResolution(proposed, false);
+            float x = ResolveAxis(
+                current.X,
+                proposed.X,
+                current.Z,
+                CageObstacleMinimumX,
+                CageObstacleMaximumX,
+                CageObstacleMinimumZ,
+                CageObstacleMaximumZ);
+            float z = ResolveAxis(
+                current.Z,
+                proposed.Z,
+                x,
+                CageObstacleMinimumZ,
+                CageObstacleMaximumZ,
+                CageObstacleMinimumX,
+                CageObstacleMaximumX);
+            var resolved = proposed with { X = x, Z = z };
+            return new BotMoveResolution(
+                resolved,
+                resolved.X != proposed.X || resolved.Z != proposed.Z);
+        }
+
+        private static float ResolveAxis(
+            float current,
+            float proposed,
+            float other,
+            float minimum,
+            float maximum,
+            float otherMinimum,
+            float otherMaximum)
+        {
+            if (other <= otherMinimum || other >= otherMaximum)
+                return proposed;
+            if (current <= minimum && proposed > minimum)
+                return minimum;
+            if (current >= maximum && proposed < maximum)
+                return maximum;
+            if (current > minimum && current < maximum)
+                return proposed >= current ? maximum : minimum;
+            return proposed;
         }
     }
 }

@@ -8,7 +8,7 @@ namespace RakionServer.World.Tests
     public sealed class CageBotNavigationTests
     {
         [Fact]
-        public void Surface_BlocksCentralBarrierAndLeavesEastOpening()
+        public void Surface_BlocksCentralObstacleAndSlidesAlongItsEdge()
         {
             BattleMapNavigationSurface surface = BattleMapNavigationSurface.Instance;
             var above = new BotVector(2000, 0, -400);
@@ -17,15 +17,30 @@ namespace RakionServer.World.Tests
                 BattleMapNavigationSurface.CageMapId,
                 above,
                 new BotVector(2100, 0, -700));
-            BotMoveResolution opening = surface.Resolve(
+            BotMoveResolution slide = surface.Resolve(
                 BattleMapNavigationSurface.CageMapId,
-                new BotVector(4000, 0, -400),
-                new BotVector(4000, 0, -700));
+                new BotVector(2000, 0, -470),
+                new BotVector(2200, 0, -470));
 
             Assert.True(blocked.Blocked);
-            Assert.Equal(-550, blocked.Position.Z);
-            Assert.False(opening.Blocked);
-            Assert.Equal(-700, opening.Position.Z);
+            Assert.Equal(-470, blocked.Position.Z);
+            Assert.False(slide.Blocked);
+            Assert.Equal(2200, slide.Position.X);
+            Assert.Equal(-470, slide.Position.Z);
+        }
+
+        [Fact]
+        public void Surface_NeverLetsLargeStepTunnelThroughCentralObstacle()
+        {
+            BattleMapNavigationSurface surface = BattleMapNavigationSurface.Instance;
+
+            BotMoveResolution resolved = surface.Resolve(
+                BattleMapNavigationSurface.CageMapId,
+                new BotVector(1800, 0, -900),
+                new BotVector(3200, 0, -900));
+
+            Assert.True(resolved.Blocked);
+            Assert.Equal(1870, resolved.Position.X);
         }
 
         [Fact]
@@ -42,7 +57,7 @@ namespace RakionServer.World.Tests
             bool jumped = false;
             bool strafed = false;
             bool attacked = false;
-            float maximumX = bot.Position.X;
+            bool clearedObstacle = false;
 
             for (int tick = 0; tick < 400; tick++)
             {
@@ -58,14 +73,15 @@ namespace RakionServer.World.Tests
                 strafed |= (action.Controls &
                     (BotControls.A | BotControls.D)) != 0;
                 attacked |= action.IsAttacking;
-                maximumX = MathF.Max(maximumX, bot.Position.X);
+                clearedObstacle |= bot.Position.Z <= -1330 &&
+                    (bot.Position.X <= 1870 || bot.Position.X >= 3130);
                 if (attacked) break;
             }
 
             Assert.True(jumped, "o contorno deve pulsar Space");
             Assert.True(strafed, "o contorno deve usar A ou D");
-            Assert.True(maximumX > 3900,
-                $"o bot deve alcançar a abertura lateral do Cage; maxX={maximumX}");
+            Assert.True(clearedObstacle,
+                "o bot deve sair do retângulo sólido antes de cruzar para o outro lado");
             Assert.True(attacked, "o bot deve reencontrar o alvo após o contorno");
         }
     }

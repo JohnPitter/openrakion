@@ -44,5 +44,6 @@ namespace RakionServer.World.Domain
         BotVector Target,
         float AttackRange,
         float MinimumSpacing,
-        bool PreferLeft);
+        bool PreferLeft,
+        bool MovementBlocked = false);
 }

@@ -45,6 +45,8 @@ namespace RakionServer.World.Domain
         private float _groundY;
         private bool _airborne;
         private bool _hasGround;
+        private bool _movementBlocked;
+        private long _nextLocomotionRefreshMs;
         public bool IsMoving => _isMoving;
         public BotNavigationMode NavigationMode { get; private set; }
 
@@ -107,14 +109,20 @@ namespace RakionServer.World.Domain
             return true;
         }
 
-        public bool ShouldPublishControls(BotControls controls)
+        public bool ShouldPublishControls(BotControls controls, long nowMs)
         {
+            const int LocomotionRefreshMilliseconds = 800;
             const BotControls movement = BotControls.W | BotControls.A |
                 BotControls.S | BotControls.D | BotControls.Space;
             BotControls current = controls & movement;
-            if (_lastPublishedControls == current) return false;
+            bool refresh = current != BotControls.None &&
+                nowMs >= _nextLocomotionRefreshMs;
+            if (_lastPublishedControls == current && !refresh) return false;
             _lastPublishedControls = current;
             _isMoving = (current & ~BotControls.Space) != 0;
+            _nextLocomotionRefreshMs = current == BotControls.None
+                ? 0
+                : nowMs + LocomotionRefreshMilliseconds;
             return true;
         }
 
@@ -219,7 +227,8 @@ namespace RakionServer.World.Domain
                     aimed,
                     Profile.MeleeRange,
                     Profile.MeleeSpacing,
-                    Seat % 2 == 0));
+                    Seat % 2 == 0,
+                    _movementBlocked));
             NavigationMode = action.Mode;
             ApplyControls(action, aimed, mapId, dt, surface);
             if (Position.HorizontalDistanceTo(aimed) > 1f)
@@ -239,6 +248,7 @@ namespace RakionServer.World.Domain
             Velocity += (desired - Velocity) * acceleration;
             BotVector proposed = Position + Velocity * dt;
             BotMoveResolution resolution = surface.Resolve(mapId, Position, proposed);
+            _movementBlocked = resolution.Blocked;
             Velocity = dt > 1e-4f
                 ? (resolution.Position - Position) * (1f / dt)
                 : BotVector.Zero;
@@ -297,6 +307,8 @@ namespace RakionServer.World.Domain
             _verticalVelocity = 0;
             _airborne = false;
             _hasGround = false;
+            _movementBlocked = false;
+            _nextLocomotionRefreshMs = 0;
         }
     }
 }

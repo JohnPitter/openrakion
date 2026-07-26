@@ -67,6 +67,18 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
+        public void LocomotionAnimation_RefreshesWithoutCuttingEveryTick()
+        {
+            var bot = new BotPlayer();
+
+            Assert.True(bot.ShouldPublishControls(BotControls.W, 1_000));
+            Assert.False(bot.ShouldPublishControls(BotControls.W, 1_150));
+            Assert.True(bot.ShouldPublishControls(BotControls.W, 1_800));
+            Assert.True(bot.ShouldPublishControls(BotControls.None, 1_950));
+            Assert.False(bot.ShouldPublishControls(BotControls.None, 2_100));
+        }
+
+        [Fact]
         public void SynthesizeMove_PositionRoundtripsThroughReader()
         {
             var pos = new BotVector(1234, -50, -600);
