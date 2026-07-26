@@ -1,8 +1,11 @@
 #include "engine_runtime.h"
 
 #include <array>
-#include <cstring>
 #include <stdexcept>
+
+#include "engine_invocation.h"
+#include "native_player.h"
+#include "rakion_world_adapter.h"
 
 extern "C" __declspec(dllimport) unsigned char CWorldBase_DLLClass;
 
@@ -10,6 +13,10 @@ namespace bot_engine
 {
 namespace
 {
+constexpr std::uintptr_t BattleTemplateLookupRva = 0x22b880;
+constexpr std::uintptr_t GameInitializeRva = 0x1f2d0;
+constexpr std::size_t GameInitializeVtableIndex = 51;
+
 constexpr std::array<const wchar_t*, 6> ForbiddenGraphicsModules{
     L"d3d8.dll",
     L"d3d9.dll",
@@ -23,48 +30,6 @@ void ConfirmStaticEntityPackageImport()
 {
     volatile unsigned char registrationByte = CWorldBase_DLLClass;
     static_cast<void>(registrationByte);
-}
-
-bool InvokeStartPeerWithStreamFaults(
-    StartPeerToPeer startPeer,
-    StreamExceptionFilter exceptionFilter,
-    void* network,
-    const LegacyString* session,
-    const LegacyString* world,
-    void* sessionProperties)
-{
-    __try
-    {
-        startPeer(
-            network,
-            session,
-            world,
-            0xFFFFFFFFUL,
-            20,
-            0,
-            sessionProperties);
-        return true;
-    }
-    __except (
-        exceptionFilter(GetExceptionCode(), GetExceptionInformation()))
-    {
-        return false;
-    }
-}
-
-void* InvokeCreateGameWithStreamFaults(
-    CreateGame createGame,
-    StreamExceptionFilter exceptionFilter)
-{
-    __try
-    {
-        return createGame();
-    }
-    __except (
-        exceptionFilter(GetExceptionCode(), GetExceptionInformation()))
-    {
-        return nullptr;
-    }
 }
 }
 
@@ -102,10 +67,15 @@ EngineProbe EngineRuntime::Initialize()
         ResolveRequired(EnableStreamHandlingSymbol));
     enableStreams();
     streamsEnabled_ = true;
+    worldAdapter_ = std::make_unique<RakionWorldAdapter>(engine_);
+    worldAdapter_->Initialize();
     return Inspect();
 }
 
-WorldProbe EngineRuntime::LoadWorld(const std::string& worldName)
+WorldProbe EngineRuntime::LoadWorld(
+    const std::string& worldName,
+    std::uint8_t mapId,
+    std::uint8_t mode)
 {
     if (!initialized_)
         throw std::logic_error("A engine precisa ser inicializada primeiro.");
@@ -113,7 +83,10 @@ WorldProbe EngineRuntime::LoadWorld(const std::string& worldName)
         throw std::logic_error("Este worker já possui um mundo carregado.");
     if (worldName.empty() || worldName.find("..") != std::string::npos)
         throw std::invalid_argument("Nome de mundo inválido.");
+    if (mapId < 200 || mapId > 213 || mode < 1 || mode > 4)
+        throw std::invalid_argument("Mapa ou modo battle inválido.");
 
+    worldAdapter_->ConfigureField(mapId, mode);
     LoadGameplayModules();
     auto** network = reinterpret_cast<void**>(ResolveRequired(NetworkSymbol));
     if (!network || !*network)
@@ -130,7 +103,7 @@ WorldProbe EngineRuntime::LoadWorld(const std::string& worldName)
     bool loaded{};
     try
     {
-        loaded = InvokeStartPeerWithStreamFaults(
+        loaded = StartPeerWithStreamFaults(
             startPeer,
             streamFilter,
             *network,
@@ -151,11 +124,59 @@ WorldProbe EngineRuntime::LoadWorld(const std::string& worldName)
         throw std::runtime_error(
             "A engine não conseguiu confirmar uma página do stream.");
     }
+    using BattleTemplateLookup = void*(__cdecl*)(int, unsigned char);
+    const auto lookup = reinterpret_cast<BattleTemplateLookup>(
+        reinterpret_cast<std::uintptr_t>(entities_) +
+        BattleTemplateLookupRva);
+    if (!lookup(mode, mapId))
+        throw std::runtime_error(
+            "DataSetup não contém o template battle solicitado.");
     worldLoaded_ = true;
-
     DestroyEngineString(world);
     DestroyEngineString(session);
     return WorldProbe{Inspect(), true, worldName};
+}
+
+LocalPlayerProbe EngineRuntime::AddLocalPlayer(
+    std::uint32_t botId,
+    const std::string& name,
+    const std::string& species)
+{
+    if (!worldLoaded_)
+        throw std::logic_error("O mundo precisa estar carregado.");
+    if (botId == 0 || name.empty() || species.empty())
+        throw std::invalid_argument("Identidade do bot inválida.");
+    if (botSources_.contains(botId))
+        throw std::logic_error("O bot já existe neste worker.");
+    if (LocalPlayerCount() >= LocalPlayerCapacity())
+        throw std::runtime_error("A capacidade nativa de players foi atingida.");
+
+    auto** network = reinterpret_cast<void**>(ResolveRequired(NetworkSymbol));
+    worldAdapter_->SelectCharacter(botId, name);
+    const auto result = CreateNativePlayer(
+        engine_, *network, name, species);
+    botSources_.emplace(botId, result.source);
+    return {botId, result.activePlayers, result.capacity};
+}
+
+std::uint32_t EngineRuntime::LocalPlayerCount() const
+{
+    if (!initialized_)
+        return 0;
+    auto** network = reinterpret_cast<void**>(ResolveRequired(NetworkSymbol));
+    if (!network || !*network)
+        return 0;
+    return GetNativePlayerCount(engine_, *network);
+}
+
+std::uint32_t EngineRuntime::LocalPlayerCapacity() const
+{
+    if (!initialized_)
+        return 0;
+    auto** network = reinterpret_cast<void**>(ResolveRequired(NetworkSymbol));
+    if (!network || !*network)
+        return 0;
+    return GetNativePlayerCapacity(*network);
 }
 
 void EngineRuntime::ConfigureDllSearch()
@@ -220,9 +241,47 @@ void EngineRuntime::LoadGameplayModules()
 
     auto streamFilter = reinterpret_cast<StreamExceptionFilter>(
         ResolveRequired(StreamExceptionFilterSymbol));
-    game_ = InvokeCreateGameWithStreamFaults(createGame, streamFilter);
+    game_ = CreateGameWithStreamFaults(createGame, streamFilter);
     if (!game_)
         throw std::runtime_error("GAME_Create não criou CGame.");
+    InitializeGameShell();
+}
+
+void EngineRuntime::InitializeGameShell()
+{
+    auto** vtable = *reinterpret_cast<void***>(game_);
+    const auto initialize = reinterpret_cast<InitializeGame>(
+        vtable[GameInitializeVtableIndex]);
+    const auto expected = reinterpret_cast<void*>(
+        reinterpret_cast<std::uintptr_t>(gameModule_) + GameInitializeRva);
+    if (reinterpret_cast<void*>(initialize) != expected)
+        throw std::runtime_error(
+            "CGame::Initialize possui ABI incompatível.");
+
+    auto constructFileName = reinterpret_cast<FileNameConstructor>(
+        ResolveRequired(FileNameConstructorSymbol));
+    auto destroyFileName = reinterpret_cast<FileNameDestructor>(
+        ResolveRequired(FileNameDestructorSymbol));
+    LegacyString path = CreateEngineString("Data\\SeriousSam.gms");
+    LegacyString fileName{};
+    constructFileName(&fileName, &path);
+    try
+    {
+        auto streamFilter = reinterpret_cast<StreamExceptionFilter>(
+            ResolveRequired(StreamExceptionFilterSymbol));
+        if (!InitializeGameWithStreamFaults(
+                initialize, streamFilter, game_, &fileName))
+            throw std::runtime_error(
+                "CGame::Initialize não concluiu o bootstrap de DataSetup.");
+    }
+    catch (...)
+    {
+        destroyFileName(&fileName);
+        DestroyEngineString(path);
+        throw;
+    }
+    destroyFileName(&fileName);
+    DestroyEngineString(path);
 }
 
 void EngineRuntime::RegisterEntityPackage()
@@ -319,6 +378,7 @@ void EngineRuntime::Shutdown() noexcept
         {
         }
     }
+    worldAdapter_.reset();
     if (initialized_ && endEngine_)
     {
         __try
@@ -353,6 +413,7 @@ void EngineRuntime::Shutdown() noexcept
     streamsEnabled_ = false;
     endEngine_ = nullptr;
     engine_ = nullptr;
+    botSources_.clear();
 }
 
 }

@@ -96,6 +96,11 @@ internal sealed class BotEngineWorker : IAsyncDisposable
     public Task<BotEngineHealth> PingAsync(CancellationToken cancellationToken) =>
         _client.PingAsync(cancellationToken);
 
+    public Task<BotEngineBot> AddBotAsync(
+        BotEngineBotRequest request,
+        CancellationToken cancellationToken) =>
+        _client.AddBotAsync(request, cancellationToken);
+
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         if (Interlocked.Exchange(ref _stopped, 1) != 0)
@@ -224,7 +229,8 @@ internal sealed class BotEngineWorker : IAsyncDisposable
     {
         const BotEngineProtocol.Capability required =
             BotEngineProtocol.Capability.EngineBootstrap |
-            BotEngineProtocol.Capability.NativeWorld;
+            BotEngineProtocol.Capability.NativeWorld |
+            BotEngineProtocol.Capability.NativePlayerSources;
         if (hello.ProcessId != unchecked((uint)processId) ||
             hello.ProtocolVersion != BotEngineProtocol.Version ||
             (hello.Capabilities & required) != required)

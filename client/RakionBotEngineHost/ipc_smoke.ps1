@@ -1,7 +1,11 @@
 param(
     [Parameter(Mandatory)]
     [string]$HostPath,
-    [string]$World = 'LevelsSV\Mammoth\Mammoth.wld'
+    [string]$World = 'LevelsSV\Mammoth\Mammoth.wld',
+    [ValidateRange(200, 213)]
+    [byte]$MapId = 211,
+    [ValidateRange(1, 4)]
+    [byte]$Mode = 2
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,7 +48,7 @@ function Invoke-Request {
     $writer = [System.IO.BinaryWriter]::new(
         $Stream, [Text.Encoding]::ASCII, $true)
     $writer.Write([uint32]0x4842524F)
-    $writer.Write([uint16]1)
+    $writer.Write([uint16]2)
     $writer.Write($MessageType)
     $writer.Write([uint32]$Payload.Length)
     $writer.Write($CorrelationId)
@@ -61,7 +65,7 @@ function Invoke-Request {
     $payloadLength = $reader.ReadUInt32()
     $responseCorrelation = $reader.ReadUInt32()
     $status = $reader.ReadUInt32()
-    if ($magic -ne 0x4842524F -or $version -ne 1) {
+    if ($magic -ne 0x4842524F -or $version -ne 2) {
         throw 'Resposta IPC com magic/version inválido'
     }
     if ($responseType -ne ($MessageType -bor 0x8000) -or
@@ -78,6 +82,8 @@ function New-LoadFieldPayload {
     param(
         [uint32]$FieldId,
         [uint16]$MaximumBots,
+        [byte]$Map,
+        [byte]$BattleMode,
         [string]$WorldName
     )
 
@@ -89,9 +95,32 @@ function New-LoadFieldPayload {
     $writer = [IO.BinaryWriter]::new($stream)
     $writer.Write($FieldId)
     $writer.Write($MaximumBots)
-    $writer.Write([uint16]0)
+    $writer.Write($Map)
+    $writer.Write($BattleMode)
     $writer.Write($worldBytes)
     $writer.Write([byte[]]::new(260 - $worldBytes.Length))
+    return $stream.ToArray()
+}
+
+function New-AddBotPayload {
+    param(
+        [uint32]$BotId,
+        [string]$Name,
+        [string]$Species
+    )
+
+    $nameBytes = [Text.Encoding]::ASCII.GetBytes($Name)
+    $speciesBytes = [Text.Encoding]::ASCII.GetBytes($Species)
+    if ($nameBytes.Length -ge 32 -or $speciesBytes.Length -ge 16) {
+        throw 'Identidade do bot excede o contrato IPC'
+    }
+    $stream = [IO.MemoryStream]::new()
+    $writer = [IO.BinaryWriter]::new($stream)
+    $writer.Write($BotId)
+    $writer.Write($nameBytes)
+    $writer.Write([byte[]]::new(32 - $nameBytes.Length))
+    $writer.Write($speciesBytes)
+    $writer.Write([byte[]]::new(16 - $speciesBytes.Length))
     return $stream.ToArray()
 }
 
@@ -102,7 +131,7 @@ try {
 
     $hello = Invoke-Request -Stream $pipe -MessageType 1 -CorrelationId 1
     if ($hello.Length -ne 12 -or
-        [BitConverter]::ToUInt32($hello, 4) -ne 3) {
+        [BitConverter]::ToUInt32($hello, 4) -ne 7) {
         throw 'Capabilities inválidas no Hello'
     }
 
@@ -113,11 +142,12 @@ try {
     }
 
     $load = New-LoadFieldPayload `
-        -FieldId 1234 -MaximumBots 8 -WorldName $World
+        -FieldId 1234 -MaximumBots 4 -Map $MapId `
+        -BattleMode $Mode -WorldName $World
     $loaded = Invoke-Request `
         -Stream $pipe -MessageType 2 -CorrelationId 3 -Payload $load
     if ([BitConverter]::ToUInt32($loaded, 0) -ne 1234 -or
-        [BitConverter]::ToUInt32($loaded, 4) -ne 8) {
+        [BitConverter]::ToUInt32($loaded, 4) -ne 4) {
         throw 'LoadField não confirmou field/capacidade'
     }
 
@@ -127,12 +157,28 @@ try {
         throw 'Ping não refletiu o field carregado'
     }
 
-    [void](Invoke-Request -Stream $pipe -MessageType 4 -CorrelationId 5)
+    $addBot = New-AddBotPayload -BotId 41 -Name 'BotProbe' -Species 'Human'
+    $added = Invoke-Request `
+        -Stream $pipe -MessageType 5 -CorrelationId 5 -Payload $addBot
+    if ($added.Length -ne 12 -or
+        [BitConverter]::ToUInt32($added, 0) -ne 41 -or
+        [BitConverter]::ToUInt32($added, 4) -ne 1 -or
+        [BitConverter]::ToUInt32($added, 8) -ne 4) {
+        throw 'AddBot não confirmou fonte local/capacidade nativa'
+    }
+
+    $botPing = Invoke-Request `
+        -Stream $pipe -MessageType 3 -CorrelationId 6
+    if ([BitConverter]::ToUInt32($botPing, 12) -ne 1) {
+        throw 'Ping não refletiu o bot criado'
+    }
+
+    [void](Invoke-Request -Stream $pipe -MessageType 4 -CorrelationId 7)
     $pipe.Dispose()
     if (-not $process.WaitForExit(15000) -or $process.ExitCode -ne 0) {
         throw "Host não encerrou corretamente: $($process.ExitCode)"
     }
-    Write-Output 'IPC smoke: Hello, Ping, LoadField e Shutdown validados'
+    Write-Output 'IPC smoke: fonte local real criada e ciclo do Host validado'
 }
 finally {
     if (-not $process.HasExited) {

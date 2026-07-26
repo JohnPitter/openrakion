@@ -63,7 +63,11 @@ internal sealed class BotEngineClient : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         byte[] payload = BotEngineFrameCodec.EncodeLoadField(
-            request.FieldId, request.MaximumBots, request.WorldName);
+            request.FieldId,
+            request.MaximumBots,
+            request.MapId,
+            request.Mode,
+            request.WorldName);
         BotEngineFrame frame = await RequestAsync(
             BotEngineProtocol.MessageType.LoadField,
             payload,
@@ -73,6 +77,29 @@ internal sealed class BotEngineClient : IAsyncDisposable
             BinaryPrimitives.ReadUInt32LittleEndian(frame.Payload.AsSpan(4)) !=
                 request.MaximumBots)
             throw new InvalidDataException("LoadField não confirmou field/capacidade.");
+    }
+
+    public async Task<BotEngineBot> AddBotAsync(
+        BotEngineBotRequest request,
+        CancellationToken cancellationToken)
+    {
+        BotEngineFrame frame = await RequestAsync(
+            BotEngineProtocol.MessageType.AddBot,
+            BotEngineFrameCodec.EncodeAddBot(request),
+            cancellationToken).ConfigureAwait(false);
+        if (frame.Payload.Length != 12)
+            throw new InvalidDataException("AddBot retornou payload inválido.");
+        var bot = new BotEngineBot(
+            BinaryPrimitives.ReadUInt32LittleEndian(frame.Payload),
+            BinaryPrimitives.ReadUInt32LittleEndian(frame.Payload.AsSpan(4)),
+            BinaryPrimitives.ReadUInt32LittleEndian(frame.Payload.AsSpan(8)));
+        if (bot.BotId != request.BotId ||
+            bot.Capacity == 0 ||
+            bot.ActivePlayers == 0 ||
+            bot.ActivePlayers > bot.Capacity)
+            throw new InvalidDataException(
+                "AddBot não confirmou identidade e capacidade do player.");
+        return bot;
     }
 
     public async Task<BotEngineHealth> PingAsync(CancellationToken cancellationToken)

@@ -30,7 +30,7 @@ public sealed class BotEngineWorkerIntegrationTests
             TimeSpan.FromSeconds(5));
         await using var supervisor = new BotEngineSupervisor(options);
         var field = new BotEngineFieldRequest(
-            4242, 8, @"LevelsSV\Mammoth\Mammoth.wld");
+            4242, 4, 211, 2, @"LevelsSV\Mammoth\Mammoth.wld");
 
         BotEngineWorker first = await supervisor.StartFieldAsync(
             field, CancellationToken.None);
@@ -38,12 +38,21 @@ public sealed class BotEngineWorkerIntegrationTests
             field, CancellationToken.None);
         BotEngineHealth health = await supervisor.PingFieldAsync(
             field.FieldId, CancellationToken.None);
+        BotEngineBot bot = await first.AddBotAsync(
+            new BotEngineBotRequest(1, "BotProbe", "Archer"),
+            CancellationToken.None);
+        BotEngineHealth populatedHealth = await supervisor.PingFieldAsync(
+            field.FieldId, CancellationToken.None);
 
         Assert.Same(first, second);
         Assert.True(first.IsRunning);
         Assert.Equal(1, supervisor.Count);
         Assert.Equal(field.FieldId, health.FieldId);
         Assert.Equal(0u, health.BotCount);
+        Assert.Equal(1u, bot.BotId);
+        Assert.Equal(1u, bot.ActivePlayers);
+        Assert.Equal(4u, bot.Capacity);
+        Assert.Equal(1u, populatedHealth.BotCount);
 
         await supervisor.StopFieldAsync(field.FieldId, CancellationToken.None);
         Assert.False(first.IsRunning);

@@ -2,7 +2,11 @@ param(
     [string]$ClientRoot,
     [switch]$RunProbe,
     [switch]$RunIpcProbe,
-    [string]$World = 'LevelsSV\Mammoth\Mammoth.wld'
+    [string]$World = 'LevelsSV\Mammoth\Mammoth.wld',
+    [ValidateRange(200, 213)]
+    [byte]$MapId = 211,
+    [ValidateRange(1, 4)]
+    [byte]$Mode = 2
 )
 
 $ErrorActionPreference = 'Stop'
@@ -28,8 +32,11 @@ if ($LASTEXITCODE -ne 0) {
 
 $sources = @(
     (Join-Path $PSScriptRoot 'main.cpp'),
+    (Join-Path $PSScriptRoot 'engine_invocation.cpp'),
     (Join-Path $PSScriptRoot 'engine_runtime.cpp'),
     (Join-Path $PSScriptRoot 'host_paths.cpp'),
+    (Join-Path $PSScriptRoot 'native_player.cpp'),
+    (Join-Path $PSScriptRoot 'rakion_world_adapter.cpp'),
     (Join-Path $PSScriptRoot 'pipe_server.cpp')
 ) | ForEach-Object { '"{0}"' -f $_ }
 $output = Join-Path $out 'BotEngineHost.exe'
@@ -64,7 +71,8 @@ if (-not (Test-Path -LiteralPath $engine -PathType Leaf)) {
 $deployedHost = Join-Path $clientBin 'BotEngineHost.exe'
 Copy-Item -LiteralPath $output -Destination $deployedHost -Force
 if ($RunProbe) {
-    & $deployedHost --client-root $clientRootPath --world $World
+    & $deployedHost --client-root $clientRootPath --world $World `
+        --map $MapId --mode $Mode
     if ($LASTEXITCODE -ne 0) {
         throw "Probe do Bot Engine Host falhou: $LASTEXITCODE"
     }
@@ -72,5 +80,7 @@ if ($RunProbe) {
 if ($RunIpcProbe) {
     & (Join-Path $PSScriptRoot 'ipc_smoke.ps1') `
         -HostPath $deployedHost `
-        -World $World
+        -World $World `
+        -MapId $MapId `
+        -Mode $Mode
 }

@@ -43,6 +43,9 @@ private:
         EngineRuntime& runtime);
     Response HandleHello() const;
     Response HandlePing() const;
+    Response HandleAddBot(
+        const Request& request,
+        EngineRuntime& runtime);
 
     template<typename T>
     static std::vector<std::uint8_t> Encode(const T& value)
@@ -55,5 +58,6 @@ private:
     std::wstring pipeName_;
     std::uint32_t fieldId_{};
     std::uint32_t maximumBots_{};
+    std::uint32_t botCount_{};
 };
 }

@@ -24,8 +24,10 @@ Sequência comprovada:
 3. `CTStream::EnableStreamHandling` habilita as páginas sob demanda dos XFS na thread do worker;
 4. `CEntitiesDLL::loadDLL("Bin\\Entities.dll")` aplica o sufixo `MP` e registra o pacote protegido;
 5. `GAME_Create` cria o `CGame` sem criar display;
-6. `CNetworkLibrary::StartPeerToPeer_t` carrega o `.wld` e inicializa o mundo nativo;
-7. o encerramento executa `StopGame`, `GAME_Destroy`, `SE_EndEngine` e desabilita o stream handler.
+6. `CGame::Initialize("Data\\SeriousSam.gms")` executa o DataSetup na ordem canônica;
+7. o adaptador `IScavengerWorldNet` fornece field e personagem selecionado à `gamemp.dll`;
+8. `CNetworkLibrary::StartPeerToPeer_t` carrega o `.wld` e inicializa o mundo nativo;
+9. o encerramento executa `StopGame`, `GAME_Destroy`, `SE_EndEngine` e desabilita o stream handler.
 
 O pacote legado tem entry point protegido em uma seção PE de dados. O `rakion.exe` original e as
 DLLs v258 não usam `NX_COMPAT` nem `DYNAMIC_BASE`; o worker precisa das mesmas características para
@@ -38,7 +40,9 @@ exports obrigatórios e, antes da distribuição, também deverá validar hashes
 .\client\RakionBotEngineHost\build.ps1 `
   -ClientRoot 'C:\Rakion' `
   -RunProbe `
-  -World 'LevelsSV\Mammoth\Mammoth.wld'
+  -World 'LevelsSV\Mammoth\Mammoth.wld' `
+  -MapId 211 `
+  -Mode 2
 ```
 
 O probe só passa quando:
@@ -60,16 +64,20 @@ O Host atende um named pipe local em modo byte. Cada frame possui header little-
 | Campo | Tipo | Regra |
 | --- | --- | --- |
 | magic | `uint32` | `0x4842524F` |
-| version | `uint16` | `1` |
+| version | `uint16` | `2` |
 | messageType | `uint16` | bit `0x8000` indica resposta |
 | payloadSize | `uint32` | máximo de 4096 bytes |
 | correlationId | `uint32` | ecoado na resposta |
 | status | `uint32` | zero em sucesso |
 
-Os comandos disponíveis são `Hello`, `LoadField`, `Ping` e `Shutdown`. `LoadField` só aceita
-caminhos relativos sob `LevelsSV`, capacidade positiva e um único carregamento por processo. O pipe
-recusa clientes remotos e o World valida PID, versão e as capabilities `EngineBootstrap` e
-`NativeWorld` antes de carregar o mapa.
+Os comandos disponíveis são `Hello`, `LoadField`, `AddBot`, `Ping` e `Shutdown`. `LoadField`
+transporta `fieldId`, capacidade, map ID original (`200..213`), modo battle (`1..4`) e caminho
+relativo sob `LevelsSV`. Ele aceita um único carregamento por processo e não permite capacidade
+superior à oferecida pela engine. `AddBot` transporta identidade explícita e cria a fonte local por
+`CNetworkLibrary::AddPlayer_t`.
+
+O pipe recusa clientes remotos. Antes de carregar o mapa, o World valida PID, versão e as
+capabilities `EngineBootstrap`, `NativeWorld` e `NativePlayerSources`.
 
 `BotEngineSupervisor` mantém no máximo um worker persistente por field. Ele inicia o processo sem
 shell ou janela, drena stdout/stderr, aplica timeout ao handshake e mata a árvore do processo quando
@@ -86,15 +94,29 @@ O smoke completo do marco executa:
 
 Além do smoke nativo, `BotEngineWorkerIntegrationTests` valida o processo real quando
 `RAKION_BOT_ENGINE_HOST` e `RAKION_BOT_ENGINE_CLIENT_ROOT` estão definidos. O teste comprova
-handshake, carregamento persistente do field, deduplicação do worker, ping e shutdown sem processo
-órfão.
+handshake, carregamento persistente do field, deduplicação do worker, criação de fonte local, ping
+e shutdown sem processo órfão.
+
+## Marco 3: fonte local real
+
+O Host cria o personagem pelo mesmo caminho nativo usado por um peer local:
+
+1. o adaptador seleciona a `_CharacterInfo` do bot;
+2. `CPlayerCharacter` é construído com nome e espécie;
+3. `CNetworkLibrary::AddPlayer_t` cria e registra o `CPlayerSource`;
+4. o retorno confirma ID, fontes ativas e capacidade nativa.
+
+O smoke validado em 26/07/2026 criou `BotProbe` com uma fonte ativa, capacidade nativa quatro,
+mundo Mammoth carregado, nenhum módulo gráfico e encerramento limpo. Esse marco comprova criação e
+registro da fonte. Ainda não comprova ações, simulação temporal, animação ou combate no stage.
 
 ## Gates restantes
 
 1. configuração e associação do supervisor ao lifecycle real de fields no World;
-2. criação de múltiplas fontes locais no mesmo worker;
-3. associação independente de seat, sequência e personagem por fonte;
+2. associação independente de seat, sequência e personagem por fonte;
+3. criação e validação de múltiplas fontes locais no mesmo worker;
 4. produção e encaminhamento de ações nativas equivalentes às humanas;
-5. desativação dos subsistemas de input e som não necessários ao worker;
-6. remoção do `BotManager` sintético e dos patches de física/animação correspondentes;
-7. validação visual e de carga com múltiplos bots.
+5. avanço determinístico dos ticks e publicação de snapshots;
+6. desativação dos subsistemas de input e som não necessários ao worker;
+7. remoção do `BotManager` sintético e dos patches de física/animação correspondentes;
+8. validação visual e de carga com múltiplos bots.

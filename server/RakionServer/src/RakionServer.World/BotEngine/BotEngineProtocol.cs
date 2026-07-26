@@ -5,18 +5,20 @@ namespace RakionServer.World.BotEngine;
 internal static class BotEngineProtocol
 {
     public const uint Magic = 0x4842524F;
-    public const ushort Version = 1;
+    public const ushort Version = 2;
     public const ushort ResponseFlag = 0x8000;
     public const int HeaderSize = 20;
     public const int MaximumPayloadSize = 4096;
     public const int WorldNameCapacity = 260;
     public const int LoadFieldRequestSize = 268;
+    public const int AddBotRequestSize = 52;
 
     [Flags]
     public enum Capability : uint
     {
         EngineBootstrap = 1U << 0,
         NativeWorld = 1U << 1,
+        NativePlayerSources = 1U << 2,
     }
 
     public enum MessageType : ushort
@@ -25,6 +27,7 @@ internal static class BotEngineProtocol
         LoadField = 2,
         Ping = 3,
         Shutdown = 4,
+        AddBot = 5,
     }
 
     public enum Status : uint

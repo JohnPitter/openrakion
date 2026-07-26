@@ -1,6 +1,7 @@
 using System;
 using System.Buffers.Binary;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -31,17 +32,37 @@ internal static class BotEngineFrameCodec
     public static byte[] EncodeLoadField(
         uint fieldId,
         ushort maximumBots,
+        byte mapId,
+        byte mode,
         string worldName)
     {
         byte[] world = EncodeWorldName(worldName);
         if (fieldId == 0 || maximumBots == 0 ||
+            mapId is < 200 or > 213 || mode is < 1 or > 4 ||
             world.Length == 0 || world.Length >= BotEngineProtocol.WorldNameCapacity)
             throw new ArgumentException("LoadField possui valores inválidos.");
 
         byte[] payload = new byte[BotEngineProtocol.LoadFieldRequestSize];
         BinaryPrimitives.WriteUInt32LittleEndian(payload, fieldId);
         BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(4), maximumBots);
+        payload[6] = mapId;
+        payload[7] = mode;
         world.CopyTo(payload.AsSpan(8));
+        return payload;
+    }
+
+    public static byte[] EncodeAddBot(BotEngineBotRequest request)
+    {
+        byte[] name = EncodePlayerText(request.Name, 32, nameof(request.Name));
+        byte[] species = EncodePlayerText(
+            request.Species, 16, nameof(request.Species));
+        if (request.BotId == 0)
+            throw new ArgumentException("BotId inválido.", nameof(request));
+
+        byte[] payload = new byte[BotEngineProtocol.AddBotRequestSize];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload, request.BotId);
+        name.CopyTo(payload.AsSpan(4));
+        species.CopyTo(payload.AsSpan(36));
         return payload;
     }
 
@@ -58,6 +79,20 @@ internal static class BotEngineFrameCodec
                     "Caminho de mundo deve usar ASCII.", nameof(worldName));
         }
         return Encoding.ASCII.GetBytes(worldName);
+    }
+
+    private static byte[] EncodePlayerText(
+        string value,
+        int capacity,
+        string parameter)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Any(
+                character => character is < ' ' or > '~'))
+            throw new ArgumentException("Texto de player inválido.", parameter);
+        byte[] encoded = Encoding.ASCII.GetBytes(value);
+        if (encoded.Length >= capacity)
+            throw new ArgumentException("Texto de player excede o contrato.", parameter);
+        return encoded;
     }
 
     public static async ValueTask<BotEngineFrame> ReadResponseAsync(

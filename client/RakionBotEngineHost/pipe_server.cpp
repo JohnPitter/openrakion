@@ -81,6 +81,24 @@ bool IsValidWorldName(std::string_view name)
             character == '-' || character == ' ' || character == '.';
     });
 }
+
+bool IsValidPlayerText(std::string_view value)
+{
+    if (value.empty())
+        return false;
+    return std::all_of(value.begin(), value.end(), [](char character)
+    {
+        const auto byte = static_cast<unsigned char>(character);
+        return byte >= 0x21 && byte <= 0x7e;
+    });
+}
+
+template<std::size_t Size>
+std::string ReadText(const char (&value)[Size])
+{
+    const auto length = strnlen(value, Size);
+    return length < Size ? std::string(value, length) : std::string{};
+}
 }
 
 PipeServer::PipeServer(std::wstring pipeName)
@@ -205,6 +223,8 @@ PipeServer::Response PipeServer::Dispatch(
         return request.payload.empty()
             ? Response{protocol::Status::Success, {}, true}
             : Response{protocol::Status::BadRequest};
+    case protocol::MessageType::AddBot:
+        return HandleAddBot(request, runtime);
     default:
         return {protocol::Status::UnsupportedMessage};
     }
@@ -225,13 +245,16 @@ PipeServer::Response PipeServer::HandleLoadField(
         payload.worldName, protocol::WorldNameCapacity);
     const std::string worldName(payload.worldName, length);
     if (payload.fieldId == 0 || payload.maximumBots == 0 ||
+        payload.maximumBots > runtime.LocalPlayerCapacity() ||
+        payload.mapId < 200 || payload.mapId > 213 ||
+        payload.mode < 1 || payload.mode > 4 ||
         length == 0 || length == protocol::WorldNameCapacity ||
         !IsValidWorldName(worldName))
         return {protocol::Status::BadRequest};
 
     try
     {
-        runtime.LoadWorld(worldName);
+        runtime.LoadWorld(worldName, payload.mapId, payload.mode);
     }
     catch (const std::exception& error)
     {
@@ -257,7 +280,8 @@ PipeServer::Response PipeServer::HandleHello() const
 {
     const protocol::HelloResponse payload{
         GetCurrentProcessId(),
-        protocol::EngineBootstrap | protocol::NativeWorld,
+        protocol::EngineBootstrap | protocol::NativeWorld |
+            protocol::NativePlayerSources,
         protocol::Version,
         0,
     };
@@ -272,8 +296,56 @@ PipeServer::Response PipeServer::HandlePing() const
     const protocol::PingResponse payload{
         static_cast<std::uint64_t>(milliseconds),
         fieldId_,
-        0,
+        botCount_,
     };
     return {protocol::Status::Success, Encode(payload)};
+}
+
+PipeServer::Response PipeServer::HandleAddBot(
+    const Request& request,
+    EngineRuntime& runtime)
+{
+    if (fieldId_ == 0)
+        return {protocol::Status::InvalidState};
+    if (request.payload.size() != sizeof(protocol::AddBotRequest))
+        return {protocol::Status::BadRequest};
+
+    protocol::AddBotRequest payload{};
+    std::memcpy(&payload, request.payload.data(), sizeof(payload));
+    const std::string name = ReadText(payload.name);
+    const std::string species = ReadText(payload.species);
+    if (payload.botId == 0 || !IsValidPlayerText(name) ||
+        !IsValidPlayerText(species) || botCount_ >= maximumBots_)
+        return {protocol::Status::BadRequest};
+
+    try
+    {
+        const auto probe = runtime.AddLocalPlayer(
+            payload.botId, name, species);
+        botCount_ = probe.activePlayers;
+        return {
+            protocol::Status::Success,
+            Encode(protocol::AddBotResponse{
+                probe.botId,
+                probe.activePlayers,
+                probe.capacity}),
+        };
+    }
+    catch (const std::logic_error& error)
+    {
+        std::cerr << "AddBot recusado: " << error.what() << '\n';
+        return {protocol::Status::InvalidState};
+    }
+    catch (const std::exception& error)
+    {
+        std::cerr << "AddBot falhou: " << error.what() << '\n';
+        return {protocol::Status::EngineFailure};
+    }
+    catch (char* error)
+    {
+        std::cerr << "AddBot recusado pela engine: "
+                  << (error ? error : "<sem mensagem>") << '\n';
+        return {protocol::Status::EngineFailure};
+    }
 }
 }

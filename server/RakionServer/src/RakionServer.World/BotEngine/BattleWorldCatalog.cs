@@ -24,14 +24,28 @@ internal static class BattleWorldCatalog
 
     public static string Resolve(byte mapId)
     {
-        if (mapId >= Worlds.Length)
+        const byte firstBattleMapId = 200;
+        int index = mapId - firstBattleMapId;
+        if (index < 0 || index >= Worlds.Length)
             throw new ArgumentOutOfRangeException(
                 nameof(mapId), mapId, "Mapa battle não suportado pelo Bot Engine Host.");
-        return Worlds[mapId];
+        return Worlds[index];
     }
 }
 
 internal sealed record BotEngineFieldRequest(
     uint FieldId,
     ushort MaximumBots,
+    byte MapId,
+    byte Mode,
     string WorldName);
+
+internal sealed record BotEngineBotRequest(
+    uint BotId,
+    string Name,
+    string Species);
+
+internal readonly record struct BotEngineBot(
+    uint BotId,
+    uint ActivePlayers,
+    uint Capacity);
