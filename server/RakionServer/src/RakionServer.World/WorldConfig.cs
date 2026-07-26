@@ -56,6 +56,7 @@ namespace RakionServer.World
         public ChatConfig Chat = new();
         public ClanConfig Clan = new();
         public CharacterDeleteConfig CharacterDelete = new();
+        public BotEngineConfig BotEngine = new();
 
         public sealed class ChatConfig
         {
@@ -83,6 +84,16 @@ namespace RakionServer.World
             public string BodyFileName = "deletion.txt";
             public string PickupFolder = "";
             public string BaseDirectory = Environment.CurrentDirectory;
+        }
+
+        public sealed class BotEngineConfig
+        {
+            public bool Enabled;
+            public string HostPath = "BotEngineHost.exe";
+            public string ClientRoot = ".";
+            public int StartupTimeoutSeconds = 30;
+            public int ShutdownTimeoutSeconds = 5;
+            public int MaxBotsPerField = 4;
         }
 
         // [DB] / [USERDB] / [LOGDB]
@@ -197,6 +208,22 @@ namespace RakionServer.World
             cfg.CharacterDelete.BaseDirectory = Path.GetDirectoryName(Path.GetFullPath(path))
                 ?? Environment.CurrentDirectory;
 
+            cfg.BotEngine.Enabled = ini.GetBool(
+                "BotEngine", "Enabled", cfg.BotEngine.Enabled);
+            cfg.BotEngine.HostPath = ResolveRelativePath(path,
+                ini.GetValue("BotEngine", "HostPath", cfg.BotEngine.HostPath));
+            cfg.BotEngine.ClientRoot = ResolveRelativePath(path,
+                ini.GetValue("BotEngine", "ClientRoot", cfg.BotEngine.ClientRoot));
+            cfg.BotEngine.StartupTimeoutSeconds = Math.Clamp(ini.GetValue(
+                "BotEngine", "StartupTimeoutSeconds",
+                cfg.BotEngine.StartupTimeoutSeconds), 1, 120);
+            cfg.BotEngine.ShutdownTimeoutSeconds = Math.Clamp(ini.GetValue(
+                "BotEngine", "ShutdownTimeoutSeconds",
+                cfg.BotEngine.ShutdownTimeoutSeconds), 1, 30);
+            cfg.BotEngine.MaxBotsPerField = Math.Clamp(ini.GetValue(
+                "BotEngine", "MaxBotsPerField",
+                cfg.BotEngine.MaxBotsPerField), 1, 4);
+
             LoadDb(ini, "DB", cfg.Db);
             LoadDb(ini, "USERDB", cfg.UserDb);
             LoadDb(ini, "LOGDB", cfg.LogDb);
@@ -267,6 +294,8 @@ namespace RakionServer.World
                 Clan.Enabled ? "on" : "off", Clan.MaxMembers, Clan.TreeMaxChildren);
             Log.Info("config", "Character delete pickup={0} folder='{1}'",
                 CharacterDelete.Enabled ? "on" : "off", CharacterDelete.PickupFolder);
+            Log.Info("config", "Bot Engine={0} maxBots={1}",
+                BotEngine.Enabled ? "on" : "off", BotEngine.MaxBotsPerField);
         }
     }
 }

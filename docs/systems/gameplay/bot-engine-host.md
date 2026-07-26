@@ -130,12 +130,39 @@ snapshots finitos e movimento observável após input. Ainda falta associar esse
 das salas e publicar o estado para clientes gráficos; ataque, HIT, queda, morte e respawn também
 continuam fora deste marco.
 
+## Marco 5: lifecycle real do World
+
+O comando `/addbot` não chama mais o tick de movimento sintético. O World primeiro reserva um seat
+sem publicá-lo, inicia ou reutiliza o Host do field e cria a fonte nativa. O roster só recebe o
+member-join após a confirmação do Host. Se bootstrap, mapa, IPC ou criação falhar, a reserva é
+desfeita e os bots do field são removidos; não há troca automática para o motor sintético.
+
+Durante uma partida battle, o clock do World avança o Host e copia posição e rotação dos snapshots
+nativos para o estado de domínio. O ID de mapa usado pelo protocolo do cliente (`0..13`) é traduzido
+para o catálogo original da engine (`200..213`). O Host é encerrado quando o field fica vazio, é
+fechado pelo master, perde o processo nativo ou o World é desligado.
+
+Configuração no `worldserver.ini`:
+
+```ini
+[BotEngine]
+Enabled=1
+HostPath=BotEngineHost.exe
+ClientRoot=.
+StartupTimeoutSeconds=30
+ShutdownTimeoutSeconds=5
+MaxBotsPerField=4
+```
+
+`HostPath` e `ClientRoot` relativos são resolvidos a partir do diretório do INI. Em uma distribuição
+onde o World não fica dentro do cliente, aponte `ClientRoot` para a raiz que contém os XFS e
+`HostPath` para o `BotEngineHost.exe` compilado sob o `Bin` dessa mesma raiz. Caminhos de máquina de
+desenvolvimento não fazem parte da configuração distribuída.
+
 ## Gates restantes
 
-1. configuração e associação do supervisor ao lifecycle real de fields no World;
-2. associação independente de seat, sequência e personagem por fonte no field real;
-3. publicação dos snapshots e eventos nativos para os clientes gráficos;
-4. combate server-authoritative: janela, hitbox, dano, HIT, queda, morte e respawn;
-5. desativação dos subsistemas de input e som não necessários ao worker;
-6. remoção do `BotManager` sintético e dos patches de física/animação correspondentes;
-7. validação visual e de carga com múltiplos bots.
+1. publicar snapshots e eventos nativos para os clientes gráficos;
+2. implementar combate server-authoritative: janela, hitbox, dano, HIT, queda, morte e respawn;
+3. desativar os subsistemas de input e som não necessários ao worker;
+4. remover o código remanescente do `BotManager` sintético e os patches correspondentes;
+5. validar visualmente e sob carga múltiplos bots em todos os mapas battle.

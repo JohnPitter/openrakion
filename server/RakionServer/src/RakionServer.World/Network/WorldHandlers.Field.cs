@@ -44,9 +44,6 @@ namespace RakionServer.World.Network
             ctx.World.BroadcastChannelChat(u, text);
         }
 
-        /// <summary>Traduz "/addbot [dificuldade] [n]" em chamadas ao <see cref="BotManager"/> e ecoa o
-        /// resultado ao host (chat de canal). Regra de negócio (host-only, time oposto, pré-match) mora
-        /// no BotManager; aqui só parse + feedback.</summary>
         private static void HandleAddBotCommand(HandlerContext ctx, string command)
         {
             ClientSession host = ctx.User;
@@ -67,16 +64,7 @@ namespace RakionServer.World.Network
                 }
             }
 
-            int added = 0;
-            string lastMessage = "";
-            for (int i = 0; i < count; i++)
-            {
-                var result = ctx.World.Bots.AddBotToField(field, host, difficulty);
-                if (result.Ok) added++; else { lastMessage = result.Message; break; }
-            }
-            ctx.World.WhisperSystem(host, added > 0
-                ? $"{added} bot(s) adicionado(s) ({difficulty})"
-                : $"nao foi possivel adicionar bot: {lastMessage}");
+            _ = ctx.World.AddNativeBotsAsync(field, host, difficulty, count);
         }
 
         /// <summary>FUN_004244f0: chat no field; publica seat do remetente e texto.</summary>

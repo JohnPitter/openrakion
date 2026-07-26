@@ -36,7 +36,9 @@ namespace RakionServer.World.Tests.E2E
 
         private WorldServerFixture() { }
 
-        public static async Task<WorldServerFixture> CreateAsync(bool forceTunneling = false)
+        public static async Task<WorldServerFixture> CreateAsync(
+            bool forceTunneling = false,
+            Action<WorldConfig>? configure = null)
         {
             int basePort = Interlocked.Add(ref _portCursor, 10);
             var fixture = new WorldServerFixture
@@ -67,6 +69,7 @@ namespace RakionServer.World.Tests.E2E
             cfg.Db.User = csb.UserID;
             cfg.Db.Pass = csb.Password;
             cfg.Db.Name = string.IsNullOrEmpty(csb.Database) ? "rakion" : csb.Database;
+            configure?.Invoke(cfg);
 
             fixture.DbConnectionString = cfg.Db.ConnectionString;
             var db = new WorldDatabase(cfg.Db);

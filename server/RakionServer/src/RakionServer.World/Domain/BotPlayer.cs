@@ -49,6 +49,7 @@ namespace RakionServer.World.Domain
         private long _nextLocomotionRefreshMs;
         public bool IsMoving => _isMoving;
         public BotNavigationMode NavigationMode { get; private set; }
+        public bool EngineAttached { get; private set; }
 
         /// <summary>HP inicial derivado de level/classe (curva simples; server-authoritative p/ o bot).</summary>
         public void InitHealth(byte level)
@@ -175,6 +176,17 @@ namespace RakionServer.World.Domain
             _hasTarget = false;
             ResetNavigation();
             if (revive) LifecycleSequence++;
+        }
+
+        public void ApplyEngineTransform(BotVector position, float heading)
+        {
+            Position = position;
+            Heading = heading;
+        }
+
+        public void AttachEngine()
+        {
+            EngineAttached = true;
         }
 
         // Estado interno da IA: EMA da velocidade do alvo (antecipação) e a última posição observada.

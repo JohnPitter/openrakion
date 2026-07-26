@@ -59,6 +59,37 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
+        public void ReservationIsInvisibleUntilConfirmed()
+        {
+            var (field, host) = GolemRoomWithHost();
+            BotManager manager = NewManager();
+
+            BotManager.AddBotResult reservation = manager.ReserveBot(
+                field, host, BotDifficulty.Normal);
+
+            Assert.True(reservation.Ok);
+            Assert.Equal(1, field.BotCount);
+            Assert.Equal((byte)0, field.Slots[reservation.Seat].State);
+            Assert.True(manager.ConfirmReservation(field, host, reservation));
+            Assert.Equal((byte)2, field.Slots[reservation.Seat].State);
+        }
+
+        [Fact]
+        public void FailedNativeAdmissionCanRollbackReservedSeat()
+        {
+            var (field, host) = GolemRoomWithHost();
+            BotManager manager = NewManager();
+            BotManager.AddBotResult reservation = manager.ReserveBot(
+                field, host, BotDifficulty.Normal);
+
+            manager.RollbackReservation(field, reservation);
+
+            Assert.Equal(0, field.BotCount);
+            Assert.Null(field.Slots[reservation.Seat].Bot);
+            Assert.Equal((byte)0, field.Slots[reservation.Seat].State);
+        }
+
+        [Fact]
         public void AddBot_ByNonHost_IsRejected()
         {
             var (field, _) = GolemRoomWithHost();

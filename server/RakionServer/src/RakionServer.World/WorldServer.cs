@@ -12,6 +12,7 @@ using RakionServer.World.Domain;
 using RakionServer.World.Infrastructure;
 using RakionServer.World.Network;
 using RakionServer.World.CharSelect;
+using RakionServer.World.BotEngine;
 
 namespace RakionServer.World
 {
@@ -26,6 +27,7 @@ namespace RakionServer.World
         private readonly WorldDatabase _db;
         private readonly ChatModerationEngine _chatModeration;
         private readonly ICharacterDeleteNotifier _characterDeleteNotifier;
+        private readonly BotEngineCoordinator _botEngine;
         private BrokerLink? _broker;
 
         private Socket? _listener;
@@ -330,7 +332,9 @@ namespace RakionServer.World
             ClearFieldState(session);
             if (field.Count == 0)
             {
+                Bots.RemoveAllBots(field);
                 lock (Fields) Fields.Remove(field);
+                StopNativeBots(field.Id);
                 Log.Info("field", "field {0} '{1}' liberado (vazio)", field.Id, field.Name);
                 return;
             }
@@ -377,7 +381,9 @@ namespace RakionServer.World
                 field.Master = null;
                 field.MasterSlot = -1;
                 field.State = 0;
+                Bots.RemoveAllBots(field);
                 lock (Fields) Fields.Remove(field);
+                StopNativeBots(field.Id);
                 Log.Info("room", "field {0} '{1}' fechado pelo host", field.Id, field.Name);
                 return true;
             }
@@ -398,6 +404,7 @@ namespace RakionServer.World
             _chatModeration = BuildChatModeration();
             _characterDeleteNotifier = characterDeleteNotifier ??
                 new CharacterDeletePickupNotifier(cfg.CharacterDelete);
+            _botEngine = new BotEngineCoordinator(cfg.BotEngine);
         }
 
         /// <summary>Subsistema de bots (peers sintéticos server-side). Ver <see cref="BotManager"/>.</summary>
@@ -523,9 +530,8 @@ namespace RakionServer.World
                                 _udpGame?.SendTick(s.UdpEndpoint, s.GameSeq);
                             }
                         }
-                        // Tick de IA/movimento dos bots (fora do lock do clock; TickField trava o field).
-                        if (f.BotCount > 0 && _udpGame != null)
-                            Bots.TickField(f, 0.15f, _udpGame.SendBotGameplay);
+                        if (f.BotCount > 0)
+                            await SyncNativeBotsAsync(f, ct).ConfigureAwait(false);
                     }
                 }
                 catch (Exception ex) { Log.Debug("field", "game clock: {0}", ex.Message); }
@@ -940,6 +946,7 @@ namespace RakionServer.World
             _broker?.Stop();
             try { _listener?.Close(); } catch { }
             _udpGame?.Stop();
+            _botEngine.DisposeAsync().AsTask().GetAwaiter().GetResult();
             PublishServerStatus(false);
         }
 

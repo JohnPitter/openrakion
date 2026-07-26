@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using RakionServer.World.Domain;
 using RakionServer.World.BotEngine;
 using Xunit;
 
@@ -97,6 +98,46 @@ public sealed class BotEngineWorkerIntegrationTests
         await supervisor.StopFieldAsync(field.FieldId, CancellationToken.None);
         Assert.False(first.IsRunning);
         Assert.Equal(0, supervisor.Count);
+    }
+
+    [Fact]
+    [Trait("Requires", "BotEngineFixture")]
+    public async Task CoordinatorMapsWorldFieldAndSynchronizesNativeSnapshot()
+    {
+        string? hostPath = Environment.GetEnvironmentVariable(
+            "RAKION_BOT_ENGINE_HOST");
+        string? clientRoot = Environment.GetEnvironmentVariable(
+            "RAKION_BOT_ENGINE_CLIENT_ROOT");
+        if (string.IsNullOrWhiteSpace(hostPath) ||
+            string.IsNullOrWhiteSpace(clientRoot))
+            return;
+
+        var config = new WorldConfig.BotEngineConfig
+        {
+            Enabled = true,
+            HostPath = hostPath,
+            ClientRoot = clientRoot,
+        };
+        await using var coordinator = new BotEngineCoordinator(config);
+        var field = new Field(4343)
+        {
+            MapId = 11,
+            Mode = (byte)GameMode.Deathmatch,
+        };
+        var bot = new BotPlayer { Name = "NativeProbe", Team = 1 };
+        bot.InitHealth(1);
+        int seat = field.AddBot(bot, 1);
+
+        await coordinator.AddBotAsync(
+            field, (byte)seat, bot, CancellationToken.None);
+        Assert.True(await coordinator.TickFieldAsync(
+            field, CancellationToken.None));
+
+        Assert.True(float.IsFinite(bot.Position.X));
+        Assert.True(float.IsFinite(bot.Position.Y));
+        Assert.True(float.IsFinite(bot.Position.Z));
+        Assert.Equal(bot.Position, field.Slots[seat].Position);
+        await coordinator.StopFieldAsync(field.Id, CancellationToken.None);
     }
 
     private static bool HasMoved(

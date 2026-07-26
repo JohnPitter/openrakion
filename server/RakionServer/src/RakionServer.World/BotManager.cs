@@ -41,16 +41,14 @@ namespace RakionServer.World
 
         public readonly record struct AddBotResult(bool Ok, string Message, int Seat, BotPlayer? Bot);
 
-        /// <summary>
-        /// Adiciona um bot ao field do <paramref name="host"/> no time oposto. Só o dono da sala, e só
-        /// antes do início da partida. Sincroniza o roster do cliente humano com um member-join (0x38).
-        /// </summary>
-        public AddBotResult AddBotToField(Field field, ClientSession host, BotDifficulty difficulty)
+        public AddBotResult ReserveBot(
+            Field field, ClientSession host, BotDifficulty difficulty)
         {
             lock (field.SyncRoot)
             {
                 PlayerRec? hostRec = field.FindRec(host);
-                if (hostRec == null) return new AddBotResult(false, "voce nao esta na sala", -1, null);
+                if (hostRec == null)
+                    return new AddBotResult(false, "voce nao esta na sala", -1, null);
                 if (field.MasterSlot != hostRec.Slot)
                     return new AddBotResult(false, "so o dono da sala adiciona bot", -1, null);
                 if (field.Phase == MatchPhase.Playing || field.State == 2)
@@ -58,31 +56,83 @@ namespace RakionServer.World
                 if (field.Mode == 0)
                     return new AddBotResult(false, "bots so em sala competitiva (PvP)", -1, null);
 
-                byte team = (byte)(hostRec.Team ^ 1);   // time oposto ao host
+                byte team = (byte)(hostRec.Team ^ 1);
                 byte level = host.CharLevel == 0 ? (byte)1 : host.CharLevel;
-                byte cls = host.CharClass == 0 ? (byte)1 : host.CharClass;
-                var bot = new BotPlayer
-                {
-                    Name = NextName(),
-                    Level = level,
-                    CharClass = cls,
-                    Team = team,
-                    Difficulty = difficulty,
-                    Profile = BotProfile.For(difficulty),
-                };
-                bot.InitHealth(level);
-
+                byte charClass = host.CharClass == 0 ? (byte)1 : host.CharClass;
+                var bot = CreateBot(team, level, charClass, difficulty);
                 int seat = field.AddBot(bot, team);
-                if (seat < 0) return new AddBotResult(false, "time cheio", -1, null);
-
-                Log.Ok("bot", "[{0}] bot '{1}' (lvl {2} cls {3} {4}) -> field {5} seat {6} time {7}",
-                    host.Slot, bot.Name, level, cls, difficulty, field.Id, seat, team);
-
-                // Espelha no roster do cliente humano: o bot aparece no slot da sala (member-join 0x38).
-                field.BroadcastLobby(RoomRosterFrames.PlayerJoined(field.Slots[seat]));
-                PublishBotLifecycles(field);
-                return new AddBotResult(true, "bot adicionado", seat, bot);
+                if (seat < 0)
+                    return new AddBotResult(false, "time cheio", -1, null);
+                field.Slots[seat].State = 0;
+                return new AddBotResult(true, "bot reservado", seat, bot);
             }
+        }
+
+        public bool ConfirmReservation(
+            Field field, ClientSession host, AddBotResult reservation)
+        {
+            if (!reservation.Ok || reservation.Bot == null)
+                return false;
+            lock (field.SyncRoot)
+            {
+                PlayerRec? record = field.RecAt((byte)reservation.Seat);
+                if (record?.Bot != reservation.Bot ||
+                    field.FindRec(host) == null ||
+                    field.Phase == MatchPhase.Playing ||
+                    field.State == 2)
+                    return false;
+                reservation.Bot.AttachEngine();
+                record.State = 2;
+                record.WeaponState = 1;
+                record.Dead = false;
+                Log.Ok("bot", "[{0}] bot nativo '{1}' -> field {2} seat {3}",
+                    host.Slot, reservation.Bot.Name, field.Id, reservation.Seat);
+                field.BroadcastLobby(RoomRosterFrames.PlayerJoined(record));
+                return true;
+            }
+        }
+
+        public void RollbackReservation(Field field, AddBotResult reservation)
+        {
+            if (!reservation.Ok || reservation.Bot == null)
+                return;
+            lock (field.SyncRoot)
+            {
+                PlayerRec? record = field.RecAt((byte)reservation.Seat);
+                if (record?.Bot == reservation.Bot)
+                    field.RemoveBot((byte)reservation.Seat);
+            }
+        }
+
+        /// <summary>
+        /// Adiciona um bot ao field do <paramref name="host"/> no time oposto. Só o dono da sala, e só
+        /// antes do início da partida. Sincroniza o roster do cliente humano com um member-join (0x38).
+        /// </summary>
+        public AddBotResult AddBotToField(Field field, ClientSession host, BotDifficulty difficulty)
+        {
+            AddBotResult reservation = ReserveBot(field, host, difficulty);
+            if (!reservation.Ok)
+                return reservation;
+            if (ConfirmReservation(field, host, reservation))
+                return reservation with { Message = "bot adicionado" };
+            RollbackReservation(field, reservation);
+            return new AddBotResult(false, "reserva do bot expirou", -1, null);
+        }
+
+        private BotPlayer CreateBot(
+            byte team, byte level, byte charClass, BotDifficulty difficulty)
+        {
+            var bot = new BotPlayer
+            {
+                Name = NextName(),
+                Level = level,
+                CharClass = charClass,
+                Team = team,
+                Difficulty = difficulty,
+                Profile = BotProfile.For(difficulty),
+            };
+            bot.InitHealth(level);
+            return bot;
         }
 
         /// <summary>Remove um bot pelo seat e avisa o roster (0x3a member-leave sintético).</summary>
@@ -234,9 +284,9 @@ namespace RakionServer.World
 
         private string NextName()
         {
-            string baseName = BotNames[_nameSeq % BotNames.Length];
-            int cycle = _nameSeq / BotNames.Length;
-            _nameSeq++;
+            int sequence = Interlocked.Increment(ref _nameSeq) - 1;
+            string baseName = BotNames[sequence % BotNames.Length];
+            int cycle = sequence / BotNames.Length;
             return cycle == 0 ? baseName : baseName + (cycle + 1);
         }
     }
