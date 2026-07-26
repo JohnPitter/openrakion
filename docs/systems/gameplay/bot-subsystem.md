@@ -87,11 +87,33 @@ O lifecycle usa um snapshot isolado por porta UDP autenticada. A DLL o consome n
 o mesmo canal transporta a transição de locomoção. Dano, HIT e morte só poderão ser ativados
 novamente quando houver uma fonte de impacto diferente de `kind=Attack`.
 
+## Navegação server-side
+
+O bot sintético possui um planejador stateful no domínio, separado da rede e da persistência. Ele
+produz controles `W/A/S/D/Space/Attack`, e não posições arbitrárias. A cinemática converte esses
+controles em velocidade, heading e posição; o adaptador de rede continua responsável apenas por
+serializar `0x030A`, `0x030F` e `0x0311`.
+
+Quando a distância deixa de melhorar, o planner tenta diagonal com pulo, strafe e recuo lateral. A
+direção de contorno permanece fixa no mundo enquanto o avatar continua olhando o alvo, evitando a
+inversão de `A/D` observada quando dois peers cruzam o mesmo eixo. O lado é trocado somente quando a
+manobra não desloca o bot ou aumenta a distância.
+
+`IBotNavigationSurface` é o contrato entre domínio e geometria do mapa. O primeiro perfil é Cage
+(`mapId=209`): a separação central bloqueia a passagem direta e a abertura leste permanece
+transitável. Mapas ainda não catalogados usam superfície aberta, preservando a perseguição anterior
+como fallback. O golden do Cage exige bloqueio, `Space`, strafe, passagem pela abertura e retorno ao
+alcance de ataque.
+
+As combinações são convertidas para as animações capturadas do humano: frente, trás, esquerda,
+direita, quatro diagonais e pulo. A trajetória vertical é calculada no World, mas ainda precisa do
+gate visual para calibrar altura e gravidade contra cada mapa.
+
 O ataque do bot alterna as três animações observadas (`0x1B`, `0x1A`, `0x12`) e usa cooldown por
-dificuldade. O dano bot→humano, salto com física, colisão nativa, queda e morte integralmente
-dirigidas pelo engine continuam fora do modelo sintético: o cliente exige um peer real para esse
-pipeline. O caminho de lançamento para equivalência completa é um cliente v258 controlado pela IA;
-o peer sintético permanece como fallback até esse caminho passar no gate visual.
+dificuldade. O dano bot→humano, queda e morte integralmente dirigidas pelo engine continuam fora do
+modelo sintético: o cliente exige confirmação visual adicional para esse pipeline. O headless
+permanece como golden source de equivalência; o peer sintético é o caminho escalável e conserva a
+apresentação mínima da DLL enquanto esse fluxo não for aceito nativamente pelo cliente.
 
 ## Captura reproduzível das ações
 
@@ -129,5 +151,6 @@ e [anúncio da Croteam](https://www.croteam.com/serious-sam-source-code-released
 
 Build e testes automatizados validam protocolo e regra de negócio. Em 22/07/2026, o RE corrigiu o
 heading em escala/eixo errados e moveu a animação de locomoção para a thread nativa do jogador.
-O gate visual imediato é confirmar caminhada contínua sem cortes. Colisão, HIT, queda e morte não
-são considerados implementados no peer sintético.
+Em 26/07/2026, o golden server-side do Cage passou usando controles, colisão, contorno e pulo. O
+gate visual imediato é confirmar a mesma trajetória no cliente sem deslize ou corte. HIT, queda por
+dano e morte ainda não são considerados implementados no peer sintético.

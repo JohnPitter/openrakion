@@ -9,6 +9,23 @@ namespace RakionServer.World.Tests
     /// <summary>Sintetizador do 0x030A do bot: formato de 26 bytes, assento na origem e roundtrip da posição.</summary>
     public sealed class BotMovementSynthTests
     {
+        [Theory]
+        [InlineData(BotControls.W, PlayerNormalAnimation.MoveForward)]
+        [InlineData(BotControls.S, PlayerNormalAnimation.MoveBackward)]
+        [InlineData(BotControls.A, PlayerNormalAnimation.MoveLeft)]
+        [InlineData(BotControls.D, PlayerNormalAnimation.MoveRight)]
+        [InlineData(BotControls.W | BotControls.A, PlayerNormalAnimation.MoveForwardLeft)]
+        [InlineData(BotControls.W | BotControls.D, PlayerNormalAnimation.MoveForwardRight)]
+        [InlineData(BotControls.S | BotControls.A, PlayerNormalAnimation.MoveBackwardLeft)]
+        [InlineData(BotControls.S | BotControls.D, PlayerNormalAnimation.MoveBackwardRight)]
+        [InlineData(BotControls.Space, PlayerNormalAnimation.Jump)]
+        public void AnimationForControls_MapsCapturedHumanControls(
+            BotControls controls,
+            PlayerNormalAnimation expected)
+        {
+            Assert.Equal(expected, BotMovement.AnimationForControls(controls));
+        }
+
         [Fact]
         public void SynthesizeMove_HasCorrectHeaderSeatAndSize()
         {

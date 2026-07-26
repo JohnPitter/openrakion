@@ -39,7 +39,14 @@ namespace RakionServer.World.Domain
         public long RespawnAtMs { get; private set; }
         private byte _attackVariant;
         private bool _isMoving;
+        private BotControls _lastPublishedControls;
+        private readonly BotNavigationPlanner _navigation = new();
+        private float _verticalVelocity;
+        private float _groundY;
+        private bool _airborne;
+        private bool _hasGround;
         public bool IsMoving => _isMoving;
+        public BotNavigationMode NavigationMode { get; private set; }
 
         /// <summary>HP inicial derivado de level/classe (curva simples; server-authoritative p/ o bot).</summary>
         public void InitHealth(byte level)
@@ -76,6 +83,7 @@ namespace RakionServer.World.Domain
             NextAttackReadyMs = Math.Max(NextAttackReadyMs, HitReactionUntilMs);
             _targetVelocityEma = BotVector.Zero;
             _hasTarget = false;
+            ResetNavigation();
         }
 
         public bool TryFinishHitReaction(long nowMs)
@@ -99,6 +107,17 @@ namespace RakionServer.World.Domain
             return true;
         }
 
+        public bool ShouldPublishControls(BotControls controls)
+        {
+            const BotControls movement = BotControls.W | BotControls.A |
+                BotControls.S | BotControls.D | BotControls.Space;
+            BotControls current = controls & movement;
+            if (_lastPublishedControls == current) return false;
+            _lastPublishedControls = current;
+            _isMoving = (current & ~BotControls.Space) != 0;
+            return true;
+        }
+
         public void ScheduleRespawn(long nowMs, int delayMs)
         {
             RespawnAtMs = !Alive && delayMs > 0 ? nowMs + delayMs : 0;
@@ -116,10 +135,12 @@ namespace RakionServer.World.Domain
             HitReactionUntilMs = 0;
             _attackVariant = 0;
             _isMoving = false;
+            _lastPublishedControls = BotControls.None;
             LastAttackerSeat = Field.NoSeat;
             LastAttackerHitSequence = 0;
             _targetVelocityEma = BotVector.Zero;
             _hasTarget = false;
+            ResetNavigation();
             LifecycleSequence++;
             return true;
         }
@@ -139,10 +160,12 @@ namespace RakionServer.World.Domain
             RespawnAtMs = 0;
             _attackVariant = 0;
             _isMoving = false;
+            _lastPublishedControls = BotControls.None;
             LastAttackerSeat = Field.NoSeat;
             LastAttackerHitSequence = 0;
             _targetVelocityEma = BotVector.Zero;
             _hasTarget = false;
+            ResetNavigation();
             if (revive) LifecycleSequence++;
         }
 
@@ -174,6 +197,106 @@ namespace RakionServer.World.Domain
             Velocity = step.Velocity;
             if (Position.HorizontalDistanceTo(targetPosition) > 1f) Heading = step.Heading;
             return step.InMelee;
+        }
+
+        public BotNavigationAction TickNavigated(
+            BotVector targetPosition,
+            byte targetSeat,
+            byte mapId,
+            long nowMs,
+            float dt,
+            IBotNavigationSurface surface)
+        {
+            if (!Alive) return default;
+            ObserveTarget(targetPosition, dt);
+            BotVector aimed = targetPosition +
+                _targetVelocityEma * Profile.Anticipation;
+            BotNavigationAction action = _navigation.Update(
+                new BotNavigationInput(
+                    nowMs,
+                    targetSeat,
+                    Position,
+                    aimed,
+                    Profile.MeleeRange,
+                    Profile.MeleeSpacing,
+                    Seat % 2 == 0));
+            NavigationMode = action.Mode;
+            ApplyControls(action, aimed, mapId, dt, surface);
+            if (Position.HorizontalDistanceTo(aimed) > 1f)
+                Heading = Position.HeadingTo(aimed);
+            return action;
+        }
+
+        private void ApplyControls(
+            BotNavigationAction action,
+            BotVector target,
+            byte mapId,
+            float dt,
+            IBotNavigationSurface surface)
+        {
+            BotVector desired = ResolveDesiredVelocity(action.Controls, target);
+            float acceleration = Math.Clamp(Profile.Acceleration, 0f, 1f);
+            Velocity += (desired - Velocity) * acceleration;
+            BotVector proposed = Position + Velocity * dt;
+            BotMoveResolution resolution = surface.Resolve(mapId, Position, proposed);
+            Velocity = dt > 1e-4f
+                ? (resolution.Position - Position) * (1f / dt)
+                : BotVector.Zero;
+            Position = resolution.Position;
+            ApplyVerticalMotion(action.IsJumping, dt);
+        }
+
+        private BotVector ResolveDesiredVelocity(
+            BotControls controls,
+            BotVector target)
+        {
+            BotVector forward = new(
+                target.X - Position.X, 0, target.Z - Position.Z);
+            forward = forward.Normalized();
+            BotVector right = new(-forward.Z, 0, forward.X);
+            float forwardAxis =
+                controls.HasFlag(BotControls.W) ? 1f :
+                controls.HasFlag(BotControls.S) ? -1f : 0f;
+            float strafeAxis =
+                controls.HasFlag(BotControls.D) ? 1f :
+                controls.HasFlag(BotControls.A) ? -1f : 0f;
+            BotVector direction = (forward * forwardAxis + right * strafeAxis)
+                .Normalized();
+            return direction * Profile.MoveSpeed;
+        }
+
+        private void ApplyVerticalMotion(bool jump, float dt)
+        {
+            if (!_hasGround)
+            {
+                _groundY = Position.Y;
+                _hasGround = true;
+            }
+            if (jump && !_airborne)
+            {
+                _airborne = true;
+                _verticalVelocity = 600f;
+            }
+            if (!_airborne) return;
+
+            _verticalVelocity -= 1600f * dt;
+            float y = Position.Y + _verticalVelocity * dt;
+            if (y <= _groundY)
+            {
+                y = _groundY;
+                _verticalVelocity = 0;
+                _airborne = false;
+            }
+            Position = Position with { Y = y };
+        }
+
+        private void ResetNavigation()
+        {
+            _navigation.Reset();
+            NavigationMode = BotNavigationMode.Idle;
+            _verticalVelocity = 0;
+            _airborne = false;
+            _hasGround = false;
         }
     }
 }

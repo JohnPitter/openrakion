@@ -1,6 +1,7 @@
 using System;
 using RakionServer.Common;
 using RakionServer.World.Domain;
+using RakionServer.World.Navigation;
 using RakionServer.World.Network;
 
 namespace RakionServer.World
@@ -14,52 +15,104 @@ namespace RakionServer.World
     /// </summary>
     public sealed partial class BotManager
     {
+        private static readonly IBotNavigationSurface NavigationSurface =
+            BattleMapNavigationSurface.Instance;
+        private readonly record struct BotTickContext(
+            Field Field,
+            float DeltaTime,
+            long Now,
+            Action<PlayerRec, byte[]> Send);
+
         public void TickField(Field field, float dt, Action<PlayerRec, byte[]> send)
         {
             long now = Environment.TickCount64;
             lock (field.SyncRoot)
             {
                 if (field.State != 2) return; // só durante a partida
+                var context = new BotTickContext(field, dt, now, send);
                 foreach (PlayerRec botRec in field.BotSlots)
-                {
-                    BotPlayer bot = botRec.Bot!;
-                    if (!bot.Alive && !TryRespawn(field, botRec, bot, now)) continue;
-                    if (botRec.State == 3) botRec.State = 4;   // ready -> playing (vítima válida do 0x4f)
-                    if (now < bot.HitReactionUntilMs) continue;
-                    if (bot.TryFinishHitReaction(now))
-                    {
-                        Broadcast(field, send, BotMovement.SynthesizeNormalAnimation(
-                            (byte)botRec.Slot, ++bot.MoveSeq, PlayerNormalAnimation.Rise));
-                        continue;
-                    }
-
-                    if (!TryFindEnemyTarget(field, bot, out BotVector target, out byte targetSeat))
-                        continue;
-                    bot.TargetSeat = targetSeat;
-                    bool inMelee = bot.Tick(target, dt);
-                    botRec.Position = bot.Position;
-                    bool moving = MathF.Abs(bot.Velocity.X) + MathF.Abs(bot.Velocity.Z) > 1f;
-
-                    byte[] move = BotMovement.SynthesizeMove(
-                        (byte)botRec.Slot, bot.Position, bot.Heading, ++bot.MoveSeq);
-                    Broadcast(field, send, move);
-                    Broadcast(field, send, BotMovement.SynthesizeKeystate(
-                        (byte)botRec.Slot, ++bot.MoveSeq, moving));
-                    if (bot.ShouldPublishLocomotion(moving))
-                    {
-                        PublishBotLifecycles(field);
-                    }
-
-                    // Ataque do bot: sintetiza a animação 0x0311 (cosmético — o dano bot->humano é
-                    // client-authoritative, teto RE). Cooldown p/ não floodar.
-                    if (inMelee && now >= bot.NextAttackReadyMs)
-                    {
-                        bot.NextAttackReadyMs = now + bot.Profile.AttackCooldownMs;
-                        Broadcast(field, send, BotMovement.SynthesizeAttack(
-                            (byte)botRec.Slot, ++bot.MoveSeq, bot.NextAttackVariant()));
-                    }
-                }
+                    TickBot(context, botRec);
             }
+        }
+
+        private void TickBot(BotTickContext context, PlayerRec record)
+        {
+            BotPlayer bot = record.Bot!;
+            if (!bot.Alive && !TryRespawn(
+                    context.Field, record, bot, context.Now)) return;
+            if (record.State == 3) record.State = 4;
+            if (context.Now < bot.HitReactionUntilMs) return;
+            if (bot.TryFinishHitReaction(context.Now))
+            {
+                Broadcast(context.Field, context.Send,
+                    BotMovement.SynthesizeNormalAnimation(
+                        (byte)record.Slot,
+                        ++bot.MoveSeq,
+                        PlayerNormalAnimation.Rise));
+                return;
+            }
+            if (!TryFindEnemyTarget(
+                    context.Field, bot, out BotVector target, out byte targetSeat))
+                return;
+
+            BotNavigationMode previousMode = bot.NavigationMode;
+            bot.TargetSeat = targetSeat;
+            BotNavigationAction action = bot.TickNavigated(
+                target,
+                targetSeat,
+                context.Field.MapId,
+                context.Now,
+                context.DeltaTime,
+                NavigationSurface);
+            record.Position = bot.Position;
+            PublishMovement(context, record, bot, action);
+            LogNavigationTransition(context.Field, record, action, previousMode);
+            TryAttack(context, record, bot, action);
+        }
+
+        private void PublishMovement(
+            BotTickContext context,
+            PlayerRec record,
+            BotPlayer bot,
+            BotNavigationAction action)
+        {
+            bool moving = action.IsMoving &&
+                MathF.Abs(bot.Velocity.X) + MathF.Abs(bot.Velocity.Z) > 1f;
+            Broadcast(context.Field, context.Send, BotMovement.SynthesizeMove(
+                (byte)record.Slot, bot.Position, bot.Heading, ++bot.MoveSeq));
+            Broadcast(context.Field, context.Send, BotMovement.SynthesizeKeystate(
+                (byte)record.Slot, ++bot.MoveSeq, moving));
+            if (!bot.ShouldPublishControls(action.Controls)) return;
+
+            Broadcast(context.Field, context.Send,
+                BotMovement.SynthesizeNormalAnimation(
+                    (byte)record.Slot,
+                    ++bot.MoveSeq,
+                    BotMovement.AnimationForControls(action.Controls)));
+            PublishBotLifecycles(context.Field);
+        }
+
+        private static void LogNavigationTransition(
+            Field field,
+            PlayerRec record,
+            BotNavigationAction action,
+            BotNavigationMode previousMode)
+        {
+            if (action.Mode == previousMode) return;
+            Log.Info("bot", "field {0} seat {1}: navegacao {2} -> {3}, controles={4}",
+                field.Id, record.Slot, previousMode, action.Mode, action.Controls);
+        }
+
+        private static void TryAttack(
+            BotTickContext context,
+            PlayerRec record,
+            BotPlayer bot,
+            BotNavigationAction action)
+        {
+            if (!action.IsAttacking || context.Now < bot.NextAttackReadyMs) return;
+            bot.NextAttackReadyMs = context.Now + bot.Profile.AttackCooldownMs;
+            Broadcast(context.Field, context.Send, BotMovement.SynthesizeAttack(
+                (byte)record.Slot, ++bot.MoveSeq, bot.NextAttackVariant()));
         }
 
         private bool TryRespawn(Field field, PlayerRec record, BotPlayer bot, long now)

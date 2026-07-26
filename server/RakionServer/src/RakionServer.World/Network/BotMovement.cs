@@ -103,6 +103,27 @@ namespace RakionServer.World.Network
             return packet;
         }
 
+        public static PlayerNormalAnimation AnimationForControls(BotControls controls)
+        {
+            if ((controls & BotControls.Space) != 0)
+                return PlayerNormalAnimation.Jump;
+
+            BotControls movement = controls &
+                (BotControls.W | BotControls.A | BotControls.S | BotControls.D);
+            return movement switch
+            {
+                BotControls.W => PlayerNormalAnimation.MoveForward,
+                BotControls.S => PlayerNormalAnimation.MoveBackward,
+                BotControls.A => PlayerNormalAnimation.MoveLeft,
+                BotControls.D => PlayerNormalAnimation.MoveRight,
+                BotControls.W | BotControls.A => PlayerNormalAnimation.MoveForwardLeft,
+                BotControls.W | BotControls.D => PlayerNormalAnimation.MoveForwardRight,
+                BotControls.S | BotControls.A => PlayerNormalAnimation.MoveBackwardLeft,
+                BotControls.S | BotControls.D => PlayerNormalAnimation.MoveBackwardRight,
+                _ => PlayerNormalAnimation.Stand
+            };
+        }
+
         /// <summary>Sintetiza a animação de ataque do bot (0x0311, kind=Attack). Cosmético: o cliente
         /// vê o bot golpear; o dano bot→humano é client-authoritative (teto RE), não server-side.</summary>
         public static byte[] SynthesizeAttack(
