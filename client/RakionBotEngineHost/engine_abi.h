@@ -60,6 +60,17 @@ constexpr char AddPlayerSymbol[] =
     "AAVCPlayerCharacter@@@Z";
 constexpr char GetLocalPlayerCountSymbol[] =
     "?GetLocalPlayerCount@CNetworkLibrary@@QAEJXZ";
+constexpr char GetLocalPlayerEntitySymbol[] =
+    "?GetLocalPlayerEntity@CNetworkLibrary@@QAEPAVCEntity@@"
+    "PAVCPlayerSource@@@Z";
+constexpr char GetPlacementSymbol[] =
+    "?GetPlacement@CEntity@@QBEABVCPlacement3D@@XZ";
+constexpr char IsAliveSymbol[] = "?IsAlive@CPlayer@@QAEHXZ";
+constexpr char GetHpSymbol[] = "?GetHP@CPlayer@@UAEMXZ";
+constexpr char ApplyActionSymbol[] =
+    "?ApplyAction@CPlayerSource@@QAEXAAH@Z";
+constexpr char SendActionSymbol[] =
+    "?SendAction@CPlayerSource@@QAEXXZ";
 constexpr char EntitiesInstanceSymbol[] =
     "?getInstance@CEntitiesDLL@@SAAAV1@XZ";
 constexpr char EntitiesLoadSymbol[] =
@@ -102,6 +113,12 @@ using PlayerConstructor = void*(__thiscall*)(
 using PlayerDestructor = void(__thiscall*)(void*);
 using AddPlayer = void*(__thiscall*)(void*, void*);
 using GetLocalPlayerCount = long(__thiscall*)(void*);
+using GetLocalPlayerEntity = void*(__thiscall*)(void*, void*);
+using GetPlacement = const float*(__thiscall*)(const void*);
+using IsAlive = int(__thiscall*)(void*);
+using GetHp = float(__thiscall*)(void*);
+using ApplyAction = void(__thiscall*)(void*, int&);
+using SendAction = void(__thiscall*)(void*);
 using InitializeGame = void(__thiscall*)(
     void*,
     const LegacyString*,

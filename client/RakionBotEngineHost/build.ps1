@@ -34,10 +34,12 @@ $sources = @(
     (Join-Path $PSScriptRoot 'main.cpp'),
     (Join-Path $PSScriptRoot 'engine_invocation.cpp'),
     (Join-Path $PSScriptRoot 'engine_runtime.cpp'),
+    (Join-Path $PSScriptRoot 'engine_simulation.cpp'),
     (Join-Path $PSScriptRoot 'host_paths.cpp'),
     (Join-Path $PSScriptRoot 'native_player.cpp'),
     (Join-Path $PSScriptRoot 'rakion_world_adapter.cpp'),
-    (Join-Path $PSScriptRoot 'pipe_server.cpp')
+    (Join-Path $PSScriptRoot 'pipe_server.cpp'),
+    (Join-Path $PSScriptRoot 'pipe_server_simulation.cpp')
 ) | ForEach-Object { '"{0}"' -f $_ }
 $output = Join-Path $out 'BotEngineHost.exe'
 $command = 'call "{0}" >nul && cl /nologo /std:c++20 /O2 /MT /EHsc /W4 /WX {1} "{2}" /link /Brepro /SUBSYSTEM:CONSOLE /DYNAMICBASE:NO /NXCOMPAT:NO /OUT:"{3}"' -f `

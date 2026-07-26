@@ -225,6 +225,12 @@ PipeServer::Response PipeServer::Dispatch(
             : Response{protocol::Status::BadRequest};
     case protocol::MessageType::AddBot:
         return HandleAddBot(request, runtime);
+    case protocol::MessageType::Tick:
+        return HandleTick(request, runtime);
+    case protocol::MessageType::Snapshot:
+        return HandleSnapshot(request, runtime);
+    case protocol::MessageType::Input:
+        return HandleInput(request, runtime);
     default:
         return {protocol::Status::UnsupportedMessage};
     }
@@ -281,7 +287,8 @@ PipeServer::Response PipeServer::HandleHello() const
     const protocol::HelloResponse payload{
         GetCurrentProcessId(),
         protocol::EngineBootstrap | protocol::NativeWorld |
-            protocol::NativePlayerSources,
+            protocol::NativePlayerSources | protocol::NativeSnapshots |
+            protocol::NativeInputs,
         protocol::Version,
         0,
     };
@@ -348,4 +355,5 @@ PipeServer::Response PipeServer::HandleAddBot(
         return {protocol::Status::EngineFailure};
     }
 }
+
 }

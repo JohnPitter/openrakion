@@ -38,9 +38,21 @@ public sealed class BotEngineWorkerIntegrationTests
             field, CancellationToken.None);
         BotEngineHealth health = await supervisor.PingFieldAsync(
             field.FieldId, CancellationToken.None);
-        BotEngineBot bot = await first.AddBotAsync(
-            new BotEngineBotRequest(1, "BotProbe", "Archer"),
-            CancellationToken.None);
+        var bots = new BotEngineBot[4];
+        for (int index = 0; index < bots.Length; ++index)
+        {
+            bots[index] = await first.AddBotAsync(
+                new BotEngineBotRequest(
+                    (uint)(index + 1), $"BotProbe{index + 1}", "Archer"),
+                CancellationToken.None);
+        }
+        BotEngineTick tick = await first.TickAsync(1, CancellationToken.None);
+        var snapshots = new BotEnginePlayerSnapshot[bots.Length];
+        for (int index = 0; index < bots.Length; ++index)
+        {
+            snapshots[index] = await first.SnapshotAsync(
+                bots[index].BotId, CancellationToken.None);
+        }
         BotEngineHealth populatedHealth = await supervisor.PingFieldAsync(
             field.FieldId, CancellationToken.None);
 
@@ -49,13 +61,51 @@ public sealed class BotEngineWorkerIntegrationTests
         Assert.Equal(1, supervisor.Count);
         Assert.Equal(field.FieldId, health.FieldId);
         Assert.Equal(0u, health.BotCount);
-        Assert.Equal(1u, bot.BotId);
-        Assert.Equal(1u, bot.ActivePlayers);
-        Assert.Equal(4u, bot.Capacity);
-        Assert.Equal(1u, populatedHealth.BotCount);
+        Assert.Equal(4u, bots[^1].ActivePlayers);
+        Assert.All(bots, bot => Assert.Equal(4u, bot.Capacity));
+        Assert.Equal(1u, tick.FrameCount);
+        Assert.Equal(4u, tick.ActivePlayers);
+        Assert.All(snapshots, snapshot =>
+        {
+            Assert.True(snapshot.Ready);
+            Assert.True(float.IsFinite(snapshot.X));
+            Assert.True(float.IsFinite(snapshot.Y));
+            Assert.True(float.IsFinite(snapshot.Z));
+            Assert.True(float.IsFinite(snapshot.Hp));
+        });
+        Assert.Equal(4u, populatedHealth.BotCount);
+
+        BotEnginePlayerSnapshot origin = snapshots[0];
+        BotEnginePlayerSnapshot moved = origin;
+        for (int attempt = 0; attempt < 50 && !HasMoved(origin, moved); ++attempt)
+        {
+            await first.ApplyInputAsync(
+                bots[0].BotId,
+                BotEngineInput.Forward,
+                CancellationToken.None);
+            await first.TickAsync(1, CancellationToken.None);
+            moved = await first.SnapshotAsync(
+                bots[0].BotId, CancellationToken.None);
+            await Task.Delay(20);
+        }
+        await first.ApplyInputAsync(
+            bots[0].BotId,
+            BotEngineInput.None,
+            CancellationToken.None);
+        Assert.True(HasMoved(origin, moved));
 
         await supervisor.StopFieldAsync(field.FieldId, CancellationToken.None);
         Assert.False(first.IsRunning);
         Assert.Equal(0, supervisor.Count);
+    }
+
+    private static bool HasMoved(
+        BotEnginePlayerSnapshot origin,
+        BotEnginePlayerSnapshot current)
+    {
+        float x = current.X - origin.X;
+        float y = current.Y - origin.Y;
+        float z = current.Z - origin.Z;
+        return x * x + y * y + z * z > 0.0001f;
     }
 }

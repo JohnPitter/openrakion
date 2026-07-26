@@ -46,6 +46,15 @@ private:
     Response HandleAddBot(
         const Request& request,
         EngineRuntime& runtime);
+    Response HandleTick(
+        const Request& request,
+        EngineRuntime& runtime);
+    Response HandleSnapshot(
+        const Request& request,
+        EngineRuntime& runtime);
+    Response HandleInput(
+        const Request& request,
+        EngineRuntime& runtime);
 
     template<typename T>
     static std::vector<std::uint8_t> Encode(const T& value)

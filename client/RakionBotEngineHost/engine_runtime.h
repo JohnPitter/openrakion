@@ -39,6 +39,16 @@ struct LocalPlayerProbe
     std::uint32_t capacity{};
 };
 
+struct PlayerSnapshot
+{
+    std::uint32_t botId{};
+    bool ready{};
+    bool alive{};
+    float position[3]{};
+    float rotation[3]{};
+    float hp{};
+};
+
 class EngineRuntime final
 {
 public:
@@ -59,6 +69,9 @@ public:
         const std::string& species);
     std::uint32_t LocalPlayerCount() const;
     std::uint32_t LocalPlayerCapacity() const;
+    void Advance(std::uint32_t frameCount);
+    PlayerSnapshot Snapshot(std::uint32_t botId) const;
+    void ApplyInput(std::uint32_t botId, std::uint32_t inputFlags);
 
 private:
     void ConfigureDllSearch();

@@ -64,20 +64,27 @@ O Host atende um named pipe local em modo byte. Cada frame possui header little-
 | Campo | Tipo | Regra |
 | --- | --- | --- |
 | magic | `uint32` | `0x4842524F` |
-| version | `uint16` | `2` |
+| version | `uint16` | `4` |
 | messageType | `uint16` | bit `0x8000` indica resposta |
 | payloadSize | `uint32` | máximo de 4096 bytes |
 | correlationId | `uint32` | ecoado na resposta |
 | status | `uint32` | zero em sucesso |
 
-Os comandos disponíveis são `Hello`, `LoadField`, `AddBot`, `Ping` e `Shutdown`. `LoadField`
-transporta `fieldId`, capacidade, map ID original (`200..213`), modo battle (`1..4`) e caminho
-relativo sob `LevelsSV`. Ele aceita um único carregamento por processo e não permite capacidade
-superior à oferecida pela engine. `AddBot` transporta identidade explícita e cria a fonte local por
-`CNetworkLibrary::AddPlayer_t`.
+Os comandos disponíveis são `Hello`, `LoadField`, `AddBot`, `Input`, `Tick`, `Snapshot`, `Ping` e
+`Shutdown`. `LoadField` transporta `fieldId`, capacidade, map ID original (`200..213`), modo battle
+(`1..4`) e caminho relativo sob `LevelsSV`. Ele aceita um único carregamento por processo e não
+permite capacidade superior à oferecida pela engine. `AddBot` transporta identidade explícita e
+cria a fonte local por `CNetworkLibrary::AddPlayer_t`.
+
+`Input` aceita combinações não conflitantes de forward, backward, left, right, jump e primary
+attack. O Host converte essas intenções para os bits/eixos do `CPlayerAction` original e chama
+`CPlayerSource::ApplyAction`/`SendAction`. `Tick` avança `CTimer::HandleTimerHandlers` e
+`CNetworkLibrary::MainLoop` na mesma thread dona da engine. `Snapshot` retorna entidade pronta,
+alive, HP, posição e rotação lidos da entidade nativa.
 
 O pipe recusa clientes remotos. Antes de carregar o mapa, o World valida PID, versão e as
-capabilities `EngineBootstrap`, `NativeWorld` e `NativePlayerSources`.
+capabilities `EngineBootstrap`, `NativeWorld`, `NativePlayerSources`, `NativeSnapshots` e
+`NativeInputs`.
 
 `BotEngineSupervisor` mantém no máximo um worker persistente por field. Ele inicia o processo sem
 shell ou janela, drena stdout/stderr, aplica timeout ao handshake e mata a árvore do processo quando
@@ -110,13 +117,25 @@ O smoke validado em 26/07/2026 criou `BotProbe` com uma fonte ativa, capacidade 
 mundo Mammoth carregado, nenhum módulo gráfico e encerramento limpo. Esse marco comprova criação e
 registro da fonte. Ainda não comprova ações, simulação temporal, animação ou combate no stage.
 
+## Marco 4: múltiplas fontes, input e snapshots
+
+O protocolo v4 foi validado com as quatro fontes locais oferecidas pela engine. Para cada uma, o
+Host avançou a simulação e resolveu uma entidade distinta. O smoke também aplicou forward ao
+primeiro bot repetindo o ciclo humano `ApplyAction → SendAction → timer → main loop`; a posição
+publicada pelo snapshot mudou sem escrita direta em placement. Isso comprova que o movimento veio
+da engine, não de teleporte ou física reimplementada.
+
+O teste integrado do World cobre o mesmo fluxo pelo supervisor real: quatro bots, um tick,
+snapshots finitos e movimento observável após input. Ainda falta associar esse worker ao lifecycle
+das salas e publicar o estado para clientes gráficos; ataque, HIT, queda, morte e respawn também
+continuam fora deste marco.
+
 ## Gates restantes
 
 1. configuração e associação do supervisor ao lifecycle real de fields no World;
-2. associação independente de seat, sequência e personagem por fonte;
-3. criação e validação de múltiplas fontes locais no mesmo worker;
-4. produção e encaminhamento de ações nativas equivalentes às humanas;
-5. avanço determinístico dos ticks e publicação de snapshots;
-6. desativação dos subsistemas de input e som não necessários ao worker;
-7. remoção do `BotManager` sintético e dos patches de física/animação correspondentes;
-8. validação visual e de carga com múltiplos bots.
+2. associação independente de seat, sequência e personagem por fonte no field real;
+3. publicação dos snapshots e eventos nativos para os clientes gráficos;
+4. combate server-authoritative: janela, hitbox, dano, HIT, queda, morte e respawn;
+5. desativação dos subsistemas de input e som não necessários ao worker;
+6. remoção do `BotManager` sintético e dos patches de física/animação correspondentes;
+7. validação visual e de carga com múltiplos bots.

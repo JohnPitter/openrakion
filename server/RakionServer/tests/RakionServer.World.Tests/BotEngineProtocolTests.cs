@@ -17,7 +17,7 @@ public sealed class BotEngineProtocolTests
 
         Assert.Equal(22, frame.Length);
         Assert.Equal(0x4842524Fu, BinaryPrimitives.ReadUInt32LittleEndian(frame));
-        Assert.Equal(2, BinaryPrimitives.ReadUInt16LittleEndian(frame.AsSpan(4)));
+        Assert.Equal(4, BinaryPrimitives.ReadUInt16LittleEndian(frame.AsSpan(4)));
         Assert.Equal(3, BinaryPrimitives.ReadUInt16LittleEndian(frame.AsSpan(6)));
         Assert.Equal(2u, BinaryPrimitives.ReadUInt32LittleEndian(frame.AsSpan(8)));
         Assert.Equal(0x11223344u, BinaryPrimitives.ReadUInt32LittleEndian(frame.AsSpan(12)));
@@ -53,6 +53,53 @@ public sealed class BotEngineProtocolTests
         Assert.Equal(17u, BinaryPrimitives.ReadUInt32LittleEndian(payload));
         Assert.Equal("BotProbe", ReadAscii(payload.AsSpan(4, 32)));
         Assert.Equal("Archer", ReadAscii(payload.AsSpan(36, 16)));
+    }
+
+    [Fact]
+    public void TickAndSnapshotPayloadsMatchNativeLayout()
+    {
+        byte[] tick = BotEngineFrameCodec.EncodeTick(25);
+        byte[] snapshot = BotEngineFrameCodec.EncodeSnapshot(17);
+
+        Assert.Equal(4, tick.Length);
+        Assert.Equal(25u, BinaryPrimitives.ReadUInt32LittleEndian(tick));
+        Assert.Equal(4, snapshot.Length);
+        Assert.Equal(17u, BinaryPrimitives.ReadUInt32LittleEndian(snapshot));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(101)]
+    public void TickRejectsInvalidFrameCount(uint frameCount)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => BotEngineFrameCodec.EncodeTick(frameCount));
+    }
+
+    [Fact]
+    public void InputPayloadMatchesNativeLayout()
+    {
+        byte[] payload = BotEngineFrameCodec.EncodeInput(
+            17,
+            BotEngineInput.Forward |
+            BotEngineInput.Jump |
+            BotEngineInput.PrimaryAttack);
+
+        Assert.Equal(8, payload.Length);
+        Assert.Equal(17u, BinaryPrimitives.ReadUInt32LittleEndian(payload));
+        Assert.Equal(49u, BinaryPrimitives.ReadUInt32LittleEndian(
+            payload.AsSpan(4)));
+    }
+
+    [Theory]
+    [InlineData(3U)]
+    [InlineData(12U)]
+    [InlineData(1U << 10)]
+    public void InputRejectsConflictingOrUnknownFlags(uint flags)
+    {
+        Assert.Throws<ArgumentException>(
+            () => BotEngineFrameCodec.EncodeInput(
+                1, (BotEngineInput)flags));
     }
 
     [Theory]

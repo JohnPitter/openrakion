@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.IO;
 using System.IO.Pipes;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -116,6 +117,69 @@ internal sealed class BotEngineClient : IAsyncDisposable
             BinaryPrimitives.ReadUInt32LittleEndian(frame.Payload.AsSpan(12)));
     }
 
+    public async Task<BotEngineTick> TickAsync(
+        uint frameCount,
+        CancellationToken cancellationToken)
+    {
+        BotEngineFrame frame = await RequestAsync(
+            BotEngineProtocol.MessageType.Tick,
+            BotEngineFrameCodec.EncodeTick(frameCount),
+            cancellationToken).ConfigureAwait(false);
+        if (frame.Payload.Length != 8)
+            throw new InvalidDataException("Tick retornou payload inválido.");
+        var tick = new BotEngineTick(
+            BinaryPrimitives.ReadUInt32LittleEndian(frame.Payload),
+            BinaryPrimitives.ReadUInt32LittleEndian(frame.Payload.AsSpan(4)));
+        if (tick.FrameCount != frameCount)
+            throw new InvalidDataException("Tick não confirmou os frames solicitados.");
+        return tick;
+    }
+
+    public async Task<BotEnginePlayerSnapshot> SnapshotAsync(
+        uint botId,
+        CancellationToken cancellationToken)
+    {
+        BotEngineFrame frame = await RequestAsync(
+            BotEngineProtocol.MessageType.Snapshot,
+            BotEngineFrameCodec.EncodeSnapshot(botId),
+            cancellationToken).ConfigureAwait(false);
+        if (frame.Payload.Length != BotEngineProtocol.SnapshotResponseSize)
+            throw new InvalidDataException("Snapshot retornou payload inválido.");
+
+        uint returnedBotId = BinaryPrimitives.ReadUInt32LittleEndian(frame.Payload);
+        uint flags = BinaryPrimitives.ReadUInt32LittleEndian(frame.Payload.AsSpan(4));
+        float[] values = ReadSnapshotValues(frame.Payload);
+        if (returnedBotId != botId || flags > 3 || values.Any(value => !float.IsFinite(value)))
+            throw new InvalidDataException("Snapshot retornou estado inválido.");
+        return new BotEnginePlayerSnapshot(
+            returnedBotId,
+            (flags & 1) != 0,
+            (flags & 2) != 0,
+            values[0], values[1], values[2],
+            values[3], values[4], values[5],
+            values[6]);
+    }
+
+    public async Task<BotEngineInputResult> ApplyInputAsync(
+        uint botId,
+        BotEngineInput input,
+        CancellationToken cancellationToken)
+    {
+        BotEngineFrame frame = await RequestAsync(
+            BotEngineProtocol.MessageType.Input,
+            BotEngineFrameCodec.EncodeInput(botId, input),
+            cancellationToken).ConfigureAwait(false);
+        if (frame.Payload.Length != 8)
+            throw new InvalidDataException("Input retornou payload inválido.");
+        var result = new BotEngineInputResult(
+            BinaryPrimitives.ReadUInt32LittleEndian(frame.Payload),
+            (BotEngineInput)BinaryPrimitives.ReadUInt32LittleEndian(
+                frame.Payload.AsSpan(4)));
+        if (result.BotId != botId || result.Input != input)
+            throw new InvalidDataException("Input não confirmou bot/flags.");
+        return result;
+    }
+
     public async Task ShutdownAsync(CancellationToken cancellationToken)
     {
         BotEngineFrame frame = await RequestAsync(
@@ -149,6 +213,17 @@ internal sealed class BotEngineClient : IAsyncDisposable
         {
             _requestGate.Release();
         }
+    }
+
+    private static float[] ReadSnapshotValues(ReadOnlySpan<byte> payload)
+    {
+        var values = new float[7];
+        for (int index = 0; index < values.Length; ++index)
+        {
+            values[index] = BinaryPrimitives.ReadSingleLittleEndian(
+                payload[(8 + index * sizeof(float))..]);
+        }
+        return values;
     }
 
     public async ValueTask DisposeAsync()

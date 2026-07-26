@@ -49,3 +49,35 @@ internal readonly record struct BotEngineBot(
     uint BotId,
     uint ActivePlayers,
     uint Capacity);
+
+internal readonly record struct BotEngineTick(
+    uint FrameCount,
+    uint ActivePlayers);
+
+internal readonly record struct BotEnginePlayerSnapshot(
+    uint BotId,
+    bool Ready,
+    bool Alive,
+    float X,
+    float Y,
+    float Z,
+    float RotationX,
+    float RotationY,
+    float RotationZ,
+    float Hp);
+
+[Flags]
+internal enum BotEngineInput : uint
+{
+    None = 0,
+    Forward = 1U << 0,
+    Backward = 1U << 1,
+    Left = 1U << 2,
+    Right = 1U << 3,
+    Jump = 1U << 4,
+    PrimaryAttack = 1U << 5,
+}
+
+internal readonly record struct BotEngineInputResult(
+    uint BotId,
+    BotEngineInput Input);

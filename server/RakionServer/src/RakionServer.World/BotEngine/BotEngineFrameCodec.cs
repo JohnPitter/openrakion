@@ -66,6 +66,48 @@ internal static class BotEngineFrameCodec
         return payload;
     }
 
+    public static byte[] EncodeTick(uint frameCount)
+    {
+        if (frameCount is 0 or > 100)
+            throw new ArgumentOutOfRangeException(nameof(frameCount));
+        byte[] payload = new byte[sizeof(uint)];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload, frameCount);
+        return payload;
+    }
+
+    public static byte[] EncodeSnapshot(uint botId)
+    {
+        if (botId == 0)
+            throw new ArgumentOutOfRangeException(nameof(botId));
+        byte[] payload = new byte[sizeof(uint)];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload, botId);
+        return payload;
+    }
+
+    public static byte[] EncodeInput(uint botId, BotEngineInput input)
+    {
+        const BotEngineInput mask =
+            BotEngineInput.Forward |
+            BotEngineInput.Backward |
+            BotEngineInput.Left |
+            BotEngineInput.Right |
+            BotEngineInput.Jump |
+            BotEngineInput.PrimaryAttack;
+        bool conflictingForward = input.HasFlag(BotEngineInput.Forward) &&
+            input.HasFlag(BotEngineInput.Backward);
+        bool conflictingStrafe = input.HasFlag(BotEngineInput.Left) &&
+            input.HasFlag(BotEngineInput.Right);
+        if (botId == 0 || (input & ~mask) != 0 ||
+            conflictingForward || conflictingStrafe)
+            throw new ArgumentException("Input do Bot Engine inválido.");
+
+        byte[] payload = new byte[sizeof(uint) * 2];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload, botId);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            payload.AsSpan(sizeof(uint)), (uint)input);
+        return payload;
+    }
+
     private static byte[] EncodeWorldName(string worldName)
     {
         if (!worldName.StartsWith(@"LevelsSV\", StringComparison.Ordinal) ||

@@ -61,4 +61,22 @@ bool InitializeGameWithStreamFaults(
         return false;
     }
 }
+
+bool AdvanceEngineSafely(
+    EngineStep handleTimerHandlers,
+    void* timer,
+    EngineStep mainLoop,
+    void* network)
+{
+    __try
+    {
+        handleTimerHandlers(timer);
+        mainLoop(network);
+        return true;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        return false;
+    }
+}
 }

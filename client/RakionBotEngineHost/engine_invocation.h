@@ -21,4 +21,10 @@ bool InitializeGameWithStreamFaults(
     StreamExceptionFilter exceptionFilter,
     void* game,
     const LegacyString* fileName);
+
+bool AdvanceEngineSafely(
+    EngineStep handleTimerHandlers,
+    void* timer,
+    EngineStep mainLoop,
+    void* network);
 }

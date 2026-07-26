@@ -101,6 +101,22 @@ internal sealed class BotEngineWorker : IAsyncDisposable
         CancellationToken cancellationToken) =>
         _client.AddBotAsync(request, cancellationToken);
 
+    public Task<BotEngineTick> TickAsync(
+        uint frameCount,
+        CancellationToken cancellationToken) =>
+        _client.TickAsync(frameCount, cancellationToken);
+
+    public Task<BotEnginePlayerSnapshot> SnapshotAsync(
+        uint botId,
+        CancellationToken cancellationToken) =>
+        _client.SnapshotAsync(botId, cancellationToken);
+
+    public Task<BotEngineInputResult> ApplyInputAsync(
+        uint botId,
+        BotEngineInput input,
+        CancellationToken cancellationToken) =>
+        _client.ApplyInputAsync(botId, input, cancellationToken);
+
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         if (Interlocked.Exchange(ref _stopped, 1) != 0)
@@ -230,7 +246,9 @@ internal sealed class BotEngineWorker : IAsyncDisposable
         const BotEngineProtocol.Capability required =
             BotEngineProtocol.Capability.EngineBootstrap |
             BotEngineProtocol.Capability.NativeWorld |
-            BotEngineProtocol.Capability.NativePlayerSources;
+            BotEngineProtocol.Capability.NativePlayerSources |
+            BotEngineProtocol.Capability.NativeSnapshots |
+            BotEngineProtocol.Capability.NativeInputs;
         if (hello.ProcessId != unchecked((uint)processId) ||
             hello.ProtocolVersion != BotEngineProtocol.Version ||
             (hello.Capabilities & required) != required)

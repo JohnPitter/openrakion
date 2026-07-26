@@ -48,7 +48,7 @@ function Invoke-Request {
     $writer = [System.IO.BinaryWriter]::new(
         $Stream, [Text.Encoding]::ASCII, $true)
     $writer.Write([uint32]0x4842524F)
-    $writer.Write([uint16]2)
+    $writer.Write([uint16]4)
     $writer.Write($MessageType)
     $writer.Write([uint32]$Payload.Length)
     $writer.Write($CorrelationId)
@@ -65,7 +65,7 @@ function Invoke-Request {
     $payloadLength = $reader.ReadUInt32()
     $responseCorrelation = $reader.ReadUInt32()
     $status = $reader.ReadUInt32()
-    if ($magic -ne 0x4842524F -or $version -ne 2) {
+    if ($magic -ne 0x4842524F -or $version -ne 4) {
         throw 'Resposta IPC com magic/version inválido'
     }
     if ($responseType -ne ($MessageType -bor 0x8000) -or
@@ -131,7 +131,7 @@ try {
 
     $hello = Invoke-Request -Stream $pipe -MessageType 1 -CorrelationId 1
     if ($hello.Length -ne 12 -or
-        [BitConverter]::ToUInt32($hello, 4) -ne 7) {
+        [BitConverter]::ToUInt32($hello, 4) -ne 31) {
         throw 'Capabilities inválidas no Hello'
     }
 
@@ -157,28 +157,119 @@ try {
         throw 'Ping não refletiu o field carregado'
     }
 
-    $addBot = New-AddBotPayload -BotId 41 -Name 'BotProbe' -Species 'Human'
-    $added = Invoke-Request `
-        -Stream $pipe -MessageType 5 -CorrelationId 5 -Payload $addBot
-    if ($added.Length -ne 12 -or
-        [BitConverter]::ToUInt32($added, 0) -ne 41 -or
-        [BitConverter]::ToUInt32($added, 4) -ne 1 -or
-        [BitConverter]::ToUInt32($added, 8) -ne 4) {
-        throw 'AddBot não confirmou fonte local/capacidade nativa'
+    $correlation = 5
+    foreach ($botIndex in 0..3) {
+        $botId = [uint32](41 + $botIndex)
+        $addBot = New-AddBotPayload -BotId $botId `
+            -Name "BotProbe$($botIndex + 1)" -Species 'Human'
+        $added = Invoke-Request -Stream $pipe -MessageType 5 `
+            -CorrelationId $correlation -Payload $addBot
+        $correlation++
+        if ($added.Length -ne 12 -or
+            [BitConverter]::ToUInt32($added, 0) -ne $botId -or
+            [BitConverter]::ToUInt32($added, 4) -ne ($botIndex + 1) -or
+            [BitConverter]::ToUInt32($added, 8) -ne 4) {
+            throw 'AddBot não confirmou fonte local/capacidade nativa'
+        }
     }
 
     $botPing = Invoke-Request `
-        -Stream $pipe -MessageType 3 -CorrelationId 6
-    if ([BitConverter]::ToUInt32($botPing, 12) -ne 1) {
-        throw 'Ping não refletiu o bot criado'
+        -Stream $pipe -MessageType 3 -CorrelationId $correlation
+    $correlation++
+    if ([BitConverter]::ToUInt32($botPing, 12) -ne 4) {
+        throw 'Ping não refletiu os bots criados'
     }
 
-    [void](Invoke-Request -Stream $pipe -MessageType 4 -CorrelationId 7)
+    $readyBots = [Collections.Generic.HashSet[uint32]]::new()
+    for ($attempt = 0; $attempt -lt 50; $attempt++) {
+        $tickPayload = [BitConverter]::GetBytes([uint32]1)
+        $tick = Invoke-Request -Stream $pipe -MessageType 6 `
+            -CorrelationId $correlation -Payload $tickPayload
+        $correlation++
+        if ($tick.Length -ne 8 -or
+            [BitConverter]::ToUInt32($tick, 0) -ne 1 -or
+            [BitConverter]::ToUInt32($tick, 4) -ne 4) {
+            throw 'Tick não confirmou frame/player ativo'
+        }
+
+        foreach ($botId in 41..44) {
+            $snapshotPayload = [BitConverter]::GetBytes([uint32]$botId)
+            $snapshot = Invoke-Request -Stream $pipe -MessageType 7 `
+                -CorrelationId $correlation -Payload $snapshotPayload
+            $correlation++
+            if ($snapshot.Length -ne 36 -or
+                [BitConverter]::ToUInt32($snapshot, 0) -ne $botId) {
+                throw 'Snapshot retornou contrato inválido'
+            }
+            if (([BitConverter]::ToUInt32($snapshot, 4) -band 1) -ne 0) {
+                [void]$readyBots.Add([uint32]$botId)
+            }
+        }
+        if ($readyBots.Count -eq 4) { break }
+        Start-Sleep -Milliseconds 20
+    }
+    if ($readyBots.Count -ne 4) {
+        throw "Somente $($readyBots.Count)/4 bots publicaram entidade após 50 ticks"
+    }
+
+    $snapshotPayload = [BitConverter]::GetBytes([uint32]41)
+    $baseline = Invoke-Request -Stream $pipe -MessageType 7 `
+        -CorrelationId $correlation -Payload $snapshotPayload
+    $correlation++
+    $originX = [BitConverter]::ToSingle($baseline, 8)
+    $originY = [BitConverter]::ToSingle($baseline, 12)
+    $originZ = [BitConverter]::ToSingle($baseline, 16)
+    $moved = $false
+    for ($attempt = 0; $attempt -lt 50; $attempt++) {
+        $inputStream = [IO.MemoryStream]::new()
+        $inputWriter = [IO.BinaryWriter]::new($inputStream)
+        $inputWriter.Write([uint32]41)
+        $inputWriter.Write([uint32]1)
+        $input = Invoke-Request -Stream $pipe -MessageType 8 `
+            -CorrelationId $correlation -Payload $inputStream.ToArray()
+        $correlation++
+        if ($input.Length -ne 8 -or
+            [BitConverter]::ToUInt32($input, 0) -ne 41 -or
+            [BitConverter]::ToUInt32($input, 4) -ne 1) {
+            throw 'Input nativo não confirmou bot/flags'
+        }
+
+        $tickPayload = [BitConverter]::GetBytes([uint32]1)
+        [void](Invoke-Request -Stream $pipe -MessageType 6 `
+            -CorrelationId $correlation -Payload $tickPayload)
+        $correlation++
+        $snapshot = Invoke-Request -Stream $pipe -MessageType 7 `
+            -CorrelationId $correlation -Payload $snapshotPayload
+        $correlation++
+        $deltaX = [BitConverter]::ToSingle($snapshot, 8) - $originX
+        $deltaY = [BitConverter]::ToSingle($snapshot, 12) - $originY
+        $deltaZ = [BitConverter]::ToSingle($snapshot, 16) - $originZ
+        if (($deltaX * $deltaX + $deltaY * $deltaY +
+                $deltaZ * $deltaZ) -gt 0.0001) {
+            $moved = $true
+            break
+        }
+        Start-Sleep -Milliseconds 20
+    }
+    if (-not $moved) {
+        throw 'Input forward não alterou a posição nativa após 50 ticks'
+    }
+
+    $stopStream = [IO.MemoryStream]::new()
+    $stopWriter = [IO.BinaryWriter]::new($stopStream)
+    $stopWriter.Write([uint32]41)
+    $stopWriter.Write([uint32]0)
+    [void](Invoke-Request -Stream $pipe -MessageType 8 `
+        -CorrelationId $correlation -Payload $stopStream.ToArray())
+    $correlation++
+
+    [void](Invoke-Request -Stream $pipe -MessageType 4 `
+        -CorrelationId $correlation)
     $pipe.Dispose()
     if (-not $process.WaitForExit(15000) -or $process.ExitCode -ne 0) {
         throw "Host não encerrou corretamente: $($process.ExitCode)"
     }
-    Write-Output 'IPC smoke: fonte local real criada e ciclo do Host validado'
+    Write-Output 'IPC smoke: quatro fontes, input, ticks e snapshots nativos validados'
 }
 finally {
     if (-not $process.HasExited) {

@@ -12,6 +12,21 @@ namespace
 {
 constexpr std::size_t PlayerCharacterSize = 0x44;
 constexpr std::size_t LocalSourcesOffset = 0x28;
+constexpr std::size_t SourceActionOffset = 0x58;
+constexpr std::size_t ButtonsOffset = 0x10;
+constexpr std::size_t StrafeAxisOffset = 0x38;
+constexpr std::size_t ForwardAxisOffset = 0x40;
+constexpr std::size_t ActionStateOffset = 0x44;
+constexpr std::uint32_t PrimaryAttackButton = 0x00000001;
+constexpr std::uint32_t JumpButton = 0x00000004;
+constexpr std::uint32_t MoveForwardButton = 0x00000020;
+constexpr std::uint32_t MoveBackwardButton = 0x00100000;
+constexpr std::uint32_t MoveLeftButton = 0x08000000;
+constexpr std::uint32_t MoveRightButton = 0x10000000;
+constexpr std::uint32_t NavigationButtons =
+    PrimaryAttackButton | JumpButton | MoveForwardButton |
+    MoveBackwardButton | MoveLeftButton | MoveRightButton;
+constexpr float MovementAxis = 6.0f;
 
 struct EngineFault
 {
@@ -111,6 +126,24 @@ std::runtime_error CreateFailure()
         LastFault.caller);
     return std::runtime_error(message);
 }
+
+bool InvokeInputSafely(
+    ApplyAction applyAction,
+    SendAction sendAction,
+    void* source)
+{
+    __try
+    {
+        int applied{};
+        applyAction(source, applied);
+        sendAction(source);
+        return true;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        return false;
+    }
+}
 }
 
 NativePlayerResult CreateNativePlayer(
@@ -183,5 +216,102 @@ std::uint32_t GetNativePlayerCapacity(void* network)
     const long capacity = *reinterpret_cast<const long*>(
         bytes + LocalSourcesOffset);
     return capacity > 0 ? static_cast<std::uint32_t>(capacity) : 0;
+}
+
+NativePlayerSnapshot InspectNativePlayer(
+    HMODULE engine,
+    HMODULE entities,
+    void* network,
+    void* source,
+    std::uint32_t botId)
+{
+    NativePlayerSnapshot snapshot{botId};
+    if (!engine || !entities || !network || !source)
+        return snapshot;
+
+    auto getEntity = reinterpret_cast<GetLocalPlayerEntity>(
+        Resolve(engine, GetLocalPlayerEntitySymbol));
+    auto getPlacement = reinterpret_cast<GetPlacement>(
+        Resolve(engine, GetPlacementSymbol));
+    auto isAlive = reinterpret_cast<IsAlive>(
+        GetProcAddress(entities, IsAliveSymbol));
+    auto getHp = reinterpret_cast<GetHp>(
+        GetProcAddress(entities, GetHpSymbol));
+    if (!isAlive || !getHp)
+        throw std::runtime_error("Exports de snapshot do player ausentes.");
+
+    void* entity = getEntity(network, source);
+    const float* placement = entity ? getPlacement(entity) : nullptr;
+    if (!entity || !placement)
+        return snapshot;
+
+    snapshot.ready = true;
+    snapshot.alive = isAlive(entity) != 0;
+    for (std::size_t index = 0; index < 3; ++index)
+    {
+        snapshot.position[index] = placement[index];
+        snapshot.rotation[index] = placement[index + 3];
+    }
+    snapshot.hp = getHp(entity);
+    return snapshot;
+}
+
+void ApplyNativeInput(
+    HMODULE engine,
+    void* source,
+    std::uint32_t inputFlags)
+{
+    const bool conflictingForward =
+        (inputFlags & (InputForward | InputBackward)) ==
+        (InputForward | InputBackward);
+    const bool conflictingStrafe =
+        (inputFlags & (InputLeft | InputRight)) ==
+        (InputLeft | InputRight);
+    if (!source || (inputFlags & ~InputMask) != 0 ||
+        conflictingForward || conflictingStrafe)
+        throw std::invalid_argument("Input nativo inválido.");
+
+    auto* action = static_cast<std::uint8_t*>(source) + SourceActionOffset;
+    auto& buttons = *reinterpret_cast<std::uint32_t*>(
+        action + ButtonsOffset);
+    buttons &= ~NavigationButtons;
+    auto& strafe = *reinterpret_cast<float*>(action + StrafeAxisOffset);
+    auto& forward = *reinterpret_cast<float*>(action + ForwardAxisOffset);
+    strafe = 0.0f;
+    forward = 0.0f;
+    action[ActionStateOffset] =
+        (inputFlags & InputPrimaryAttack) != 0 ? 1 : 0;
+
+    if ((inputFlags & InputForward) != 0)
+    {
+        buttons |= MoveForwardButton;
+        forward = -MovementAxis;
+    }
+    if ((inputFlags & InputBackward) != 0)
+    {
+        buttons |= MoveBackwardButton;
+        forward = MovementAxis;
+    }
+    if ((inputFlags & InputLeft) != 0)
+    {
+        buttons |= MoveLeftButton;
+        strafe = -MovementAxis;
+    }
+    if ((inputFlags & InputRight) != 0)
+    {
+        buttons |= MoveRightButton;
+        strafe = MovementAxis;
+    }
+    if ((inputFlags & InputJump) != 0)
+        buttons |= JumpButton;
+    if ((inputFlags & InputPrimaryAttack) != 0)
+        buttons |= PrimaryAttackButton;
+
+    auto applyAction = reinterpret_cast<ApplyAction>(
+        Resolve(engine, ApplyActionSymbol));
+    auto sendAction = reinterpret_cast<SendAction>(
+        Resolve(engine, SendActionSymbol));
+    if (!InvokeInputSafely(applyAction, sendAction, source))
+        throw std::runtime_error("CPlayerSource recusou o input.");
 }
 }
