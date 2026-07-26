@@ -24,6 +24,7 @@ gg*.dll
 __pycache__/
 *.pyc
 *.class
+*.obj
 _verify.xfs
 *.log
 *.dmp

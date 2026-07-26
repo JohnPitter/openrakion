@@ -1,4 +1,9 @@
-# BotHost headless como peer real
+# BotHost headless legado como peer real
+
+> Este documento preserva o RE do experimento que iniciava um `rakion.exe` completo por conta.
+> Ele não é mais o caminho de lançamento. A arquitetura atual está em
+> [`bot-engine-host.md`](bot-engine-host.md), não abre o cliente por bot e não possui fallback
+> sintético.
 
 ## Objetivo e fallback
 

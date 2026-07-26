@@ -1,0 +1,4 @@
+LIBRARY entitiesmp.dll
+
+EXPORTS
+    CWorldBase_DLLClass DATA

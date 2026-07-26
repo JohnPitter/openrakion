@@ -60,6 +60,7 @@ arquivos em `archive/` somente para contexto histórico.
 - [`systems/gameplay/npc-family-icewind.md`](systems/gameplay/npc-family-icewind.md)
 - [`systems/gameplay/npc-special-classes.md`](systems/gameplay/npc-special-classes.md)
 - [`systems/gameplay/bot-subsystem.md`](systems/gameplay/bot-subsystem.md)
+- [`systems/gameplay/bot-engine-host.md`](systems/gameplay/bot-engine-host.md)
 - [`systems/gameplay/combat-actions-status.md`](systems/gameplay/combat-actions-status.md)
 - [`systems/gameplay/potions-chaos-effects.md`](systems/gameplay/potions-chaos-effects.md)
 - [`systems/gameplay/votes-invites-kicks.md`](systems/gameplay/votes-invites-kicks.md)

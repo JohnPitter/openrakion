@@ -1,4 +1,8 @@
-# Subsistema de Bots — peer sintético server-side
+# Subsistema legado de Bots — peer sintético server-side
+
+> Este caminho está mantido apenas enquanto o Bot Engine Host é integrado e será removido antes do
+> lançamento. Ele não é fallback aceito. A golden source atual é
+> [`bot-engine-host.md`](bot-engine-host.md).
 
 O bot é um peer sintético controlado pelo World: ocupa um assento do field, aparece no roster,
 recebe movimento e animações no formato do cliente v258. HP, morte e respawn sintéticos existem no
