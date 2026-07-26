@@ -108,6 +108,21 @@ internal static class BotEngineFrameCodec
         return payload;
     }
 
+    public static byte[] EncodeAim(BotEngineAim aim)
+    {
+        if (aim.BotId == 0 ||
+            !float.IsFinite(aim.X) ||
+            !float.IsFinite(aim.Y) ||
+            !float.IsFinite(aim.Z))
+            throw new ArgumentException("Alvo do Bot Engine inválido.", nameof(aim));
+        byte[] payload = new byte[sizeof(uint) + sizeof(float) * 3];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload, aim.BotId);
+        BinaryPrimitives.WriteSingleLittleEndian(payload.AsSpan(4), aim.X);
+        BinaryPrimitives.WriteSingleLittleEndian(payload.AsSpan(8), aim.Y);
+        BinaryPrimitives.WriteSingleLittleEndian(payload.AsSpan(12), aim.Z);
+        return payload;
+    }
+
     private static byte[] EncodeWorldName(string worldName)
     {
         if (!worldName.StartsWith(@"LevelsSV\", StringComparison.Ordinal) ||

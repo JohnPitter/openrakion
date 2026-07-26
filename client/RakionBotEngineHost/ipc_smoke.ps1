@@ -48,7 +48,7 @@ function Invoke-Request {
     $writer = [System.IO.BinaryWriter]::new(
         $Stream, [Text.Encoding]::ASCII, $true)
     $writer.Write([uint32]0x4842524F)
-    $writer.Write([uint16]4)
+    $writer.Write([uint16]5)
     $writer.Write($MessageType)
     $writer.Write([uint32]$Payload.Length)
     $writer.Write($CorrelationId)
@@ -65,7 +65,7 @@ function Invoke-Request {
     $payloadLength = $reader.ReadUInt32()
     $responseCorrelation = $reader.ReadUInt32()
     $status = $reader.ReadUInt32()
-    if ($magic -ne 0x4842524F -or $version -ne 4) {
+    if ($magic -ne 0x4842524F -or $version -ne 5) {
         throw 'Resposta IPC com magic/version inválido'
     }
     if ($responseType -ne ($MessageType -bor 0x8000) -or
@@ -131,7 +131,7 @@ try {
 
     $hello = Invoke-Request -Stream $pipe -MessageType 1 -CorrelationId 1
     if ($hello.Length -ne 12 -or
-        [BitConverter]::ToUInt32($hello, 4) -ne 31) {
+        [BitConverter]::ToUInt32($hello, 4) -ne 63) {
         throw 'Capabilities inválidas no Hello'
     }
 
@@ -219,6 +219,19 @@ try {
     $originX = [BitConverter]::ToSingle($baseline, 8)
     $originY = [BitConverter]::ToSingle($baseline, 12)
     $originZ = [BitConverter]::ToSingle($baseline, 16)
+    $aimStream = [IO.MemoryStream]::new()
+    $aimWriter = [IO.BinaryWriter]::new($aimStream)
+    $aimWriter.Write([uint32]41)
+    $aimWriter.Write([single]($originX + 1000))
+    $aimWriter.Write([single]$originY)
+    $aimWriter.Write([single]($originZ + 500))
+    $aim = Invoke-Request -Stream $pipe -MessageType 9 `
+        -CorrelationId $correlation -Payload $aimStream.ToArray()
+    $correlation++
+    if ($aim.Length -ne 4 -or
+        [BitConverter]::ToUInt32($aim, 0) -ne 41) {
+        throw 'Aim nativo não confirmou o bot'
+    }
     $moved = $false
     for ($attempt = 0; $attempt -lt 50; $attempt++) {
         $inputStream = [IO.MemoryStream]::new()
@@ -269,7 +282,7 @@ try {
     if (-not $process.WaitForExit(15000) -or $process.ExitCode -ne 0) {
         throw "Host não encerrou corretamente: $($process.ExitCode)"
     }
-    Write-Output 'IPC smoke: quatro fontes, input, ticks e snapshots nativos validados'
+    Write-Output 'IPC smoke: quatro fontes, aim, input, ticks e snapshots nativos validados'
 }
 finally {
     if (-not $process.HasExited) {

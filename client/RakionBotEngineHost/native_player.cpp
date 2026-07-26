@@ -1,5 +1,6 @@
 #include "native_player.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <stdexcept>
@@ -313,5 +314,46 @@ void ApplyNativeInput(
         Resolve(engine, SendActionSymbol));
     if (!InvokeInputSafely(applyAction, sendAction, source))
         throw std::runtime_error("CPlayerSource recusou o input.");
+}
+
+void AimNativePlayer(
+    HMODULE engine,
+    void* network,
+    void* source,
+    const float* target)
+{
+    if (!network || !source || !target)
+        throw std::invalid_argument("Alvo nativo inválido.");
+    auto getEntity = reinterpret_cast<GetLocalPlayerEntity>(
+        Resolve(engine, GetLocalPlayerEntitySymbol));
+    auto getPlacement = reinterpret_cast<GetPlacement>(
+        Resolve(engine, GetPlacementSymbol));
+    auto setPlacement = reinterpret_cast<SetPlacement>(
+        Resolve(engine, SetPlacementSymbol));
+    auto toAngles = reinterpret_cast<DirectionVectorToAngles>(
+        Resolve(engine, DirectionVectorToAnglesSymbol));
+    void* entity = getEntity(network, source);
+    const float* placement = entity ? getPlacement(entity) : nullptr;
+    if (!placement)
+        throw std::runtime_error("Entidade nativa ainda não está pronta.");
+
+    const float direction[3]{
+        target[0] - placement[0],
+        0.0f,
+        target[2] - placement[2],
+    };
+    if (direction[0] * direction[0] + direction[2] * direction[2] < 0.0001f)
+        return;
+    float updated[6]{};
+    std::copy_n(placement, 6, updated);
+    __try
+    {
+        toAngles(direction, updated + 3);
+        setPlacement(entity, updated);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        throw std::runtime_error("A engine recusou a orientação nativa.");
+    }
 }
 }

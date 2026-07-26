@@ -17,7 +17,7 @@ public sealed class BotEngineProtocolTests
 
         Assert.Equal(22, frame.Length);
         Assert.Equal(0x4842524Fu, BinaryPrimitives.ReadUInt32LittleEndian(frame));
-        Assert.Equal(4, BinaryPrimitives.ReadUInt16LittleEndian(frame.AsSpan(4)));
+        Assert.Equal(5, BinaryPrimitives.ReadUInt16LittleEndian(frame.AsSpan(4)));
         Assert.Equal(3, BinaryPrimitives.ReadUInt16LittleEndian(frame.AsSpan(6)));
         Assert.Equal(2u, BinaryPrimitives.ReadUInt32LittleEndian(frame.AsSpan(8)));
         Assert.Equal(0x11223344u, BinaryPrimitives.ReadUInt32LittleEndian(frame.AsSpan(12)));
@@ -100,6 +100,19 @@ public sealed class BotEngineProtocolTests
         Assert.Throws<ArgumentException>(
             () => BotEngineFrameCodec.EncodeInput(
                 1, (BotEngineInput)flags));
+    }
+
+    [Fact]
+    public void AimPayloadCarriesFiniteTarget()
+    {
+        byte[] payload = BotEngineFrameCodec.EncodeAim(
+            new BotEngineAim(17, 10.5f, -2f, 99f));
+
+        Assert.Equal(16, payload.Length);
+        Assert.Equal(17u, BinaryPrimitives.ReadUInt32LittleEndian(payload));
+        Assert.Equal(10.5f, BinaryPrimitives.ReadSingleLittleEndian(payload.AsSpan(4)));
+        Assert.Equal(-2f, BinaryPrimitives.ReadSingleLittleEndian(payload.AsSpan(8)));
+        Assert.Equal(99f, BinaryPrimitives.ReadSingleLittleEndian(payload.AsSpan(12)));
     }
 
     [Theory]

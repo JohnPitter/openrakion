@@ -81,3 +81,9 @@ internal enum BotEngineInput : uint
 internal readonly record struct BotEngineInputResult(
     uint BotId,
     BotEngineInput Input);
+
+internal readonly record struct BotEngineAim(
+    uint BotId,
+    float X,
+    float Y,
+    float Z);

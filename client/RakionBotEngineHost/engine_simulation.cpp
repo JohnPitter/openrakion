@@ -59,4 +59,15 @@ void EngineRuntime::ApplyInput(
         throw std::invalid_argument("Bot não existe neste worker.");
     ApplyNativeInput(engine_, source->second, inputFlags);
 }
+
+void EngineRuntime::Aim(std::uint32_t botId, const float* target)
+{
+    const auto source = botSources_.find(botId);
+    if (source == botSources_.end())
+        throw std::invalid_argument("Bot não existe neste worker.");
+    auto** network = reinterpret_cast<void**>(ResolveRequired(NetworkSymbol));
+    if (!network || !*network)
+        throw std::runtime_error("Engine sem network para orientar o bot.");
+    AimNativePlayer(engine_, *network, source->second, target);
+}
 }

@@ -84,6 +84,8 @@ internal sealed class BotEngineCoordinator : IAsyncDisposable
                     entry.Value, cancellationToken).ConfigureAwait(false);
                 ApplySnapshot(field, entry.Key, snapshot);
             }
+            await ApplyIntentsAsync(
+                field, session, cancellationToken).ConfigureAwait(false);
             return true;
         }
         catch (Exception exception) when (
@@ -123,9 +125,54 @@ internal sealed class BotEngineCoordinator : IAsyncDisposable
             if (record?.Bot == null)
                 return;
             var position = new BotVector(snapshot.X, snapshot.Y, snapshot.Z);
-            record.Bot.ApplyEngineTransform(position, snapshot.RotationY);
+            record.Bot.ApplyEngineTransform(position, snapshot.RotationX);
             record.Position = position;
-            record.Heading = snapshot.RotationY;
+            record.Heading = snapshot.RotationX;
         }
+    }
+
+    private static async Task ApplyIntentsAsync(
+        Field field,
+        FieldSession session,
+        CancellationToken cancellationToken)
+    {
+        long now = Environment.TickCount64;
+        foreach (KeyValuePair<byte, uint> entry in session.BotIds)
+        {
+            if (!BotEngineBrain.TryPlan(
+                field, entry.Key, entry.Value, now, out BotEngineIntent intent))
+            {
+                ClearIntent(field, entry.Key);
+                await session.Worker.ApplyInputAsync(
+                    entry.Value,
+                    BotEngineInput.None,
+                    cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+            if (ShouldRefreshAim(field, entry.Key, intent))
+                await session.Worker.AimAsync(
+                    intent.Aim, cancellationToken).ConfigureAwait(false);
+            await session.Worker.ApplyInputAsync(
+                entry.Value,
+                intent.Input,
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static void ClearIntent(Field field, byte seat)
+    {
+        lock (field.SyncRoot)
+            field.RecAt(seat)?.Bot?.SetEngineIntent(BotControls.None, false);
+    }
+
+    private static bool ShouldRefreshAim(
+        Field field,
+        byte seat,
+        BotEngineIntent intent)
+    {
+        lock (field.SyncRoot)
+            return field.RecAt(seat)?.Bot?.ShouldRefreshEngineAim(
+                intent.TargetSeat,
+                new BotVector(intent.Aim.X, intent.Aim.Y, intent.Aim.Z)) == true;
     }
 }

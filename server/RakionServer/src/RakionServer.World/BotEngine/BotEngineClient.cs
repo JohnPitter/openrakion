@@ -180,6 +180,22 @@ internal sealed class BotEngineClient : IAsyncDisposable
         return result;
     }
 
+    public async Task<uint> AimAsync(
+        BotEngineAim aim,
+        CancellationToken cancellationToken)
+    {
+        BotEngineFrame frame = await RequestAsync(
+            BotEngineProtocol.MessageType.Aim,
+            BotEngineFrameCodec.EncodeAim(aim),
+            cancellationToken).ConfigureAwait(false);
+        if (frame.Payload.Length != sizeof(uint))
+            throw new InvalidDataException("Aim retornou payload inválido.");
+        uint botId = BinaryPrimitives.ReadUInt32LittleEndian(frame.Payload);
+        if (botId != aim.BotId)
+            throw new InvalidDataException("Aim não confirmou o bot.");
+        return botId;
+    }
+
     public async Task ShutdownAsync(CancellationToken cancellationToken)
     {
         BotEngineFrame frame = await RequestAsync(

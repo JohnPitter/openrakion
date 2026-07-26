@@ -50,6 +50,10 @@ namespace RakionServer.World.Domain
         public bool IsMoving => _isMoving;
         public BotNavigationMode NavigationMode { get; private set; }
         public bool EngineAttached { get; private set; }
+        public BotControls EngineControls { get; private set; }
+        public bool EngineAttacking { get; private set; }
+        private byte _engineAimTargetSeat = Field.NoSeat;
+        private BotVector _lastEngineAimTarget;
 
         /// <summary>HP inicial derivado de level/classe (curva simples; server-authoritative p/ o bot).</summary>
         public void InitHealth(byte level)
@@ -187,6 +191,22 @@ namespace RakionServer.World.Domain
         public void AttachEngine()
         {
             EngineAttached = true;
+        }
+
+        public void SetEngineIntent(BotControls controls, bool attacking)
+        {
+            EngineControls = controls;
+            EngineAttacking = attacking;
+        }
+
+        public bool ShouldRefreshEngineAim(byte targetSeat, BotVector target)
+        {
+            if (_engineAimTargetSeat == targetSeat &&
+                _lastEngineAimTarget.HorizontalDistanceTo(target) <= 5f)
+                return false;
+            _engineAimTargetSeat = targetSeat;
+            _lastEngineAimTarget = target;
+            return true;
         }
 
         // Estado interno da IA: EMA da velocidade do alvo (antecipação) e a última posição observada.

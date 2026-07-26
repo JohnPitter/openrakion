@@ -103,4 +103,34 @@ PipeServer::Response PipeServer::HandleInput(
         return {protocol::Status::EngineFailure};
     }
 }
+
+PipeServer::Response PipeServer::HandleAim(
+    const Request& request,
+    EngineRuntime& runtime)
+{
+    if (fieldId_ == 0)
+        return {protocol::Status::InvalidState};
+    if (request.payload.size() != sizeof(protocol::AimRequest))
+        return {protocol::Status::BadRequest};
+
+    protocol::AimRequest payload{};
+    std::memcpy(&payload, request.payload.data(), sizeof(payload));
+    try
+    {
+        runtime.Aim(payload.botId, payload.target);
+        return {
+            protocol::Status::Success,
+            Encode(protocol::AimResponse{payload.botId}),
+        };
+    }
+    catch (const std::invalid_argument&)
+    {
+        return {protocol::Status::BadRequest};
+    }
+    catch (const std::exception& error)
+    {
+        std::cerr << "Aim falhou: " << error.what() << '\n';
+        return {protocol::Status::EngineFailure};
+    }
+}
 }

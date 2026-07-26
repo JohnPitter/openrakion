@@ -72,6 +72,7 @@ public:
     void Advance(std::uint32_t frameCount);
     PlayerSnapshot Snapshot(std::uint32_t botId) const;
     void ApplyInput(std::uint32_t botId, std::uint32_t inputFlags);
+    void Aim(std::uint32_t botId, const float* target);
 
 private:
     void ConfigureDllSearch();

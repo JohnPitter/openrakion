@@ -117,6 +117,11 @@ internal sealed class BotEngineWorker : IAsyncDisposable
         CancellationToken cancellationToken) =>
         _client.ApplyInputAsync(botId, input, cancellationToken);
 
+    public Task<uint> AimAsync(
+        BotEngineAim aim,
+        CancellationToken cancellationToken) =>
+        _client.AimAsync(aim, cancellationToken);
+
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         if (Interlocked.Exchange(ref _stopped, 1) != 0)
@@ -248,7 +253,8 @@ internal sealed class BotEngineWorker : IAsyncDisposable
             BotEngineProtocol.Capability.NativeWorld |
             BotEngineProtocol.Capability.NativePlayerSources |
             BotEngineProtocol.Capability.NativeSnapshots |
-            BotEngineProtocol.Capability.NativeInputs;
+            BotEngineProtocol.Capability.NativeInputs |
+            BotEngineProtocol.Capability.NativeTargeting;
         if (hello.ProcessId != unchecked((uint)processId) ||
             hello.ProtocolVersion != BotEngineProtocol.Version ||
             (hello.Capabilities & required) != required)

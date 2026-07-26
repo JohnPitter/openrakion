@@ -53,4 +53,9 @@ void ApplyNativeInput(
     HMODULE engine,
     void* source,
     std::uint32_t inputFlags);
+void AimNativePlayer(
+    HMODULE engine,
+    void* network,
+    void* source,
+    const float* target);
 }

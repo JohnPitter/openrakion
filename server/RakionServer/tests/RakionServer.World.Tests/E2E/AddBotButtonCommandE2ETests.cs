@@ -79,7 +79,8 @@ namespace RakionServer.World.Tests.E2E
             human.SendFieldChat("GoHeroi : /addbot");
             JourneyHelper.WaitUntil(
                 () => field.BotSlots.Any(record => record.Bot!.EngineAttached),
-                "Host nativo não confirmou o bot");
+                "Host nativo não confirmou o bot",
+                TimeSpan.FromSeconds(40));
 
             Assert.Equal(UserStatus.FieldLobby, session.Status);
             Assert.Single(field.BotSlots);

@@ -78,6 +78,14 @@ public sealed class BotEngineWorkerIntegrationTests
 
         BotEnginePlayerSnapshot origin = snapshots[0];
         BotEnginePlayerSnapshot moved = origin;
+        uint aimedBotId = await first.AimAsync(
+            new BotEngineAim(
+                bots[0].BotId,
+                origin.X + 10f,
+                origin.Y,
+                origin.Z + 5f),
+            CancellationToken.None);
+        Assert.Equal(bots[0].BotId, aimedBotId);
         for (int attempt = 0; attempt < 50 && !HasMoved(origin, moved); ++attempt)
         {
             await first.ApplyInputAsync(

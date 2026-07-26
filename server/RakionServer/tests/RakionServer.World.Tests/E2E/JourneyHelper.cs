@@ -27,13 +27,21 @@ namespace RakionServer.World.Tests.E2E
 
         public static void WaitUntil(Func<bool> condition, string message)
         {
-            var deadline = DateTime.UtcNow + Timeout;
+            WaitUntil(condition, message, Timeout);
+        }
+
+        public static void WaitUntil(
+            Func<bool> condition,
+            string message,
+            TimeSpan timeout)
+        {
+            var deadline = DateTime.UtcNow + timeout;
             while (DateTime.UtcNow < deadline)
             {
                 if (condition()) return;
                 Thread.Sleep(100);
             }
-            throw new TimeoutException(message + $" (timeout {Timeout.TotalSeconds:0.#}s)");
+            throw new TimeoutException(message + $" (timeout {timeout.TotalSeconds:0.#}s)");
         }
 
         /// <summary>Leva os dois clientes até coabitarem um field competitivo (mode dado) com UDP

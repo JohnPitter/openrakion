@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using RakionServer.Common;
@@ -88,7 +89,10 @@ public sealed partial class WorldServer
     {
         if (await _botEngine.TickFieldAsync(
             field, cancellationToken).ConfigureAwait(false))
+        {
+            PublishNativeBotSnapshots(field);
             return;
+        }
         Bots.RemoveAllBots(field);
         Log.Warn("bot-engine", "field={0} bots removidos após falha do host", field.Id);
     }
@@ -98,6 +102,49 @@ public sealed partial class WorldServer
         await _botEngine.StopFieldAsync(
             field.Id, CancellationToken.None).ConfigureAwait(false);
         Bots.RemoveAllBots(field);
+    }
+
+    private void PublishNativeBotSnapshots(Field field)
+    {
+        if (_udpGame == null)
+            return;
+        var deliveries = new List<(PlayerRec Target, byte[] Packet)>();
+        lock (field.SyncRoot)
+        {
+            PlayerRec[] humans = Array.FindAll(
+                field.Slots, record => record.Session != null && record.Occupied);
+            foreach (PlayerRec record in field.BotSlots)
+            {
+                BotPlayer bot = record.Bot!;
+                if (!bot.EngineAttached)
+                    continue;
+                foreach (byte[] packet in BuildNativePackets(record, bot))
+                    foreach (PlayerRec human in humans)
+                        deliveries.Add((human, packet));
+            }
+        }
+        foreach ((PlayerRec target, byte[] packet) in deliveries)
+            _udpGame.SendBotGameplay(target, packet);
+    }
+
+    private static IEnumerable<byte[]> BuildNativePackets(
+        PlayerRec record,
+        BotPlayer bot)
+    {
+        bool moving = (bot.EngineControls &
+            (BotControls.W | BotControls.A | BotControls.S | BotControls.D)) != 0;
+        yield return BotMovement.SynthesizeMove(
+            (byte)record.Slot, bot.Position, bot.Heading, ++bot.MoveSeq);
+        yield return BotMovement.SynthesizeKeystate(
+            (byte)record.Slot, ++bot.MoveSeq, moving);
+        if (bot.ShouldPublishControls(bot.EngineControls, Environment.TickCount64))
+            yield return BotMovement.SynthesizeNormalAnimation(
+                (byte)record.Slot,
+                ++bot.MoveSeq,
+                BotMovement.AnimationForControls(bot.EngineControls));
+        if (bot.EngineAttacking)
+            yield return BotMovement.SynthesizeAttack(
+                (byte)record.Slot, ++bot.MoveSeq, bot.NextAttackVariant());
     }
 
     private void StopNativeBots(int fieldId)

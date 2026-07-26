@@ -65,6 +65,10 @@ constexpr char GetLocalPlayerEntitySymbol[] =
     "PAVCPlayerSource@@@Z";
 constexpr char GetPlacementSymbol[] =
     "?GetPlacement@CEntity@@QBEABVCPlacement3D@@XZ";
+constexpr char SetPlacementSymbol[] =
+    "?SetPlacement@CEntity@@QAEXABVCPlacement3D@@@Z";
+constexpr char DirectionVectorToAnglesSymbol[] =
+    "?DirectionVectorToAngles@@YAXABV?$Vector@M$02@@AAV1@@Z";
 constexpr char IsAliveSymbol[] = "?IsAlive@CPlayer@@QAEHXZ";
 constexpr char GetHpSymbol[] = "?GetHP@CPlayer@@UAEMXZ";
 constexpr char ApplyActionSymbol[] =
@@ -115,6 +119,8 @@ using AddPlayer = void*(__thiscall*)(void*, void*);
 using GetLocalPlayerCount = long(__thiscall*)(void*);
 using GetLocalPlayerEntity = void*(__thiscall*)(void*, void*);
 using GetPlacement = const float*(__thiscall*)(const void*);
+using SetPlacement = void(__thiscall*)(void*, const float*);
+using DirectionVectorToAngles = void(__cdecl*)(const float*, float*);
 using IsAlive = int(__thiscall*)(void*);
 using GetHp = float(__thiscall*)(void*);
 using ApplyAction = void(__thiscall*)(void*, int&);
