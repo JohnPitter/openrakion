@@ -233,6 +233,8 @@ PipeServer::Response PipeServer::Dispatch(
         return HandleInput(request, runtime);
     case protocol::MessageType::Aim:
         return HandleAim(request, runtime);
+    case protocol::MessageType::Lifecycle:
+        return HandleLifecycle(request, runtime);
     default:
         return {protocol::Status::UnsupportedMessage};
     }
@@ -290,7 +292,8 @@ PipeServer::Response PipeServer::HandleHello() const
         GetCurrentProcessId(),
         protocol::EngineBootstrap | protocol::NativeWorld |
             protocol::NativePlayerSources | protocol::NativeSnapshots |
-            protocol::NativeInputs | protocol::NativeTargeting,
+            protocol::NativeInputs | protocol::NativeTargeting |
+            protocol::NativeLifecycle,
         protocol::Version,
         0,
     };

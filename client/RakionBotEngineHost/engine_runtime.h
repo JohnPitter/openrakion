@@ -73,6 +73,7 @@ public:
     PlayerSnapshot Snapshot(std::uint32_t botId) const;
     void ApplyInput(std::uint32_t botId, std::uint32_t inputFlags);
     void Aim(std::uint32_t botId, const float* target);
+    void SetLifecycle(std::uint32_t botId, bool alive);
 
 private:
     void ConfigureDllSearch();

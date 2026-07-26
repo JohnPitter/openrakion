@@ -196,6 +196,28 @@ internal sealed class BotEngineClient : IAsyncDisposable
         return botId;
     }
 
+    public async Task<BotEngineLifecycleResult> SetLifecycleAsync(
+        uint botId,
+        BotEngineLifecycle state,
+        CancellationToken cancellationToken)
+    {
+        BotEngineFrame frame = await RequestAsync(
+            BotEngineProtocol.MessageType.Lifecycle,
+            BotEngineFrameCodec.EncodeLifecycle(botId, state),
+            cancellationToken).ConfigureAwait(false);
+        if (frame.Payload.Length != sizeof(uint) * 2)
+            throw new InvalidDataException(
+                "Lifecycle retornou payload inválido.");
+        var result = new BotEngineLifecycleResult(
+            BinaryPrimitives.ReadUInt32LittleEndian(frame.Payload),
+            (BotEngineLifecycle)BinaryPrimitives.ReadUInt32LittleEndian(
+                frame.Payload.AsSpan(sizeof(uint))));
+        if (result.BotId != botId || result.State != state)
+            throw new InvalidDataException(
+                "Lifecycle não confirmou bot/estado.");
+        return result;
+    }
+
     public async Task ShutdownAsync(CancellationToken cancellationToken)
     {
         BotEngineFrame frame = await RequestAsync(
@@ -249,17 +271,10 @@ internal sealed class BotEngineClient : IAsyncDisposable
     }
 }
 
-internal sealed class BotEngineException : Exception
+internal sealed class BotEngineException(
+    BotEngineProtocol.MessageType messageType,
+    BotEngineProtocol.Status status) : Exception($"Bot Engine Host recusou {messageType}: {status}.")
 {
-    public BotEngineException(
-        BotEngineProtocol.MessageType messageType,
-        BotEngineProtocol.Status status)
-        : base($"Bot Engine Host recusou {messageType}: {status}.")
-    {
-        MessageType = messageType;
-        Status = status;
-    }
-
-    public BotEngineProtocol.MessageType MessageType { get; }
-    public BotEngineProtocol.Status Status { get; }
+    public BotEngineProtocol.MessageType MessageType { get; } = messageType;
+    public BotEngineProtocol.Status Status { get; } = status;
 }

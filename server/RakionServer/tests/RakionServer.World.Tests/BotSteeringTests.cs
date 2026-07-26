@@ -100,7 +100,7 @@ namespace RakionServer.World.Tests
 
             for (int i = 0; i < 100; i++) bot.Tick(target, 0.1f);
 
-            Assert.True(bot.Position.HorizontalDistanceTo(target) <= BotCombat.MeleeRangeWire,
+            Assert.True(bot.Position.HorizontalDistanceTo(target) <= bot.Profile.MeleeRange,
                 "o bot precisa alcançar a hitbox em escala wire durante uma rodada real");
         }
 

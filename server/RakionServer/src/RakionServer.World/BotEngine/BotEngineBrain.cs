@@ -28,6 +28,9 @@ internal static class BotEngineBrain
             BotPlayer? bot = botRecord?.Bot;
             if (bot == null || !bot.Alive)
                 return false;
+            bot.TryFinishHitReaction(now);
+            if (bot.HitReactionUntilMs != 0)
+                return false;
             if (!TryFindNearestEnemy(field, botRecord!, out PlayerRec target))
                 return false;
 

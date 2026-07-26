@@ -36,10 +36,7 @@ namespace RakionServer.World.Domain
         public BotPlayer? Bot;             // peer sintético server-side (assento ocupado por bot)
         public BotVector Position;          // última posição observada (do 0x030A do humano / IA do bot) p/ mira do bot
         public float Heading;               // rumo observado do 0x030A humano, usado no cone de melee
-        public long NextBotMeleeAttackMs;   // anti-repetição de hooks do mesmo golpe humano
-        public uint BotHitSequence;          // sequência autoritativa de acertos confirmados em bots
-        public byte BotHitCombo;             // feedback visual de combo contra bot
-        public long LastBotHitFeedbackMs;    // janela do combo exibido ao atacante
+        public PlayerCombatState Combat { get; } = new();
         public byte[]? InitialMovement;     // primeiro 0x4B do match, usado para sincronizar peers que carregaram depois
         public byte Team => (byte)(Slot < 10 ? 0 : 1); // slots 0..9 = time0, 10..0x13 = time1
         public int Slot;                 // indice no array (0..0x13)
@@ -69,12 +66,12 @@ namespace RakionServer.World.Domain
     /// FUN_00407e00 = morte/scoring). O motor roda por-field (WorldServer tick global),
     /// NAO por-sessao.
     /// </summary>
-    public sealed partial class Field
+    public sealed partial class Field(int id)
     {
         public const byte NoSeat = 0x14;
         private const ushort DefaultRoundDurationSec = 432; // +3s de countdown => 0x01B3, captura original que destrava o stage
 
-        public int Id;
+        public int Id = id;
         public string Name = "";
         public string CreatorCharacterName = "";
         public string Password = "";
@@ -128,9 +125,7 @@ namespace RakionServer.World.Domain
         /// <summary>Array de 0x14 player-records (field+0x124, stride 0x14).</summary>
         public readonly PlayerRec[] Slots = NewSlots();
 
-        public readonly List<ClientSession> Players = new();
-
-        public Field(int id) => Id = id;
+        public readonly List<ClientSession> Players = [];
 
         private static PlayerRec[] NewSlots()
         {
@@ -190,7 +185,7 @@ namespace RakionServer.World.Domain
                 rec.UsesTunneling = false;
                 rec.Position = default;
                 rec.Heading = 0;
-                rec.NextBotMeleeAttackMs = 0;
+                rec.Combat.Reset();
                 rec.InitialMovement = null;
             }
         }
@@ -271,7 +266,7 @@ namespace RakionServer.World.Domain
                     Slots[i].VoteState = 0;
                     Slots[i].Position = default;
                     Slots[i].Heading = 0;
-                    Slots[i].NextBotMeleeAttackMs = 0;
+                    Slots[i].Combat.Reset();
                     return i;
                 }
             }
@@ -388,22 +383,22 @@ namespace RakionServer.World.Domain
 
         public byte[] Build0x48(ushort remainingSec)
         {
-            return new byte[]
-            {
+            return
+            [
                 0x48, 0x00,
                 Round == 0 ? (byte)1 : Round,
                 (byte)(remainingSec & 0xff), (byte)(remainingSec >> 8),
                 Wins0, Wins1, Mvp0, Mvp1,
                 0x00, 0x00, 0x00,
-            };
+            ];
         }
 
         /// <summary>0x49 NovoRound (5B): [49 00][round][mvp0][mvp1].</summary>
-        public byte[] Build0x49() => new byte[] { 0x49, 0x00, Round, Mvp0, Mvp1 };
+        public byte[] Build0x49() => [0x49, 0x00, Round, Mvp0, Mvp1];
 
         /// <summary>0x4a FimRound — corpo (4B): [reason][losingSide][wins0][wins1].
         /// layout fiel ao caminho validado in-game (Golem War); modos 2-clientes precisam re-teste.</summary>
-        public byte[] Build0x4a() => new byte[] { RoundEndReason, LosingSideWire, Wins0, Wins1 };
+        public byte[] Build0x4a() => [RoundEndReason, LosingSideWire, Wins0, Wins1];
 
         /// <summary>
         /// 0x44 FimMatch PvP de FUN_00407BE0: [44 00][reason], com zero-pad do bloco AES.
@@ -649,7 +644,7 @@ namespace RakionServer.World.Domain
                 record.Dead = false;
                 record.Position = default;
                 record.Heading = 0;
-                record.NextBotMeleeAttackMs = 0;
+                record.Combat.Reset();
                 record.InitialMovement = null;
                 record.Bot?.ResetForLobby();
             }
@@ -680,12 +675,10 @@ namespace RakionServer.World.Domain
     /// <summary>
     /// Room = sala de chat/lobby (array this+0xdc, entradas de 0x358 bytes).
     /// </summary>
-    public sealed class Room
+    public sealed class Room(int id)
     {
-        public int Id;
-        public readonly List<ClientSession> Members = new();
-
-        public Room(int id) => Id = id;
+        public int Id = id;
+        public readonly List<ClientSession> Members = [];
 
         public void Add(ClientSession s) { lock (Members) { if (!Members.Contains(s)) Members.Add(s); } }
         public void Remove(ClientSession s) { lock (Members) Members.Remove(s); }
@@ -693,7 +686,7 @@ namespace RakionServer.World.Domain
         public void Broadcast(byte[] payload, ClientSession? except = null)
         {
             ClientSession[] snapshot;
-            lock (Members) snapshot = Members.ToArray();
+            lock (Members) snapshot = [.. Members];
             foreach (var m in snapshot)
                 if (m != except) m.SendLobby(payload);
         }

@@ -123,6 +123,20 @@ internal static class BotEngineFrameCodec
         return payload;
     }
 
+    public static byte[] EncodeLifecycle(
+        uint botId,
+        BotEngineLifecycle state)
+    {
+        if (botId == 0 ||
+            state is not (BotEngineLifecycle.Alive or BotEngineLifecycle.Dead))
+            throw new ArgumentException("Lifecycle do Bot Engine inválido.");
+        byte[] payload = new byte[sizeof(uint) * 2];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload, botId);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            payload.AsSpan(sizeof(uint)), (uint)state);
+        return payload;
+    }
+
     private static byte[] EncodeWorldName(string worldName)
     {
         if (!worldName.StartsWith(@"LevelsSV\", StringComparison.Ordinal) ||

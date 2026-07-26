@@ -250,5 +250,6 @@ gráfico.
 3. Cada fonte publica `0x030A/0x030F/0x0311` com seat correto e sequência independente.
 4. Humanos acertam bots e bots acertam humanos usando o pipeline nativo.
 5. Queda, morte, respawn e placar convergem no World.
-6. Queda ou timeout do BotHost troca o field para o bot sintético sem desconectar humanos.
+6. Queda ou timeout do BotHost remove os bots do field sem criar fallback sintético e preserva os
+   humanos conectados.
 7. Teste de carga mede memória e CPU por field e por bot adicional.

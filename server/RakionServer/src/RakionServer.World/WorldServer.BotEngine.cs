@@ -91,6 +91,7 @@ public sealed partial class WorldServer
             field, cancellationToken).ConfigureAwait(false))
         {
             PublishNativeBotSnapshots(field);
+            ResolveNativeBotCombat(field);
             return;
         }
         Bots.RemoveAllBots(field);
@@ -131,6 +132,8 @@ public sealed partial class WorldServer
         PlayerRec record,
         BotPlayer bot)
     {
+        if (!bot.Alive || bot.HitReactionUntilMs != 0)
+            yield break;
         bool moving = (bot.EngineControls &
             (BotControls.W | BotControls.A | BotControls.S | BotControls.D)) != 0;
         yield return BotMovement.SynthesizeMove(

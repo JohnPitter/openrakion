@@ -133,4 +133,40 @@ PipeServer::Response PipeServer::HandleAim(
         return {protocol::Status::EngineFailure};
     }
 }
+
+PipeServer::Response PipeServer::HandleLifecycle(
+    const Request& request,
+    EngineRuntime& runtime)
+{
+    if (fieldId_ == 0)
+        return {protocol::Status::InvalidState};
+    if (request.payload.size() != sizeof(protocol::LifecycleRequest))
+        return {protocol::Status::BadRequest};
+
+    protocol::LifecycleRequest payload{};
+    std::memcpy(&payload, request.payload.data(), sizeof(payload));
+    if (payload.state != protocol::LifecycleState::Alive &&
+        payload.state != protocol::LifecycleState::Dead)
+        return {protocol::Status::BadRequest};
+    try
+    {
+        runtime.SetLifecycle(
+            payload.botId,
+            payload.state == protocol::LifecycleState::Alive);
+        return {
+            protocol::Status::Success,
+            Encode(protocol::LifecycleResponse{
+                payload.botId, payload.state}),
+        };
+    }
+    catch (const std::invalid_argument&)
+    {
+        return {protocol::Status::BadRequest};
+    }
+    catch (const std::exception& error)
+    {
+        std::cerr << "Lifecycle falhou: " << error.what() << '\n';
+        return {protocol::Status::EngineFailure};
+    }
+}
 }

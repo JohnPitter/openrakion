@@ -48,7 +48,7 @@ function Invoke-Request {
     $writer = [System.IO.BinaryWriter]::new(
         $Stream, [Text.Encoding]::ASCII, $true)
     $writer.Write([uint32]0x4842524F)
-    $writer.Write([uint16]5)
+    $writer.Write([uint16]6)
     $writer.Write($MessageType)
     $writer.Write([uint32]$Payload.Length)
     $writer.Write($CorrelationId)
@@ -65,7 +65,7 @@ function Invoke-Request {
     $payloadLength = $reader.ReadUInt32()
     $responseCorrelation = $reader.ReadUInt32()
     $status = $reader.ReadUInt32()
-    if ($magic -ne 0x4842524F -or $version -ne 5) {
+    if ($magic -ne 0x4842524F -or $version -ne 6) {
         throw 'Resposta IPC com magic/version inválido'
     }
     if ($responseType -ne ($MessageType -bor 0x8000) -or
@@ -131,7 +131,7 @@ try {
 
     $hello = Invoke-Request -Stream $pipe -MessageType 1 -CorrelationId 1
     if ($hello.Length -ne 12 -or
-        [BitConverter]::ToUInt32($hello, 4) -ne 63) {
+        [BitConverter]::ToUInt32($hello, 4) -ne 127) {
         throw 'Capabilities inválidas no Hello'
     }
 
@@ -276,13 +276,50 @@ try {
         -CorrelationId $correlation -Payload $stopStream.ToArray())
     $correlation++
 
+    $lifecycleStream = [IO.MemoryStream]::new()
+    $lifecycleWriter = [IO.BinaryWriter]::new($lifecycleStream)
+    $lifecycleWriter.Write([uint32]41)
+    $lifecycleWriter.Write([uint32]2)
+    $dead = Invoke-Request -Stream $pipe -MessageType 10 `
+        -CorrelationId $correlation -Payload $lifecycleStream.ToArray()
+    $correlation++
+    if ($dead.Length -ne 8 -or
+        [BitConverter]::ToUInt32($dead, 0) -ne 41 -or
+        [BitConverter]::ToUInt32($dead, 4) -ne 2) {
+        throw 'Lifecycle Dead não confirmou bot/estado'
+    }
+    $deadSnapshot = Invoke-Request -Stream $pipe -MessageType 7 `
+        -CorrelationId $correlation -Payload $snapshotPayload
+    $correlation++
+    if (([BitConverter]::ToUInt32($deadSnapshot, 4) -band 2) -ne 0) {
+        throw 'Snapshot nativo permaneceu vivo após Lifecycle Dead'
+    }
+
+    $lifecycleStream.SetLength(0)
+    $lifecycleStream.Position = 0
+    $lifecycleWriter.Write([uint32]41)
+    $lifecycleWriter.Write([uint32]1)
+    $alive = Invoke-Request -Stream $pipe -MessageType 10 `
+        -CorrelationId $correlation -Payload $lifecycleStream.ToArray()
+    $correlation++
+    if ($alive.Length -ne 8 -or
+        [BitConverter]::ToUInt32($alive, 4) -ne 1) {
+        throw 'Lifecycle Alive não confirmou bot/estado'
+    }
+    $aliveSnapshot = Invoke-Request -Stream $pipe -MessageType 7 `
+        -CorrelationId $correlation -Payload $snapshotPayload
+    $correlation++
+    if (([BitConverter]::ToUInt32($aliveSnapshot, 4) -band 2) -eq 0) {
+        throw 'Snapshot nativo permaneceu morto após Lifecycle Alive'
+    }
+
     [void](Invoke-Request -Stream $pipe -MessageType 4 `
         -CorrelationId $correlation)
     $pipe.Dispose()
     if (-not $process.WaitForExit(15000) -or $process.ExitCode -ne 0) {
         throw "Host não encerrou corretamente: $($process.ExitCode)"
     }
-    Write-Output 'IPC smoke: quatro fontes, aim, input, ticks e snapshots nativos validados'
+    Write-Output 'IPC smoke: quatro fontes, aim, input, lifecycle, ticks e snapshots nativos validados'
 }
 finally {
     if (-not $process.HasExited) {

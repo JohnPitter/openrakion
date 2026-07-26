@@ -145,6 +145,19 @@ bool InvokeInputSafely(
         return false;
     }
 }
+
+bool InvokeLifecycleSafely(SetLifecycle transition, void* entity)
+{
+    __try
+    {
+        transition(entity);
+        return true;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        return false;
+    }
+}
 }
 
 NativePlayerResult CreateNativePlayer(
@@ -355,5 +368,29 @@ void AimNativePlayer(
     {
         throw std::runtime_error("A engine recusou a orientação nativa.");
     }
+}
+
+void SetNativeLifecycle(
+    HMODULE engine,
+    HMODULE entities,
+    void* network,
+    void* source,
+    bool alive)
+{
+    if (!engine || !entities || !network || !source)
+        throw std::invalid_argument("Lifecycle nativo inválido.");
+    auto getEntity = reinterpret_cast<GetLocalPlayerEntity>(
+        Resolve(engine, GetLocalPlayerEntitySymbol));
+    auto transition = reinterpret_cast<SetLifecycle>(
+        GetProcAddress(
+            entities,
+            alive ? SetAliveSymbol : SetDeadSymbol));
+    void* entity = getEntity(network, source);
+    if (!entity || !transition)
+        throw std::runtime_error(
+            "Entidade ou transição de lifecycle ausente.");
+    if (!InvokeLifecycleSafely(transition, entity))
+        throw std::runtime_error(
+            "A engine recusou a transição de lifecycle.");
 }
 }

@@ -64,17 +64,17 @@ O Host atende um named pipe local em modo byte. Cada frame possui header little-
 | Campo | Tipo | Regra |
 | --- | --- | --- |
 | magic | `uint32` | `0x4842524F` |
-| version | `uint16` | `5` |
+| version | `uint16` | `6` |
 | messageType | `uint16` | bit `0x8000` indica resposta |
 | payloadSize | `uint32` | máximo de 4096 bytes |
 | correlationId | `uint32` | ecoado na resposta |
 | status | `uint32` | zero em sucesso |
 
 Os comandos disponíveis são `Hello`, `LoadField`, `AddBot`, `Aim`, `Input`, `Tick`, `Snapshot`,
-`Ping` e `Shutdown`. `LoadField` transporta `fieldId`, capacidade, map ID original (`200..213`), modo battle
-(`1..4`) e caminho relativo sob `LevelsSV`. Ele aceita um único carregamento por processo e não
-permite capacidade superior à oferecida pela engine. `AddBot` transporta identidade explícita e
-cria a fonte local por `CNetworkLibrary::AddPlayer_t`.
+`Lifecycle`, `Ping` e `Shutdown`. `LoadField` transporta `fieldId`, capacidade, map ID original
+(`200..213`), modo battle (`1..4`) e caminho relativo sob `LevelsSV`. Ele aceita um único
+carregamento por processo e não permite capacidade superior à oferecida pela engine. `AddBot`
+transporta identidade explícita e cria a fonte local por `CNetworkLibrary::AddPlayer_t`.
 
 `Input` aceita combinações não conflitantes de forward, backward, left, right, jump e primary
 attack. O Host converte essas intenções para os bits/eixos do `CPlayerAction` original e chama
@@ -86,9 +86,13 @@ alive, HP, posição e rotação lidos da entidade nativa.
 entidade local. O caminho reutiliza `DirectionVectorToAngles` e `CEntity::SetPlacement`, já
 comprovados no peer headless; posição e colisão nunca são escritas pelo World ou pelo Host.
 
+`Lifecycle` aceita somente `Alive` ou `Dead`. O Host resolve a entidade ligada ao
+`CPlayerSource` e chama os exports originais `CPlayer::SetAlive` ou `CPlayer::SetDead` da
+`entitiesmp.dll`. A sequência monotônica do domínio impede reaplicar transições antigas.
+
 O pipe recusa clientes remotos. Antes de carregar o mapa, o World valida PID, versão e as
 capabilities `EngineBootstrap`, `NativeWorld`, `NativePlayerSources`, `NativeSnapshots`,
-`NativeInputs` e `NativeTargeting`.
+`NativeInputs`, `NativeTargeting` e `NativeLifecycle`.
 
 `BotEngineSupervisor` mantém no máximo um worker persistente por field. Ele inicia o processo sem
 shell ou janela, drena stdout/stderr, aplica timeout ao handshake e mata a árvore do processo quando
@@ -123,16 +127,15 @@ registro da fonte. Ainda não comprova ações, simulação temporal, animação
 
 ## Marco 4: múltiplas fontes, input e snapshots
 
-O protocolo v5 foi validado com as quatro fontes locais oferecidas pela engine. Para cada uma, o
+O protocolo v6 foi validado com as quatro fontes locais oferecidas pela engine. Para cada uma, o
 Host avançou a simulação e resolveu uma entidade distinta. O smoke também aplicou forward ao
 primeiro bot repetindo o ciclo humano `ApplyAction → SendAction → timer → main loop`; a posição
 publicada pelo snapshot mudou sem escrita direta em placement. Isso comprova que o movimento veio
 da engine, não de teleporte ou física reimplementada.
 
 O teste integrado do World cobre o mesmo fluxo pelo supervisor real: quatro bots, um tick,
-snapshots finitos e movimento observável após input. Ainda falta associar esse worker ao lifecycle
-das salas e publicar o estado para clientes gráficos; ataque, HIT, queda, morte e respawn também
-continuam fora deste marco.
+snapshots finitos, movimento observável após input e transições `Dead → Alive` confirmadas pelo
+flag nativo do snapshot.
 
 ## Marco 5: lifecycle real do World
 
@@ -180,11 +183,48 @@ A borda wire usa centésimos de unidade: `100` no `s16` de `0x030A` representa `
 Snapshots nativos são multiplicados por `100` somente no codec de saída, e poses humanas são
 divididas por `100` ao entrar no domínio. O Host e o cérebro trabalham sempre na unidade nativa.
 
+## Marco 7: combate autoritativo humano → bot
+
+O espelho autenticado do cliente encaminha ao World a pose `0x030A` e o início de ataque
+`0x0311`. O domínio aceita somente sequências crescentes, limita a cadência e abre uma janela de
+impacto entre 120 e 450 ms depois do início. Durante a janela, o servidor seleciona o bot inimigo
+mais próximo que esteja jogando, vivo e ligado ao Host, limitado a:
+
+- distância horizontal de `3,25` unidades nativas;
+- diferença vertical máxima de `2,0`;
+- cone frontal de 75 graus;
+- uma confirmação de dano por sequência de ataque.
+
+O dano atual é uma política de lançamento explícita, não uma fórmula alegada como original:
+`50 + 2 × BasicAttack`, limitada a `50..250`. A política fica isolada no backend para ser
+substituída pelas fórmulas por arma/equipamento quando esses contratos forem incorporados.
+
+Um impacto confirmado reduz o HP do bot somente no World, publica `0x0311 kind=Damage` para os
+humanos e interrompe input/snapshot de movimento durante a reação. Ao chegar a zero, o World
+aplica a morte com causa comum `8`, atualiza o placar do modo, agenda o respawn e incrementa a
+sequência de lifecycle. No tick seguinte, o coordenador envia `Dead` ao Host e a engine executa
+`CPlayer::SetDead`. Em Deathmatch, Team Death e Boss, após sete segundos o domínio restaura o HP,
+envia `Alive` e a engine executa `CPlayer::SetAlive`.
+
+Os gates automatizados cobrem:
+
+1. sequência, cadência, janela, alcance, altura, time e cone frontal;
+2. dano idempotente e morte única;
+3. ataque autenticado atravessando UDP, World e Host real;
+4. pacote visual de HIT com atacante correto;
+5. morte, um ponto em Deathmatch, lifecycle nativo e respawn com HP cheio;
+6. quatro fontes nativas alternando `Dead → Alive` sem processo gráfico.
+
+Esse marco ainda não prova o contato físico por evento de colisão da engine, linha de visão,
+fórmula por arma, queda visual no cliente ou combate bot → humano.
+
 ## Gates restantes
 
 1. validar visualmente a convergência do deslocamento nativo no cliente gráfico;
-2. implementar combate server-authoritative: janela, hitbox, dano, HIT, queda, morte e respawn;
-3. extrair da engine os eventos de animação em vez de inferi-los somente a partir do input;
-4. desativar os subsistemas de input e som não necessários ao worker;
-5. remover o código remanescente do `BotManager` sintético e os patches correspondentes;
-6. validar visualmente e sob carga múltiplos bots em todos os mapas battle.
+2. extrair hitbox, contato e eventos de animação da engine em vez de inferi-los do input;
+3. implementar e validar combate autoritativo bot → humano;
+4. validar visualmente HIT, queda, morte e respawn;
+5. substituir a política provisória pelas fórmulas por arma/equipamento;
+6. desativar os subsistemas de input e som não necessários ao worker;
+7. remover o código remanescente do `BotManager` sintético e os patches correspondentes;
+8. validar visualmente e sob carga múltiplos bots em todos os mapas battle.

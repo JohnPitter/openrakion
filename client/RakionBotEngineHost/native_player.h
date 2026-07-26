@@ -58,4 +58,10 @@ void AimNativePlayer(
     void* network,
     void* source,
     const float* target);
+void SetNativeLifecycle(
+    HMODULE engine,
+    HMODULE entities,
+    void* network,
+    void* source,
+    bool alive);
 }

@@ -103,6 +103,24 @@ public sealed class BotEngineWorkerIntegrationTests
             CancellationToken.None);
         Assert.True(HasMoved(origin, moved));
 
+        BotEngineLifecycleResult dead = await first.SetLifecycleAsync(
+            bots[0].BotId,
+            BotEngineLifecycle.Dead,
+            CancellationToken.None);
+        BotEnginePlayerSnapshot deadSnapshot = await first.SnapshotAsync(
+            bots[0].BotId, CancellationToken.None);
+        Assert.Equal(BotEngineLifecycle.Dead, dead.State);
+        Assert.False(deadSnapshot.Alive);
+
+        BotEngineLifecycleResult alive = await first.SetLifecycleAsync(
+            bots[0].BotId,
+            BotEngineLifecycle.Alive,
+            CancellationToken.None);
+        BotEnginePlayerSnapshot aliveSnapshot = await first.SnapshotAsync(
+            bots[0].BotId, CancellationToken.None);
+        Assert.Equal(BotEngineLifecycle.Alive, alive.State);
+        Assert.True(aliveSnapshot.Alive);
+
         await supervisor.StopFieldAsync(field.FieldId, CancellationToken.None);
         Assert.False(first.IsRunning);
         Assert.Equal(0, supervisor.Count);

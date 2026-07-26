@@ -58,6 +58,9 @@ private:
     Response HandleAim(
         const Request& request,
         EngineRuntime& runtime);
+    Response HandleLifecycle(
+        const Request& request,
+        EngineRuntime& runtime);
 
     template<typename T>
     static std::vector<std::uint8_t> Encode(const T& value)

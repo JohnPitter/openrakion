@@ -77,7 +77,7 @@ namespace RakionServer.World.Domain
             rec.VoteState = 0;
             rec.Position = default;
             rec.Heading = 0;
-            rec.NextBotMeleeAttackMs = 0;
+            rec.Combat.Reset();
         }
 
         /// <summary>True se ainda há algum humano (Session != null) ocupando o field.</summary>

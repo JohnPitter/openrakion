@@ -70,4 +70,16 @@ void EngineRuntime::Aim(std::uint32_t botId, const float* target)
         throw std::runtime_error("Engine sem network para orientar o bot.");
     AimNativePlayer(engine_, *network, source->second, target);
 }
+
+void EngineRuntime::SetLifecycle(std::uint32_t botId, bool alive)
+{
+    const auto source = botSources_.find(botId);
+    if (source == botSources_.end())
+        throw std::invalid_argument("Bot não existe neste worker.");
+    auto** network = reinterpret_cast<void**>(ResolveRequired(NetworkSymbol));
+    if (!network || !*network)
+        throw std::runtime_error("Engine sem network para lifecycle.");
+    SetNativeLifecycle(
+        engine_, entities_, *network, source->second, alive);
+}
 }

@@ -6,7 +6,7 @@
 namespace bot_engine::protocol
 {
 constexpr std::uint32_t Magic = 0x4842524F;
-constexpr std::uint16_t Version = 5;
+constexpr std::uint16_t Version = 6;
 constexpr std::uint16_t ResponseFlag = 0x8000;
 constexpr std::uint32_t MaximumPayloadSize = 4096;
 constexpr std::size_t WorldNameCapacity = 260;
@@ -24,6 +24,7 @@ enum class MessageType : std::uint16_t
     Snapshot = 7,
     Input = 8,
     Aim = 9,
+    Lifecycle = 10,
 };
 
 enum class Status : std::uint32_t
@@ -45,6 +46,7 @@ enum Capability : std::uint32_t
     NativeSnapshots = 1U << 3,
     NativeInputs = 1U << 4,
     NativeTargeting = 1U << 5,
+    NativeLifecycle = 1U << 6,
 };
 
 #pragma pack(push, 1)
@@ -155,6 +157,24 @@ struct AimResponse
 {
     std::uint32_t botId;
 };
+
+enum class LifecycleState : std::uint32_t
+{
+    Alive = 1,
+    Dead = 2,
+};
+
+struct LifecycleRequest
+{
+    std::uint32_t botId;
+    LifecycleState state;
+};
+
+struct LifecycleResponse
+{
+    std::uint32_t botId;
+    LifecycleState state;
+};
 #pragma pack(pop)
 
 static_assert(sizeof(FrameHeader) == 20);
@@ -172,4 +192,6 @@ static_assert(sizeof(InputRequest) == 8);
 static_assert(sizeof(InputResponse) == 8);
 static_assert(sizeof(AimRequest) == 16);
 static_assert(sizeof(AimResponse) == 4);
+static_assert(sizeof(LifecycleRequest) == 8);
+static_assert(sizeof(LifecycleResponse) == 8);
 }

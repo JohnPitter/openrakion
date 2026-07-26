@@ -87,3 +87,13 @@ internal readonly record struct BotEngineAim(
     float X,
     float Y,
     float Z);
+
+internal enum BotEngineLifecycle : uint
+{
+    Alive = 1,
+    Dead = 2,
+}
+
+internal readonly record struct BotEngineLifecycleResult(
+    uint BotId,
+    BotEngineLifecycle State);

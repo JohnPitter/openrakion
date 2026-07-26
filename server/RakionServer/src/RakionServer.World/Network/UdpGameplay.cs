@@ -18,30 +18,22 @@ namespace RakionServer.World.Network
     /// O endpoint é autenticado pelo slot, IP TCP e chave de sessão enviada no 0x0c.
     /// Depois do handshake, apenas o endpoint exato pode enviar input e ações ao field.
     /// </summary>
-    public sealed class UdpGameplay
+    public sealed class UdpGameplay(
+        WorldServer world, int port, bool relayCompatibilityEnabled,
+        int relayPacketsPerSecond, int relayBurst)
     {
         public const int MaxPacket = 0x4b0; // 1200, igual ao recvfrom do binario
         private const byte GameplayFeedbackOp0 = 0x15;
         private const byte GameplayFeedbackOp1 = 0x83;
         private const byte DefaultGameplayState = 0x0a;
 
-        private readonly WorldServer _world;
-        private readonly int _port;
-        private readonly bool _relayCompatibilityEnabled;
-        private readonly UdpRelayLimiterRegistry _relayLimits;
+        private readonly WorldServer _world = world;
+        private readonly int _port = port;
+        private readonly bool _relayCompatibilityEnabled = relayCompatibilityEnabled;
+        private readonly UdpRelayLimiterRegistry _relayLimits = new UdpRelayLimiterRegistry(relayPacketsPerSecond, relayBurst);
         private Socket? _sock;
         private CancellationTokenSource? _cts;
         private readonly byte[] _rx = new byte[2048];
-
-        public UdpGameplay(
-            WorldServer world, int port, bool relayCompatibilityEnabled,
-            int relayPacketsPerSecond, int relayBurst)
-        {
-            _world = world;
-            _port = port;
-            _relayCompatibilityEnabled = relayCompatibilityEnabled;
-            _relayLimits = new UdpRelayLimiterRegistry(relayPacketsPerSecond, relayBurst);
-        }
 
         public void Start()
         {
@@ -123,7 +115,7 @@ namespace RakionServer.World.Network
 
         public void SendTick(IPEndPoint to, byte seq, byte state = DefaultGameplayState)
         {
-            byte[] p = { GameplayFeedbackOp0, GameplayFeedbackOp1, seq, 0x00, 0x00, 0x00, 0x00, state };
+            byte[] p = [GameplayFeedbackOp0, GameplayFeedbackOp1, seq, 0x00, 0x00, 0x00, 0x00, state];
             try { _sock?.SendTo(p, to); }
             catch (Exception ex) { Log.Debug("udp", "tick {0}: {1}", to, ex.Message); }
         }
@@ -316,8 +308,10 @@ namespace RakionServer.World.Network
                 UpdateHumanPose(sender, position, heading);
                 return;
             }
-            // 0x0311 kind=Attack confirma apenas o início da animação. Não prova contato e nunca
-            // pode reduzir HP. O dano do bot exige um evento de impacto separado do cliente-vítima.
+            if (type == GameplayActionDatagram.AnimationType &&
+                GameplayActionDatagram.TryParseAnimation(packet, out var animation) &&
+                animation.Kind == PlayerAnimationKind.Attack)
+                _world.RegisterHumanBotAttack(sender, animation);
         }
 
         private void UpdateHumanPose(ClientSession sender, BotVector position, float heading)

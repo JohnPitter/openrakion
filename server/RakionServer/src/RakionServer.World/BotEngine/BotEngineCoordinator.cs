@@ -8,32 +8,22 @@ using RakionServer.World.Domain;
 
 namespace RakionServer.World.BotEngine;
 
-internal sealed class BotEngineCoordinator : IAsyncDisposable
+internal sealed class BotEngineCoordinator(WorldConfig.BotEngineConfig config) : IAsyncDisposable
 {
-    private sealed class FieldSession
+    private sealed class FieldSession(BotEngineWorker worker)
     {
-        public FieldSession(BotEngineWorker worker)
-        {
-            Worker = worker;
-        }
-
-        public BotEngineWorker Worker { get; }
+        public BotEngineWorker Worker { get; } = worker;
         public ConcurrentDictionary<byte, uint> BotIds { get; } = new();
+        public ConcurrentDictionary<byte, uint> LifecycleSequences { get; } = new();
     }
 
-    private readonly WorldConfig.BotEngineConfig _config;
-    private readonly BotEngineSupervisor _supervisor;
-    private readonly ConcurrentDictionary<int, FieldSession> _sessions = new();
-
-    public BotEngineCoordinator(WorldConfig.BotEngineConfig config)
-    {
-        _config = config;
-        _supervisor = new BotEngineSupervisor(new BotEngineWorkerOptions(
+    private readonly WorldConfig.BotEngineConfig _config = config;
+    private readonly BotEngineSupervisor _supervisor = new BotEngineSupervisor(new BotEngineWorkerOptions(
             config.HostPath,
             config.ClientRoot,
             TimeSpan.FromSeconds(config.StartupTimeoutSeconds),
             TimeSpan.FromSeconds(config.ShutdownTimeoutSeconds)));
-    }
+    private readonly ConcurrentDictionary<int, FieldSession> _sessions = new();
 
     public bool Enabled => _config.Enabled;
 
@@ -67,6 +57,7 @@ internal sealed class BotEngineCoordinator : IAsyncDisposable
         if (!session.BotIds.TryAdd(seat, botId))
             throw new InvalidOperationException(
                 $"Seat {seat} já possui player nativo.");
+        session.LifecycleSequences[seat] = bot.LifecycleSequence;
     }
 
     public async Task<bool> TickFieldAsync(
@@ -77,6 +68,8 @@ internal sealed class BotEngineCoordinator : IAsyncDisposable
             return true;
         try
         {
+            await SynchronizeLifecyclesAsync(
+                field, session, cancellationToken).ConfigureAwait(false);
             await session.Worker.TickAsync(1, cancellationToken).ConfigureAwait(false);
             foreach (KeyValuePair<byte, uint> entry in session.BotIds)
             {
@@ -159,6 +152,50 @@ internal sealed class BotEngineCoordinator : IAsyncDisposable
         }
     }
 
+    private static async Task SynchronizeLifecyclesAsync(
+        Field field,
+        FieldSession session,
+        CancellationToken cancellationToken)
+    {
+        List<LifecycleCommand> commands = CaptureLifecycleCommands(
+            field, session);
+        foreach (LifecycleCommand command in commands)
+        {
+            await session.Worker.SetLifecycleAsync(
+                command.BotId,
+                command.State,
+                cancellationToken).ConfigureAwait(false);
+            session.LifecycleSequences[command.Seat] = command.Sequence;
+        }
+    }
+
+    private static List<LifecycleCommand> CaptureLifecycleCommands(
+        Field field,
+        FieldSession session)
+    {
+        List<LifecycleCommand> commands = [];
+        lock (field.SyncRoot)
+        {
+            foreach (KeyValuePair<byte, uint> entry in session.BotIds)
+            {
+                BotPlayer? bot = field.RecAt(entry.Key)?.Bot;
+                if (bot == null ||
+                    session.LifecycleSequences.TryGetValue(
+                        entry.Key, out uint applied) &&
+                    applied == bot.LifecycleSequence)
+                    continue;
+                commands.Add(new LifecycleCommand(
+                    entry.Key,
+                    entry.Value,
+                    bot.LifecycleSequence,
+                    bot.Alive
+                        ? BotEngineLifecycle.Alive
+                        : BotEngineLifecycle.Dead));
+            }
+        }
+        return commands;
+    }
+
     private static void ClearIntent(Field field, byte seat)
     {
         lock (field.SyncRoot)
@@ -175,4 +212,10 @@ internal sealed class BotEngineCoordinator : IAsyncDisposable
                 intent.TargetSeat,
                 new BotVector(intent.Aim.X, intent.Aim.Y, intent.Aim.Z)) == true;
     }
+
+    private readonly record struct LifecycleCommand(
+        byte Seat,
+        uint BotId,
+        uint Sequence,
+        BotEngineLifecycle State);
 }
