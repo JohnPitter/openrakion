@@ -8,8 +8,8 @@ movimentação, animações e detecção espacial. O worker não inicia `rakion.
 jogo e não admite o peer sintético como fallback.
 
 O World permanece dono do field, roster e comandos. O Host é uma infraestrutura nativa isolada por
-processo de field; a próxima borda será um contrato IPC versionado. Falha de bootstrap, hash, ABI ou
-IPC deve recusar os bots daquele field sem substituir o resultado por física aproximada.
+processo de field e expõe um contrato IPC binário versionado. Falha de bootstrap, hash, ABI ou IPC
+deve recusar os bots daquele field sem substituir o resultado por física aproximada.
 
 ## Marco 1: bootstrap autônomo
 
@@ -53,12 +53,48 @@ Em 26/07/2026, o probe carregou e encerrou `LevelsSV\Mammoth\Mammoth.wld` a part
 cliente original. A saída confirmou `worldLoaded=1`, `entitiesLoaded=1` e lista vazia de módulos
 gráficos.
 
+## Marco 2: IPC e supervisor
+
+O Host atende um named pipe local em modo byte. Cada frame possui header little-endian de 20 bytes:
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| magic | `uint32` | `0x4842524F` |
+| version | `uint16` | `1` |
+| messageType | `uint16` | bit `0x8000` indica resposta |
+| payloadSize | `uint32` | máximo de 4096 bytes |
+| correlationId | `uint32` | ecoado na resposta |
+| status | `uint32` | zero em sucesso |
+
+Os comandos disponíveis são `Hello`, `LoadField`, `Ping` e `Shutdown`. `LoadField` só aceita
+caminhos relativos sob `LevelsSV`, capacidade positiva e um único carregamento por processo. O pipe
+recusa clientes remotos e o World valida PID, versão e as capabilities `EngineBootstrap` e
+`NativeWorld` antes de carregar o mapa.
+
+`BotEngineSupervisor` mantém no máximo um worker persistente por field. Ele inicia o processo sem
+shell ou janela, drena stdout/stderr, aplica timeout ao handshake e mata a árvore do processo quando
+o encerramento cooperativo falha. Não existe ramo para iniciar o `BotManager` sintético.
+
+O smoke completo do marco executa:
+
+```powershell
+.\client\RakionBotEngineHost\build.ps1 `
+  -ClientRoot 'C:\Rakion' `
+  -RunProbe `
+  -RunIpcProbe
+```
+
+Além do smoke nativo, `BotEngineWorkerIntegrationTests` valida o processo real quando
+`RAKION_BOT_ENGINE_HOST` e `RAKION_BOT_ENGINE_CLIENT_ROOT` estão definidos. O teste comprova
+handshake, carregamento persistente do field, deduplicação do worker, ping e shutdown sem processo
+órfão.
+
 ## Gates restantes
 
-1. contrato IPC binário, explícito e versionado entre World e worker;
-2. lifecycle de um worker por field, com timeout e encerramento controlado;
-3. criação de múltiplas fontes locais no mesmo worker;
-4. associação independente de seat, sequência e personagem por fonte;
-5. produção e encaminhamento de ações nativas equivalentes às humanas;
+1. configuração e associação do supervisor ao lifecycle real de fields no World;
+2. criação de múltiplas fontes locais no mesmo worker;
+3. associação independente de seat, sequência e personagem por fonte;
+4. produção e encaminhamento de ações nativas equivalentes às humanas;
+5. desativação dos subsistemas de input e som não necessários ao worker;
 6. remoção do `BotManager` sintético e dos patches de física/animação correspondentes;
 7. validação visual e de carga com múltiplos bots.

@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include "engine_runtime.h"
+#include "pipe_server.h"
 
 namespace
 {
@@ -18,6 +19,7 @@ struct Options
 {
     std::filesystem::path clientRoot;
     std::string worldName;
+    std::wstring pipeName;
 };
 
 std::string NarrowAscii(std::wstring_view value)
@@ -45,9 +47,14 @@ Options ParseOptions(int argc, wchar_t** argv)
             options.clientRoot = argv[++index];
         else if (argument == L"--world")
             options.worldName = NarrowAscii(argv[++index]);
+        else if (argument == L"--pipe")
+            options.pipeName = argv[++index];
         else
             throw std::invalid_argument("Argumento desconhecido.");
     }
+    if (!options.pipeName.empty() && !options.worldName.empty())
+        throw std::invalid_argument(
+            "--pipe e --world são modos mutuamente exclusivos.");
     return options;
 }
 
@@ -103,6 +110,11 @@ int wmain(int argc, wchar_t** argv)
         PrintProbe(probe);
         if (!IsAccepted(probe))
             return ProbeRejected;
+        if (!options.pipeName.empty())
+        {
+            bot_engine::PipeServer server(options.pipeName);
+            return server.Run(runtime);
+        }
         if (options.worldName.empty())
             return EXIT_SUCCESS;
 
