@@ -81,13 +81,11 @@ namespace RakionServer.World.Tests
         [Fact]
         public void SynthesizeMove_PositionRoundtripsThroughReader()
         {
-            var pos = new BotVector(1234, -50, -600);
+            var pos = new BotVector(123.45f, -0.5f, -60f);
             byte[] p = BotMovement.SynthesizeMove(10, pos, 0f, 1);
 
             Assert.True(BotMovement.TryReadPosition(p, out BotVector read));
-            Assert.Equal(1234f, read.X);
-            Assert.Equal(-50f, read.Y);
-            Assert.Equal(-600f, read.Z);
+            Assert.Equal(pos, read);
         }
 
         [Fact]

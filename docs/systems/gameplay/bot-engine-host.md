@@ -176,6 +176,10 @@ real confirma admissão, seleção do alvo, input W e recebimento do `0x030A` co
 smoke isolado confirma deslocamento físico após `Aim + W`; a convergência visual desse deslocamento
 no ciclo completo de uma partida ainda é um gate pendente e não equivale a combate validado.
 
+A borda wire usa centésimos de unidade: `100` no `s16` de `0x030A` representa `1,0` na engine.
+Snapshots nativos são multiplicados por `100` somente no codec de saída, e poses humanas são
+divididas por `100` ao entrar no domínio. O Host e o cérebro trabalham sempre na unidade nativa.
+
 ## Gates restantes
 
 1. validar visualmente a convergência do deslocamento nativo no cliente gráfico;

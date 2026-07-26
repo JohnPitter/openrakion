@@ -50,6 +50,7 @@ namespace RakionServer.World.Network
     {
         public const ushort MoveType = 0x030a;
         public const int MoveSize = 26;
+        public const float PositionScale = 100f;
 
         /// <summary>Monta o 0x030A do bot: origem = <paramref name="seat"/>, posição/rumo do estado da IA.</summary>
         public static byte[] SynthesizeMove(
@@ -174,9 +175,9 @@ namespace RakionServer.World.Network
             if (packet.Length < MoveSize ||
                 BinaryPrimitives.ReadUInt16LittleEndian(packet) != MoveType) return false;
             position = new BotVector(
-                BinaryPrimitives.ReadInt16LittleEndian(packet[11..]),
-                BinaryPrimitives.ReadInt16LittleEndian(packet[13..]),
-                BinaryPrimitives.ReadInt16LittleEndian(packet[15..]));
+                FromWire(packet[11..]),
+                FromWire(packet[13..]),
+                FromWire(packet[15..]));
             short degrees = BinaryPrimitives.ReadInt16LittleEndian(packet[17..]);
             heading = NormalizeRadians(degrees * MathF.PI / 180f + MathF.PI);
             return true;
@@ -188,8 +189,14 @@ namespace RakionServer.World.Network
             return TryReadPose(packet, out position, out _);
         }
 
-        private static short ToWire(float v) =>
-            (short)Math.Clamp(MathF.Round(v), short.MinValue, short.MaxValue);
+        private static short ToWire(float value) =>
+            (short)Math.Clamp(
+                MathF.Round(value * PositionScale),
+                short.MinValue,
+                short.MaxValue);
+
+        private static float FromWire(ReadOnlySpan<byte> value) =>
+            BinaryPrimitives.ReadInt16LittleEndian(value) / PositionScale;
 
         private static short HeadingToWire(float radians)
         {

@@ -70,17 +70,17 @@ public sealed class NativeBotMovementE2ETests
         BotVector origin = botRecord.Bot!.Position;
         BotVector target = origin with
         {
-            X = origin.X + 1000f,
-            Z = origin.Z + 500f,
+            X = origin.X + 10f,
+            Z = origin.Z + 5f,
         };
         lock (field.SyncRoot)
             field.Slots[session.FieldSeat].Position = target;
         human.SendMove(
             fixture.UdpPort2,
             session.FieldSeat,
-            (short)MathF.Round(target.X),
-            (short)MathF.Round(target.Y),
-            (short)MathF.Round(target.Z));
+            ToWire(target.X),
+            ToWire(target.Y),
+            ToWire(target.Z));
         JourneyHelper.WaitUntil(
             () => botRecord.Bot!.EngineControls.HasFlag(BotControls.W),
             "World não aplicou input W à fonte nativa");
@@ -98,6 +98,9 @@ public sealed class NativeBotMovementE2ETests
         Assert.True(float.IsFinite(published.Y));
         Assert.True(float.IsFinite(published.Z));
     }
+
+    private static short ToWire(float value) =>
+        checked((short)MathF.Round(value * BotMovement.PositionScale));
 
     private static void AuthenticateGameplay(
         HeadlessWorldClient human,

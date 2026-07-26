@@ -96,14 +96,14 @@ namespace RakionServer.World.Tests.E2E
             master.SendBotTelemetryMove(
                 fixture.UdpPort2, masterSession.FieldSeat, 321, 0, -123);
             JourneyHelper.WaitUntil(
-                () => field.FindRec(masterSession)?.Position == new BotVector(321, 0, -123),
+                () => field.FindRec(masterSession)?.Position == new BotVector(3.21f, 0, -1.23f),
                 "telemetria do master não atualizou o estado autoritativo");
             AssertNoTunnelFrame(joiner);
 
             joiner.SendBotTelemetryMove(
                 fixture.UdpPort2, joinerSession.FieldSeat, -222, 0, 456);
             JourneyHelper.WaitUntil(
-                () => field.FindRec(joinerSession)?.Position == new BotVector(-222, 0, 456),
+                () => field.FindRec(joinerSession)?.Position == new BotVector(-2.22f, 0, 4.56f),
                 "telemetria do joiner não atualizou o estado autoritativo");
             AssertNoTunnelFrame(master);
 
