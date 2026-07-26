@@ -10,28 +10,51 @@
 #include "action_capture.h"
 #include "bot_telemetry.h"
 #include "compat_log.h"
+#include "headless_bot_driver.h"
 
 namespace
 {
 constexpr uint16_t BotTelemetryType = 0xb07a;
+constexpr uint16_t HeadlessBotTelemetryType = 0xb07b;
 constexpr uint32_t SendToOtherClientRva = 0x00100780;
 constexpr BYTE ExpectedSendToOtherClient[] = { 0x83, 0xec, 0x0c, 0x55, 0x8b, 0xe9 };
 constexpr uint32_t SetActionRva = 0x00102fa0;
 constexpr BYTE ExpectedSetAction[] = { 0x83, 0xec, 0x0c, 0x56, 0x57, 0x8b, 0xf1 };
+constexpr uint32_t RemoteActionRva = 0x0010dc48;
+constexpr BYTE ExpectedRemoteAction[] = {
+    0x8b, 0x44, 0x24, 0x48, 0x3a, 0x85, 0x46, 0x29, 0x00, 0x00
+};
 using SendToFn = int(WSAAPI*)(SOCKET, const char*, int, int, const sockaddr*, int);
+using SendFn = int(WSAAPI*)(SOCKET, const char*, int, int);
+using RecvFromFn = int(WSAAPI*)(SOCKET, char*, int, int, sockaddr*, int*);
 using ConnectFn = int(WSAAPI*)(SOCKET, const sockaddr*, int);
+using BindFn = int(WSAAPI*)(SOCKET, const sockaddr*, int);
 SendToFn OriginalSendTo{};
+SendFn OriginalSend{};
+RecvFromFn OriginalRecvFrom{};
 ConnectFn SystemConnect{};
+BindFn OriginalBind{};
 volatile LONG WorldEndpointFamilyPort{};
 volatile LONG WorldEndpointAddress{};
 volatile LONG WorldSocketValue{-1};
+volatile LONG PeerToPeerSocketValue{-1};
 volatile LONG ServerAddress{};
+volatile LONG PeerToPeerPort{};
 volatile LONG TelemetrySequence{};
 volatile LONG LocalActionHookEnabled{};
 volatile LONG LocalAttackLogged{};
+volatile LONG GameplayHandshakeComplete{};
 alignas(8) volatile LONG64 LastTelemetryKey{};
 uintptr_t SendToOtherClientContinue{};
 uintptr_t SetActionContinue{};
+uintptr_t RemoteActionContinue{};
+SOCKET GameplaySockets[2]{INVALID_SOCKET, INVALID_SOCKET};
+sockaddr_in HeadlessPeerEndpoints[32]{};
+volatile LONG HeadlessPeerEndpointMask{};
+
+int WSAAPI SendToHook(
+    SOCKET socket, const char* buffer, int length, int flags,
+    const sockaddr* target, int targetLength);
 
 bool IsRakionServerPort(u_short networkPort)
 {
@@ -85,10 +108,57 @@ int WSAAPI ConnectHook(SOCKET socket, const sockaddr* target, int targetLength)
     return SystemConnect(socket, destination, targetLength);
 }
 
+int WSAAPI BindHook(SOCKET socket, const sockaddr* endpoint, int endpointLength)
+{
+    const int result = OriginalBind(socket, endpoint, endpointLength);
+    if (result != SOCKET_ERROR && endpoint &&
+        endpointLength >= static_cast<int>(sizeof(sockaddr_in)) &&
+        endpoint->sa_family == AF_INET)
+    {
+        const auto& ipv4 = *reinterpret_cast<const sockaddr_in*>(endpoint);
+        const auto* bytes = reinterpret_cast<const BYTE*>(&ipv4.sin_port);
+        const uint16_t port = static_cast<uint16_t>(bytes[0] << 8 | bytes[1]);
+        if (port >= 2300 && port <= 2399)
+        {
+            InterlockedExchange(&PeerToPeerPort, port);
+            InterlockedExchange(
+                &PeerToPeerSocketValue, static_cast<LONG>(socket));
+        }
+    }
+    return result;
+}
+
 bool SameEndpoint(const sockaddr_in& left, const sockaddr_in& right)
 {
     return left.sin_family == right.sin_family && left.sin_port == right.sin_port &&
            left.sin_addr.s_addr == right.sin_addr.s_addr;
+}
+
+void RewriteHeadlessRelaySource(
+    char* buffer, int received, sockaddr* source, int sourceLength)
+{
+    if (!IsHeadlessBotDriverEnabled() || !buffer || received < 7 || !source ||
+        sourceLength < static_cast<int>(sizeof(sockaddr_in)) ||
+        source->sa_family != AF_INET)
+        return;
+
+    auto& endpoint = *reinterpret_cast<sockaddr_in*>(source);
+    const uint16_t type = *reinterpret_cast<const uint16_t*>(buffer);
+    const BYTE seat = static_cast<BYTE>(buffer[6]) & 0x1F;
+    const uint16_t sourcePort = ntohs(endpoint.sin_port);
+    if (type == 0x030F && sourcePort >= 2300 && sourcePort <= 2399)
+    {
+        HeadlessPeerEndpoints[seat] = endpoint;
+        InterlockedOr(
+            &HeadlessPeerEndpointMask, static_cast<LONG>(1UL << seat));
+        return;
+    }
+    if ((type != 0x030A && type != 0x0311) || sourcePort != 40709 ||
+        (InterlockedCompareExchange(&HeadlessPeerEndpointMask, 0, 0) &
+         static_cast<LONG>(1UL << seat)) == 0)
+        return;
+
+    endpoint = HeadlessPeerEndpoints[seat];
 }
 
 void RememberWorldEndpoint(const sockaddr* target, int targetLength)
@@ -115,6 +185,88 @@ bool ReadWorldEndpoint(sockaddr_in& endpoint)
     return true;
 }
 
+void CloseGameplaySockets()
+{
+    for (SOCKET& socket : GameplaySockets)
+    {
+        if (socket != INVALID_SOCKET) closesocket(socket);
+        socket = INVALID_SOCKET;
+    }
+}
+
+bool ResolveLocalAddress(const sockaddr_in& server, in_addr& localAddress)
+{
+    SOCKET probe = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (probe == INVALID_SOCKET) return false;
+    const int connected = connect(
+        probe, reinterpret_cast<const sockaddr*>(&server), sizeof(server));
+    sockaddr_in local{};
+    int length = sizeof(local);
+    const bool resolved = connected != SOCKET_ERROR &&
+        getsockname(probe, reinterpret_cast<sockaddr*>(&local), &length) != SOCKET_ERROR &&
+        local.sin_family == AF_INET && local.sin_addr.s_addr != INADDR_ANY;
+    closesocket(probe);
+    if (resolved) localAddress = local.sin_addr;
+    return resolved;
+}
+
+bool SendGameplayHandshake(
+    size_t index, const sockaddr_in& server, const in_addr& localAddress,
+    uint16_t networkSlot, uint32_t sessionKey, uint16_t advertisedPort)
+{
+    SOCKET socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (socket == INVALID_SOCKET) return false;
+
+    sockaddr_in local{};
+    local.sin_family = AF_INET;
+    local.sin_addr = localAddress;
+    if (bind(socket, reinterpret_cast<const sockaddr*>(&local), sizeof(local)) ==
+        SOCKET_ERROR)
+    {
+        closesocket(socket);
+        return false;
+    }
+
+    DWORD timeout = 1000;
+    setsockopt(
+        socket, SOL_SOCKET, SO_RCVTIMEO,
+        reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+
+    BYTE packet[23]{};
+    const uint16_t type = static_cast<uint16_t>(0x0201 + index);
+    const uint32_t echoData =
+        0x48444c53u + static_cast<uint32_t>(networkSlot) + static_cast<uint32_t>(index);
+    std::memcpy(packet, &type, sizeof(type));
+    std::memcpy(packet + 7, &networkSlot, sizeof(networkSlot));
+    std::memcpy(packet + 9, &sessionKey, sizeof(sessionKey));
+    std::memcpy(packet + 13, &localAddress.s_addr, sizeof(localAddress.s_addr));
+    const uint16_t networkAdvertisedPort = htons(advertisedPort);
+    std::memcpy(packet + 17, &networkAdvertisedPort, sizeof(networkAdvertisedPort));
+    std::memcpy(packet + 19, &echoData, sizeof(echoData));
+
+    if (SendToHook(
+            socket, reinterpret_cast<const char*>(packet), sizeof(packet), 0,
+            reinterpret_cast<const sockaddr*>(&server), sizeof(server)) == SOCKET_ERROR)
+    {
+        closesocket(socket);
+        return false;
+    }
+
+    BYTE echo[12]{};
+    const int received = recv(socket, reinterpret_cast<char*>(echo), sizeof(echo), 0);
+    uint32_t echoed{};
+    if (received == sizeof(echo)) std::memcpy(&echoed, echo + 2, sizeof(echoed));
+    if (received != sizeof(echo) || echo[0] != 0x01 || echo[1] != 0x02 ||
+        echo[6] != index || echo[7] != index || echoed != echoData)
+    {
+        closesocket(socket);
+        return false;
+    }
+
+    GameplaySockets[index] = socket;
+    return true;
+}
+
 bool IsBotTelemetryInput(const char* buffer, int length, uint16_t& type, uint32_t& sequence)
 {
     if (!buffer || length < 10) return false;
@@ -136,6 +288,14 @@ int WSAAPI SendToHook(
 {
     sockaddr_in redirected{};
     const sockaddr* destination = RedirectServerEndpoint(target, targetLength, redirected);
+    if (destination && destination->sa_family == AF_INET &&
+        targetLength >= static_cast<int>(sizeof(sockaddr_in)) &&
+        length > 0 && length <= 0xffff)
+    {
+        const auto& endpoint = *reinterpret_cast<const sockaddr_in*>(destination);
+        CaptureProviderPacket(
+            ntohs(endpoint.sin_port), buffer, static_cast<uint16_t>(length));
+    }
     if (buffer && length >= 2 && static_cast<BYTE>(buffer[0]) == 0x02 &&
         static_cast<BYTE>(buffer[1]) == 0x02)
     {
@@ -166,43 +326,117 @@ int WSAAPI SendToHook(
     return OriginalSendTo(socket, buffer, length, flags, destination, targetLength);
 }
 
-void __stdcall MirrorLocalAction(uint32_t type, const void* message)
+int WSAAPI SendHook(SOCKET socket, const char* buffer, int length, int flags)
 {
-    if (!message) return;
+    sockaddr_in endpoint{};
+    int endpointLength = sizeof(endpoint);
+    if (getpeername(
+            socket, reinterpret_cast<sockaddr*>(&endpoint), &endpointLength) != SOCKET_ERROR &&
+        endpoint.sin_family == AF_INET && length > 0 && length <= 0xffff)
+    {
+        CaptureProviderPacket(
+            ntohs(endpoint.sin_port), buffer, static_cast<uint16_t>(length));
+    }
+    return OriginalSend(socket, buffer, length, flags);
+}
+
+int WSAAPI RecvFromHook(
+    SOCKET socket, char* buffer, int length, int flags,
+    sockaddr* source, int* sourceLength)
+{
+    const int received = OriginalRecvFrom(
+        socket, buffer, length, flags, source, sourceLength);
+    if (received > 0 && received <= 0xffff && source && sourceLength &&
+        *sourceLength >= static_cast<int>(sizeof(sockaddr_in)) &&
+        source->sa_family == AF_INET)
+    {
+        const auto& endpoint = *reinterpret_cast<const sockaddr_in*>(source);
+        CaptureInboundPacket(
+            ntohs(endpoint.sin_port), buffer, static_cast<uint16_t>(received));
+        RewriteHeadlessRelaySource(
+            buffer, received, source, *sourceLength);
+        const uint16_t sourcePort = ntohs(endpoint.sin_port);
+        if (sourcePort >= 2300 && sourcePort <= 2399)
+            QueueHeadlessPeerPacket(buffer, static_cast<uint16_t>(received));
+    }
+    return received;
+}
+
+int __stdcall MirrorLocalAction(uint32_t type, const void* message)
+{
+    if (!message) return 0;
     __try
     {
         const auto* bytes = static_cast<const BYTE*>(message);
         const uint16_t payloadLength = *reinterpret_cast<const uint16_t*>(bytes + 0x3ea);
         const BYTE* payload = bytes + 2;
         CapturePeerAction(static_cast<uint16_t>(type), payload, payloadLength);
-        if ((type != 0x030a && type != 0x0311) || !OriginalSendTo) return;
+        const bool gameplayAction = type == 0x030a || type == 0x0311;
+        if (IsHeadlessBotDriverEnabled() && gameplayAction &&
+            !IsHeadlessGameplayReady())
+            return 1;
+        if (!gameplayAction || !OriginalSendTo) return 0;
         const bool movement = type == 0x030a && payloadLength == 19;
         const bool attack = type == 0x0311 && payloadLength == 3 && payload[1] == 1;
-        if (!movement && !attack) return;
+        if (!movement && !attack) return 0;
 
         sockaddr_in world{};
         const SOCKET socket = static_cast<SOCKET>(
             InterlockedCompareExchange(&WorldSocketValue, -1, -1));
-        if (socket == INVALID_SOCKET || !ReadWorldEndpoint(world)) return;
+        if (socket == INVALID_SOCKET || !ReadWorldEndpoint(world)) return 0;
+
+        BYTE gameplay[26]{};
+        const uint16_t innerLength = static_cast<uint16_t>(7 + payloadLength);
+        gameplay[0] = static_cast<BYTE>(type);
+        gameplay[1] = static_cast<BYTE>(type >> 8);
+        const uint32_t sequence = static_cast<uint32_t>(InterlockedIncrement(&TelemetrySequence));
+        std::memcpy(gameplay + 2, &sequence, sizeof(sequence));
+        gameplay[6] = movement ? static_cast<BYTE>(payload[2] & 0x1f) : payload[0];
+        std::memcpy(gameplay + 7, payload, payloadLength);
+
+        bool sentDirect = false;
+        if (IsHeadlessBotDriverEnabled())
+        {
+            const SOCKET peerSocket = static_cast<SOCKET>(
+                InterlockedCompareExchange(&PeerToPeerSocketValue, -1, -1));
+            const ULONG mask = static_cast<ULONG>(
+                InterlockedCompareExchange(&HeadlessPeerEndpointMask, 0, 0));
+            if (peerSocket != INVALID_SOCKET)
+            {
+                for (BYTE seat = 0; seat < 32; ++seat)
+                {
+                    if ((mask & (1UL << seat)) == 0) continue;
+                    const sockaddr_in& peer = HeadlessPeerEndpoints[seat];
+                    if (OriginalSendTo(
+                            peerSocket,
+                            reinterpret_cast<const char*>(gameplay),
+                            innerLength,
+                            0,
+                            reinterpret_cast<const sockaddr*>(&peer),
+                            sizeof(peer)) != SOCKET_ERROR)
+                        sentDirect = true;
+                }
+            }
+        }
 
         BYTE packet[30]{};
-        const uint16_t innerLength = static_cast<uint16_t>(7 + payloadLength);
-        packet[0] = static_cast<BYTE>(BotTelemetryType);
-        packet[1] = static_cast<BYTE>(BotTelemetryType >> 8);
+        const uint16_t envelopeType =
+            IsHeadlessBotDriverEnabled() && !sentDirect
+            ? HeadlessBotTelemetryType
+            : BotTelemetryType;
+        packet[0] = static_cast<BYTE>(envelopeType);
+        packet[1] = static_cast<BYTE>(envelopeType >> 8);
         std::memcpy(packet + 2, &innerLength, sizeof(innerLength));
-        packet[4] = static_cast<BYTE>(type);
-        packet[5] = static_cast<BYTE>(type >> 8);
-        const uint32_t sequence = static_cast<uint32_t>(InterlockedIncrement(&TelemetrySequence));
-        std::memcpy(packet + 6, &sequence, sizeof(sequence));
-        packet[10] = movement ? static_cast<BYTE>(payload[2] & 0x1f) : payload[0];
-        std::memcpy(packet + 11, payload, payloadLength);
+        std::memcpy(packet + 4, gameplay, innerLength);
         OriginalSendTo(socket, reinterpret_cast<const char*>(packet), innerLength + 4, 0,
             reinterpret_cast<const sockaddr*>(&world), sizeof(world));
         if (attack && InterlockedExchange(&LocalAttackLogged, 1) == 0)
             CompatLog("primeiro ataque humano espelhado ao World para validar hit no bot");
+        return 0;
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
+        return 0;
     }
 }
 
@@ -215,12 +449,17 @@ __declspec(naked) void SendToOtherClientHook()
         push dword ptr [esp + 44]
         push dword ptr [esp + 44]
         call MirrorLocalAction
+        mov dword ptr [esp + 28], eax
         popad
         popfd
+        test eax, eax
+        jne skipOriginalAction
         sub esp, 0x0c
         push ebp
         mov ebp, ecx
         jmp dword ptr [SendToOtherClientContinue]
+    skipOriginalAction:
+        ret 0x08
     }
 }
 
@@ -248,8 +487,9 @@ bool InstallLocalActionHook(HMODULE engine)
     return true;
 }
 
-void __stdcall CaptureSetAction(const void* source, const void* action)
+void __stdcall PrepareSetAction(const void* source, void* action)
 {
+    ApplyHeadlessBotAction(source, action);
     CapturePlayerAction(source, action);
 }
 
@@ -263,7 +503,7 @@ __declspec(naked) void SetActionHook()
         mov edx, dword ptr [esp + 40]
         push edx
         push eax
-        call CaptureSetAction
+        call PrepareSetAction
         popad
         popfd
         sub esp, 0x0c
@@ -274,9 +514,9 @@ __declspec(naked) void SetActionHook()
     }
 }
 
-bool InstallSetActionCaptureHook(HMODULE engine)
+bool InstallSetActionHook(HMODULE engine)
 {
-    if (!IsActionCaptureEnabled()) return true;
+    if (!IsActionCaptureEnabled() && !IsHeadlessBotDriverEnabled()) return true;
     auto* patch = reinterpret_cast<BYTE*>(engine) + SetActionRva;
     if (std::memcmp(patch, ExpectedSetAction, sizeof(ExpectedSetAction)) != 0)
         return false;
@@ -296,6 +536,53 @@ bool InstallSetActionCaptureHook(HMODULE engine)
     std::memcpy(patch, detour, sizeof(detour));
     VirtualProtect(patch, sizeof(ExpectedSetAction), oldProtection, &oldProtection);
     FlushInstructionCache(GetCurrentProcess(), patch, sizeof(ExpectedSetAction));
+    return true;
+}
+
+void __stdcall CaptureRemoteAction(const void* action)
+{
+    CaptureRemotePlayerAction(action);
+}
+
+__declspec(naked) void RemoteActionHook()
+{
+    __asm
+    {
+        pushfd
+        pushad
+        lea eax, dword ptr [esp + 0x6c]
+        push eax
+        call CaptureRemoteAction
+        popad
+        popfd
+        mov eax, dword ptr [esp + 0x48]
+        cmp al, byte ptr [ebp + 0x2946]
+        jmp dword ptr [RemoteActionContinue]
+    }
+}
+
+bool InstallRemoteActionHook(HMODULE engine)
+{
+    if (!IsActionCaptureEnabled()) return true;
+    auto* patch = reinterpret_cast<BYTE*>(engine) + RemoteActionRva;
+    if (std::memcmp(patch, ExpectedRemoteAction, sizeof(ExpectedRemoteAction)) != 0)
+        return false;
+    RemoteActionContinue = reinterpret_cast<uintptr_t>(
+        patch + sizeof(ExpectedRemoteAction));
+    DWORD oldProtection{};
+    if (!VirtualProtect(
+            patch, sizeof(ExpectedRemoteAction), PAGE_EXECUTE_READWRITE, &oldProtection))
+        return false;
+
+    BYTE detour[sizeof(ExpectedRemoteAction)]{ 0xe9 };
+    const int32_t displacement = static_cast<int32_t>(
+        reinterpret_cast<uintptr_t>(&RemoteActionHook) -
+        (reinterpret_cast<uintptr_t>(patch) + 5));
+    std::memcpy(detour + 1, &displacement, sizeof(displacement));
+    std::memset(detour + 5, 0x90, sizeof(detour) - 5);
+    std::memcpy(patch, detour, sizeof(detour));
+    VirtualProtect(patch, sizeof(ExpectedRemoteAction), oldProtection, &oldProtection);
+    FlushInstructionCache(GetCurrentProcess(), patch, sizeof(ExpectedRemoteAction));
     return true;
 }
 
@@ -331,6 +618,146 @@ bool InstallSendToHook(HMODULE module)
                            oldProtection, &oldProtection);
             FlushInstructionCache(GetCurrentProcess(), &imports->u1.Function,
                                   sizeof(imports->u1.Function));
+            return true;
+        }
+    }
+    return false;
+}
+
+bool InstallSendHook(HMODULE module)
+{
+    auto* base = reinterpret_cast<BYTE*>(module);
+    auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) return false;
+    auto* nt = reinterpret_cast<IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE) return false;
+    const auto& directory = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    if (directory.VirtualAddress == 0) return false;
+
+    auto* descriptor = reinterpret_cast<IMAGE_IMPORT_DESCRIPTOR*>(
+        base + directory.VirtualAddress);
+    for (; descriptor->Name != 0; ++descriptor)
+    {
+        const char* library = reinterpret_cast<const char*>(base + descriptor->Name);
+        if (_stricmp(library, "wsock32.dll") != 0) continue;
+        auto* names = reinterpret_cast<IMAGE_THUNK_DATA*>(
+            base + descriptor->OriginalFirstThunk);
+        auto* imports = reinterpret_cast<IMAGE_THUNK_DATA*>(
+            base + descriptor->FirstThunk);
+        for (; names->u1.AddressOfData != 0; ++names, ++imports)
+        {
+            if (IMAGE_SNAP_BY_ORDINAL(names->u1.Ordinal)) continue;
+            auto* name = reinterpret_cast<IMAGE_IMPORT_BY_NAME*>(
+                base + names->u1.AddressOfData);
+            if (std::strcmp(reinterpret_cast<const char*>(name->Name), "send") != 0)
+                continue;
+            OriginalSend = reinterpret_cast<SendFn>(imports->u1.Function);
+            DWORD oldProtection{};
+            if (!VirtualProtect(
+                    &imports->u1.Function, sizeof(imports->u1.Function),
+                    PAGE_READWRITE, &oldProtection))
+                return false;
+            imports->u1.Function = reinterpret_cast<ULONG_PTR>(&SendHook);
+            VirtualProtect(
+                &imports->u1.Function, sizeof(imports->u1.Function),
+                oldProtection, &oldProtection);
+            FlushInstructionCache(
+                GetCurrentProcess(), &imports->u1.Function,
+                sizeof(imports->u1.Function));
+            return true;
+        }
+    }
+    return false;
+}
+
+bool InstallRecvFromHook(HMODULE module)
+{
+    auto* base = reinterpret_cast<BYTE*>(module);
+    auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) return false;
+    auto* nt = reinterpret_cast<IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE) return false;
+    const auto& directory = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    if (directory.VirtualAddress == 0) return false;
+
+    auto* descriptor = reinterpret_cast<IMAGE_IMPORT_DESCRIPTOR*>(
+        base + directory.VirtualAddress);
+    for (; descriptor->Name != 0; ++descriptor)
+    {
+        const char* library = reinterpret_cast<const char*>(base + descriptor->Name);
+        if (_stricmp(library, "wsock32.dll") != 0) continue;
+        auto* names = reinterpret_cast<IMAGE_THUNK_DATA*>(
+            base + descriptor->OriginalFirstThunk);
+        auto* imports = reinterpret_cast<IMAGE_THUNK_DATA*>(
+            base + descriptor->FirstThunk);
+        for (; names->u1.AddressOfData != 0; ++names, ++imports)
+        {
+            if (IMAGE_SNAP_BY_ORDINAL(names->u1.Ordinal)) continue;
+            auto* name = reinterpret_cast<IMAGE_IMPORT_BY_NAME*>(
+                base + names->u1.AddressOfData);
+            if (std::strcmp(
+                    reinterpret_cast<const char*>(name->Name), "recvfrom") != 0)
+                continue;
+            OriginalRecvFrom = reinterpret_cast<RecvFromFn>(imports->u1.Function);
+            DWORD oldProtection{};
+            if (!VirtualProtect(
+                    &imports->u1.Function, sizeof(imports->u1.Function),
+                    PAGE_READWRITE, &oldProtection))
+                return false;
+            imports->u1.Function = reinterpret_cast<ULONG_PTR>(&RecvFromHook);
+            VirtualProtect(
+                &imports->u1.Function, sizeof(imports->u1.Function),
+                oldProtection, &oldProtection);
+            FlushInstructionCache(
+                GetCurrentProcess(), &imports->u1.Function,
+                sizeof(imports->u1.Function));
+            return true;
+        }
+    }
+    return false;
+}
+
+bool InstallBindHook(HMODULE module)
+{
+    auto* base = reinterpret_cast<BYTE*>(module);
+    auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) return false;
+    auto* nt = reinterpret_cast<IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE) return false;
+    const auto& directory = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    if (directory.VirtualAddress == 0) return false;
+
+    auto* descriptor = reinterpret_cast<IMAGE_IMPORT_DESCRIPTOR*>(
+        base + directory.VirtualAddress);
+    for (; descriptor->Name != 0; ++descriptor)
+    {
+        const char* library = reinterpret_cast<const char*>(base + descriptor->Name);
+        if (_stricmp(library, "wsock32.dll") != 0) continue;
+        auto* names = reinterpret_cast<IMAGE_THUNK_DATA*>(
+            base + descriptor->OriginalFirstThunk);
+        auto* imports = reinterpret_cast<IMAGE_THUNK_DATA*>(
+            base + descriptor->FirstThunk);
+        for (; names->u1.AddressOfData != 0; ++names, ++imports)
+        {
+            if (IMAGE_SNAP_BY_ORDINAL(names->u1.Ordinal)) continue;
+            auto* name = reinterpret_cast<IMAGE_IMPORT_BY_NAME*>(
+                base + names->u1.AddressOfData);
+            if (std::strcmp(
+                    reinterpret_cast<const char*>(name->Name), "bind") != 0)
+                continue;
+            OriginalBind = reinterpret_cast<BindFn>(imports->u1.Function);
+            DWORD oldProtection{};
+            if (!VirtualProtect(
+                    &imports->u1.Function, sizeof(imports->u1.Function),
+                    PAGE_READWRITE, &oldProtection))
+                return false;
+            imports->u1.Function = reinterpret_cast<ULONG_PTR>(&BindHook);
+            VirtualProtect(
+                &imports->u1.Function, sizeof(imports->u1.Function),
+                oldProtection, &oldProtection);
+            FlushInstructionCache(
+                GetCurrentProcess(), &imports->u1.Function,
+                sizeof(imports->u1.Function));
             return true;
         }
     }
@@ -394,6 +821,49 @@ bool TryGetWorldLocalPort(uint16_t& port)
     return port != 0;
 }
 
+bool TryGetPeerToPeerPort(uint16_t& port)
+{
+    const LONG value = InterlockedCompareExchange(&PeerToPeerPort, 0, 0);
+    if (value <= 0 || value > 0xffff) return false;
+    port = static_cast<uint16_t>(value);
+    return true;
+}
+
+bool EnsureWorldUdpHandshake(
+    uint16_t networkSlot, uint32_t sessionKey, uint16_t advertisedPort)
+{
+    if (InterlockedCompareExchange(&GameplayHandshakeComplete, 0, 0) != 0)
+        return true;
+    if (!OriginalSendTo || sessionKey == 0 || advertisedPort == 0)
+        return false;
+
+    uint32_t address{};
+    if (!TryGetServerAddress(address)) return false;
+    sockaddr_in server{};
+    server.sin_family = AF_INET;
+    server.sin_addr.s_addr = address;
+    server.sin_port = htons(40708);
+
+    in_addr localAddress{};
+    if (!ResolveLocalAddress(server, localAddress)) return false;
+
+    CloseGameplaySockets();
+    for (size_t index = 0; index < _countof(GameplaySockets); ++index)
+    {
+        server.sin_port = htons(static_cast<u_short>(40708 + index));
+        if (!SendGameplayHandshake(
+                index, server, localAddress, networkSlot, sessionKey, advertisedPort))
+        {
+            CloseGameplaySockets();
+            return false;
+        }
+    }
+
+    InterlockedExchange(&GameplayHandshakeComplete, 1);
+    CompatLog("handshake UDP headless autenticado nas duas portas do World");
+    return true;
+}
+
 bool TryGetServerAddress(uint32_t& address)
 {
     const LONG value = InterlockedCompareExchange(&ServerAddress, 0, 0);
@@ -440,9 +910,13 @@ bool InstallBotTelemetryHook()
         HMODULE engine = GetModuleHandleW(L"engine.dll");
         if (engine)
         {
-            if (!InstallConnectHook(engine, "wsock32.dll") || !InstallSendToHook(engine))
+            if (!InstallConnectHook(engine, "wsock32.dll") ||
+                !InstallSendToHook(engine) || !InstallSendHook(engine) ||
+                !InstallRecvFromHook(engine) || !InstallBindHook(engine))
                 return false;
-            return InstallLocalActionHook(engine) && InstallSetActionCaptureHook(engine);
+            return InstallLocalActionHook(engine) && InstallSetActionHook(engine) &&
+                InstallRemoteActionHook(engine) &&
+                InstallHeadlessRemotePlayerTrace(engine);
         }
         Sleep(100);
     }

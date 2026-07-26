@@ -36,16 +36,22 @@ $patchSources = @(
     'headless_mode.cpp',
     'headless_crc.cpp',
     'headless_world_session.cpp',
+    'headless_bot_driver.cpp',
+    'headless_navigation.cpp',
     'bot_telemetry.cpp',
     'action_capture.cpp',
     'compat_log.cpp'
 ) | ForEach-Object { '"{0}"' -f (Join-Path $PSScriptRoot $_) }
-$patch = 'call "{0}" >nul && cl /nologo /std:c++20 /O2 /MT /EHsc /LD /W4 /WX {1} /link /Brepro user32.lib /OUT:"{2}"' -f `
+$patch = 'call "{0}" >nul && cl /nologo /std:c++20 /O2 /MT /EHsc /LD /W4 /WX {1} /link /Brepro user32.lib ws2_32.lib /OUT:"{2}"' -f `
     $vcvars, ($patchSources -join ' '), (Join-Path $out 'RakionClientPatch.dll')
 $proxy = 'call "{0}" >nul && cl /nologo /std:c++20 /O2 /MT /EHsc /LD /W4 /WX "{1}" /link /Brepro /DEF:"{2}" /OUT:"{3}"' -f `
     $vcvars, (Join-Path $PSScriptRoot 'version_proxy.cpp'), (Join-Path $PSScriptRoot 'version_proxy.def'), (Join-Path $out 'version.dll')
 $smoke = 'call "{0}" >nul && cl /nologo /std:c++20 /O2 /MT /EHsc /W4 /WX "{1}" /link /Brepro /OUT:"{2}"' -f `
     $vcvars, (Join-Path $PSScriptRoot 'proxy_smoke.cpp'), (Join-Path $out 'proxy_smoke.exe')
+$navigationTest = 'call "{0}" >nul && cl /nologo /std:c++20 /O2 /MT /EHsc /W4 /WX "{1}" "{2}" /link /Brepro /OUT:"{3}"' -f `
+    $vcvars, (Join-Path $PSScriptRoot 'headless_navigation_tests.cpp'),
+    (Join-Path $PSScriptRoot 'headless_navigation.cpp'),
+    (Join-Path $out 'headless_navigation_tests.exe')
 
 Push-Location $out
 try
@@ -58,5 +64,9 @@ try
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     & .\proxy_smoke.exe
     if ($LASTEXITCODE -ne 0) { throw "Smoke test do proxy falhou: $LASTEXITCODE" }
+    cmd.exe /d /c $navigationTest
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    & .\headless_navigation_tests.exe
+    if ($LASTEXITCODE -ne 0) { throw "Teste do pathfinder headless falhou: $LASTEXITCODE" }
 }
 finally { Pop-Location }

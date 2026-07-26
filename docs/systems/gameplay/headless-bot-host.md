@@ -216,6 +216,28 @@ Fontes adicionais só podem ser criadas depois que a fonte primária possuir per
 válidos; chamar `AddPlayer_t` antes desse ponto não é um caminho seguro. O próximo gate é iniciar a
 partida, carregar o mapa e observar a criação da fonte local primária.
 
+## Navegação nativa
+
+O processo headless não altera diretamente a posição do personagem. O planejador isolado em
+`headless_navigation.cpp` preenche o mesmo `CPlayerAction` usado pelo cliente gráfico:
+
+- `W` e `S` controlam aproximação e recuo;
+- `A` e `D` fazem o contorno lateral;
+- `Space` é pulsado durante manobras de desvio;
+- o ataque primário só é acionado dentro do alcance configurado.
+
+Quando a distância deixa de melhorar, o planejador tenta uma diagonal com pulo, depois deslocamento
+lateral e, por último, recuo lateral. Cada manobra mantém uma direção fixa no mundo. Se o
+personagem girar para continuar olhando o alvo, o planejador recalcula se deve pressionar `A` ou
+`D`, evitando inverter o contorno ao cruzar o eixo do adversário. O lado só muda quando a tentativa
+quase não desloca o personagem ou aumenta claramente a distância.
+
+O gate dinâmico no mapa Cage foi executado com dois peers headless durante três minutos. Ambos
+usaram ações nativas, contornaram a separação central, reduziram a distância de aproximadamente
+67 para menos de 3 unidades e entraram no estado de ataque, sem crash. Esse teste valida a
+navegação e a colisão do engine; não substitui o gate visual de combate, morte e respawn no cliente
+gráfico.
+
 ## Gates de lançamento
 
 1. Processo headless inicia sem dispositivo gráfico, áudio ou janela interativa.

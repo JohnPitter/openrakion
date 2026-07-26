@@ -106,7 +106,12 @@ public sealed class HeadlessClientSession : IDisposable
             ["OPENRAKION_HEADLESS_WORLD"] = options.WorldName
         };
         if (options.Role == HeadlessClientRole.Master)
+        {
             environment["OPENRAKION_HEADLESS_ROOM"] = options.RoomName!;
+            environment["OPENRAKION_HEADLESS_MAP"] =
+                BattleMapCatalog.Resolve(options.WorldName)
+                    .ToString(CultureInfo.InvariantCulture);
+        }
         else if (options.FieldId is int fieldId)
             environment["OPENRAKION_HEADLESS_FIELD"] =
                 fieldId.ToString(CultureInfo.InvariantCulture);

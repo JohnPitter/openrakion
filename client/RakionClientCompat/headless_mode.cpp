@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "compat_log.h"
+#include "headless_bot_driver.h"
 #include "headless_mode.h"
 
 namespace
@@ -15,6 +16,8 @@ constexpr char DedicatedServerSymbol[] = "?_bDedicatedServer@@3HA";
 constexpr char NetworkSymbol[] = "?_pNetwork@@3PAVCNetworkLibrary@@A";
 constexpr char LocalPlayerCountSymbol[] =
     "?GetLocalPlayerCount@CNetworkLibrary@@QAEJXZ";
+constexpr char NetworkMainLoopSymbol[] =
+    "?MainLoop@CNetworkLibrary@@QAEXXZ";
 constexpr char InputSymbol[] = "?_pInput@@3PAVCInput@@A";
 constexpr char IsInputEnabledSymbol[] =
     "?IsInputEnabled@CInput@@QBEHXZ";
@@ -27,6 +30,7 @@ constexpr uintptr_t FieldCreateContinuationRva = 0x7d105;
 constexpr uintptr_t PlayGameUiPrimaryRva = 0x60ef1;
 constexpr uintptr_t PlayGameUiControlsRva = 0x60ef8;
 constexpr uintptr_t PlayGameUiSecondaryRva = 0x60eff;
+constexpr uintptr_t BattleHudRedrawRva = 0x5e2a0;
 constexpr std::array<BYTE, 6> ExpectedFieldRosterUiTail{
     0x8b, 0x0d, 0xd0, 0xee, 0x4f, 0x00
 };
@@ -44,6 +48,9 @@ constexpr std::array<BYTE, 5> ExpectedPlayGameUiSecondary{
 };
 constexpr std::array<BYTE, 5> NoOperationCall{
     0x90, 0x90, 0x90, 0x90, 0x90
+};
+constexpr std::array<BYTE, 7> ExpectedBattleHudRedraw{
+    0x83, 0xec, 0x14, 0x56, 0x57, 0x8b, 0xf1
 };
 volatile LONG HeadlessActive{};
 volatile LONG LastLocalPlayerCount{-1};
@@ -165,6 +172,28 @@ bool InstallFieldRosterUiBypass()
     return true;
 }
 
+bool InstallBattleHudRedrawBypass(BYTE* image)
+{
+    BYTE* target = image + BattleHudRedrawRva;
+    if (memcmp(
+            target, ExpectedBattleHudRedraw.data(),
+            ExpectedBattleHudRedraw.size()) != 0)
+        return false;
+
+    DWORD oldProtection{};
+    if (!VirtualProtect(
+            target, ExpectedBattleHudRedraw.size(),
+            PAGE_EXECUTE_READWRITE, &oldProtection))
+        return false;
+    memset(target, 0x90, ExpectedBattleHudRedraw.size());
+    target[0] = 0xc3;
+    FlushInstructionCache(
+        GetCurrentProcess(), target, ExpectedBattleHudRedraw.size());
+    VirtualProtect(
+        target, ExpectedBattleHudRedraw.size(), oldProtection, &oldProtection);
+    return true;
+}
+
 bool HasHeadlessInputApi(HMODULE engine)
 {
     return GetProcAddress(engine, InputSymbol) &&
@@ -232,6 +261,12 @@ bool ConfigureHeadlessEngine()
         CompatLog("headless recusado: API CInput necessaria para isolamento ausente");
         return false;
     }
+    auto* image = reinterpret_cast<BYTE*>(GetModuleHandleW(nullptr));
+    if (!image || !InstallBattleHudRedrawBypass(image))
+    {
+        CompatLog("headless recusado: redraw do HUD incompativel");
+        return false;
+    }
 
     InterlockedExchange(dedicated, 1);
     InterlockedExchange(&HeadlessActive, 1);
@@ -270,6 +305,27 @@ void PollHeadlessEngineState()
     _snprintf_s(message, _countof(message), _TRUNCATE,
         "headless network pronto: localPlayerCount=%d", count);
     CompatLog(message);
+}
+
+void PumpHeadlessEngineFrame()
+{
+    if (InterlockedCompareExchange(&HeadlessActive, 0, 0) == 0) return;
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    if (!engine) return;
+    auto** network = reinterpret_cast<void**>(GetProcAddress(engine, NetworkSymbol));
+    using MainLoopFn = void(__thiscall*)(void*);
+    auto mainLoop = reinterpret_cast<MainLoopFn>(
+        GetProcAddress(engine, NetworkMainLoopSymbol));
+    if (!network || !*network || !mainLoop) return;
+
+    __try
+    {
+        PumpHeadlessBotAction();
+        mainLoop(*network);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+    }
 }
 
 bool IsHeadlessFieldRosterReady()

@@ -27,6 +27,7 @@ constexpr BYTE ExpectedAddBotCreateHook[] = { 0xe9, 0xd9, 0xde, 0x0c, 0x00, 0x90
 constexpr BYTE ExpectedAddBotClickHook[] = { 0xe9, 0x86, 0xd7, 0x0c, 0x00, 0x90 };
 constexpr char LegacyGameGuardUrl[] = "http://218.145.66.176:10200";
 constexpr char DisabledGameGuardUrl[] = "http://127.0.0.1:1";
+constexpr char HeadlessVariable[] = "OPENRAKION_HEADLESS";
 uintptr_t AddBotCreateCave{};
 uintptr_t AddBotCreateContinue{};
 uintptr_t AddBotClickCave{};
@@ -38,6 +39,11 @@ using IsBattleMap = int (__cdecl*)(uint32_t);
 
 bool IsCurrentRoomBattle()
 {
+    char headless[2]{};
+    if (GetEnvironmentVariableA(
+            HeadlessVariable, headless, static_cast<DWORD>(sizeof(headless))) == 1 &&
+        headless[0] == '1')
+        return false;
     auto* image = reinterpret_cast<BYTE*>(GetModuleHandleW(nullptr));
     if (!image) return false;
     void* world = reinterpret_cast<WorldNetAccessor>(image + WorldNetAccessorRva)();

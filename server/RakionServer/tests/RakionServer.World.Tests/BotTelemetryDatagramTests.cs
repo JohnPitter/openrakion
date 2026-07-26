@@ -17,6 +17,20 @@ namespace RakionServer.World.Tests
             Assert.Equal(gameplay, decoded.ToArray());
         }
 
+        [Fact]
+        public void Wrap_HeadlessRelay_PreservesGameplayAndMarksRouting()
+        {
+            byte[] gameplay = System.Convert.FromHexString(
+                "1103630000000A0A0109");
+
+            byte[] packet = BotTelemetryDatagram.Wrap(gameplay, headlessRelay: true);
+
+            Assert.True(BotTelemetryDatagram.TryUnwrap(
+                packet, out var decoded, out bool headlessRelay));
+            Assert.True(headlessRelay);
+            Assert.Equal(gameplay, decoded.ToArray());
+        }
+
         [Theory]
         [InlineData("7AB00000")]
         [InlineData("7AB0020011")]

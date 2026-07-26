@@ -10,7 +10,6 @@
 
 #include "bot_telemetry.h"
 #include "compat_log.h"
-#include "headless_crc.h"
 #include "headless_mode.h"
 #include "headless_world_session.h"
 
@@ -36,6 +35,8 @@ constexpr char FieldGameStartSymbol[] =
     "?SendFieldGameStart@IScavengerWorldNet@@UAEXXZ";
 constexpr char FieldPlayingSymbol[] =
     "?IsGamePlaying@FieldInfo@@QAEHXZ";
+constexpr char FieldClientCountSymbol[] =
+    "?GetClientCount@FieldInfo@@QAEEXZ";
 constexpr char FieldMasterSymbol[] =
     "?IsMasterSlot@FieldInfo@@QAEHXZ";
 constexpr char FieldSeatMasterSymbol[] =
@@ -46,6 +47,7 @@ constexpr char FieldVariable[] = "OPENRAKION_HEADLESS_FIELD";
 constexpr char WorldVariable[] = "OPENRAKION_HEADLESS_WORLD";
 constexpr char RoleVariable[] = "OPENRAKION_HEADLESS_ROLE";
 constexpr char RoomVariable[] = "OPENRAKION_HEADLESS_ROOM";
+constexpr char MapVariable[] = "OPENRAKION_HEADLESS_MAP";
 constexpr char QuickJoinVariable[] = "OPENRAKION_HEADLESS_QUICK_JOIN";
 constexpr char AssignStringSymbol[] = "??4CTString@@QAEAAV0@PBD@Z";
 constexpr char StringConstructorSymbol[] = "??0CTString@@QAE@PBD@Z";
@@ -53,12 +55,18 @@ constexpr char StringDestructorSymbol[] = "??1CTString@@QAE@XZ";
 constexpr char PlayerConstructorSymbol[] =
     "??0CPlayerCharacter@@QAE@ABVCTString@@0@Z";
 constexpr char PlayerDestructorSymbol[] = "??1CPlayerCharacter@@QAE@XZ";
+constexpr char StreamExceptionFilterSymbol[] =
+    "?ExceptionFilter@CTStream@@SAHKPAU_EXCEPTION_POINTERS@@@Z";
 constexpr unsigned WorldPortNetworkOrder = 0x049f;
 constexpr unsigned char SkipHashVerification = 4;
 constexpr size_t AccountSlotCountOffset = 0x6c;
+constexpr size_t AccountNetworkSlotOffset = 0x08;
+constexpr size_t AccountUdpSessionKeyOffset = 0x0c;
 constexpr size_t CharacterRecordsOffset = 0x1338;
 constexpr size_t CharacterRecordSize = 0x424;
 constexpr size_t CharacterRecordNameOffset = 0x10;
+constexpr size_t PendingCharacterIdOffset = 0x2df4;
+constexpr size_t SelectedCharacterRecordPointerOffset = 0x368c;
 constexpr unsigned char MaximumVisibleCharacters = 4;
 constexpr uintptr_t ApplicationPointerRva = 0xfeed0;
 constexpr size_t MenuStateOffset = 0x180;
@@ -67,6 +75,7 @@ constexpr size_t GameWorldNameOffset = 0x48;
 constexpr size_t GameSessionNameOffset = 0x54;
 constexpr size_t GameJoinAddressOffset = 0x58;
 constexpr size_t GameJoinPortOffset = 0x5c;
+constexpr long GameSessionProviderPort = 25600;
 constexpr size_t GamePlayerCharactersOffset = 0x130;
 constexpr size_t GameMenuSplitScreenConfigOffset = 0x478;
 constexpr size_t GameStartSplitScreenConfigOffset = 0x47c;
@@ -75,37 +84,71 @@ constexpr size_t GameStartPlayerIndicesOffset = 0x4c8;
 constexpr size_t FieldPlayerRecordsOffset = 0x1ac;
 constexpr size_t FieldPlayerRecordSize = 0x378;
 constexpr size_t FieldPlayerAddressOffset = 0x34;
-constexpr size_t FieldPlayerObservedPortOffset = 0x38;
-constexpr size_t FieldPlayerAdvertisedPortOffset = 0x3a;
 constexpr unsigned char FieldPlayerCount = 20;
 constexpr uintptr_t StartGameRva = 0x150c0;
+constexpr uintptr_t JoinWorldArgumentRva = 0x15169;
+constexpr uintptr_t EmptyJoinWorldLiteralRva = 0x26960;
+constexpr uintptr_t StartPeerToPeerIatRva = 0x260f4;
+constexpr uintptr_t StartProviderIatRva = 0x26134;
 constexpr uintptr_t JoinSessionIatRva = 0x26150;
 constexpr uintptr_t AddPlayerIatRva = 0x261d0;
 constexpr size_t ApplicationServerWorldOffset = 0x64;
+constexpr size_t ApplicationRoomModeOffset = 0x4464;
+constexpr size_t ApplicationRoomMapOffset = 0x4465;
+constexpr size_t ApplicationRoomRoundsOffset = 0x4466;
+constexpr size_t ApplicationRoomDurationOffset = 0x4468;
+constexpr size_t ApplicationRoomFragLimitOffset = 0x446a;
+constexpr size_t ApplicationRoomMinLevelOffset = 0x446b;
+constexpr size_t ApplicationRoomMaxLevelOffset = 0x446c;
+constexpr size_t ApplicationRoomLevelRangeOffset = 0x446d;
+constexpr size_t ApplicationRoomNameOffset = 0x446e;
+constexpr size_t ApplicationRoomPasswordOffset = 0x450f;
+constexpr size_t ApplicationRoomDescriptionOffset = 0x4518;
 constexpr int PlayGameMenuState = 0x1d;
 constexpr int PeerToPeerClientMode = 4;
 constexpr DWORD FieldEnterDelayMilliseconds = 1500;
 constexpr DWORD FieldReadyDelayMilliseconds = 1500;
 constexpr DWORD MatchStartInitialDelayMilliseconds = 6000;
 constexpr DWORD MatchStartRetryMilliseconds = 1500;
+constexpr DWORD MatchRosterSettleMilliseconds = 2000;
 constexpr DWORD EngineStartDelayMilliseconds = 500;
+constexpr DWORD JoinerEngineStartDelayMilliseconds = 12000;
 constexpr DWORD EngineRetryDelayMilliseconds = 2000;
 constexpr LONG MaximumEngineStartAttempts = 3;
+constexpr UINT PollWorldMessage = WM_APP + 0x270;
 constexpr UINT StartEngineMessage = WM_APP + 0x271;
+constexpr uintptr_t ExecutableExitProcessIatRva = 0xd0a18;
+constexpr uintptr_t ExecutableExitIatRva = 0xd0dec;
+constexpr uintptr_t EngineExitProcessIatRva = 0x2151cc;
+constexpr uintptr_t EngineExitIatRva = 0x21547c;
 volatile LONG SessionState{};
 volatile LONG CharacterReadyTick{};
 volatile LONG FieldEnterTick{};
 volatile LONG MatchStartTick{};
+volatile LONG MatchRosterReadyTick{};
 volatile LONG EngineStartTick{};
 volatile LONG EngineWaitingLogged{};
 volatile LONG EngineStartPending{};
+volatile LONG WorldPollPending{};
 volatile LONG EngineStartAttempts{};
 volatile LONG EngineEndpointWaitingLogged{};
 volatile LONG EngineJoinPhase{};
+volatile LONG EngineFaultTraceCount{};
+volatile LONG EngineFaultTraceInstalled{};
 volatile LONG MasterFieldLogged{};
+volatile LONG ExitTraceInstalled{};
+volatile LONG SuppressedQueueAssertions{};
+volatile LONG HeadlessWatchdogLogged{};
+volatile LONG SelectedCharacterLayoutLogged{};
+volatile LONG BattleMapCatalogLogged{};
 HWND GameWindow{};
 WNDPROC OriginalWindowProcedure{};
 char SelectedCharacterName[13]{};
+unsigned long SelectedCharacterId{};
+void* OriginalExitProcess{};
+void* OriginalExit{};
+
+bool ReplaceImport(void** slot, void* replacement, void*& original);
 
 enum class HeadlessRole
 {
@@ -118,8 +161,17 @@ struct EngineExceptionDetails
     ULONG_PTR accessType{};
     DWORD memoryState{};
     DWORD memoryProtect{};
+    uintptr_t directReturn{};
+    uintptr_t firstArgument{};
     uintptr_t returns[5]{};
 };
+
+struct LegacyString
+{
+    void* value{};
+    long metadata{};
+};
+static_assert(sizeof(LegacyString) == 8);
 
 void CaptureEngineExceptionDetails(
     const EXCEPTION_POINTERS* exception, EngineExceptionDetails& details)
@@ -144,6 +196,11 @@ void CaptureEngineExceptionDetails(
 
     __try
     {
+        const auto* stack = reinterpret_cast<const uintptr_t*>(
+            exception->ContextRecord->Esp);
+        details.directReturn = stack[1];
+        details.firstArgument = stack[2];
+
         uintptr_t frame = exception->ContextRecord->Ebp;
         for (size_t index = 0; index < _countof(details.returns); ++index)
         {
@@ -160,6 +217,44 @@ void CaptureEngineExceptionDetails(
     }
 }
 
+void LogEngineCallerCode(uintptr_t returnAddress)
+{
+    if (returnAddress < 24) return;
+    MEMORY_BASIC_INFORMATION memory{};
+    if (VirtualQuery(
+            reinterpret_cast<void*>(returnAddress), &memory,
+            sizeof(memory)) == 0)
+        return;
+    if (memory.State != MEM_COMMIT ||
+        (memory.Protect & (PAGE_NOACCESS | PAGE_GUARD)) != 0)
+        return;
+
+    constexpr size_t ByteCount = 48;
+    const auto* start = reinterpret_cast<const BYTE*>(returnAddress - 24);
+    char message[240]{};
+    int written = _snprintf_s(
+        message, _countof(message), _TRUNCATE,
+        "headless engine: caller bytes base=%p data=",
+        start);
+    if (written < 0) return;
+    __try
+    {
+        for (size_t index = 0;
+            index < ByteCount && written + 2 < static_cast<int>(_countof(message));
+            ++index)
+        {
+            written += _snprintf_s(
+                message + written, _countof(message) - written, _TRUNCATE,
+                "%02X", start[index]);
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        return;
+    }
+    CompatLog(message);
+}
+
 int LogEngineJoinException(EXCEPTION_POINTERS* exception)
 {
     const DWORD code = exception && exception->ExceptionRecord
@@ -174,11 +269,12 @@ int LogEngineJoinException(EXCEPTION_POINTERS* exception)
     EngineExceptionDetails details{};
     CaptureEngineExceptionDetails(exception, details);
     const LONG phase = InterlockedCompareExchange(&EngineJoinPhase, 0, 0);
-    char message[520]{};
+    char message[600]{};
     _snprintf_s(message, _countof(message), _TRUNCATE,
         "headless engine: excecao no join phase=%ld code=%08lX "
         "address=%p accessType=%llu access=%p state=%08lX protect=%08lX "
         "esi=%08lX edi=%08lX ecx=%08lX edx=%08lX ebp=%08lX esp=%08lX "
+        "direct=%08IX arg0=%08IX "
         "returns=%08IX,%08IX,%08IX,%08IX,%08IX",
         phase, code, address, static_cast<unsigned long long>(details.accessType),
         reinterpret_cast<void*>(accessAddress),
@@ -186,10 +282,44 @@ int LogEngineJoinException(EXCEPTION_POINTERS* exception)
         context ? context->Esi : 0, context ? context->Edi : 0,
         context ? context->Ecx : 0, context ? context->Edx : 0,
         context ? context->Ebp : 0, context ? context->Esp : 0,
+        details.directReturn, details.firstArgument,
         details.returns[0], details.returns[1], details.returns[2],
         details.returns[3], details.returns[4]);
     CompatLog(message);
+    LogEngineCallerCode(details.directReturn);
     return EXCEPTION_EXECUTE_HANDLER;
+}
+
+int FilterEngineJoinException(EXCEPTION_POINTERS* exception)
+{
+    if (exception && exception->ExceptionRecord)
+    {
+        HMODULE engine = GetModuleHandleW(L"engine.dll");
+        using ExceptionFilterFn = int(__cdecl*)(
+            DWORD, EXCEPTION_POINTERS*);
+        auto streamFilter = engine
+            ? reinterpret_cast<ExceptionFilterFn>(
+                GetProcAddress(engine, StreamExceptionFilterSymbol))
+            : nullptr;
+        if (streamFilter &&
+            streamFilter(
+                exception->ExceptionRecord->ExceptionCode, exception) ==
+                EXCEPTION_CONTINUE_EXECUTION)
+            return EXCEPTION_CONTINUE_EXECUTION;
+    }
+
+    return LogEngineJoinException(exception);
+}
+
+LONG CALLBACK TraceEngineJoinFault(EXCEPTION_POINTERS* exception)
+{
+    if (!exception || !exception->ExceptionRecord ||
+        exception->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION ||
+        InterlockedCompareExchange(&EngineJoinPhase, 0, 0) == 0 ||
+        InterlockedIncrement(&EngineFaultTraceCount) > 6)
+        return EXCEPTION_CONTINUE_SEARCH;
+    LogEngineJoinException(exception);
+    return EXCEPTION_CONTINUE_SEARCH;
 }
 
 bool IsHeadlessRequested()
@@ -198,6 +328,107 @@ bool IsHeadlessRequested()
     const DWORD length = GetEnvironmentVariableA(
         HeadlessVariable, value, static_cast<DWORD>(sizeof(value)));
     return length == 1 && value[0] == '1';
+}
+
+void LogExitRequest(const char* api, unsigned int code, const void* caller)
+{
+    void* frames[10]{};
+    const USHORT frameCount = CaptureStackBackTrace(
+        0, static_cast<DWORD>(_countof(frames)), frames, nullptr);
+    char message[360]{};
+    int written = _snprintf_s(message, _countof(message), _TRUNCATE,
+        "headless processo: %s(%u) solicitado por %p stack=",
+        api, code, caller);
+    if (written < 0) return;
+    for (USHORT index = 0;
+        index < frameCount &&
+        written + 10 < static_cast<int>(_countof(message));
+        ++index)
+    {
+        written += _snprintf_s(
+            message + written, _countof(message) - written, _TRUNCATE,
+            "%08IX%s", reinterpret_cast<uintptr_t>(frames[index]),
+            index + 1 == frameCount ? "" : ",");
+    }
+    CompatLog(message);
+}
+
+[[noreturn]] void WINAPI TraceExitProcess(unsigned int code)
+{
+    LogExitRequest("ExitProcess", code, _ReturnAddress());
+    using ExitProcessFn = void(WINAPI*)(unsigned int);
+    reinterpret_cast<ExitProcessFn>(OriginalExitProcess)(code);
+    __assume(0);
+}
+
+bool __cdecl ShouldSuppressExit(int code, const void* caller)
+{
+    auto* image = reinterpret_cast<const BYTE*>(GetModuleHandleW(nullptr));
+    constexpr uintptr_t QueueAssertionReturnRva = 0xbb7c5;
+    constexpr uintptr_t WatchdogReturnRvas[] = { 0x1285c, 0x128ad };
+    if (code == 1 && image &&
+        caller == static_cast<const void*>(image + QueueAssertionReturnRva))
+    {
+        if (InterlockedIncrement(&SuppressedQueueAssertions) == 1)
+            CompatLog("headless processo: assercao da fila descartada");
+        return true;
+    }
+    if (code == 1 && image &&
+        (caller == static_cast<const void*>(image + WatchdogReturnRvas[0]) ||
+         caller == static_cast<const void*>(image + WatchdogReturnRvas[1])))
+    {
+        if (InterlockedCompareExchange(&HeadlessWatchdogLogged, 1, 0) == 0)
+            CompatLog("headless processo: watchdog da interface ignorado");
+        return true;
+    }
+    LogExitRequest("exit", static_cast<unsigned int>(code), caller);
+    return false;
+}
+
+__declspec(naked) void TraceExit()
+{
+    __asm
+    {
+        mov eax, dword ptr [esp + 4]
+        mov edx, dword ptr [esp]
+        push edx
+        push eax
+        call ShouldSuppressExit
+        add esp, 8
+        test al, al
+        jz forward
+        ret 4
+    forward:
+        push dword ptr [esp + 4]
+        call dword ptr [OriginalExit]
+        int 3
+    }
+}
+
+bool EnsureHeadlessExitTrace()
+{
+    if (InterlockedCompareExchange(&ExitTraceInstalled, 0, 0) != 0)
+        return true;
+    auto* image = reinterpret_cast<BYTE*>(GetModuleHandleW(nullptr));
+    auto* engine = reinterpret_cast<BYTE*>(GetModuleHandleW(L"engine.dll"));
+    if (!image || !engine) return false;
+    if (!ReplaceImport(
+            reinterpret_cast<void**>(image + ExecutableExitProcessIatRva),
+            reinterpret_cast<void*>(&TraceExitProcess),
+            OriginalExitProcess) ||
+        !ReplaceImport(
+            reinterpret_cast<void**>(engine + EngineExitProcessIatRva),
+            reinterpret_cast<void*>(&TraceExitProcess),
+            OriginalExitProcess) ||
+        !ReplaceImport(
+            reinterpret_cast<void**>(image + ExecutableExitIatRva),
+            reinterpret_cast<void*>(&TraceExit), OriginalExit) ||
+        !ReplaceImport(
+            reinterpret_cast<void**>(engine + EngineExitIatRva),
+            reinterpret_cast<void*>(&TraceExit), OriginalExit))
+        return false;
+    InterlockedExchange(&ExitTraceInstalled, 1);
+    return true;
 }
 
 HeadlessRole GetHeadlessRole()
@@ -360,6 +591,9 @@ int SelectFirstCharacter()
         {
             continue;
         }
+        SelectedCharacterId = characterId;
+        *reinterpret_cast<unsigned long*>(
+            static_cast<unsigned char*>(world) + PendingCharacterIdOffset) = characterId;
         select(world, characterId);
         char message[96]{};
         _snprintf_s(message, _countof(message), _TRUNCATE,
@@ -378,7 +612,124 @@ bool IsCharacterReady()
     if (!world) return false;
     using GetSelectedFn = void*(__thiscall*)(void*);
     auto** vtable = *reinterpret_cast<void***>(world);
-    return vtable && reinterpret_cast<GetSelectedFn>(vtable[3])(world) != nullptr;
+    if (!vtable) return false;
+    void* selected = reinterpret_cast<GetSelectedFn>(vtable[3])(world);
+    if (!selected) return false;
+    void* selectedRecord{};
+    __try
+    {
+        selectedRecord = *reinterpret_cast<void**>(
+            static_cast<BYTE*>(world) + SelectedCharacterRecordPointerOffset);
+        if (!selectedRecord ||
+            *static_cast<const unsigned long*>(selectedRecord) != SelectedCharacterId)
+            return false;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        return false;
+    }
+    if (InterlockedCompareExchange(&SelectedCharacterLayoutLogged, 1, 0) == 0)
+    {
+        using GetAccountFn = void*(__thiscall*)(void*);
+        auto getAccount = reinterpret_cast<GetAccountFn>(
+            GetProcAddress(engine, AccountInfoSymbol));
+        auto* account = getAccount
+            ? static_cast<BYTE*>(getAccount(world)) : nullptr;
+        char message[256]{};
+        _snprintf_s(message, _countof(message), _TRUNCATE,
+            "headless diagnostico: selected=%p record=%p account=%p delta=%Id getter=%p",
+            selected, selectedRecord, account,
+            account ? static_cast<BYTE*>(selected) - account : 0,
+            vtable[3]);
+        CompatLog(message);
+        auto* bytes = static_cast<BYTE*>(selected);
+        for (size_t block = 0; block < 4; ++block)
+        {
+            char hex[65]{};
+            __try
+            {
+                for (size_t index = 0; index < 32; ++index)
+                    _snprintf_s(hex + index * 2, 3, _TRUNCATE, "%02X",
+                        bytes[block * 32 + index]);
+                _snprintf_s(message, _countof(message), _TRUNCATE,
+                    "headless diagnostico: selected+0x%Ix=%s",
+                    block * 32, hex);
+                CompatLog(message);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+            }
+        }
+        for (size_t offset = 0; offset < 0x200; offset += sizeof(void*))
+        {
+            __try
+            {
+                auto* candidate = *reinterpret_cast<BYTE**>(bytes + offset);
+                if (account && candidate >= account && candidate < account + 0x5000)
+                {
+                    _snprintf_s(message, _countof(message), _TRUNCATE,
+                        "headless diagnostico: selected+0x%Ix -> account+0x%Ix",
+                        offset, candidate - account);
+                    CompatLog(message);
+                }
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+            }
+        }
+        if (SelectedCharacterName[0] != '\0')
+        {
+            const size_t nameLength = strlen(SelectedCharacterName) + 1;
+            for (size_t offset = 0; offset < 0x5000; ++offset)
+            {
+                __try
+                {
+                    if (memcmp(bytes + offset, SelectedCharacterName, nameLength) == 0)
+                    {
+                        _snprintf_s(message, _countof(message), _TRUNCATE,
+                            "headless diagnostico: nome direto selected+0x%Ix",
+                            offset);
+                        CompatLog(message);
+                    }
+                    auto* candidate =
+                        *reinterpret_cast<const char**>(bytes + offset);
+                    if (candidate &&
+                        memcmp(candidate, SelectedCharacterName, nameLength) == 0)
+                    {
+                        _snprintf_s(message, _countof(message), _TRUNCATE,
+                            "headless diagnostico: ponteiro nome selected+0x%Ix",
+                            offset);
+                        CompatLog(message);
+                    }
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                }
+            }
+        }
+    }
+    return true;
+}
+
+bool EnsureGameplayUdpReady()
+{
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    void* world = engine ? GetWorld(engine) : nullptr;
+    using GetAccountFn = void*(__thiscall*)(void*);
+    auto getAccount = engine ? reinterpret_cast<GetAccountFn>(
+        GetProcAddress(engine, AccountInfoSymbol)) : nullptr;
+    auto* account = world && getAccount
+        ? static_cast<const BYTE*>(getAccount(world)) : nullptr;
+    if (!account) return false;
+
+    const uint16_t networkSlot =
+        *reinterpret_cast<const uint16_t*>(account + AccountNetworkSlotOffset);
+    const uint32_t sessionKey =
+        *reinterpret_cast<const uint32_t*>(account + AccountUdpSessionKeyOffset);
+    uint16_t peerToPeerPort{};
+    if (!TryGetPeerToPeerPort(peerToPeerPort)) return false;
+    return EnsureWorldUdpHandshake(
+        networkSlot, sessionKey, peerToPeerPort);
 }
 
 bool JoinConfiguredField()
@@ -434,6 +785,18 @@ bool CreateConfiguredField()
         CompatLog("headless World recusado: nome da sala invalido");
         return false;
     }
+    char configuredMap[4]{};
+    const DWORD mapLength = GetEnvironmentVariableA(
+        MapVariable, configuredMap, static_cast<DWORD>(sizeof(configuredMap)));
+    unsigned mapId{};
+    char mapTail{};
+    if (mapLength == 0 || mapLength >= sizeof(configuredMap) ||
+        sscanf_s(configuredMap, "%u%c", &mapId, &mapTail, 1) != 1 ||
+        mapId > 0xff)
+    {
+        CompatLog("headless World recusado: mapa battle invalido");
+        return false;
+    }
 
     HMODULE engine = GetModuleHandleW(L"engine.dll");
     void* world = engine ? GetWorld(engine) : nullptr;
@@ -442,10 +805,29 @@ bool CreateConfiguredField()
         unsigned short, unsigned char, unsigned char, unsigned char, unsigned char);
     auto create = engine ? reinterpret_cast<FieldCreateFn>(
         GetProcAddress(engine, FieldCreateSymbol)) : nullptr;
-    if (!world || !create) return false;
+    auto* image = reinterpret_cast<BYTE*>(GetModuleHandleW(nullptr));
+    auto** application = image ? reinterpret_cast<BYTE**>(
+        image + ApplicationPointerRva) : nullptr;
+    if (!world || !create || !application || !*application) return false;
 
     char empty[] = "";
-    create(world, room, empty, empty, 0, 2, 1, 432, 20, 1, 99, 0);
+    BYTE* pending = *application;
+    pending[ApplicationRoomModeOffset] = 2;
+    pending[ApplicationRoomMapOffset] = static_cast<unsigned char>(mapId);
+    pending[ApplicationRoomRoundsOffset] = 1;
+    *reinterpret_cast<unsigned short*>(
+        pending + ApplicationRoomDurationOffset) = 432;
+    pending[ApplicationRoomFragLimitOffset] = 20;
+    pending[ApplicationRoomMinLevelOffset] = 1;
+    pending[ApplicationRoomMaxLevelOffset] = 99;
+    pending[ApplicationRoomLevelRangeOffset] = 0;
+    strcpy_s(reinterpret_cast<char*>(pending + ApplicationRoomNameOffset), 161, room);
+    strcpy_s(reinterpret_cast<char*>(pending + ApplicationRoomPasswordOffset), 9, empty);
+    strcpy_s(reinterpret_cast<char*>(
+        pending + ApplicationRoomDescriptionOffset), 201, empty);
+    create(
+        world, room, empty, empty, static_cast<unsigned char>(mapId),
+        2, 1, 432, 20, 1, 99, 0);
     CompatLog("headless World: criacao da sala master enviada");
     return true;
 }
@@ -493,6 +875,16 @@ bool IsFieldPlaying()
     if (!world || !isPlaying) return false;
     void* field = GetFieldInfo(world);
     return field && isPlaying(field) != 0;
+}
+
+unsigned char GetFieldClientCount()
+{
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    void* field = engine ? GetFieldInfo(GetWorld(engine)) : nullptr;
+    using ClientCountFn = unsigned char(__thiscall*)(void*);
+    auto getClientCount = engine ? reinterpret_cast<ClientCountFn>(
+        GetProcAddress(engine, FieldClientCountSymbol)) : nullptr;
+    return field && getClientCount ? getClientCount(field) : 0;
 }
 
 bool RequestFieldRoundStart()
@@ -544,17 +936,15 @@ bool IsPlaceholderJoinAddress(const char* value)
         _stricmp(value, "serveraddress:0") == 0;
 }
 
-unsigned ReadNetworkPort(const BYTE* value)
-{
-    return static_cast<unsigned>(value[0]) << 8 | value[1];
-}
-
 bool EnsureGameJoinAddress(BYTE* game)
 {
     const char* currentAddress = ReadGameString(game, GameJoinAddressOffset);
-    const long currentPort = *reinterpret_cast<long*>(game + GameJoinPortOffset);
-    if (!IsPlaceholderJoinAddress(currentAddress) && currentPort > 0)
+    if (!IsPlaceholderJoinAddress(currentAddress))
+    {
+        *reinterpret_cast<long*>(game + GameJoinPortOffset) =
+            GameSessionProviderPort;
         return true;
+    }
 
     HMODULE engine = GetModuleHandleW(L"engine.dll");
     void* field = engine ? GetFieldInfo(GetWorld(engine)) : nullptr;
@@ -569,11 +959,7 @@ bool EnsureGameJoinAddress(BYTE* game)
         auto* record = static_cast<BYTE*>(field) +
             FieldPlayerRecordsOffset + seat * FieldPlayerRecordSize;
         const BYTE* address = record + FieldPlayerAddressOffset;
-        unsigned port = ReadNetworkPort(
-            record + FieldPlayerAdvertisedPortOffset);
-        if (port == 0)
-            port = ReadNetworkPort(record + FieldPlayerObservedPortOffset);
-        if (port == 0 || (address[0] | address[1] | address[2] | address[3]) == 0)
+        if ((address[0] | address[1] | address[2] | address[3]) == 0)
             return false;
 
         char host[16]{};
@@ -583,8 +969,8 @@ bool EnsureGameJoinAddress(BYTE* game)
         if (!AssignGameString(game + GameJoinAddressOffset, host))
             return false;
         *reinterpret_cast<long*>(game + GameJoinPortOffset) =
-            static_cast<long>(port);
-        CompatLog("headless engine: endpoint P2P do master aplicado");
+            GameSessionProviderPort;
+        CompatLog("headless engine: endpoint da sessao do master aplicado");
         return true;
     }
     return false;
@@ -630,11 +1016,29 @@ bool PrepareLocalPlayerCharacter(BYTE* game)
         !playerConstructor || !playerDestructor)
         return false;
 
-    void* name{};
-    void* species{};
+    BYTE* player = game + GamePlayerCharactersOffset;
+    __try
+    {
+        const char* existingName =
+            *reinterpret_cast<const char**>(player + 0x10);
+        const char* existingSpecies =
+            *reinterpret_cast<const char**>(player + 0x1c);
+        if (existingName && existingSpecies &&
+            _stricmp(existingName, SelectedCharacterName) == 0 &&
+            existingSpecies[0] != '\0')
+        {
+            CompatLog("headless engine: personagem completo preservado");
+            return true;
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+    }
+
+    LegacyString name{};
+    LegacyString species{};
     stringConstructor(&name, SelectedCharacterName);
     stringConstructor(&species, "Human");
-    BYTE* player = game + GamePlayerCharactersOffset;
     playerDestructor(player);
     playerConstructor(player, &name, &species);
     stringDestructor(&species);
@@ -656,8 +1060,45 @@ void ConfigureSingleLocalPlayer(BYTE* game)
         menuIndices[index] = startIndices[index] = -1;
 }
 
+void* OriginalStartPeerToPeer{};
+void* OriginalStartProvider{};
 void* OriginalJoinSession{};
 void* OriginalAddPlayer{};
+
+void __fastcall TraceStartPeerToPeer(
+    void* network, void*, const void* sessionName, const void* worldName,
+    unsigned long spawnFlags, long maximumPlayers, int waitAllPlayers,
+    void* sessionProperties)
+{
+    using StartPeerToPeerFn = void(__thiscall*)(
+        void*, const void*, const void*, unsigned long, long, int, void*);
+    InterlockedExchange(&EngineJoinPhase, 25);
+    try
+    {
+        reinterpret_cast<StartPeerToPeerFn>(OriginalStartPeerToPeer)(
+            network, sessionName, worldName, spawnFlags, maximumPlayers,
+            waitAllPlayers, sessionProperties);
+        InterlockedExchange(&EngineJoinPhase, 26);
+    }
+    catch (char* error)
+    {
+        char message[320]{};
+        _snprintf_s(message, _countof(message), _TRUNCATE,
+            "headless engine: StartPeerToPeer falhou: %s",
+            error ? error : "<sem mensagem>");
+        CompatLog(message);
+        throw;
+    }
+}
+
+__declspec(naked) void TraceStartProvider()
+{
+    __asm
+    {
+        mov dword ptr [EngineJoinPhase], 10
+        jmp dword ptr [OriginalStartProvider]
+    }
+}
 
 __declspec(naked) void TraceJoinSession()
 {
@@ -691,13 +1132,49 @@ bool ReplaceImport(void** slot, void* replacement, void*& original)
     return original != nullptr;
 }
 
+bool PatchJoinWorldArgument(BYTE* gameModule, const char* worldName)
+{
+    BYTE* instruction = gameModule + JoinWorldArgumentRva;
+    if (instruction[0] != 0x68 || !IsValidWorldName(worldName))
+        return false;
+
+    auto* operand = reinterpret_cast<const char**>(instruction + 1);
+    const char* emptyLiteral = reinterpret_cast<const char*>(
+        gameModule + EmptyJoinWorldLiteralRva);
+    if (*operand != emptyLiteral && *operand != worldName)
+        return false;
+    if (*operand == worldName)
+        return true;
+
+    DWORD protection{};
+    if (!VirtualProtect(
+        operand, sizeof(*operand), PAGE_EXECUTE_READWRITE, &protection))
+        return false;
+    *operand = worldName;
+    FlushInstructionCache(GetCurrentProcess(), operand, sizeof(*operand));
+    DWORD ignored{};
+    VirtualProtect(operand, sizeof(*operand), protection, &ignored);
+    CompatLog("headless engine: mundo aplicado ao JoinSession do Rakion");
+    return true;
+}
+
 bool InstallJoinTraceHooks(BYTE* gameModule)
 {
+    auto** startPeerSlot = reinterpret_cast<void**>(
+        gameModule + StartPeerToPeerIatRva);
+    auto** startProviderSlot = reinterpret_cast<void**>(
+        gameModule + StartProviderIatRva);
     auto** joinSlot = reinterpret_cast<void**>(
         gameModule + JoinSessionIatRva);
     auto** addPlayerSlot = reinterpret_cast<void**>(
         gameModule + AddPlayerIatRva);
     return ReplaceImport(
+        startPeerSlot, reinterpret_cast<void*>(&TraceStartPeerToPeer),
+        OriginalStartPeerToPeer) &&
+        ReplaceImport(
+            startProviderSlot, reinterpret_cast<void*>(&TraceStartProvider),
+            OriginalStartProvider) &&
+        ReplaceImport(
         joinSlot, reinterpret_cast<void*>(&TraceJoinSession),
         OriginalJoinSession) &&
         ReplaceImport(
@@ -705,24 +1182,119 @@ bool InstallJoinTraceHooks(BYTE* gameModule)
             OriginalAddPlayer);
 }
 
+void LogBattleMapCatalog()
+{
+    if (InterlockedCompareExchange(&BattleMapCatalogLogged, 1, 0) != 0)
+        return;
+
+    auto* entities = reinterpret_cast<BYTE*>(
+        GetModuleHandleW(L"entitiesmp.dll"));
+    if (!entities)
+    {
+        CompatLog("headless engine: catalogo battle indisponivel");
+        return;
+    }
+
+    using GetRegistryFn = BYTE*(__cdecl*)();
+    using ResolveTemplateFn = BYTE*(__thiscall*)(void*);
+    auto getRegistry = reinterpret_cast<GetRegistryFn>(entities + 0x1dd750);
+    auto resolveTemplate =
+        reinterpret_cast<ResolveTemplateFn>(entities + 0x22c190);
+    BYTE* registry = getRegistry();
+    const unsigned count = *reinterpret_cast<unsigned short*>(registry + 2);
+    BYTE* templates = *reinterpret_cast<BYTE**>(registry + 0x14);
+    char message[320]{};
+    int written = _snprintf_s(
+        message, _countof(message), _TRUNCATE,
+        "headless engine: catalogo battle count=%u ids=", count);
+    for (unsigned index = 0;
+         index < count && written > 0 &&
+             static_cast<size_t>(written) < _countof(message) - 8;
+         ++index)
+    {
+        BYTE* definition = resolveTemplate(templates + index * 0x5c8);
+        const unsigned id =
+            definition ? *reinterpret_cast<unsigned short*>(definition + 4) : 0xffff;
+        written += _snprintf_s(
+            message + written, _countof(message) - written, _TRUNCATE,
+            "%s%u", index == 0 ? "" : ",", id);
+    }
+    CompatLog(message);
+}
+
+void LogSelectedBattleMap()
+{
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    auto* entities = reinterpret_cast<BYTE*>(
+        GetModuleHandleW(L"entitiesmp.dll"));
+    BYTE* field = engine
+        ? static_cast<BYTE*>(GetFieldInfo(GetWorld(engine))) : nullptr;
+    if (!field || !entities) return;
+
+    const unsigned mapId = field[0x1a2];
+    const unsigned mode = field[0x1a3];
+    using LookupFn = void*(__cdecl*)(int, unsigned char);
+    auto lookup = reinterpret_cast<LookupFn>(entities + 0x22b880);
+    void* definition = lookup(static_cast<int>(mode), static_cast<unsigned char>(mapId));
+    char message[160]{};
+    _snprintf_s(
+        message, _countof(message), _TRUNCATE,
+        "headless engine: field map=%u mode=%u template=%p",
+        mapId, mode, definition);
+    CompatLog(message);
+}
+
 bool StartNativeFieldEngine(BYTE* game, int mode)
 {
     HMODULE engine = GetModuleHandleW(L"engine.dll");
     auto* gameModule = reinterpret_cast<BYTE*>(GetModuleHandleW(L"gamemp.dll"));
-    if (!engine || !gameModule || !InstallSafeStreamCrc(engine)) return false;
-
-    constexpr BYTE ExpectedStartGamePrefix[]{
-        0x6a, 0xff, 0x68, 0x07, 0x3f, 0x02, 0x10
-    };
-    BYTE* address = gameModule + StartGameRva;
-    if (memcmp(address, ExpectedStartGamePrefix, sizeof(ExpectedStartGamePrefix)) != 0)
+    if (!engine)
+    {
+        CompatLog("headless engine recusado: engine.dll indisponivel");
         return false;
+    }
+    if (!gameModule)
+    {
+        CompatLog("headless engine recusado: gamemp.dll indisponivel");
+        return false;
+    }
+    constexpr BYTE ExpectedStartGamePrefix[]{0x6a, 0xff, 0x68};
+    constexpr BYTE ExpectedStartGameBody[]{0x64, 0xa1, 0, 0, 0, 0};
+    constexpr uintptr_t StartGameExceptionHandlerRva = 0x23f07;
+    BYTE* address = gameModule + StartGameRva;
+    const auto exceptionHandler =
+        *reinterpret_cast<const uintptr_t*>(address + sizeof(ExpectedStartGamePrefix));
+    if (memcmp(address, ExpectedStartGamePrefix, sizeof(ExpectedStartGamePrefix)) != 0 ||
+        exceptionHandler != reinterpret_cast<uintptr_t>(gameModule) +
+            StartGameExceptionHandlerRva ||
+        memcmp(address + 7, ExpectedStartGameBody, sizeof(ExpectedStartGameBody)) != 0)
+    {
+        CompatLog("headless engine recusado: prólogo de CGame::StartGame incompatível");
+        return false;
+    }
     if (!InstallJoinTraceHooks(gameModule))
         CompatLog("headless engine: telemetria interna do master indisponivel");
+    if (mode == PeerToPeerClientMode &&
+        !PatchJoinWorldArgument(
+            gameModule, ReadGameString(game, GameWorldNameOffset)))
+    {
+        CompatLog("headless engine recusado: argumento de mundo do join incompatível");
+        return false;
+    }
+    if (InterlockedCompareExchange(&EngineFaultTraceInstalled, 1, 0) == 0)
+        AddVectoredExceptionHandler(1, &TraceEngineJoinFault);
+    LogBattleMapCatalog();
+    LogSelectedBattleMap();
 
     using StartGameFn = int(__thiscall*)(void*, int);
+    InterlockedExchange(&EngineFaultTraceCount, 0);
     InterlockedExchange(&EngineJoinPhase, 100);
     const int started = reinterpret_cast<StartGameFn>(address)(game, mode);
+    if (started)
+    {
+        InterlockedExchange(&EngineFaultTraceCount, 0);
+        InterlockedExchange(&EngineJoinPhase, 40);
+    }
     const LONG phase = InterlockedCompareExchange(&EngineJoinPhase, 0, 0);
     char result[160]{};
     _snprintf_s(result, _countof(result), _TRUNCATE,
@@ -748,6 +1320,7 @@ bool StartFieldEngine()
     const char* worldName{};
     const char* sessionName{};
     const char* joinAddress{};
+    long joinPort{};
     int playerIndex{-1};
     int peerMode{};
     bool fieldMaster{};
@@ -771,6 +1344,7 @@ bool StartFieldEngine()
         worldName = ReadGameString(game, GameWorldNameOffset);
         sessionName = ReadGameString(game, GameSessionNameOffset);
         joinAddress = ReadGameString(game, GameJoinAddressOffset);
+        joinPort = *reinterpret_cast<long*>(game + GameJoinPortOffset);
         playerIndex = *reinterpret_cast<int*>(
             game + GameMenuPlayerIndicesOffset);
         if (!worldName || worldName[0] == '\0' ||
@@ -790,7 +1364,7 @@ bool StartFieldEngine()
         }
 
     }
-    __except (LogEngineJoinException(GetExceptionInformation()))
+    __except (FilterEngineJoinException(GetExceptionInformation()))
     {
         CompatLog("headless engine recusado: ABI de CGame incompatível");
         return false;
@@ -798,9 +1372,10 @@ bool StartFieldEngine()
 
     char attempt[320]{};
     _snprintf_s(attempt, _countof(attempt), _TRUNCATE,
-        "headless engine: iniciando mode=%d world=%s session=%s peer=%s",
+        "headless engine: iniciando mode=%d world=%s session=%s peer=%s:%ld",
         peerMode, worldName, sessionName,
-        peerMode == PeerToPeerClientMode ? joinAddress : "<master>");
+        peerMode == PeerToPeerClientMode ? joinAddress : "<master>",
+        peerMode == PeerToPeerClientMode ? joinPort : 0);
     CompatLog(attempt);
 
     bool joined{};
@@ -809,7 +1384,7 @@ bool StartFieldEngine()
         joined = StartNativeFieldEngine(
             game, fieldMaster ? 2 : PeerToPeerClientMode);
     }
-    __except (LogEngineJoinException(GetExceptionInformation()))
+    __except (FilterEngineJoinException(GetExceptionInformation()))
     {
         CompatLog(fieldMaster
             ? "headless engine recusado: ABI de CGame::StartGame incompatível"
@@ -835,6 +1410,12 @@ bool StartFieldEngine()
 LRESULT CALLBACK HeadlessWindowProcedure(
     HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
+    if (message == PollWorldMessage)
+    {
+        InterlockedExchange(&WorldPollPending, 0);
+        PollHeadlessWorldSession();
+        return 0;
+    }
     if (message == StartEngineMessage)
     {
         const LONG attempt = InterlockedIncrement(&EngineStartAttempts);
@@ -892,6 +1473,16 @@ bool QueueFieldEngineStart()
 void PollHeadlessWorldSession()
 {
     if (!IsHeadlessRequested()) return;
+    if (!EnsureMainThreadDispatcher()) return;
+    const DWORD windowThread = GetWindowThreadProcessId(GameWindow, nullptr);
+    if (windowThread != GetCurrentThreadId())
+    {
+        if (InterlockedCompareExchange(&WorldPollPending, 1, 0) == 0 &&
+            PostMessageA(GameWindow, PollWorldMessage, 0, 0) == FALSE)
+            InterlockedExchange(&WorldPollPending, 0);
+        return;
+    }
+    if (!EnsureHeadlessExitTrace()) return;
     const LONG state = InterlockedCompareExchange(&SessionState, 0, 0);
     if (state == 0 && InterlockedCompareExchange(&SessionState, 1, 0) == 0)
     {
@@ -906,6 +1497,7 @@ void PollHeadlessWorldSession()
     }
     if (state == 3 && IsCharacterReady())
     {
+        if (!EnsureGameplayUdpReady()) return;
         InterlockedExchange(&CharacterReadyTick, static_cast<LONG>(GetTickCount()));
         InterlockedExchange(&SessionState, 4);
         CompatLog("headless World: personagem confirmado pelo engine");
@@ -945,6 +1537,22 @@ void PollHeadlessWorldSession()
         if (!IsFieldMaster()) return;
         if (InterlockedCompareExchange(&MasterFieldLogged, 1, 0) == 0)
             CompatLog("headless World: sala master confirmada pelo engine");
+        if (GetFieldClientCount() < 2)
+        {
+            InterlockedExchange(&MatchRosterReadyTick, 0);
+            return;
+        }
+        const DWORD rosterReadyAt = static_cast<DWORD>(
+            InterlockedCompareExchange(&MatchRosterReadyTick, 0, 0));
+        if (rosterReadyAt == 0)
+        {
+            InterlockedExchange(
+                &MatchRosterReadyTick, static_cast<LONG>(GetTickCount()));
+            CompatLog("headless World: dois jogadores confirmados na sala");
+            return;
+        }
+        if (GetTickCount() - rosterReadyAt < MatchRosterSettleMilliseconds)
+            return;
         const DWORD requestedAt = static_cast<DWORD>(
             InterlockedCompareExchange(&MatchStartTick, 0, 0));
         const DWORD fieldCreatedAt = static_cast<DWORD>(
@@ -977,13 +1585,20 @@ void PollHeadlessWorldSession()
     {
         const DWORD requestedAt = static_cast<DWORD>(
             InterlockedCompareExchange(&EngineStartTick, 0, 0));
-        if (GetTickCount() - requestedAt < EngineStartDelayMilliseconds) return;
+        const DWORD delay = GetHeadlessRole() == HeadlessRole::Master
+            ? EngineStartDelayMilliseconds : JoinerEngineStartDelayMilliseconds;
+        if (GetTickCount() - requestedAt < delay) return;
         if (QueueFieldEngineStart()) InterlockedExchange(&SessionState, 11);
         return;
     }
     if (state == 12)
     {
         InterlockedExchange(&SessionState, 14);
+        return;
+    }
+    if (state == 14)
+    {
+        PumpHeadlessEngineFrame();
         return;
     }
     if (state == 15)

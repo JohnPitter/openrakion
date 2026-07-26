@@ -60,6 +60,15 @@ public sealed class BotHostOptionsTests
         Assert.Equal(HeadlessPeerRole.Master, options.Role);
         Assert.Null(options.FieldId);
         Assert.Equal("native-headless", options.RoomName);
+        Assert.Equal(209, BattleMapCatalog.Resolve(options.WorldName));
+    }
+
+    [Fact]
+    public void BattleMapCatalog_ResolvesMammothFromNormalizedWorld()
+    {
+        Assert.Equal(
+            211,
+            BattleMapCatalog.Resolve(@"LevelsSV/Mammoth/Mammoth.wld"));
     }
 
     [Fact]

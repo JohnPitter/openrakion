@@ -26,6 +26,7 @@ __pycache__/
 *.class
 _verify.xfs
 *.log
+*.dmp
 .DS_Store
 Thumbs.db
 # Output de build .NET

@@ -116,8 +116,9 @@ namespace RakionServer.World.Network
                 return;
             }
 
-            if (session.UdpEndpoint != null)
-                SendGameplayDatagram(session.UdpEndpoint, datagram);
+            IPEndPoint? endpoint = session.UdpAdvertisedEndpoint ?? session.UdpEndpoint;
+            if (endpoint != null)
+                SendGameplayDatagram(endpoint, datagram);
         }
 
         public void SendTick(IPEndPoint to, byte seq, byte state = DefaultGameplayState)
@@ -141,9 +142,10 @@ namespace RakionServer.World.Network
                 return;
             }
 
-            if (BotTelemetryDatagram.TryUnwrap(pkt, out ReadOnlySpan<byte> telemetry))
+            if (BotTelemetryDatagram.TryUnwrap(
+                    pkt, out ReadOnlySpan<byte> telemetry, out bool headlessRelay))
             {
-                ProcessBotTelemetry(from, telemetry);
+                ProcessBotTelemetry(from, telemetry, headlessRelay);
                 return;
             }
 
@@ -224,7 +226,8 @@ namespace RakionServer.World.Network
             RelayToUdpPeers(sender, packet, type);
         }
 
-        private void ProcessBotTelemetry(IPEndPoint from, ReadOnlySpan<byte> packet)
+        private void ProcessBotTelemetry(
+            IPEndPoint from, ReadOnlySpan<byte> packet, bool headlessRelay)
         {
             ClientSession? sender = ResolveSender(from);
             if (sender == null || !sender.InField ||
@@ -235,8 +238,34 @@ namespace RakionServer.World.Network
             }
             if (!_relayLimits.TryConsume(sender.Slot, sender.UdpKey, Environment.TickCount64)) return;
             ApplyBotInput(sender, type, packet);
+            if (headlessRelay)
+            {
+                RelayToAdvertisedPeers(sender, packet, type);
+                return;
+            }
             Log.Debug("udp", "telemetria 0x{0:X4} aplicada somente no servidor para slot {1}",
                 type, sender.Slot);
+        }
+
+        private void RelayToAdvertisedPeers(
+            ClientSession sender, ReadOnlySpan<byte> packet, ushort type)
+        {
+            byte[] datagram = packet.ToArray();
+            int relayed = 0;
+            foreach (ClientSession session in _world.Sessions)
+            {
+                IPEndPoint? endpoint = session.UdpAdvertisedEndpoint;
+                if (!session.InField || endpoint == null || session == sender ||
+                    session.FieldId != sender.FieldId) continue;
+                try { _sock!.SendTo(datagram, endpoint); relayed++; }
+                catch (SocketException ex)
+                {
+                    Log.Debug("udp", "relay headless 0x{0:X4} para {1}: {2}",
+                        type, endpoint, ex.Message);
+                }
+            }
+            Log.Debug("udp", "telemetria headless 0x{0:X4} relay p/ {1} peer(s) do field {2}",
+                type, relayed, sender.FieldId);
         }
 
         private void RelayToUdpPeers(
