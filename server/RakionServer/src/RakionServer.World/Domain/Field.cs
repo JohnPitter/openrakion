@@ -37,6 +37,7 @@ namespace RakionServer.World.Domain
         public BotVector Position;          // última posição observada (do 0x030A do humano / IA do bot) p/ mira do bot
         public float Heading;               // rumo observado do 0x030A humano, usado no cone de melee
         public PlayerCombatState Combat { get; } = new();
+        public PlayerCombatVitals Vitals { get; } = new();
         public byte[]? InitialMovement;     // primeiro 0x4B do match, usado para sincronizar peers que carregaram depois
         public byte Team => (byte)(Slot < 10 ? 0 : 1); // slots 0..9 = time0, 10..0x13 = time1
         public int Slot;                 // indice no array (0..0x13)
@@ -186,6 +187,7 @@ namespace RakionServer.World.Domain
                 rec.Position = default;
                 rec.Heading = 0;
                 rec.Combat.Reset();
+                rec.Vitals.Reset();
                 rec.InitialMovement = null;
             }
         }
@@ -267,6 +269,7 @@ namespace RakionServer.World.Domain
                     Slots[i].Position = default;
                     Slots[i].Heading = 0;
                     Slots[i].Combat.Reset();
+                    Slots[i].Vitals.Reset();
                     return i;
                 }
             }
@@ -433,6 +436,7 @@ namespace RakionServer.World.Domain
 
             rec.State = 4;
             rec.Dead = false;
+            InitializeHumanVitals(rec);
             if (Phase == MatchPhase.Pre)
             {
                 if (CountReady() != 0) return PlayerReadyTransition.Waiting;
@@ -504,7 +508,12 @@ namespace RakionServer.World.Domain
             // cheios e o objetivo em aberto de novo.
             ObjectivePairA = 1; ObjectivePairB = 1; BossTargetA = 1; BossTargetB = 1;
             ObjectiveDecided = false;
-            foreach (var r in Slots) if (r.Occupied) r.Dead = false;
+            foreach (PlayerRec record in Slots)
+            {
+                if (!record.Occupied) continue;
+                record.Dead = false;
+                InitializeHumanVitals(record);
+            }
             SelectBossLeaders();
             Log.Ok("field", "field {0} round {1} iniciado (dur={2}s mode={3})", Id, Round, RoundDurationSec, Mode);
         }
@@ -645,10 +654,22 @@ namespace RakionServer.World.Domain
                 record.Position = default;
                 record.Heading = 0;
                 record.Combat.Reset();
+                record.Vitals.Reset();
                 record.InitialMovement = null;
                 record.Bot?.ResetForLobby();
             }
             Log.Ok("field", "field {0} MATCH OVER (motivo={1})", Id, reason);
+        }
+
+        private static void InitializeHumanVitals(PlayerRec record)
+        {
+            if (record.Session == null)
+                return;
+            HumanCombatMaximums maximums = HumanCombatVitalsPolicy.Resolve(
+                record.Session.CharLevel,
+                record.Session.Stats[5],
+                record.Session.Stats[6]);
+            record.Vitals.Initialize(maximums.Hp, maximums.Ap);
         }
 
         public bool ApplyObjectivePair(short first, short second)

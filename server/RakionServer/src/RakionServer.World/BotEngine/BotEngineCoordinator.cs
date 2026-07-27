@@ -122,10 +122,21 @@ internal sealed class BotEngineCoordinator(WorldConfig.BotEngineConfig config) :
             if (record?.Bot == null)
                 return;
             var position = new BotVector(snapshot.X, snapshot.Y, snapshot.Z);
-            record.Bot.ApplyEngineTransform(position, snapshot.RotationX);
+            // Placement nativo devolve ângulos SE em graus; o domínio combat/wire usa radianos
+            // com a mesma inversão de frente do codec 0x030A.
+            float heading = NormalizeEngineHeading(snapshot.RotationX);
+            record.Bot.ApplyEngineTransform(position, heading);
             record.Position = position;
-            record.Heading = snapshot.RotationX;
+            record.Heading = heading;
         }
+    }
+
+    private static float NormalizeEngineHeading(float engineDegrees)
+    {
+        float radians = engineDegrees * MathF.PI / 180f + MathF.PI;
+        while (radians > MathF.PI) radians -= 2f * MathF.PI;
+        while (radians < -MathF.PI) radians += 2f * MathF.PI;
+        return radians;
     }
 
     private static async Task ApplyIntentsAsync(

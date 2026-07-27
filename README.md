@@ -15,7 +15,7 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
 
 - 🟢 **Servidor 100% próprio em .NET** (não usa os executáveis da SoftNyx). Serviços:
   - **Broker** (`RakionServer.Broker`) — lista de servidores/canais, anuncia o world (advertised IP) e faz a ponte de login.
-  - **World** (`RakionServer.World`) — login completo, lobby, lista de canais/salas, seleção de personagem, **inventário + armazém (box) persistente**, **loja (compra e venda) com saldo em tempo real**, **Power User** (compra + bônus configurável de XP/gold), chat, handshake **UDP de gameplay**, **motor de partida** (Golem/Deathmatch/TeamDeath/Boss com settlement persistido) e **bots PvP** server-side (`/addbot`).
+  - **World** (`RakionServer.World`) — login completo, lobby, lista de canais/salas, seleção de personagem, **inventário + armazém (box) persistente**, **loja (compra e venda) com saldo em tempo real**, **Power User** (compra + bônus configurável de XP/gold), chat, handshake **UDP de gameplay**, **motor de partida** (Golem/Deathmatch/TeamDeath/Boss com settlement persistido) e **bots PvP nativos** via **Bot Engine Host x86** (`/addbot`, sem fallback sintético).
   - **Buddy** (`RakionServer.Buddy`) — serviço **canônico** de amigos/mensageiro (F9): login, adicionar/remover amigo, grupos, apelido, **presença** (amigo acende online), **SMS/PM** e **brokering de tunnel P2P** para convite/mensagem direta.
   - **LauncherWeb** (`RakionServer.LauncherWeb`) — autenticação por ticket, update assinado,
     página de compra de Cash e endpoint público de status/jogadores online.

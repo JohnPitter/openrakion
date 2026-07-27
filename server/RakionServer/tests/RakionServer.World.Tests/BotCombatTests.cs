@@ -100,6 +100,62 @@ public sealed class BotCombatTests
             field, attacker, 1_121, 999, out _));
     }
 
+    [Fact]
+    public void BotAttackUsesWindowHitboxAndArmorFirstDamage()
+    {
+        Field field = Match().Field;
+        PlayerRec target = field.Slots[0];
+        target.Position = new BotVector(0, 0, 2);
+        target.Vitals.Initialize(100, 20);
+        PlayerRec attacker = AddBot(
+            field, 1, new BotVector(0, 0, 0));
+        attacker.Bot!.TargetSeat = 0;
+        Assert.True(attacker.Bot.TryStartAttack(1_000));
+
+        // Janela de bot abre no mesmo tick (impacto imediato).
+        Assert.True(BotCombat.TryResolveBotAttack(
+            field, attacker, 1_000, 15, out BotHumanCombatHit hit));
+        Assert.Equal(100, hit.Damage.RemainingHp);
+        Assert.Equal(5, hit.Damage.RemainingAp);
+        Assert.False(hit.Damage.Died);
+        Assert.False(BotCombat.TryResolveBotAttack(
+            field, attacker, 1_001, 15, out _));
+    }
+
+    [Fact]
+    public void BotAttackKillsHumanExactlyOnce()
+    {
+        Field field = Match().Field;
+        PlayerRec target = field.Slots[0];
+        target.Position = new BotVector(0, 0, 2);
+        target.Vitals.Initialize(10, 0);
+        PlayerRec attacker = AddBot(
+            field, 1, new BotVector(0, 0, 0));
+        attacker.Bot!.TargetSeat = 0;
+        attacker.Bot.TryStartAttack(1_000);
+
+        Assert.True(BotCombat.TryResolveBotAttack(
+            field, attacker, 1_000, 20, out BotHumanCombatHit hit));
+        Assert.True(hit.Damage.Died);
+        Assert.Equal(0, target.Vitals.Hp);
+        Assert.False(BotCombat.TryResolveBotAttack(
+            field, attacker, 1_001, 20, out _));
+    }
+
+    [Fact]
+    public void HumanVitalsRespawnAtFullHpAndArmor()
+    {
+        PlayerCombatVitals vitals = new();
+        vitals.Initialize(120, 30);
+        Assert.True(vitals.ApplyDamage(200, 10).Died);
+        vitals.ScheduleRespawn(1_000, 7_000);
+
+        Assert.False(vitals.TryRespawn(7_999));
+        Assert.True(vitals.TryRespawn(8_000));
+        Assert.Equal(120, vitals.Hp);
+        Assert.Equal(30, vitals.Ap);
+    }
+
     private static (Field Field, PlayerRec Attacker) Match()
     {
         Field field = new(1)

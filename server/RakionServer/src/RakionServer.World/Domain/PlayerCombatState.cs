@@ -18,7 +18,18 @@ public sealed class PlayerCombatState
 
     public uint ConfirmedHitSequence { get; private set; }
 
-    public bool TryOpenAttack(uint sequence, long nowMs)
+    public bool TryOpenAttack(uint sequence, long nowMs) =>
+        TryOpenAttack(sequence, nowMs, ImpactDelayMs, ActiveDurationMs);
+
+    /// <summary>
+    /// Abre janela com atraso/duração explícitos. Bots usam impacto imediato porque o Host
+    /// nativo e o resolve autoritativo rodam no mesmo tick do World.
+    /// </summary>
+    public bool TryOpenAttack(
+        uint sequence,
+        long nowMs,
+        int impactDelayMs,
+        int activeDurationMs)
     {
         if (!IsNewSequence(sequence))
             return false;
@@ -26,12 +37,14 @@ public sealed class PlayerCombatState
         _lastAcceptedSequence = sequence;
         if (nowMs < _nextAttackAtMs)
             return false;
+        if (impactDelayMs < 0 || activeDurationMs <= 0)
+            return false;
 
         _nextAttackAtMs = nowMs + MinimumAttackIntervalMs;
         _pendingAttack = new PlayerAttackWindow(
             sequence,
-            nowMs + ImpactDelayMs,
-            nowMs + ImpactDelayMs + ActiveDurationMs);
+            nowMs + impactDelayMs,
+            nowMs + impactDelayMs + activeDurationMs);
         return true;
     }
 

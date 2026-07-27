@@ -222,9 +222,6 @@ Os gates automatizados cobrem:
 5. morte, um ponto em Deathmatch, lifecycle nativo e respawn com HP cheio;
 6. quatro fontes nativas alternando `Dead → Alive` sem processo gráfico.
 
-Esse marco ainda não prova o contato físico por evento de colisão da engine, linha de visão,
-fórmula por arma, queda visual no cliente ou combate bot → humano.
-
 ## Marco 8: reação de dano nativa
 
 Cada dano aceito pelo World incrementa `DamageSequence` e registra o seat atacante. Antes do tick
@@ -233,17 +230,29 @@ thread proprietária da engine e reutiliza o export `ExecDamageAnim` da `entitie
 animação, queda ou deslocamento sintetizado no backend.
 
 O build x86 com `/W4 /WX`, o probe IPC contra o cliente original e os testes integrados do worker
-confirmam ABI, capability, request/response e aplicação do comando nas fontes nativas. A queda e a
-recuperação ainda precisam do gate visual no cliente gráfico; o smoke headless comprova que a
-engine aceitou a transição, mas não substitui essa observação.
+confirmam ABI, capability, request/response e aplicação do comando nas fontes nativas.
+
+## Marco 9: combate autoritativo bot → humano
+
+O cérebro nativo (`BotEngineBrain`) abre a janela de ataque do bot com o mesmo
+`PlayerCombatState` do humano (cadência + janela 120–450 ms). O domínio resolve o alvo humano do
+`TargetSeat` com hitbox idêntica (alcance `3,25`, vertical `2,0`, cone frontal). O dano usa
+`BotHumanDamagePolicy` (`10 + level + bônus de dificuldade`, clamp `10..80`) e a armadura do
+humano absorve primeiro via `PlayerCombatVitals`.
+
+Publicação no fio:
+
+1. animação `0x0311 kind=Damage` no seat da vítima;
+2. evento tipado de dano (`ServerCombatDatagrams.Damage`);
+3. vitais autoritativos (`PlayerRemainHp`);
+4. em morte: `PlayerDeath` + TCP `0x4F` com placar e respawn após o delay competitivo.
+
+O respawn humano restaura HP/AP cheios e publica `Respawn` + vitais. Não existe ramo sintético de
+movimento: `BotManager.Tick` e o planejador de obstáculos server-side foram removidos.
 
 ## Gates restantes
 
-1. validar visualmente a convergência do deslocamento nativo no cliente gráfico;
-2. validar visualmente HIT, queda e recuperação produzidos por `ExecDamageAnim`;
-3. implementar e validar combate autoritativo bot → humano;
-4. validar visualmente morte e respawn;
-5. substituir a política provisória pelas fórmulas por arma/equipamento;
-6. desativar os subsistemas de input e som não necessários ao worker;
-7. remover o código remanescente do `BotManager` sintético e os patches correspondentes;
-8. validar visualmente e sob carga múltiplos bots em todos os mapas battle.
+1. validar visualmente no cliente gráfico deslocamento nativo, HIT/queda/recuperação, morte e
+   respawn (humano↔bot) e multi-bot sob carga em todos os mapas battle;
+2. substituir as políticas provisórias de dano pelas fórmulas por arma/equipamento;
+3. desativar os subsistemas de input e som não necessários ao worker.

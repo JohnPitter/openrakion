@@ -138,6 +138,82 @@ public sealed class NativeBotMovementE2ETests
             JourneyHelper.Timeout);
     }
 
+    [Fact]
+    [Trait("Requires", "BotEngineFixture")]
+    public async Task NativeBotDamagesKillsAndRespawnsHumanAuthoritatively()
+    {
+        NativeMatch? setup = await StartNativeMatchAsync("native-bot-combat");
+        if (setup == null)
+            return;
+        await using NativeMatch match = setup;
+        JourneyHelper.WaitUntil(
+            () => match.BotRecord.Bot!.MoveSeq > 0,
+            "snapshot nativo inicial não chegou");
+        lock (match.Field.SyncRoot)
+            match.HumanRecord.Vitals.Initialize(30, 0);
+        PositionAttackerInFront(match);
+        JourneyHelper.WaitUntil(
+            () => match.BotRecord.Bot!.TargetSeat ==
+                match.HumanRecord.Slot,
+            "cérebro nativo não selecionou o humano");
+        JourneyHelper.WaitUntil(
+            () => match.BotRecord.Bot!.NextAttackReadyMs > 0,
+            "cérebro nativo não abriu uma janela de ataque");
+
+        JourneyHelper.WaitUntil(
+            () => match.HumanRecord.Dead,
+            "ataque nativo do bot não matou o humano",
+            TimeSpan.FromSeconds(10));
+        match.Human.WaitForFirstByte(0x4F, JourneyHelper.Timeout);
+        Assert.Equal(0, match.HumanRecord.Vitals.Hp);
+        Assert.Equal(1, match.BotRecord.RoundScore);
+
+        byte[] respawn = match.Human.WaitForUdp(
+            packet => GameplayPeerDatagramCodec.TryParseEntityEvent(
+                    packet, out GameplayEntityEvent envelope) &&
+                envelope.EventId == GameplayPeerDatagramCodec.RespawnEventId &&
+                envelope.PrimaryEntitySeat == match.HumanRecord.Slot,
+            TimeSpan.FromSeconds(10));
+        Assert.NotEmpty(respawn);
+        JourneyHelper.WaitUntil(
+            () => !match.HumanRecord.Dead,
+            "humano não renasceu após lifecycle autoritativo");
+        Assert.Equal(30, match.HumanRecord.Vitals.Hp);
+    }
+
+    [Fact]
+    [Trait("Requires", "BotEngineFixture")]
+    public async Task MultipleNativeBotsKeepIndependentEngineState()
+    {
+        NativeMatch? setup = await StartNativeMatchAsync(
+            "native-multi-bot", botCount: 2);
+        if (setup == null)
+            return;
+        await using NativeMatch match = setup;
+        PlayerRec[] bots = match.Field.BotSlots.ToArray();
+        Assert.Equal(2, bots.Length);
+        BotPlayer first = bots[0].Bot!;
+        BotPlayer second = bots[1].Bot!;
+        JourneyHelper.WaitUntil(
+            () => first.MoveSeq > 0 && second.MoveSeq > 0,
+            "snapshots nativos multi-bot não chegaram");
+        uint firstSeq = first.MoveSeq;
+        uint secondSeq = second.MoveSeq;
+        first.SetEngineIntent(BotControls.W, false);
+        second.SetEngineIntent(BotControls.S, true);
+        first.BeginHitReaction(Environment.TickCount64);
+
+        Assert.Equal(BotControls.None, first.EngineControls);
+        Assert.Equal(BotControls.S, second.EngineControls);
+        Assert.True(second.EngineAttacking);
+        Assert.True(first.HitReactionUntilMs > 0);
+        Assert.Equal(0, second.HitReactionUntilMs);
+        Assert.NotSame(first.Combat, second.Combat);
+        Assert.True(first.EngineAttached);
+        Assert.True(second.EngineAttached);
+        Assert.True(firstSeq > 0 && secondSeq > 0);
+    }
+
     private static short ToWire(float value) =>
         checked((short)MathF.Round(value * BotMovement.PositionScale));
 
@@ -161,7 +237,8 @@ public sealed class NativeBotMovementE2ETests
     }
 
     private static async Task<NativeMatch?> StartNativeMatchAsync(
-        string roomName)
+        string roomName,
+        int botCount = 1)
     {
         string? hostPath = Environment.GetEnvironmentVariable(
             "RAKION_BOT_ENGINE_HOST");
@@ -178,18 +255,20 @@ public sealed class NativeBotMovementE2ETests
                 config.BotEngine.Enabled = true;
                 config.BotEngine.HostPath = hostPath;
                 config.BotEngine.ClientRoot = clientRoot;
+                config.BotEngine.MaxBotsPerField = Math.Max(4, botCount);
             });
         if (!fixture.Available)
         {
             await fixture.DisposeAsync();
             return null;
         }
-        return await CreateNativeMatchAsync(fixture, roomName);
+        return await CreateNativeMatchAsync(fixture, roomName, botCount);
     }
 
     private static async Task<NativeMatch> CreateNativeMatchAsync(
         WorldServerFixture fixture,
-        string roomName)
+        string roomName,
+        int botCount)
     {
         WorldServer server = fixture.Server!;
         HeadlessWorldClient human = await HeadlessWorldClient.ConnectAsync(
@@ -209,12 +288,14 @@ public sealed class NativeBotMovementE2ETests
                 server.GetField(session.FieldId) != null,
             "sala não criada");
         Field field = server.GetField(session.FieldId)!;
-        human.SendFieldChat("GoHeroi : /addbot");
+        for (int index = 0; index < botCount; index++)
+            human.SendFieldChat("GoHeroi : /addbot");
         JourneyHelper.WaitUntil(
-            () => field.BotSlots.Any(record => record.Bot!.EngineAttached),
-            "Host nativo não confirmou o bot",
-            TimeSpan.FromSeconds(40));
-        PlayerRec botRecord = field.BotSlots.Single();
+            () => field.BotSlots.Count(record =>
+                record.Bot!.EngineAttached) >= botCount,
+            "Host nativo não confirmou os bots",
+            TimeSpan.FromSeconds(60));
+        PlayerRec botRecord = field.BotSlots.First();
         AuthenticateGameplay(human, fixture, session, field);
         lock (field.SyncRoot)
         {
@@ -223,7 +304,8 @@ public sealed class NativeBotMovementE2ETests
             field.DeadlineMs = Environment.TickCount64 + 60_000;
             field.Round = 1;
             field.Slots[session.FieldSeat].State = 4;
-            botRecord.State = 4;
+            foreach (PlayerRec bot in field.BotSlots)
+                bot.State = 4;
         }
         return new NativeMatch(
             fixture,

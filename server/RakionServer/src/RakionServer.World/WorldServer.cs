@@ -407,7 +407,7 @@ namespace RakionServer.World
             _botEngine = new BotEngineCoordinator(cfg.BotEngine);
         }
 
-        /// <summary>Subsistema de bots (peers sintéticos server-side). Ver <see cref="BotManager"/>.</summary>
+        /// <summary>Roster/lifecycle de bots nativos. Ver <see cref="BotManager"/> e Bot Engine Host.</summary>
         public BotManager Bots { get; } = new();
 
         /// <summary>Mensagem de sistema para UMA sessão (feedback de comando), via chat de canal.</summary>

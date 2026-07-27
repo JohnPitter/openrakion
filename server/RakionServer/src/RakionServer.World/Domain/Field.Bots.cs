@@ -6,11 +6,11 @@ namespace RakionServer.World.Domain
     /// Assentos de BOT no field. Um bot ocupa um <see cref="PlayerRec"/> como um jogador (mesmo
     /// State/Team), mas com <see cref="PlayerRec.Session"/> nulo e <see cref="PlayerRec.Bot"/> setado.
     /// Ciclo efêmero: os bots são limpos no fim do match ou quando o último humano sai (regra do
-    /// subsistema, aplicada pelo BotManager). Não há relay do bot — o movimento é sintetizado.
+    /// subsistema, aplicada pelo BotManager). Movimento e colisão vêm do Bot Engine Host.
     /// </summary>
     public sealed partial class Field
     {
-        /// <summary>Assentos ocupados por bot (para o tick de IA e a limpeza).</summary>
+        /// <summary>Assentos ocupados por bot (tick nativo e limpeza).</summary>
         public IEnumerable<PlayerRec> BotSlots
         {
             get { foreach (var r in Slots) if (r.IsBot) yield return r; }
@@ -78,6 +78,7 @@ namespace RakionServer.World.Domain
             rec.Position = default;
             rec.Heading = 0;
             rec.Combat.Reset();
+            rec.Vitals.Reset();
         }
 
         /// <summary>True se ainda há algum humano (Session != null) ocupando o field.</summary>

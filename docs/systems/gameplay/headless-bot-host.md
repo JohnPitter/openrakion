@@ -5,12 +5,12 @@
 > [`bot-engine-host.md`](bot-engine-host.md), não abre o cliente por bot e não possui fallback
 > sintético.
 
-## Objetivo e fallback
+## Objetivo (legado)
 
-O BotHost executa uma instância nativa sem renderização como um peer real do field. O
-`BotManager` sintético continua disponível como fallback
-quando não houver BotHost saudável. O World permanece responsável por roster, autorização, HP,
-pontuação, morte e respawn; o engine headless fornece física, colisão, animações e eventos de arma.
+O BotHost executava uma instância nativa sem renderização como um peer real do field. Esse
+caminho foi substituído pelo Bot Engine Host in-process do field. **Não há fallback sintético**
+nem peer-process por bot no caminho shippado. O World permanece responsável por roster,
+autorização, HP, pontuação, morte e respawn.
 
 Na fase atual, cada conta headless corresponde a um processo e a uma fonte local primária. A
 consolidação de vários bots em uma instância por field depende de comprovar fontes locais

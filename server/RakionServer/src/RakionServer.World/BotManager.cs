@@ -10,14 +10,9 @@ using RakionServer.World.Network;
 namespace RakionServer.World
 {
     /// <summary>
-    /// Subsistema de BOTS reconstruído sobre o motor de partida do golden. Regra de negócio pura de
-    /// roster/lifecycle: só o HOST adiciona, só ANTES da partida, no time OPOSTO ao host; o bot é um
-    /// peer sintético (<see cref="BotPlayer"/>) que entra no roster (0x38) como um jogador, é movido
-    /// pela IA (<see cref="BotSteering"/>) e tem o movimento sintetizado no fio (0x030A, fase de rede).
-    ///
-    /// Teto do RE (respeitado): entrega oponente FUNCIONAL (roster, movimento, dano/morte server-side)
-    /// e publica a confirmação necessária para a camada visual da DLL. Nenhum
-    /// pacote do bot fala direto com o cliente — só via o socket do <see cref="UdpGameplay"/>.
+    /// Roster e lifecycle de bots no field. Só o HOST adiciona, só ANTES da partida, no time OPOSTO.
+    /// Movimento, colisão e animação vêm exclusivamente do Bot Engine Host; este serviço não possui
+    /// tick sintético nem fallback de física. Publicação de rede usa <see cref="UdpGameplay"/>.
     /// Ciclo efêmero: bots somem no fim do match ou quando o último humano sai.
     /// </summary>
     public sealed partial class BotManager
@@ -135,7 +130,7 @@ namespace RakionServer.World
             return bot;
         }
 
-        /// <summary>Remove um bot pelo seat e avisa o roster (0x3a member-leave sintético).</summary>
+        /// <summary>Remove um bot pelo seat e avisa o roster (0x3a member-leave).</summary>
         public bool RemoveBot(Field field, byte seat)
         {
             lock (field.SyncRoot)
@@ -147,7 +142,7 @@ namespace RakionServer.World
             }
         }
 
-        /// <summary>Publica o spawn dos peers sintéticos quando o match entra no field.</summary>
+        /// <summary>Publica o spawn dos bots quando o match entra no field.</summary>
         public void PublishMatchSpawns(Field field)
         {
             lock (field.SyncRoot)
@@ -178,7 +173,7 @@ namespace RakionServer.World
         }
 
         /// <summary>
-        /// Replica o snapshot inicial de entrada do humano para criar os peers sintéticos no engine.
+        /// Replica o snapshot inicial de entrada do humano para criar os peers de bot no engine.
         /// O seat fica no envelope 0x4B; o blob contém apenas o estado inicial do avatar.
         /// </summary>
         public void SendInitialStateTo(ClientSession session, Field field, byte[] stateBlob)

@@ -26,17 +26,22 @@ internal static class BotEngineBrain
         {
             PlayerRec? botRecord = field.RecAt(botSeat);
             BotPlayer? bot = botRecord?.Bot;
-            if (bot == null || !bot.Alive)
+            if (botRecord == null || bot == null || !bot.Alive)
                 return false;
             bot.TryFinishHitReaction(now);
             if (bot.HitReactionUntilMs != 0)
                 return false;
-            if (!TryFindNearestEnemy(field, botRecord!, out PlayerRec target))
+            if (!TryFindNearestEnemy(field, botRecord, out PlayerRec target))
                 return false;
 
             float distance = bot.Position.HorizontalDistanceTo(target.Position);
             BotEngineInput input = ResolveInput(bot, distance, now);
             BotControls controls = ToControls(input);
+            // Domínio usa yaw em radianos (mesmo contrato do 0x030A humano). O Aim
+            // nativo orienta a engine; o cone de melee autoritativo usa este heading.
+            float facing = botRecord.Position.HeadingTo(target.Position);
+            bot.Heading = facing;
+            botRecord.Heading = facing;
             bot.TargetSeat = (byte)target.Slot;
             bot.SetEngineIntent(
                 controls, input.HasFlag(BotEngineInput.PrimaryAttack));
@@ -82,9 +87,8 @@ internal static class BotEngineBrain
             return BotEngineInput.Forward;
         if (distance < MinimumAttackDistance)
             return BotEngineInput.Backward;
-        if (now < bot.NextAttackReadyMs)
+        if (!bot.TryStartAttack(now))
             return BotEngineInput.None;
-        bot.NextAttackReadyMs = now + bot.Profile.AttackCooldownMs;
         return BotEngineInput.PrimaryAttack;
     }
 
