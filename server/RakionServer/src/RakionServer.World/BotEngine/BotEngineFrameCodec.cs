@@ -137,6 +137,20 @@ internal static class BotEngineFrameCodec
         return payload;
     }
 
+    public static byte[] EncodeDamageReaction(
+        uint botId,
+        byte attackerSeat)
+    {
+        if (botId == 0 || attackerSeat >= 20)
+            throw new ArgumentException(
+                "Reação de dano do Bot Engine inválida.");
+        byte[] payload = new byte[sizeof(uint) * 2];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload, botId);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            payload.AsSpan(sizeof(uint)), attackerSeat);
+        return payload;
+    }
+
     private static byte[] EncodeWorldName(string worldName)
     {
         if (!worldName.StartsWith(@"LevelsSV\", StringComparison.Ordinal) ||

@@ -64,17 +64,18 @@ O Host atende um named pipe local em modo byte. Cada frame possui header little-
 | Campo | Tipo | Regra |
 | --- | --- | --- |
 | magic | `uint32` | `0x4842524F` |
-| version | `uint16` | `6` |
+| version | `uint16` | `7` |
 | messageType | `uint16` | bit `0x8000` indica resposta |
 | payloadSize | `uint32` | máximo de 4096 bytes |
 | correlationId | `uint32` | ecoado na resposta |
 | status | `uint32` | zero em sucesso |
 
 Os comandos disponíveis são `Hello`, `LoadField`, `AddBot`, `Aim`, `Input`, `Tick`, `Snapshot`,
-`Lifecycle`, `Ping` e `Shutdown`. `LoadField` transporta `fieldId`, capacidade, map ID original
-(`200..213`), modo battle (`1..4`) e caminho relativo sob `LevelsSV`. Ele aceita um único
-carregamento por processo e não permite capacidade superior à oferecida pela engine. `AddBot`
-transporta identidade explícita e cria a fonte local por `CNetworkLibrary::AddPlayer_t`.
+`Lifecycle`, `DamageReaction`, `Ping` e `Shutdown`. `LoadField` transporta `fieldId`, capacidade,
+map ID original (`200..213`), modo battle (`1..4`) e caminho relativo sob `LevelsSV`. Ele aceita
+um único carregamento por processo e não permite capacidade superior à oferecida pela engine.
+`AddBot` transporta identidade explícita e cria a fonte local por
+`CNetworkLibrary::AddPlayer_t`.
 
 `Input` aceita combinações não conflitantes de forward, backward, left, right, jump e primary
 attack. O Host converte essas intenções para os bits/eixos do `CPlayerAction` original e chama
@@ -90,9 +91,15 @@ comprovados no peer headless; posição e colisão nunca são escritas pelo Worl
 `CPlayerSource` e chama os exports originais `CPlayer::SetAlive` ou `CPlayer::SetDead` da
 `entitiesmp.dll`. A sequência monotônica do domínio impede reaplicar transições antigas.
 
+`DamageReaction` recebe bot e seat do atacante. O Host resolve a entidade nativa e chama
+`CPlayer::ExecDamageAnim(0x0F, 0x07, attackerSeat)`, combinação extraída do consumidor real de
+`0x0311 kind=Damage`. O comando não altera HP: o World continua sendo a única autoridade de dano.
+Uma sequência monotônica separada impede repetir a reação do mesmo impacto. Em golpe letal, o
+coordenador aplica a reação antes de enviar `Lifecycle=Dead`.
+
 O pipe recusa clientes remotos. Antes de carregar o mapa, o World valida PID, versão e as
 capabilities `EngineBootstrap`, `NativeWorld`, `NativePlayerSources`, `NativeSnapshots`,
-`NativeInputs`, `NativeTargeting` e `NativeLifecycle`.
+`NativeInputs`, `NativeTargeting`, `NativeLifecycle` e `NativeDamageReactions`.
 
 `BotEngineSupervisor` mantém no máximo um worker persistente por field. Ele inicia o processo sem
 shell ou janela, drena stdout/stderr, aplica timeout ao handshake e mata a árvore do processo quando
@@ -127,7 +134,7 @@ registro da fonte. Ainda não comprova ações, simulação temporal, animação
 
 ## Marco 4: múltiplas fontes, input e snapshots
 
-O protocolo v6 foi validado com as quatro fontes locais oferecidas pela engine. Para cada uma, o
+O protocolo v7 foi validado com as quatro fontes locais oferecidas pela engine. Para cada uma, o
 Host avançou a simulação e resolveu uma entidade distinta. O smoke também aplicou forward ao
 primeiro bot repetindo o ciclo humano `ApplyAction → SendAction → timer → main loop`; a posição
 publicada pelo snapshot mudou sem escrita direta em placement. Isso comprova que o movimento veio
@@ -218,12 +225,24 @@ Os gates automatizados cobrem:
 Esse marco ainda não prova o contato físico por evento de colisão da engine, linha de visão,
 fórmula por arma, queda visual no cliente ou combate bot → humano.
 
+## Marco 8: reação de dano nativa
+
+Cada dano aceito pelo World incrementa `DamageSequence` e registra o seat atacante. Antes do tick
+seguinte, o coordenador envia exatamente uma `DamageReaction` para o Host. A chamada ocorre na
+thread proprietária da engine e reutiliza o export `ExecDamageAnim` da `entitiesmp.dll`; não há
+animação, queda ou deslocamento sintetizado no backend.
+
+O build x86 com `/W4 /WX`, o probe IPC contra o cliente original e os testes integrados do worker
+confirmam ABI, capability, request/response e aplicação do comando nas fontes nativas. A queda e a
+recuperação ainda precisam do gate visual no cliente gráfico; o smoke headless comprova que a
+engine aceitou a transição, mas não substitui essa observação.
+
 ## Gates restantes
 
 1. validar visualmente a convergência do deslocamento nativo no cliente gráfico;
-2. extrair hitbox, contato e eventos de animação da engine em vez de inferi-los do input;
+2. validar visualmente HIT, queda e recuperação produzidos por `ExecDamageAnim`;
 3. implementar e validar combate autoritativo bot → humano;
-4. validar visualmente HIT, queda, morte e respawn;
+4. validar visualmente morte e respawn;
 5. substituir a política provisória pelas fórmulas por arma/equipamento;
 6. desativar os subsistemas de input e som não necessários ao worker;
 7. remover o código remanescente do `BotManager` sintético e os patches correspondentes;

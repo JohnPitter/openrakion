@@ -61,6 +61,9 @@ private:
     Response HandleLifecycle(
         const Request& request,
         EngineRuntime& runtime);
+    Response HandleDamageReaction(
+        const Request& request,
+        EngineRuntime& runtime);
 
     template<typename T>
     static std::vector<std::uint8_t> Encode(const T& value)

@@ -73,6 +73,8 @@ constexpr char IsAliveSymbol[] = "?IsAlive@CPlayer@@QAEHXZ";
 constexpr char GetHpSymbol[] = "?GetHP@CPlayer@@UAEMXZ";
 constexpr char SetAliveSymbol[] = "?SetAlive@CPlayer@@QAEXXZ";
 constexpr char SetDeadSymbol[] = "?SetDead@CPlayer@@QAEXXZ";
+constexpr char ExecDamageAnimSymbol[] =
+    "?ExecDamageAnim@CPlayer@@QAEXJJH@Z";
 constexpr char ApplyActionSymbol[] =
     "?ApplyAction@CPlayerSource@@QAEXAAH@Z";
 constexpr char SendActionSymbol[] =
@@ -126,6 +128,7 @@ using DirectionVectorToAngles = void(__cdecl*)(const float*, float*);
 using IsAlive = int(__thiscall*)(void*);
 using GetHp = float(__thiscall*)(void*);
 using SetLifecycle = void(__thiscall*)(void*);
+using ExecDamageAnim = void(__thiscall*)(void*, long, long, int);
 using ApplyAction = void(__thiscall*)(void*, int&);
 using SendAction = void(__thiscall*)(void*);
 using InitializeGame = void(__thiscall*)(

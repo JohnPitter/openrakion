@@ -5,7 +5,7 @@ namespace RakionServer.World.BotEngine;
 internal static class BotEngineProtocol
 {
     public const uint Magic = 0x4842524F;
-    public const ushort Version = 6;
+    public const ushort Version = 7;
     public const ushort ResponseFlag = 0x8000;
     public const int HeaderSize = 20;
     public const int MaximumPayloadSize = 4096;
@@ -24,6 +24,7 @@ internal static class BotEngineProtocol
         NativeInputs = 1U << 4,
         NativeTargeting = 1U << 5,
         NativeLifecycle = 1U << 6,
+        NativeDamageReactions = 1U << 7,
     }
 
     public enum MessageType : ushort
@@ -38,6 +39,7 @@ internal static class BotEngineProtocol
         Input = 8,
         Aim = 9,
         Lifecycle = 10,
+        DamageReaction = 11,
     }
 
     public enum Status : uint

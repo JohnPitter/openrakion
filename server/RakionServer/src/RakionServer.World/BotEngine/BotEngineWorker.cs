@@ -128,6 +128,13 @@ internal sealed class BotEngineWorker : IAsyncDisposable
         CancellationToken cancellationToken) =>
         _client.SetLifecycleAsync(botId, state, cancellationToken);
 
+    public Task<BotEngineDamageReactionResult> ApplyDamageReactionAsync(
+        uint botId,
+        byte attackerSeat,
+        CancellationToken cancellationToken) =>
+        _client.ApplyDamageReactionAsync(
+            botId, attackerSeat, cancellationToken);
+
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         if (Interlocked.Exchange(ref _stopped, 1) != 0)
@@ -261,7 +268,8 @@ internal sealed class BotEngineWorker : IAsyncDisposable
             BotEngineProtocol.Capability.NativeSnapshots |
             BotEngineProtocol.Capability.NativeInputs |
             BotEngineProtocol.Capability.NativeTargeting |
-            BotEngineProtocol.Capability.NativeLifecycle;
+            BotEngineProtocol.Capability.NativeLifecycle |
+            BotEngineProtocol.Capability.NativeDamageReactions;
         if (hello.ProcessId != unchecked((uint)processId) ||
             hello.ProtocolVersion != BotEngineProtocol.Version ||
             (hello.Capabilities & required) != required)

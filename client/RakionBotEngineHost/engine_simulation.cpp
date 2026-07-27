@@ -82,4 +82,23 @@ void EngineRuntime::SetLifecycle(std::uint32_t botId, bool alive)
     SetNativeLifecycle(
         engine_, entities_, *network, source->second, alive);
 }
+
+void EngineRuntime::ApplyDamageReaction(
+    std::uint32_t botId,
+    std::uint32_t attackerSeat)
+{
+    const auto source = botSources_.find(botId);
+    if (source == botSources_.end())
+        throw std::invalid_argument("Bot não existe neste worker.");
+    auto** network = reinterpret_cast<void**>(ResolveRequired(NetworkSymbol));
+    if (!network || !*network)
+        throw std::runtime_error(
+            "Engine sem network para reação de dano.");
+    ApplyNativeDamageReaction(
+        engine_,
+        entities_,
+        *network,
+        source->second,
+        attackerSeat);
+}
 }

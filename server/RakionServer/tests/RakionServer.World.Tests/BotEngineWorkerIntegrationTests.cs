@@ -103,6 +103,14 @@ public sealed class BotEngineWorkerIntegrationTests
             CancellationToken.None);
         Assert.True(HasMoved(origin, moved));
 
+        BotEngineDamageReactionResult reaction =
+            await first.ApplyDamageReactionAsync(
+                bots[0].BotId,
+                1,
+                CancellationToken.None);
+        Assert.Equal(bots[0].BotId, reaction.BotId);
+        Assert.Equal(1, reaction.AttackerSeat);
+
         BotEngineLifecycleResult dead = await first.SetLifecycleAsync(
             bots[0].BotId,
             BotEngineLifecycle.Dead,
@@ -163,6 +171,11 @@ public sealed class BotEngineWorkerIntegrationTests
         Assert.True(float.IsFinite(bot.Position.Y));
         Assert.True(float.IsFinite(bot.Position.Z));
         Assert.Equal(bot.Position, field.Slots[seat].Position);
+
+        Assert.False(bot.TakeDamage(1, attackerSeat: 0));
+        Assert.True(await coordinator.TickFieldAsync(
+            field, CancellationToken.None));
+
         await coordinator.StopFieldAsync(field.Id, CancellationToken.None);
     }
 

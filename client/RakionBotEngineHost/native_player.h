@@ -64,4 +64,10 @@ void SetNativeLifecycle(
     void* network,
     void* source,
     bool alive);
+void ApplyNativeDamageReaction(
+    HMODULE engine,
+    HMODULE entities,
+    void* network,
+    void* source,
+    std::uint32_t attackerSeat);
 }

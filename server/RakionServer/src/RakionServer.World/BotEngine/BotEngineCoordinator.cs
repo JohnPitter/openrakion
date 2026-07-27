@@ -15,6 +15,7 @@ internal sealed class BotEngineCoordinator(WorldConfig.BotEngineConfig config) :
         public BotEngineWorker Worker { get; } = worker;
         public ConcurrentDictionary<byte, uint> BotIds { get; } = new();
         public ConcurrentDictionary<byte, uint> LifecycleSequences { get; } = new();
+        public ConcurrentDictionary<byte, uint> DamageSequences { get; } = new();
     }
 
     private readonly WorldConfig.BotEngineConfig _config = config;
@@ -58,6 +59,7 @@ internal sealed class BotEngineCoordinator(WorldConfig.BotEngineConfig config) :
             throw new InvalidOperationException(
                 $"Seat {seat} já possui player nativo.");
         session.LifecycleSequences[seat] = bot.LifecycleSequence;
+        session.DamageSequences[seat] = bot.DamageSequence;
     }
 
     public async Task<bool> TickFieldAsync(
@@ -68,6 +70,8 @@ internal sealed class BotEngineCoordinator(WorldConfig.BotEngineConfig config) :
             return true;
         try
         {
+            await SynchronizeDamageReactionsAsync(
+                field, session, cancellationToken).ConfigureAwait(false);
             await SynchronizeLifecyclesAsync(
                 field, session, cancellationToken).ConfigureAwait(false);
             await session.Worker.TickAsync(1, cancellationToken).ConfigureAwait(false);
@@ -169,6 +173,23 @@ internal sealed class BotEngineCoordinator(WorldConfig.BotEngineConfig config) :
         }
     }
 
+    private static async Task SynchronizeDamageReactionsAsync(
+        Field field,
+        FieldSession session,
+        CancellationToken cancellationToken)
+    {
+        List<DamageReactionCommand> commands = CaptureDamageReactionCommands(
+            field, session);
+        foreach (DamageReactionCommand command in commands)
+        {
+            await session.Worker.ApplyDamageReactionAsync(
+                command.BotId,
+                command.AttackerSeat,
+                cancellationToken).ConfigureAwait(false);
+            session.DamageSequences[command.Seat] = command.Sequence;
+        }
+    }
+
     private static List<LifecycleCommand> CaptureLifecycleCommands(
         Field field,
         FieldSession session)
@@ -196,6 +217,33 @@ internal sealed class BotEngineCoordinator(WorldConfig.BotEngineConfig config) :
         return commands;
     }
 
+    private static List<DamageReactionCommand> CaptureDamageReactionCommands(
+        Field field,
+        FieldSession session)
+    {
+        List<DamageReactionCommand> commands = [];
+        lock (field.SyncRoot)
+        {
+            foreach (KeyValuePair<byte, uint> entry in session.BotIds)
+            {
+                BotPlayer? bot = field.RecAt(entry.Key)?.Bot;
+                if (bot == null ||
+                    bot.DamageSequence == 0 ||
+                    bot.LastAttackerSeat == Field.NoSeat ||
+                    session.DamageSequences.TryGetValue(
+                        entry.Key, out uint applied) &&
+                    applied == bot.DamageSequence)
+                    continue;
+                commands.Add(new DamageReactionCommand(
+                    entry.Key,
+                    entry.Value,
+                    bot.DamageSequence,
+                    bot.LastAttackerSeat));
+            }
+        }
+        return commands;
+    }
+
     private static void ClearIntent(Field field, byte seat)
     {
         lock (field.SyncRoot)
@@ -218,4 +266,10 @@ internal sealed class BotEngineCoordinator(WorldConfig.BotEngineConfig config) :
         uint BotId,
         uint Sequence,
         BotEngineLifecycle State);
+
+    private readonly record struct DamageReactionCommand(
+        byte Seat,
+        uint BotId,
+        uint Sequence,
+        byte AttackerSeat);
 }

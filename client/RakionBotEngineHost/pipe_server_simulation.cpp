@@ -169,4 +169,40 @@ PipeServer::Response PipeServer::HandleLifecycle(
         return {protocol::Status::EngineFailure};
     }
 }
+
+PipeServer::Response PipeServer::HandleDamageReaction(
+    const Request& request,
+    EngineRuntime& runtime)
+{
+    if (fieldId_ == 0)
+        return {protocol::Status::InvalidState};
+    if (request.payload.size() !=
+        sizeof(protocol::DamageReactionRequest))
+        return {protocol::Status::BadRequest};
+
+    protocol::DamageReactionRequest payload{};
+    std::memcpy(&payload, request.payload.data(), sizeof(payload));
+    if (payload.attackerSeat >= 20)
+        return {protocol::Status::BadRequest};
+    try
+    {
+        runtime.ApplyDamageReaction(
+            payload.botId, payload.attackerSeat);
+        return {
+            protocol::Status::Success,
+            Encode(protocol::DamageReactionResponse{
+                payload.botId, payload.attackerSeat}),
+        };
+    }
+    catch (const std::invalid_argument&)
+    {
+        return {protocol::Status::BadRequest};
+    }
+    catch (const std::exception& error)
+    {
+        std::cerr << "DamageReaction falhou: "
+                  << error.what() << '\n';
+        return {protocol::Status::EngineFailure};
+    }
+}
 }

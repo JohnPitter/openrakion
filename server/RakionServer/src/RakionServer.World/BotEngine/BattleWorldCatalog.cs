@@ -97,3 +97,7 @@ internal enum BotEngineLifecycle : uint
 internal readonly record struct BotEngineLifecycleResult(
     uint BotId,
     BotEngineLifecycle State);
+
+internal readonly record struct BotEngineDamageReactionResult(
+    uint BotId,
+    byte AttackerSeat);

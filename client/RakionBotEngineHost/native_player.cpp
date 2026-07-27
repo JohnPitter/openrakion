@@ -158,6 +158,22 @@ bool InvokeLifecycleSafely(SetLifecycle transition, void* entity)
         return false;
     }
 }
+
+bool InvokeDamageReactionSafely(
+    ExecDamageAnim applyReaction,
+    void* entity,
+    int attackerSeat)
+{
+    __try
+    {
+        applyReaction(entity, 0x0f, 0x07, attackerSeat);
+        return true;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        return false;
+    }
+}
 }
 
 NativePlayerResult CreateNativePlayer(
@@ -392,5 +408,31 @@ void SetNativeLifecycle(
     if (!InvokeLifecycleSafely(transition, entity))
         throw std::runtime_error(
             "A engine recusou a transição de lifecycle.");
+}
+
+void ApplyNativeDamageReaction(
+    HMODULE engine,
+    HMODULE entities,
+    void* network,
+    void* source,
+    std::uint32_t attackerSeat)
+{
+    if (!engine || !entities || !network || !source ||
+        attackerSeat >= 20)
+        throw std::invalid_argument("Reação de dano nativa inválida.");
+    auto getEntity = reinterpret_cast<GetLocalPlayerEntity>(
+        Resolve(engine, GetLocalPlayerEntitySymbol));
+    auto applyReaction = reinterpret_cast<ExecDamageAnim>(
+        GetProcAddress(entities, ExecDamageAnimSymbol));
+    void* entity = getEntity(network, source);
+    if (!entity || !applyReaction)
+        throw std::runtime_error(
+            "Entidade ou reação de dano ausente.");
+    if (!InvokeDamageReactionSafely(
+            applyReaction,
+            entity,
+            static_cast<int>(attackerSeat)))
+        throw std::runtime_error(
+            "A engine recusou a reação de dano.");
 }
 }

@@ -48,7 +48,7 @@ function Invoke-Request {
     $writer = [System.IO.BinaryWriter]::new(
         $Stream, [Text.Encoding]::ASCII, $true)
     $writer.Write([uint32]0x4842524F)
-    $writer.Write([uint16]6)
+    $writer.Write([uint16]7)
     $writer.Write($MessageType)
     $writer.Write([uint32]$Payload.Length)
     $writer.Write($CorrelationId)
@@ -65,7 +65,7 @@ function Invoke-Request {
     $payloadLength = $reader.ReadUInt32()
     $responseCorrelation = $reader.ReadUInt32()
     $status = $reader.ReadUInt32()
-    if ($magic -ne 0x4842524F -or $version -ne 6) {
+    if ($magic -ne 0x4842524F -or $version -ne 7) {
         throw 'Resposta IPC com magic/version inválido'
     }
     if ($responseType -ne ($MessageType -bor 0x8000) -or
@@ -131,7 +131,7 @@ try {
 
     $hello = Invoke-Request -Stream $pipe -MessageType 1 -CorrelationId 1
     if ($hello.Length -ne 12 -or
-        [BitConverter]::ToUInt32($hello, 4) -ne 127) {
+        [BitConverter]::ToUInt32($hello, 4) -ne 255) {
         throw 'Capabilities inválidas no Hello'
     }
 
@@ -276,6 +276,19 @@ try {
         -CorrelationId $correlation -Payload $stopStream.ToArray())
     $correlation++
 
+    $damageStream = [IO.MemoryStream]::new()
+    $damageWriter = [IO.BinaryWriter]::new($damageStream)
+    $damageWriter.Write([uint32]41)
+    $damageWriter.Write([uint32]0)
+    $damage = Invoke-Request -Stream $pipe -MessageType 11 `
+        -CorrelationId $correlation -Payload $damageStream.ToArray()
+    $correlation++
+    if ($damage.Length -ne 8 -or
+        [BitConverter]::ToUInt32($damage, 0) -ne 41 -or
+        [BitConverter]::ToUInt32($damage, 4) -ne 0) {
+        throw 'DamageReaction não confirmou bot/atacante'
+    }
+
     $lifecycleStream = [IO.MemoryStream]::new()
     $lifecycleWriter = [IO.BinaryWriter]::new($lifecycleStream)
     $lifecycleWriter.Write([uint32]41)
@@ -319,7 +332,7 @@ try {
     if (-not $process.WaitForExit(15000) -or $process.ExitCode -ne 0) {
         throw "Host não encerrou corretamente: $($process.ExitCode)"
     }
-    Write-Output 'IPC smoke: quatro fontes, aim, input, lifecycle, ticks e snapshots nativos validados'
+    Write-Output 'IPC smoke: quatro fontes, aim, input, reação de dano, lifecycle, ticks e snapshots nativos validados'
 }
 finally {
     if (-not $process.HasExited) {

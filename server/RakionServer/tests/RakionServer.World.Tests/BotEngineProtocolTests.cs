@@ -17,7 +17,7 @@ public sealed class BotEngineProtocolTests
 
         Assert.Equal(22, frame.Length);
         Assert.Equal(0x4842524Fu, BinaryPrimitives.ReadUInt32LittleEndian(frame));
-        Assert.Equal(6, BinaryPrimitives.ReadUInt16LittleEndian(frame.AsSpan(4)));
+        Assert.Equal(7, BinaryPrimitives.ReadUInt16LittleEndian(frame.AsSpan(4)));
         Assert.Equal(3, BinaryPrimitives.ReadUInt16LittleEndian(frame.AsSpan(6)));
         Assert.Equal(2u, BinaryPrimitives.ReadUInt32LittleEndian(frame.AsSpan(8)));
         Assert.Equal(0x11223344u, BinaryPrimitives.ReadUInt32LittleEndian(frame.AsSpan(12)));
@@ -124,6 +124,17 @@ public sealed class BotEngineProtocolTests
         Assert.Equal(8, payload.Length);
         Assert.Equal(17u, BinaryPrimitives.ReadUInt32LittleEndian(payload));
         Assert.Equal(2u, BinaryPrimitives.ReadUInt32LittleEndian(
+            payload.AsSpan(4)));
+    }
+
+    [Fact]
+    public void DamageReactionPayloadMatchesNativeLayout()
+    {
+        byte[] payload = BotEngineFrameCodec.EncodeDamageReaction(17, 10);
+
+        Assert.Equal(8, payload.Length);
+        Assert.Equal(17u, BinaryPrimitives.ReadUInt32LittleEndian(payload));
+        Assert.Equal(10u, BinaryPrimitives.ReadUInt32LittleEndian(
             payload.AsSpan(4)));
     }
 

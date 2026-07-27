@@ -218,6 +218,30 @@ internal sealed class BotEngineClient : IAsyncDisposable
         return result;
     }
 
+    public async Task<BotEngineDamageReactionResult> ApplyDamageReactionAsync(
+        uint botId,
+        byte attackerSeat,
+        CancellationToken cancellationToken)
+    {
+        BotEngineFrame frame = await RequestAsync(
+            BotEngineProtocol.MessageType.DamageReaction,
+            BotEngineFrameCodec.EncodeDamageReaction(
+                botId, attackerSeat),
+            cancellationToken).ConfigureAwait(false);
+        if (frame.Payload.Length != sizeof(uint) * 2)
+            throw new InvalidDataException(
+                "DamageReaction retornou payload inválido.");
+        var result = new BotEngineDamageReactionResult(
+            BinaryPrimitives.ReadUInt32LittleEndian(frame.Payload),
+            checked((byte)BinaryPrimitives.ReadUInt32LittleEndian(
+                frame.Payload.AsSpan(sizeof(uint)))));
+        if (result.BotId != botId ||
+            result.AttackerSeat != attackerSeat)
+            throw new InvalidDataException(
+                "DamageReaction não confirmou bot/atacante.");
+        return result;
+    }
+
     public async Task ShutdownAsync(CancellationToken cancellationToken)
     {
         BotEngineFrame frame = await RequestAsync(
