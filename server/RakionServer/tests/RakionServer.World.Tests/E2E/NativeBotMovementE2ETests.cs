@@ -214,6 +214,30 @@ public sealed class NativeBotMovementE2ETests
         Assert.True(firstSeq > 0 && secondSeq > 0);
     }
 
+    [Fact]
+    [Trait("Requires", "BotEngineFixture")]
+    public async Task NativeBotSurvivesRealMatchStart()
+    {
+        NativeMatch? setup = await StartNativeMatchAsync("native-start", start: false);
+        if (setup == null)
+            return;
+        await using NativeMatch match = setup;
+        PlayerRec botRecord = match.BotRecord;
+        Assert.True(botRecord.Bot!.EngineAttached);
+
+        // Antes do start não há snapshot: o tick nativo só roda em partida. O start real é
+        // o caminho onde a entidade é recriada, e uma recusa pontual de input aqui já
+        // derrubou o Host e apagou todos os bots do field.
+        match.Human.StartMatch();
+        JourneyHelper.WaitUntil(
+            () => match.Field.MatchId != Guid.Empty,
+            "partida não foi armada");
+
+        await Task.Delay(1500);
+        Assert.Single(match.Field.BotSlots);
+        Assert.True(botRecord.Bot!.EngineAttached);
+    }
+
     private static short ToWire(float value) =>
         checked((short)MathF.Round(value * BotMovement.PositionScale));
 
@@ -238,7 +262,8 @@ public sealed class NativeBotMovementE2ETests
 
     private static async Task<NativeMatch?> StartNativeMatchAsync(
         string roomName,
-        int botCount = 1)
+        int botCount = 1,
+        bool start = true)
     {
         string? hostPath = Environment.GetEnvironmentVariable(
             "RAKION_BOT_ENGINE_HOST");
@@ -262,13 +287,14 @@ public sealed class NativeBotMovementE2ETests
             await fixture.DisposeAsync();
             return null;
         }
-        return await CreateNativeMatchAsync(fixture, roomName, botCount);
+        return await CreateNativeMatchAsync(fixture, roomName, botCount, start);
     }
 
     private static async Task<NativeMatch> CreateNativeMatchAsync(
         WorldServerFixture fixture,
         string roomName,
-        int botCount)
+        int botCount,
+        bool start = true)
     {
         WorldServer server = fixture.Server!;
         HeadlessWorldClient human = await HeadlessWorldClient.ConnectAsync(
@@ -299,6 +325,14 @@ public sealed class NativeBotMovementE2ETests
             TimeSpan.FromSeconds(60));
         PlayerRec botRecord = field.BotSlots.First();
         AuthenticateGameplay(human, fixture, session, field);
+        if (!start)
+            return new NativeMatch(
+                fixture,
+                human,
+                session,
+                field,
+                field.Slots[session.FieldSeat],
+                botRecord);
         lock (field.SyncRoot)
         {
             field.State = 2;
