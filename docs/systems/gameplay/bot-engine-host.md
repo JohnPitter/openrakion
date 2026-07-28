@@ -519,10 +519,27 @@ Contratos cravados nos gates:
 - `EPlayerDamage 0x0191000B` sai no layout da RE (40 B: `playerId`, `damageType`, `damageMotionType`,
   `u16` reservado, dois escalares, dois `vec3f`), validado campo a campo.
 
-Em aberto: os dois escalares de `EPlayerDamage` não têm rótulo definitivo HP/AP na RE
-(`WorkReduce_HP_AP` perde a convenção de chamada no decompiler). O World preenche o primeiro e
-publica o snapshot autoritativo de HP logo em seguida, então a aproximação local do cliente é
-corrigida no mesmo tick.
+### `WorkReduce_HP_AP` lido no dump desempacotado
+
+A `entitiesmp.dll` em disco é empacotada; o host ganhou `--dump-entities <arquivo>`, que despeja a
+imagem carregada (`SizeOfImage`, offset == RVA) e destrava o disassembly. Com ele:
+
+| Slot virtual | Papel |
+| --- | --- |
+| `+0x158` / `+0x15C` | get/set de **HP** (usados por `ReduceHP`) |
+| `+0x170` / `+0x16C` | get/set de **AP** (usados por `ReduceAP`) |
+| `+0x164` | `ReduceHP` |
+| `+0x178` | `ReduceAP` |
+
+`CPlayer::WorkReduce_HP_AP(float a, float b)` manda **`a` para `ReduceHP` (`+0x164`)** e **`b` para
+`ReduceAP` (`+0x178`)**; se o AP cruza zero, o resto vai para `ReduceHP` e o AP é zerado — o
+transbordo clássico de armadura para vida. Isso fecha metade da pendência dos escalares.
+
+Ainda **não** está cravado qual escalar do evento cai em cada argumento: o `ApplyReceiveDamage`
+copia `firstDamageValue`/`secondDamageValue` para slots de pilha que sofrem `push` intermediários
+antes do call, e amarrar isso exige rastrear o `esp` pela função inteira. Enquanto isso, o World
+preenche o primeiro escalar e publica o snapshot autoritativo de HP logo em seguida, então a
+aproximação local do cliente é corrigida no mesmo tick.
 
 ## Gates restantes
 

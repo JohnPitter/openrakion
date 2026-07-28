@@ -1,6 +1,7 @@
 #include "engine_runtime.h"
 
 #include <array>
+#include <fstream>
 #include <stdexcept>
 
 #include "engine_invocation.h"
@@ -414,6 +415,27 @@ void EngineRuntime::Shutdown() noexcept
     endEngine_ = nullptr;
     engine_ = nullptr;
     botSources_.clear();
+}
+
+bool EngineRuntime::DumpEntitiesImage(
+    const std::filesystem::path& destination) const
+{
+    if (!entities_)
+        return false;
+    const auto* base = reinterpret_cast<const std::uint8_t*>(entities_);
+    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE)
+        return false;
+    const auto* headers =
+        reinterpret_cast<const IMAGE_NT_HEADERS32*>(base + dos->e_lfanew);
+    if (headers->Signature != IMAGE_NT_SIGNATURE)
+        return false;
+    const std::size_t size = headers->OptionalHeader.SizeOfImage;
+    std::ofstream output(destination, std::ios::binary | std::ios::trunc);
+    if (!output)
+        return false;
+    output.write(reinterpret_cast<const char*>(base), size);
+    return output.good();
 }
 
 }

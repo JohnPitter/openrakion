@@ -20,6 +20,7 @@ struct Options
     std::filesystem::path clientRoot;
     std::string worldName;
     std::wstring pipeName;
+    std::filesystem::path entitiesDump;
     std::uint8_t mapId{211};
     std::uint8_t mode{2};
 };
@@ -66,6 +67,8 @@ Options ParseOptions(int argc, wchar_t** argv)
             options.pipeName = argv[++index];
         else if (argument == L"--map")
             options.mapId = ParseByte(argv[++index], argument);
+        else if (argument == L"--dump-entities")
+            options.entitiesDump = argv[++index];
         else if (argument == L"--mode")
             options.mode = ParseByte(argv[++index], argument);
         else
@@ -140,6 +143,10 @@ int wmain(int argc, wchar_t** argv)
         const auto worldProbe = runtime.LoadWorld(
             options.worldName, options.mapId, options.mode);
         PrintWorldProbe(worldProbe);
+        if (!options.entitiesDump.empty())
+            std::cout << "{\"entitiesDump\":"
+                      << (runtime.DumpEntitiesImage(options.entitiesDump) ? 1 : 0)
+                      << "}\n";
         return worldProbe.worldLoaded &&
             worldProbe.engine.entitiesLoaded
             ? EXIT_SUCCESS

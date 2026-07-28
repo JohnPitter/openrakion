@@ -77,6 +77,8 @@ public:
     void ApplyDamageReaction(
         std::uint32_t botId,
         std::uint32_t attackerSeat);
+    // Ferramenta de RE: a entitiesmp.dll em disco é empacotada; só a imagem carregada é legível.
+    bool DumpEntitiesImage(const std::filesystem::path& destination) const;
 
 private:
     void ConfigureDllSearch();
