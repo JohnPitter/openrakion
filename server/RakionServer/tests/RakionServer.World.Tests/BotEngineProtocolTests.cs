@@ -168,6 +168,25 @@ public sealed class BotEngineProtocolTests
                 1, 8, 211, 2, worldName));
     }
 
+    [Theory]
+    [InlineData((byte)200, @"LevelsSV\Icefield\Icefield.wld")]
+    [InlineData((byte)211, @"LevelsSV\Mammoth\Mammoth.wld")]
+    [InlineData((byte)213, @"LevelsSV\EightArenas\EightArenas.wld")]
+    public void BattleCatalogResolvesClientWireMapId(byte wireMapId, string world)
+    {
+        Assert.Equal(world, BattleWorldCatalog.Resolve(wireMapId));
+    }
+
+    [Theory]
+    [InlineData((byte)0)]
+    [InlineData((byte)11)]
+    [InlineData((byte)214)]
+    public void BattleCatalogRejectsMapIdOutsideBattleRange(byte wireMapId)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => BattleWorldCatalog.Resolve(wireMapId));
+    }
+
     private static string ReadAscii(ReadOnlySpan<byte> value)
     {
         int length = value.IndexOf((byte)0);

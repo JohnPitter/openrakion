@@ -152,8 +152,10 @@ member-join após a confirmação do Host. Se bootstrap, mapa, IPC ou criação 
 desfeita e os bots do field são removidos; não há troca automática para o motor sintético.
 
 Durante uma partida battle, o clock do World avança o Host e copia posição e rotação dos snapshots
-nativos para o estado de domínio. O ID de mapa usado pelo protocolo do cliente (`0..13`) é traduzido
-para o catálogo original da engine (`200..213`). O Host é encerrado quando o field fica vazio, é
+nativos para o estado de domínio. O `0x3B` do cliente já traz o mapa battle no catálogo original da
+engine (`200..213`, capturado em sala real: `0xD3` = Mammoth) — o World repassa o byte ao Host sem
+tradução, e `BattleWorldCatalog` recusa qualquer valor fora dessa faixa. Modo `0` (stage PvE) usa
+outro namespace (`< 100`) e não admite bots. O Host é encerrado quando o field fica vazio, é
 fechado pelo master, perde o processo nativo ou o World é desligado.
 
 Configuração no `worldserver.ini`:
@@ -250,9 +252,278 @@ Publicação no fio:
 O respawn humano restaura HP/AP cheios e publica `Respawn` + vitais. Não existe ramo sintético de
 movimento: `BotManager.Tick` e o planejador de obstáculos server-side foram removidos.
 
+## Bloqueio aberto: locomoção nativa não acontece
+
+O bot **não anda**. A entidade cai até assentar no chão e gira pelo `Aim`, mas nunca se desloca no
+plano — em partida real e no smoke isolado. O gate anterior media deslocamento incluindo o eixo
+vertical, então a queda de alguns centímetros o satisfazia; `HasMoved` e o `ipc_smoke.ps1` passaram a
+medir só X/Z e falham honestamente.
+
+Sondas em runtime contra o cliente original, todas com o mundo Mammoth carregado (26/07/2026):
+
+| Hipótese | Sonda | Resultado |
+| --- | --- | --- |
+| `ApplyAction` reconstrói e zera a ação | dump do struct antes/depois | **refutada** — valores sobrevivem e a engine arquiva a cópia em `+0x58` |
+| falta aplicar na entidade | chamada direta de `CPlayer::ApplyAction` | **refutada** — executa sem falha, entidade não anda |
+| offset errado do eixo de translação | varredura dos 22 campos `float` do `CPlayerAction` | **refutada** — nenhum campo desloca |
+| conteúdo/layout da ação | `ctl_ComposeActionPacket` (composição da própria engine) varrendo os 176 bytes de `ctl_pvPlayerControls` | **refutada** — nenhuma entrada desloca |
+| simulação parada | `CTimer::GetCurrentTick` + `CNetworkLibrary::IsPaused` | **refutada** — tick avança (`0.15 → 2.65`), `paused=0` |
+| player fora de estado jogável | `CPlayer::IsPlayerReady` / `IsAlive` | **refutada** — `ready=1`, `alive=8` |
+| fonte não registrada | `pls_Index` / `pls_Active` | **refutada** — `0` / `1` |
+
+### Causa estrutural encontrada: o driver de tick da SE1 está stubado
+
+Desassemblando a `engine.dll` (que **não** é empacotada, ao contrário da `entitiesmp.dll`):
+
+```
+?ProcessGameStream@CSessionState@@QAEXXZ        -> ret
+?ProcessGameStreamBlock@CSessionState@@QAEXAAV… -> ret 4
+```
+
+O caminho de simulação da SE1 (`MainLoop` → `ProcessGameStream` → tick → `CPlayerTarget`) **não
+existe** neste binário: o Rakion substituiu o netcode por protocolo próprio. Por isso o host, que
+chamava `HandleTimerHandlers` + `MainLoop`, nunca simulava nada — a entidade levantada 5 unidades
+ficava parada no ar (`queda=0.000`) enquanto os ticks "avançavam".
+
+As primitivas de simulação continuam vivas e exportadas. Dirigindo-as manualmente o mundo passa a
+simular de verdade:
+
+```
+session = *(void**)((byte*)_pNetwork + 0x24)      // via ?IsPaused@CNetworkLibrary
+_pTimer->SetCurrentTick(t += TickQuantum)
+session->HandleMovers()                           // ?HandleMovers@CSessionState@@QAEXXZ
+```
+
+Com isso a entidade caiu 5,31 unidades e assentou no chão — gravidade e colisão reais. O
+`HandleTimers` (timers de entidade) ainda falha ao cruzar o primeiro agendamento e ficou de fora.
+
+Sobre a locomoção: `?UpdatePlacement@CPlayer@@UAEXABVCPlayerAction@@@Z` escreve o placement **a
+partir da ação** — com ação sem posição, teleportou a entidade para a origem. Ou seja, existe um
+caminho de placement absoluto na ação, coerente com o `0x030A` do fio.
+
+### RE da `entitiesmp.dll` destravado por dump do módulo desempacotado
+
+A `entitiesmp.dll` em disco é empacotada: os RVAs dos exports caem em espaço sem seção, então
+desassemblar o arquivo não serve. O host, porém, tem o módulo já desempacotado em memória — despejar
+`SizeOfImage` a partir da base (`0x35000000`, 5.100.032 bytes) produz uma imagem plana em que
+`offset == RVA` e o Ghidra/objdump leem normalmente. **É assim que se faz RE dessa DLL.**
+
+Com isso, `CPlayer::ApplyAction` (RVA `0x153DE0`) ficou legível:
+
+| Fato | Evidência |
+| --- | --- |
+| gate de ação | `[CPlayer+0x3E0] & 1` deve estar setado; `& 2` aborta. No bot vale `0x00000001` ⇒ **passa** |
+| a ação é copiada | `rep movsl` de `0x12` dwords (72 B) para `CPlayer+0xBB0` |
+| botões | `ação+0x10` (o palpite do host estava certo) |
+| eixos | `ação+0x2C / +0x30 / +0x34`, filtrados contra acumuladores em `+0xAA4/8/C` |
+| desvio conhecido | `call *0x352B35B4` → `engine.dll 0x3600CFC0` = `!(CEntity+0x10 >> 28 & 1)`, o mesmo gate do HIT×N |
+
+### O que ainda não anda
+
+Com a simulação dirigida de verdade (controle positivo no mesmo caminho: entidade levantada cai
+`5.310`), varrer **os 32 bits de botão** e **todos os campos float da ação** chamando
+`CPlayer::ApplyAction` + `HandleMovers` não produz deslocamento horizontal. `CPlayerEntity::DoMoving`
+é só um `jmp` para `CMovableModelEntity::DoMoving`, isto é, integração pura — alguém precisa setar a
+translação desejada antes.
+
+### Corrigido: o tick engolia as faltas de página dos XFS
+
+`HandleTimers` parecia falhar ao cruzar o primeiro agendamento. Não falhava: o rastro mostrou
+
+```
+CParticleEmitter::InitializeParticle → CTextureObject::SetData_t → CStock_CTextureData::Obtain_t
+  → CSerial::Load_t → CTextureData::Read_t → CTStream::ExpectID_t   (AV lendo o cursor do stream)
+```
+
+carregando `ModelsSV\Effects\Chaos\Mage\Swing_Invincible\rebirth003.tex` de `modelssv.xfs`. Essa
+violação de acesso é o mecanismo **normal** de paginação sob demanda dos XFS: o filtro
+`CTStream::ExceptionFilter` materializa a página e manda continuar. `AdvanceEngineSafely` usava
+`EXCEPTION_EXECUTE_HANDLER` genérico — ao contrário dos outros três pontos de invocação — e portanto
+abortava o tick em qualquer leitura de recurso. Passando o filtro da engine, os 60 ticks completam
+sem falha e a lógica de entidade roda.
+
+### Locomoção: caminho encontrado, ainda não fecha pelo host
+
+Sonda isolada **fez o bot andar** pela primeira vez:
+
+```
+[walk] freeze=1 → apos limpar: freeze=0
+[walk] campo 40 ANDOU dx=-19.668 dz=-16.415
+```
+
+Receita da sonda: encerrar o congelamento de spawn, escrever o vetor de translação na ação e chamar
+`CPlayer::ActiveActions`, com `HandleTimers` + `HandleMovers` no mesmo laço.
+
+O que a RE cravou:
+
+| Peça | Fato |
+| --- | --- |
+| handler de locomoção | `?ActiveActions@CPlayer@@QAEXABVCPlayerAction@@@Z` — único que chama `CMovableEntity::SetDesiredTranslation`/`SetDesiredRotation` |
+| translação | vetor em `ação+0x40/+0x44/+0x48` (relativo ao ponteiro publicado pela fonte) |
+| congelamento | `CheckFreezeState()==1` ⇒ `SetDesiredTranslation(0,0,0)`; campos `CPlayer+0x27D4` (tipo), `+0x27D8` (início), `+0x27DC` (restante) |
+| gate de entidade | `!(CEntity+0x10 >> 28 & 1)` — o mesmo do HIT×N |
+| **a fonte zera os eixos** | medido: `apos escrever tz=-6.00` → `apos source tz=0.00`. `CPlayerSource::ApplyAction/SendAction` recompõe a ação do estado de controles, vazio no host ⇒ a intenção do bot precisa ser escrita **depois** da publicação |
+
+O host já aplica tudo isso (freeze encerrado no input e no lifecycle, intenção escrita após a
+publicação, `ActiveActions` chamado, tick dirigindo `HandleTimers`+`HandleMovers` com relógio
+monotônico) e mesmo assim o gate horizontal não passa.
+
+**A sonda decisiva foi feita e desmente o marco anterior.** Lendo
+`CMovableEntity::GetDesiredTranslation` logo depois do `ActiveActions`, com a ação carregando
+`tz=-6.00`:
+
+```
+[desired] tz_acao=-6.00 desired=(0.000,0.000,0.000)
+```
+
+Nenhuma translação é produzida. Ou seja, o deslocamento observado na sonda anterior **não era
+locomoção** — muito provavelmente foi corrupção de estado da entidade por escrita em campo alheio,
+da mesma família do teleporte já visto com `UpdatePlacement`. Locomoção nativa continua **não
+alcançada**.
+
+### O despacho de movimento é do animador
+
+`ActiveActions` zera os vetores locais e desce por uma cadeia de estados lida do
+`?GetPlayerAnimator@CPlayer@@QAEPAVCPlayerAnimator@@XZ`:
+
+```
+CPlayer+0x49C == 0        → segue
+animator+0x12C == 0       → 0x35151450
+animator+0x134 == 0       → 0x35151683
+animator+0x144 == 0       → 0x351516DF
+animator+0x140 == 0       → 0x35151B18   ← onde o bot aterrissa
+```
+
+Medido no bot: **todos esses campos valem 0** e `GetDesiredTranslation` continua `(0,0,0)`. Cada
+campo do animador corresponde a um modo de movimento; sem nenhum ativo, não há translação.
+
+A tabela de estados está no próprio binário — `?ePlayerAction_values@@3PAVCEntityPropertyEnumValue@@A`
+(RVA `0x38D810`) — e bate com o `PlayerNormalAnimation` que o servidor já usa:
+
+```
+0 None · 1 Stand anim · 2 Idle00 · 3 Idle01 · 4 Forward move · 5 Backward move
+6 Left move · 7 Right move · … · 12 Jump · 14 Rise · 17 Guard · …
+```
+
+Chamar `?SetPlayerActionState@CPlayerAnimator@@QAEXW4ePlayerAction@@@Z` com `4` (Forward move)
+**não** destrava: a translação segue zerada, ou seja, esse setter não escreve os campos que o
+`ActiveActions` consulta.
+
+### Quem liga os interruptores: `CPlayerAnimator::AnimatePlayer`
+
+Varrendo o dump por escritas nesses campos e filtrando por métodos de `CPlayerAnimator`:
+
+| Campo | Escritor |
+| --- | --- |
+| `+0x12C` | `?AnimatePlayer@CPlayerAnimator@@QAEXABVCPlayerAction@@@Z` |
+| `+0x134` | `?AnimateGuard@…` |
+| `+0x13C` | `?AnimateDamage@…`, `?ChangeAttack01State@…`, `?SetPlayerActionState@…` |
+| `+0x140`, `+0x150` | `?AnimateHoldAttack@…`, `?AnimateHoldTry@…` |
+| `+0x144` | `?ChangeWeapon@…`, `?SetWeapon@…` |
+
+`AnimatePlayer` é o driver por tick: recebe a **própria ação** e, logo no início, faz
+`movzbl eax,[ação+0x44]` → `animator+0x128`. Ou seja, `ação+0x44` é um **byte de estado** cujos
+códigos são o enum `ePlayerAction` do próprio binário — o mesmo catálogo do `PlayerNormalAnimation`
+do servidor. O `ActionStateOffset = 0x44` que o host original tinha estava certo.
+
+**Tentativa registrada como negativa:** chamar `AnimatePlayer(animator, ação)` no host, com o byte de
+estado preenchido, **regrediu os testes de 7/8 para 4/8** — o animador precisa de contexto que o host
+headless ainda não monta (provavelmente modelo/animação carregados). Revertido; baseline de volta em
+7/8.
+
+### A bifurcação local × remoto explica o impasse
+
+`?IsLocalEntity@CPlayerAnimator@@QAEHXZ` é, no código, `!(CEntity+0x10 >> 28 & 1)` — o mesmo bit 28
+do gate do HIT×N. Ele decide o caminho de animação:
+
+| Caminho | Condição | Comportamento |
+| --- | --- | --- |
+| **local** | bit 28 limpo (caso do bot) | `AnimatePlayer` **ignora** `ação+0x44` e lê `CPlayer+0x148`; `ActiveActions` computa translação e chama `SetDesiredTranslation` |
+| **remoto** | bit 28 setado | `AnimatePlayer` **escreve** `CPlayer+0x148` a partir do estado da ação; `ActiveActions` desvia (`je 0x35152365`) e não computa movimento — a posição vem transportada (`UpdatePlacement`) |
+
+Ou seja, o Rakion tem dois modelos: peer remoto **não simula** locomoção (recebe posição, coerente com
+o `0x030A` do fio carregar posição absoluta), e player local simula, mas depende de `CPlayer+0x148`,
+que **nenhum método de `CPlayer` ou `CPlayerAnimator` escreve no caminho local** — a varredura de
+escritas mostra só `ResetAnimationFlags` (reset) e o próprio `AnimatePlayer` (caminho remoto).
+
+Isso indica que o estado que destrava a locomoção local é escrito **fora da `entitiesmp.dll`**,
+provavelmente na camada de input/jogo do `rakion.exe` — que o host headless não tem. Forçar
+`CPlayer+0x148 = 1` à mão não produz translação e **derruba o processo**.
+
+Consequência para o goal: ou se reproduz no host a camada que alimenta esse estado, ou se aceita o
+modelo remoto (posição calculada no servidor e transportada), que é como o próprio jogo move os
+outros jogadores — mas aí a locomoção deixa de ser simulada pela engine, o que contraria o goal como
+está escrito. **Essa escolha é do dono do projeto, não minha.**
+
+### RESOLVIDO: o bot anda pela engine
+
+O gate horizontal passa e a suíte fecha em **945/945**, com os oito testes de host nativo verdes —
+locomoção, combate humano→bot, combate bot→humano, morte, respawn e multi-bot.
+
+A receita, toda derivada da desassemblagem:
+
+1. encerrar o congelamento de spawn (`CPlayer+0x27D4/+0x27DC`), que a engine usa para zerar a
+   translação;
+2. publicar a ação pela fonte **antes** de escrever a intenção (a fonte recompõe os eixos a partir
+   do estado de controles, vazio no host);
+3. ligar o modo de movimento do animador (`CPlayerAnimator+0x12C`) e escrever o vetor de
+   deslocamento (`+0x16C/+0x170/+0x174`) conforme o input do World;
+4. chamar `CPlayer::ActiveActions`, que converte isso em `SetDesiredTranslation`;
+5. avançar o tick com `HandleTimers` + `HandleMovers`, que integram com física e colisão reais.
+
+O deslocamento nunca vem de "teleporte": o World só declara intenção; cálculo, colisão e integração
+são da engine. A verificação usa dois sinais independentes — o oráculo
+`GetDesiredTranslation` (diferente de zero) e o deslocamento horizontal medido no snapshot.
+
+### De onde sai o vetor de locomoção
+
+Lendo o ramo com `animator+0x12C != 0`:
+
+```
+call GetPlayerAnimator ; add eax,0x16C
+mov ecx,[eax] ; mov edx,[eax+4] ; mov eax,[eax+8]   → vira a translação desejada
+```
+
+O vetor **não vem dos eixos da ação** — vem de `CPlayerAnimator+0x16C`, preenchido pelo lado da
+animação. Isso explica de forma econômica por que nenhum campo da ação jamais moveu o bot: em
+Rakion o deslocamento do player é dirigido pela animação (root motion), e o `ActiveActions` apenas
+copia esse vetor para `SetDesiredTranslation`.
+
+Consequência prática: locomoção nativa depende do pipeline de **modelo/animação carregado**, que o
+host headless não monta — o mesmo motivo pelo qual chamar `AnimatePlayer` derrubou os testes.
+Nenhum escritor de `+0x16C` aparece em métodos de `CPlayerAnimator`/`CPlayer` com as formas usuais
+de store, o que reforça que o preenchimento vem do sistema de modelos da `engine.dll`.
+
+Fio solto para a próxima rodada: identificar quem preenche `CPlayerAnimator+0x16C` (provável API de
+modelo/animação da engine) e medir o custo de carregar esse pipeline sem display.
+
 ## Gates restantes
 
-1. validar visualmente no cliente gráfico deslocamento nativo, HIT/queda/recuperação, morte e
-   respawn (humano↔bot) e multi-bot sob carga em todos os mapas battle;
+1. **validação visual no cliente gráfico** — deslocamento, HIT/queda/recuperação, morte, respawn
+   (humano↔bot) e multi-bot sob carga nos mapas battle. É o único critério do goal ainda em aberto:
+   os testes cobrem o fio (945/945, 8/8 com Host real), não a apresentação;
 2. substituir as políticas provisórias de dano pelas fórmulas por arma/equipamento;
 3. desativar os subsistemas de input e som não necessários ao worker.
+
+## Implantação
+
+O `BotEngineHost.exe` é x86 e precisa ficar sob o `Bin` de uma raiz de cliente válida — a localização
+faz parte da ABI, porque `SE_InitEngine` deriva o diretório de dados do caminho do executável. Em
+uma instalação onde o World não roda dentro do cliente, aponte no `worldserver.ini`:
+
+```ini
+[BotEngine]
+Enabled=1
+HostPath=<raiz do cliente>\Bin\BotEngineHost.exe
+ClientRoot=<raiz do cliente>
+```
+
+Build e verificação local:
+
+```powershell
+.\client\RakionBotEngineHost\build.ps1 -ClientRoot '<raiz do cliente>' -RunProbe -RunIpcProbe
+```
+
+O `-RunIpcProbe` exercita o contrato inteiro (quatro fontes, aim, input, reação de dano, lifecycle,
+ticks e snapshots) e **falha se a locomoção horizontal parar de funcionar** — é o gate honesto, que
+mede só o plano X/Z para não aceitar queda como movimento.

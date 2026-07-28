@@ -51,6 +51,7 @@ NativePlayerSnapshot InspectNativePlayer(
     std::uint32_t botId);
 void ApplyNativeInput(
     HMODULE engine,
+    void* network,
     void* source,
     std::uint32_t inputFlags);
 void AimNativePlayer(

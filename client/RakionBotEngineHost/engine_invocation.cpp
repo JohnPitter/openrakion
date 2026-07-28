@@ -62,19 +62,27 @@ bool InitializeGameWithStreamFaults(
     }
 }
 
-bool AdvanceEngineSafely(
-    EngineStep handleTimerHandlers,
+bool AdvanceSessionSafely(
+    SessionTick setCurrentTick,
     void* timer,
-    EngineStep mainLoop,
-    void* network)
+    float tick,
+    SessionTick handleTimers,
+    EngineStep handleMovers,
+    void* session,
+    StreamExceptionFilter exceptionFilter)
 {
+    // Os XFS são paginados sob demanda por falta de página: o filtro da engine
+    // materializa a página e manda continuar. Tratar a exceção por conta própria
+    // aborta o tick no meio de qualquer leitura de recurso.
     __try
     {
-        handleTimerHandlers(timer);
-        mainLoop(network);
+        setCurrentTick(timer, tick);
+        handleTimers(session, tick);
+        handleMovers(session);
         return true;
     }
-    __except (EXCEPTION_EXECUTE_HANDLER)
+    __except (
+        exceptionFilter(GetExceptionCode(), GetExceptionInformation()))
     {
         return false;
     }

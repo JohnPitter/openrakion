@@ -282,7 +282,9 @@ public sealed class NativeBotMovementE2ETests
             value => value.ActiveCharId > 0 &&
                 value.Status == UserStatus.FieldLobby);
         human.CreateRoom(new HeadlessWorldClient.RoomSpec(
-            roomName, 11, (byte)GameMode.Deathmatch, 1, 432, 20, 1, 99));
+            roomName,
+            HeadlessWorldClient.RoomSpec.BattleMap,
+            (byte)GameMode.Deathmatch, 1, 432, 20, 1, 99));
         JourneyHelper.WaitUntil(
             () => session.FieldId >= 0 &&
                 server.GetField(session.FieldId) != null,

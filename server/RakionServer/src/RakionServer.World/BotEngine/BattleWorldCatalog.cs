@@ -22,10 +22,14 @@ internal static class BattleWorldCatalog
         @"LevelsSV\EightArenas\EightArenas.wld",
     ];
 
+    public static bool Supports(byte mapId) =>
+        mapId >= FirstBattleMapId && mapId - FirstBattleMapId < Worlds.Length;
+
+    private const byte FirstBattleMapId = 200;
+
     public static string Resolve(byte mapId)
     {
-        const byte firstBattleMapId = 200;
-        int index = mapId - firstBattleMapId;
+        int index = mapId - FirstBattleMapId;
         if (index < 0 || index >= Worlds.Length)
             throw new ArgumentOutOfRangeException(
                 nameof(mapId), mapId, "Mapa battle não suportado pelo Bot Engine Host.");

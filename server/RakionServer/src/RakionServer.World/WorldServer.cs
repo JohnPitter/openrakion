@@ -114,6 +114,9 @@ namespace RakionServer.World
                 Log.Info("field", "[{0}] criou field {1} '{2}' (map={3} mode={4} cap={5})",
                     master.Slot, field.Id, options.Name, options.MapId, options.Mode,
                     field.MaxPlayers);
+                // O Host nativo leva segundos para subir a engine e carregar o mundo. Adiantar
+                // isso na criação da sala tira a espera do caminho do /addbot.
+                _ = _botEngine.WarmUpFieldAsync(field, _cts?.Token ?? CancellationToken.None);
                 return field;
             }
         }
@@ -410,11 +413,21 @@ namespace RakionServer.World
         /// <summary>Roster/lifecycle de bots nativos. Ver <see cref="BotManager"/> e Bot Engine Host.</summary>
         public BotManager Bots { get; } = new();
 
-        /// <summary>Mensagem de sistema para UMA sessão (feedback de comando), via chat de canal.</summary>
+        /// <summary>
+        /// Mensagem de sistema para UMA sessão (feedback de comando). Dentro de uma sala o cliente
+        /// só renderiza o chat de field (0x47); o chat de canal é descartado sem exibir nada.
+        /// </summary>
         public void WhisperSystem(ClientSession target, string message)
         {
+            PlayerRec? rec = GetField(target.FieldId)?.FindRec(target);
+            if (rec != null)
+            {
+                try { target.SendMessage(Protocol.Op.FieldChat, FieldChatFrames.Message((byte)rec.Slot, message)); }
+                catch { }
+                return;
+            }
             byte slot = target.ChannelSlot == byte.MaxValue ? (byte)0 : target.ChannelSlot;
-            try { target.SendLobby(Network.LobbyFrames.ChannelChat(slot, message)); } catch { }
+            try { target.SendLobby(LobbyFrames.ChannelChat(slot, message)); } catch { }
         }
 
         public bool Locked { get; private set; }                 // this+0x50 (servidor fechado p/ GM)

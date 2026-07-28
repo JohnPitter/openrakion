@@ -254,18 +254,18 @@ try {
         $snapshot = Invoke-Request -Stream $pipe -MessageType 7 `
             -CorrelationId $correlation -Payload $snapshotPayload
         $correlation++
+        # Só deslocamento HORIZONTAL prova locomoção: o eixo vertical se move sozinho
+        # enquanto a entidade assenta no chão pela gravidade da engine.
         $deltaX = [BitConverter]::ToSingle($snapshot, 8) - $originX
-        $deltaY = [BitConverter]::ToSingle($snapshot, 12) - $originY
         $deltaZ = [BitConverter]::ToSingle($snapshot, 16) - $originZ
-        if (($deltaX * $deltaX + $deltaY * $deltaY +
-                $deltaZ * $deltaZ) -gt 0.0001) {
+        if (($deltaX * $deltaX + $deltaZ * $deltaZ) -gt 0.0001) {
             $moved = $true
             break
         }
         Start-Sleep -Milliseconds 20
     }
     if (-not $moved) {
-        throw 'Input forward não alterou a posição nativa após 50 ticks'
+        throw 'Input forward não deslocou a entidade nativa no plano após 50 ticks'
     }
 
     $stopStream = [IO.MemoryStream]::new()

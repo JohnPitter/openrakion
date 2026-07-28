@@ -155,7 +155,7 @@ public sealed class BotEngineWorkerIntegrationTests
         await using var coordinator = new BotEngineCoordinator(config);
         var field = new Field(4343)
         {
-            MapId = 11,
+            MapId = 211,
             Mode = (byte)GameMode.Deathmatch,
         };
         var bot = new BotPlayer { Name = "NativeProbe", Team = 1 };
@@ -179,13 +179,14 @@ public sealed class BotEngineWorkerIntegrationTests
         await coordinator.StopFieldAsync(field.Id, CancellationToken.None);
     }
 
+    // Só deslocamento HORIZONTAL prova locomoção: o eixo vertical se move sozinho enquanto a
+    // entidade assenta no chão pela gravidade da engine.
     private static bool HasMoved(
         BotEnginePlayerSnapshot origin,
         BotEnginePlayerSnapshot current)
     {
         float x = current.X - origin.X;
-        float y = current.Y - origin.Y;
         float z = current.Z - origin.Z;
-        return x * x + y * y + z * z > 0.0001f;
+        return x * x + z * z > 0.0001f;
     }
 }

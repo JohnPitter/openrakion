@@ -148,9 +148,16 @@ namespace RakionServer.World.Network
             return true;
         }
 
+        /// <summary>
+        /// Empacota um datagrama de gameplay no corpo do túnel TCP (0x57): o cliente transporta
+        /// `[tipo][bytes a partir do offset 7]` e reinsere a sequência no destino. Vale para as ações
+        /// de player (0x030A/0x030F/0x0311) e para as mensagens confiáveis de peer (evento de
+        /// entidade, NPC, tick), cuja forma canônica é validada por <see cref="GameplayPeerDatagram"/>.
+        /// </summary>
         public static byte[] BuildTunnelPayload(ReadOnlySpan<byte> datagram)
         {
-            if (!TryParseHeader(datagram, out _))
+            if (!TryParseHeader(datagram, out _) &&
+                !GameplayPeerDatagramCodec.TryParse(datagram, out _))
                 throw new ArgumentException("Datagrama de gameplay inválido.", nameof(datagram));
 
             byte[] payload = new byte[datagram.Length - 5];

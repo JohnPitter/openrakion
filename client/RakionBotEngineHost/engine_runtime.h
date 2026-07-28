@@ -100,6 +100,9 @@ private:
     EndEngine endEngine_{};
     bool initialized_{};
     bool worldLoaded_{};
+    // Relógio da simulação dirigida pelo host: precisa ser monotônico entre
+    // comandos de tick, não relido da engine a cada chamada.
+    float simulationTick_{};
     bool streamsEnabled_{};
     std::unique_ptr<RakionWorldAdapter> worldAdapter_;
     std::unordered_map<std::uint32_t, void*> botSources_;

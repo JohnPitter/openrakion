@@ -22,9 +22,12 @@ bool InitializeGameWithStreamFaults(
     void* game,
     const LegacyString* fileName);
 
-bool AdvanceEngineSafely(
-    EngineStep handleTimerHandlers,
+bool AdvanceSessionSafely(
+    SessionTick setCurrentTick,
     void* timer,
-    EngineStep mainLoop,
-    void* network);
+    float tick,
+    SessionTick handleTimers,
+    EngineStep handleMovers,
+    void* session,
+    StreamExceptionFilter exceptionFilter);
 }

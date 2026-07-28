@@ -1,3 +1,4 @@
+using RakionServer.World.Domain;
 using RakionServer.World.Network;
 using Xunit;
 
@@ -109,6 +110,34 @@ namespace RakionServer.World.Tests
                 System.Convert.FromHexString(datagramHex));
 
             Assert.Equal(System.Convert.FromHexString(expectedHex), payload);
+        }
+
+        [Fact]
+        public void TunnelPayload_CarriesServerCombatEvents()
+        {
+            byte[] datagram = ServerCombatDatagrams.Damage(new ServerDamageEvent(
+                AttackerSeat: 3,
+                VictimSeat: 10,
+                Sequence: 7,
+                Damage: 52,
+                Direction: new BotVector(0f, 0f, 1f)));
+
+            byte[] payload = GameplayActionDatagram.BuildTunnelPayload(datagram);
+
+            // O túnel transporta tipo + corpo a partir do offset 7; a sequência é reinserida
+            // no destino. Sem isso o evento de dano estourava e o combate ficava invisível.
+            Assert.Equal(datagram.Length - 5, payload.Length);
+            Assert.Equal(datagram[0], payload[0]);
+            Assert.Equal(datagram[1], payload[1]);
+            Assert.Equal(datagram[7..], payload[2..]);
+        }
+
+        [Fact]
+        public void TunnelPayload_RejectsCorruptedDatagram()
+        {
+            Assert.Throws<System.ArgumentException>(
+                () => GameplayActionDatagram.BuildTunnelPayload(
+                    System.Convert.FromHexString("0C83000000000000")));
         }
 
         [Theory]

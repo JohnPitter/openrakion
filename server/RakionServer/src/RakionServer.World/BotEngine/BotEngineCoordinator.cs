@@ -28,6 +28,39 @@ internal sealed class BotEngineCoordinator(WorldConfig.BotEngineConfig config) :
 
     public bool Enabled => _config.Enabled;
 
+    /// <summary>
+    /// Sobe o worker do field sem criar bots. O bootstrap da engine e a carga do mundo levam
+    /// segundos; adiantá-los na criação da sala tira essa espera do caminho do /addbot.
+    /// </summary>
+    public async Task WarmUpFieldAsync(Field field, CancellationToken cancellationToken)
+    {
+        if (!Enabled || !BattleWorldCatalog.Supports(field.MapId))
+            return;
+        try
+        {
+            await StartWorkerAsync(field, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            Log.Warn("bot-engine", "field={0} pré-aquecimento falhou: {1}",
+                field.Id, exception.Message);
+        }
+    }
+
+    private Task<BotEngineWorker> StartWorkerAsync(
+        Field field,
+        CancellationToken cancellationToken)
+    {
+        // O 0x3B do cliente já traz o mapa battle no catálogo da engine (200..213); não há tradução.
+        var request = new BotEngineFieldRequest(
+            (uint)field.Id,
+            (ushort)_config.MaxBotsPerField,
+            field.MapId,
+            field.Mode,
+            BattleWorldCatalog.Resolve(field.MapId));
+        return _supervisor.StartFieldAsync(request, cancellationToken);
+    }
+
     public async Task AddBotAsync(
         Field field,
         byte seat,
@@ -36,15 +69,8 @@ internal sealed class BotEngineCoordinator(WorldConfig.BotEngineConfig config) :
     {
         if (!Enabled)
             throw new InvalidOperationException("Bot Engine Host está desativado.");
-        byte engineMapId = checked((byte)(field.MapId + 200));
-        var request = new BotEngineFieldRequest(
-            (uint)field.Id,
-            (ushort)_config.MaxBotsPerField,
-            engineMapId,
-            field.Mode,
-            BattleWorldCatalog.Resolve(engineMapId));
-        BotEngineWorker worker = await _supervisor.StartFieldAsync(
-            request, cancellationToken).ConfigureAwait(false);
+        BotEngineWorker worker = await StartWorkerAsync(
+            field, cancellationToken).ConfigureAwait(false);
         FieldSession session = _sessions.GetOrAdd(
             field.Id, _ => new FieldSession(worker));
         if (!ReferenceEquals(session.Worker, worker))

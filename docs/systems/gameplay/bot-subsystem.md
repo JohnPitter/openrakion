@@ -35,7 +35,9 @@ quando o bot está vivo e fora de reação de HIT.
 - `BotEngineIsolationTests`: multi-bot sem estado compartilhado e ausência do tick sintético.
 - `BotEngineWorkerIntegrationTests` e `E2E/NativeBotMovementE2ETests`: Host real (fixture
   `RAKION_BOT_ENGINE_HOST` + `RAKION_BOT_ENGINE_CLIENT_ROOT`) — sala, entrada, movimento,
-  combate, morte, respawn, multi-bot e saída.
+  combate, morte, respawn, multi-bot e saída. O gate de movimento mede **só o plano X/Z**: medir
+  também o eixo vertical faria a queda de spawn passar por locomoção, e foi exatamente o que
+  mascarou o defeito por muito tempo.
 - `BotManagerTests`: gates de roster (host, time oposto, rollback).
 - `E2E/AddBotButtonCommandE2ETests` e `BotRematchE2ETests`: comando e rematch.
 

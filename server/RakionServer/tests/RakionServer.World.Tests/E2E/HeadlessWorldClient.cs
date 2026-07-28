@@ -176,10 +176,13 @@ namespace RakionServer.World.Tests.E2E
         {
             // Enum de domínio: Golem=1, Deathmatch=2, TeamDeath=3, Boss=4.
             // fragLimit: Deathmatch (2) em 13..30; TeamDeath (3) em 20..50.
-            public static RoomSpec Golem(string name) => new(name, 0, 1, 1, 432, 0, 1, 99);
-            public static RoomSpec Deathmatch(string name) => new(name, 0, 2, 1, 432, 20, 1, 99);
-            public static RoomSpec TeamDeath(string name) => new(name, 0, 3, 1, 432, 25, 1, 99);
-            public static RoomSpec Boss(string name) => new(name, 0, 4, 1, 432, 0, 1, 99);
+            // map: sala competitiva usa o catálogo battle da engine (200..213); 211 = Mammoth,
+            // o mesmo byte 0xD3 capturado do cliente original no 0x3b.
+            public const byte BattleMap = 211;
+            public static RoomSpec Golem(string name) => new(name, BattleMap, 1, 1, 432, 0, 1, 99);
+            public static RoomSpec Deathmatch(string name) => new(name, BattleMap, 2, 1, 432, 20, 1, 99);
+            public static RoomSpec TeamDeath(string name) => new(name, BattleMap, 3, 1, 432, 25, 1, 99);
+            public static RoomSpec Boss(string name) => new(name, BattleMap, 4, 1, 432, 0, 1, 99);
         }
 
         /// <summary>Cria sala competitiva (0x3b). Layout:

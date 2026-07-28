@@ -13,11 +13,21 @@ namespace
 {
 constexpr std::size_t PlayerCharacterSize = 0x44;
 constexpr std::size_t LocalSourcesOffset = 0x28;
+// CPlayer::ActiveActions (RVA 0x151300 no dump desempacotado) lê a translação
+// desejada da ação, multiplica pelo fator global e entrega a
+// CMovableEntity::SetDesiredTranslation. Medido no host: relativo ao ponteiro de
+// ação que a fonte publica, o vetor vive em +0x40/+0x44/+0x48.
 constexpr std::size_t SourceActionOffset = 0x58;
 constexpr std::size_t ButtonsOffset = 0x10;
-constexpr std::size_t StrafeAxisOffset = 0x38;
-constexpr std::size_t ForwardAxisOffset = 0x40;
-constexpr std::size_t ActionStateOffset = 0x44;
+constexpr std::size_t TranslationXOffset = 0x40;
+constexpr std::size_t TranslationYOffset = 0x44;
+constexpr std::size_t TranslationZOffset = 0x48;
+// CPlayerAnimator: modo de movimento e vetor de deslocamento lidos pelo ActiveActions.
+constexpr std::size_t AnimatorMoveModeOffset = 0x12C;
+constexpr std::size_t AnimatorMoveVectorOffset = 0x16C;
+// Estado de congelamento de spawn: enquanto vale, a engine zera a translacao.
+constexpr std::size_t FreezeKindOffset = 0x27D4;
+constexpr std::size_t FreezeRemainingOffset = 0x27DC;
 constexpr std::uint32_t PrimaryAttackButton = 0x00000001;
 constexpr std::uint32_t JumpButton = 0x00000004;
 constexpr std::uint32_t MoveForwardButton = 0x00000020;
@@ -144,6 +154,34 @@ bool InvokeInputSafely(
     {
         return false;
     }
+}
+
+// O congelamento de spawn expira pelo relógio de partida do cliente, que o host não
+// roda. Enquanto vale, CPlayer::ActiveActions responde SetDesiredTranslation(0,0,0).
+// O World é a autoridade sobre quando o bot entra em jogo: encerrar aqui é a ponte.
+bool InvokeActionHandlerSafely(
+    PlayerActionHandler handler,
+    void* entity,
+    const void* action)
+{
+    __try
+    {
+        handler(entity, action);
+        return true;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        return false;
+    }
+}
+
+void EndSpawnFreeze(void* entity)
+{
+    if (!entity)
+        return;
+    auto* bytes = static_cast<std::uint8_t*>(entity);
+    *reinterpret_cast<std::uint32_t*>(bytes + FreezeKindOffset) = 0;
+    *reinterpret_cast<float*>(bytes + FreezeRemainingOffset) = 0.0f;
 }
 
 bool InvokeLifecycleSafely(SetLifecycle transition, void* entity)
@@ -288,6 +326,7 @@ NativePlayerSnapshot InspectNativePlayer(
 
 void ApplyNativeInput(
     HMODULE engine,
+    void* network,
     void* source,
     std::uint32_t inputFlags)
 {
@@ -302,15 +341,35 @@ void ApplyNativeInput(
         throw std::invalid_argument("Input nativo inválido.");
 
     auto* action = static_cast<std::uint8_t*>(source) + SourceActionOffset;
+    auto getEntity = reinterpret_cast<GetLocalPlayerEntity>(
+        Resolve(engine, GetLocalPlayerEntitySymbol));
+    void* entity = network ? getEntity(network, source) : nullptr;
+    EndSpawnFreeze(entity);
+
+    // A fonte publica a ação pelo caminho da engine; ela recompõe os eixos a
+    // partir do estado de controles (vazio no host), então a intenção do bot é
+    // escrita depois dessa publicação.
+    auto applyAction = reinterpret_cast<ApplyAction>(
+        Resolve(engine, ApplyActionSymbol));
+    auto sendAction = reinterpret_cast<SendAction>(
+        Resolve(engine, SendActionSymbol));
+    // Transição de stage recria a entidade: uma recusa pontual da fonte não pode
+    // encerrar o worker e remover os bots do field inteiro.
+    if (!InvokeInputSafely(applyAction, sendAction, source))
+    {
+        std::printf("[input] fonte recusou o input neste tick\n");
+        std::fflush(stdout);
+        return;
+    }
+
     auto& buttons = *reinterpret_cast<std::uint32_t*>(
         action + ButtonsOffset);
+    auto& strafe = *reinterpret_cast<float*>(action + TranslationXOffset);
+    auto& forward = *reinterpret_cast<float*>(action + TranslationZOffset);
     buttons &= ~NavigationButtons;
-    auto& strafe = *reinterpret_cast<float*>(action + StrafeAxisOffset);
-    auto& forward = *reinterpret_cast<float*>(action + ForwardAxisOffset);
     strafe = 0.0f;
     forward = 0.0f;
-    action[ActionStateOffset] =
-        (inputFlags & InputPrimaryAttack) != 0 ? 1 : 0;
+    *reinterpret_cast<float*>(action + TranslationYOffset) = 0.0f;
 
     if ((inputFlags & InputForward) != 0)
     {
@@ -337,12 +396,35 @@ void ApplyNativeInput(
     if ((inputFlags & InputPrimaryAttack) != 0)
         buttons |= PrimaryAttackButton;
 
-    auto applyAction = reinterpret_cast<ApplyAction>(
-        Resolve(engine, ApplyActionSymbol));
-    auto sendAction = reinterpret_cast<SendAction>(
-        Resolve(engine, SendActionSymbol));
-    if (!InvokeInputSafely(applyAction, sendAction, source))
-        throw std::runtime_error("CPlayerSource recusou o input.");
+    if (!entity)
+        return;
+    // Handler por tick do player ativo: converte a ação em translação desejada e
+    // deixa a física/colisão da engine integrarem no HandleMovers.
+    auto activeActions = reinterpret_cast<PlayerActionHandler>(
+        GetProcAddress(
+            GetModuleHandleA(EntitiesModuleName), PlayerActiveActionsSymbol));
+    // CPlayer::ActiveActions só produz translação quando o animador está em modo de
+    // movimento (+0x12C) e copia dali o vetor de deslocamento (+0x16C/+0x170/+0x174).
+    // O World manda a intenção; o cálculo, a colisão e a integração seguem da engine.
+    auto getAnimator = reinterpret_cast<PlayerAnimatorGetter>(
+        GetProcAddress(
+            GetModuleHandleA(EntitiesModuleName), PlayerAnimatorSymbol));
+    if (void* animator = getAnimator ? getAnimator(entity) : nullptr)
+    {
+        auto* fields = static_cast<std::uint8_t*>(animator);
+        const bool moving = (inputFlags &
+            (InputForward | InputBackward | InputLeft | InputRight)) != 0;
+        *reinterpret_cast<std::uint32_t*>(fields + AnimatorMoveModeOffset) =
+            moving ? 1u : 0u;
+        *reinterpret_cast<float*>(fields + AnimatorMoveVectorOffset) = strafe;
+        *reinterpret_cast<float*>(fields + AnimatorMoveVectorOffset + 4) = 0.0f;
+        *reinterpret_cast<float*>(fields + AnimatorMoveVectorOffset + 8) = forward;
+    }
+
+    // Falha pontual do handler não pode derrubar o worker: sem locomoção neste tick o
+    // bot apenas não se desloca; matar o Host removeria todos os bots do field.
+    if (activeActions)
+        InvokeActionHandlerSafely(activeActions, entity, action);
 }
 
 void AimNativePlayer(
@@ -408,6 +490,8 @@ void SetNativeLifecycle(
     if (!InvokeLifecycleSafely(transition, entity))
         throw std::runtime_error(
             "A engine recusou a transição de lifecycle.");
+    if (alive)
+        EndSpawnFreeze(entity);
 }
 
 void ApplyNativeDamageReaction(

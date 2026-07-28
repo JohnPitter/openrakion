@@ -2,6 +2,8 @@
 
 #include <windows.h>
 
+#include <cstddef>
+
 namespace bot_engine
 {
 struct LegacyString
@@ -79,6 +81,34 @@ constexpr char ApplyActionSymbol[] =
     "?ApplyAction@CPlayerSource@@QAEXAAH@Z";
 constexpr char SendActionSymbol[] =
     "?SendAction@CPlayerSource@@QAEXXZ";
+// Primitivas de simulação: o driver de tick da SE1 está stubado no binário do
+// Rakion, então o host dirige estas diretamente.
+constexpr char SessionHandleTimersSymbol[] =
+    "?HandleTimers@CSessionState@@QAEXM@Z";
+constexpr char SessionHandleMoversSymbol[] =
+    "?HandleMovers@CSessionState@@QAEXXZ";
+constexpr char TimerSetCurrentTickSymbol[] = "?SetCurrentTick@CTimer@@QAEXM@Z";
+constexpr char TimerGetCurrentTickSymbol[] =
+    "?GetCurrentTick@CTimer@@QBE?BMXZ";
+constexpr char TimerQuantumSymbol[] = "?TickQuantum@CTimer@@2MB";
+// Ponteiro do session state dentro do CNetworkLibrary, lido do IsPaused
+// (mov eax,[ecx+0x24]; mov eax,[eax+0x70]).
+constexpr std::size_t NetworkSessionStateOffset = 0x24;
+// Aplicador do lado da ENTIDADE. O caminho fonte → servidor → game stream da SE1
+// está stubado no Rakion, então o host entrega a ação diretamente ao CPlayer.
+constexpr char PlayerApplyActionSymbol[] =
+    "?ApplyAction@CPlayer@@UAEXABVCPlayerAction@@MAAH@Z";
+// Handler por tick do player ativo: lê a translação da ação e chama
+// CMovableEntity::SetDesiredTranslation. É o que efetivamente move o personagem.
+constexpr char PlayerActiveActionsSymbol[] =
+    "?ActiveActions@CPlayer@@QAEXABVCPlayerAction@@@Z";
+// Driver de animação por tick: recebe a ação e liga as flags de modo de movimento
+// (CPlayerAnimator+0x12C/0x134/0x13C/0x140/0x144/0x150) que o ActiveActions
+// consulta antes de produzir translação.
+constexpr char PlayerAnimatorSymbol[] =
+    "?GetPlayerAnimator@CPlayer@@QAEPAVCPlayerAnimator@@XZ";
+constexpr char PlayerAnimateSymbol[] =
+    "?AnimatePlayer@CPlayerAnimator@@QAEXABVCPlayerAction@@@Z";
 constexpr char EntitiesInstanceSymbol[] =
     "?getInstance@CEntitiesDLL@@SAAAV1@XZ";
 constexpr char EntitiesLoadSymbol[] =
@@ -138,4 +168,9 @@ using InitializeGame = void(__thiscall*)(
 using GetEntitiesInstance = void*(__cdecl*)();
 using LoadEntitiesPackage = void(__thiscall*)(void*, LegacyString);
 using GetEntitiesHandle = HMODULE(__thiscall*)(void*);
+using SessionTick = void(__thiscall*)(void*, float);
+using TimerQuery = float(__thiscall*)(const void*);
+using PlayerApplyAction = void(__thiscall*)(void*, const void*, float, int&);
+using PlayerActionHandler = void(__thiscall*)(void*, const void*);
+using PlayerAnimatorGetter = void*(__thiscall*)(void*);
 }

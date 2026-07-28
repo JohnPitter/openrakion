@@ -1,6 +1,7 @@
 #include "engine_runtime.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <stdexcept>
 
 #include "engine_invocation.h"
@@ -8,6 +9,17 @@
 
 namespace bot_engine
 {
+namespace
+{
+void* ResolveSessionState(void* network)
+{
+    if (!network)
+        return nullptr;
+    return *reinterpret_cast<void**>(
+        static_cast<std::uint8_t*>(network) + NetworkSessionStateOffset);
+}
+}
+
 void EngineRuntime::Advance(std::uint32_t frameCount)
 {
     if (!worldLoaded_ || frameCount == 0 || frameCount > 100)
@@ -15,17 +27,42 @@ void EngineRuntime::Advance(std::uint32_t frameCount)
 
     auto** network = reinterpret_cast<void**>(ResolveRequired(NetworkSymbol));
     auto** timer = reinterpret_cast<void**>(ResolveRequired(TimerSymbol));
-    auto mainLoop = reinterpret_cast<EngineStep>(
-        ResolveRequired(NetworkMainLoopSymbol));
-    auto handleTimerHandlers = reinterpret_cast<EngineStep>(
-        ResolveRequired(TimerHandlersSymbol));
+    auto streamFilter = reinterpret_cast<StreamExceptionFilter>(
+        ResolveRequired(StreamExceptionFilterSymbol));
     if (!network || !*network || !timer || !*timer)
         throw std::runtime_error("Engine sem network/timer para avançar.");
 
+    // O driver de tick da SE1 (CSessionState::ProcessGameStream) é um stub neste
+    // binário — o Rakion substituiu o netcode. Quem simula são as primitivas
+    // HandleTimers (lógica das entidades) e HandleMovers (física e colisão); o
+    // host as dirige na thread dona da engine.
+    auto session = ResolveSessionState(*network);
+    auto handleTimers = reinterpret_cast<SessionTick>(
+        ResolveRequired(SessionHandleTimersSymbol));
+    auto handleMovers = reinterpret_cast<EngineStep>(
+        ResolveRequired(SessionHandleMoversSymbol));
+    auto setCurrentTick = reinterpret_cast<SessionTick>(
+        ResolveRequired(TimerSetCurrentTickSymbol));
+    auto getCurrentTick = reinterpret_cast<TimerQuery>(
+        ResolveRequired(TimerGetCurrentTickSymbol));
+    auto* quantum = reinterpret_cast<const float*>(
+        ResolveRequired(TimerQuantumSymbol));
+    if (!session)
+        throw std::runtime_error("Engine sem session state para avançar.");
+
+    if (simulationTick_ <= 0.0f)
+        simulationTick_ = getCurrentTick(*timer);
     for (std::uint32_t frame = 0; frame < frameCount; ++frame)
     {
-        if (!AdvanceEngineSafely(
-                handleTimerHandlers, *timer, mainLoop, *network))
+        simulationTick_ += *quantum;
+        if (!AdvanceSessionSafely(
+                setCurrentTick,
+                *timer,
+                simulationTick_,
+                handleTimers,
+                handleMovers,
+                session,
+                streamFilter))
             throw std::runtime_error("A engine falhou durante o tick.");
     }
 }
@@ -57,7 +94,9 @@ void EngineRuntime::ApplyInput(
     const auto source = botSources_.find(botId);
     if (source == botSources_.end())
         throw std::invalid_argument("Bot não existe neste worker.");
-    ApplyNativeInput(engine_, source->second, inputFlags);
+    auto** network = reinterpret_cast<void**>(ResolveRequired(NetworkSymbol));
+    ApplyNativeInput(
+        engine_, network ? *network : nullptr, source->second, inputFlags);
 }
 
 void EngineRuntime::Aim(std::uint32_t botId, const float* target)
