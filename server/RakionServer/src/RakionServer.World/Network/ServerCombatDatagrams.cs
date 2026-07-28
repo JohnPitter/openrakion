@@ -49,14 +49,21 @@ public static class ServerCombatDatagrams
 
     public static byte[] Vitals(
         ServerVitalsEvent value,
-        PlayerCombatVitals vitals)
+        PlayerCombatVitals vitals) =>
+        Vitals(value, vitals.Hp, vitals.Ap);
+
+    /// <summary>
+    /// Vitais por valor: o bot guarda HP no domínio dele (<see cref="Domain.BotPlayer"/>), não em
+    /// <see cref="PlayerCombatVitals"/>, e o cliente precisa do mesmo evento para baixar a barra.
+    /// </summary>
+    public static byte[] Vitals(ServerVitalsEvent value, int hp, int ap)
     {
         byte[] payload = new byte[12];
         BinaryPrimitives.WriteUInt32LittleEndian(payload, value.VictimSeat);
         BinaryPrimitives.WriteSingleLittleEndian(
-            payload.AsSpan(4), vitals.Hp);
+            payload.AsSpan(4), hp);
         BinaryPrimitives.WriteSingleLittleEndian(
-            payload.AsSpan(8), vitals.Ap);
+            payload.AsSpan(8), ap);
         return BuildEvent(
             new CombatEventEnvelope(
                 value.SourceSeat,

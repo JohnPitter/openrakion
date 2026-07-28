@@ -63,6 +63,32 @@ namespace RakionServer.World
             }
         }
 
+        /// <summary>
+        /// Publica o assento no roster ANTES do host nativo confirmar: o bootstrap da engine leva
+        /// segundos e o dono da sala precisa ver o bot no clique. A simulação só é ligada em
+        /// <see cref="ConfirmReservation"/>; falha do host desfaz o assento e anuncia a saída.
+        /// </summary>
+        public bool PublishReservation(
+            Field field, ClientSession host, AddBotResult reservation)
+        {
+            if (!reservation.Ok || reservation.Bot == null)
+                return false;
+            lock (field.SyncRoot)
+            {
+                PlayerRec? record = field.RecAt((byte)reservation.Seat);
+                if (record?.Bot != reservation.Bot ||
+                    field.FindRec(host) == null ||
+                    field.Phase == MatchPhase.Playing ||
+                    field.State == 2)
+                    return false;
+                record.State = 2;
+                record.WeaponState = 1;
+                record.Dead = false;
+                field.BroadcastLobby(RoomRosterFrames.PlayerJoined(record));
+                return true;
+            }
+        }
+
         public bool ConfirmReservation(
             Field field, ClientSession host, AddBotResult reservation)
         {
@@ -77,12 +103,8 @@ namespace RakionServer.World
                     field.State == 2)
                     return false;
                 reservation.Bot.AttachEngine();
-                record.State = 2;
-                record.WeaponState = 1;
-                record.Dead = false;
                 Log.Ok("bot", "[{0}] bot nativo '{1}' -> field {2} seat {3}",
                     host.Slot, reservation.Bot.Name, field.Id, reservation.Seat);
-                field.BroadcastLobby(RoomRosterFrames.PlayerJoined(record));
                 return true;
             }
         }
@@ -94,8 +116,10 @@ namespace RakionServer.World
             lock (field.SyncRoot)
             {
                 PlayerRec? record = field.RecAt((byte)reservation.Seat);
-                if (record?.Bot == reservation.Bot)
-                    field.RemoveBot((byte)reservation.Seat);
+                if (record?.Bot == reservation.Bot &&
+                    field.RemoveBot((byte)reservation.Seat))
+                    // O assento já foi publicado no clique; desfazer exige anunciar a saída.
+                    field.BroadcastLobby(BuildLeave((byte)reservation.Seat));
             }
         }
 
@@ -108,7 +132,8 @@ namespace RakionServer.World
             AddBotResult reservation = ReserveBot(field, host, difficulty);
             if (!reservation.Ok)
                 return reservation;
-            if (ConfirmReservation(field, host, reservation))
+            if (PublishReservation(field, host, reservation) &&
+                ConfirmReservation(field, host, reservation))
                 return reservation with { Message = "bot adicionado" };
             RollbackReservation(field, reservation);
             return new AddBotResult(false, "reserva do bot expirou", -1, null);

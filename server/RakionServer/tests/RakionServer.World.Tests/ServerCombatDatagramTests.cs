@@ -1,3 +1,5 @@
+using System;
+using System.Buffers.Binary;
 using RakionServer.World.Domain;
 using RakionServer.World.Network;
 using Xunit;
@@ -19,6 +21,33 @@ public sealed class ServerCombatDatagramTests
         Assert.Equal((byte)10, damage.Envelope.SenderSeat);
         Assert.Equal((byte)0, damage.Envelope.PrimaryEntitySeat);
         Assert.Equal(25f, damage.FirstDamageValue);
+    }
+
+    /// <summary>
+    /// Layout de `EPlayerDamage 0x0191000B` fechado na RE do cliente (docs/protocol):
+    /// `u32 playerId | u8 damageType | u8 damageMotionType | u16 reserved |
+    ///  f32 firstDamageValue | f32 secondDamageValue | vec3f first | vec3f second` = 40 bytes.
+    /// O consumidor é `CPlayer::ReceiveDamage`, então cada campo tem que cair no offset certo.
+    /// </summary>
+    [Fact]
+    public void DamagePayloadMatchesReversedClientLayout()
+    {
+        var direction = new BotVector(0.25f, 0f, -0.75f);
+        byte[] packet = ServerCombatDatagrams.Damage(
+            new ServerDamageEvent(3, 10, 91, 52, direction));
+
+        ReadOnlySpan<byte> payload = packet.AsSpan(19);
+        Assert.Equal(40, payload.Length);
+        Assert.Equal(10u, BinaryPrimitives.ReadUInt32LittleEndian(payload));
+        Assert.Equal(11, payload[4]);   // damageType: melee
+        Assert.Equal(4, payload[5]);    // damageMotionType: knockdown
+        Assert.Equal(0, BinaryPrimitives.ReadUInt16LittleEndian(payload[6..]));
+        Assert.Equal(52f, BinaryPrimitives.ReadSingleLittleEndian(payload[8..]));
+        Assert.Equal(direction.X, BinaryPrimitives.ReadSingleLittleEndian(payload[16..]));
+        Assert.Equal(direction.Y, BinaryPrimitives.ReadSingleLittleEndian(payload[20..]));
+        Assert.Equal(direction.Z, BinaryPrimitives.ReadSingleLittleEndian(payload[24..]));
+        Assert.Equal(direction.X, BinaryPrimitives.ReadSingleLittleEndian(payload[28..]));
+        Assert.Equal(direction.Z, BinaryPrimitives.ReadSingleLittleEndian(payload[36..]));
     }
 
     [Fact]

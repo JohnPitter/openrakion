@@ -42,6 +42,13 @@ public sealed partial class WorldServer
                 failure = reservation.Message;
                 break;
             }
+            // Publica o assento antes de esperar a engine: o dono vê o bot no clique.
+            if (!Bots.PublishReservation(field, host, reservation))
+            {
+                Bots.RollbackReservation(field, reservation);
+                failure = "a sala mudou de estado";
+                break;
+            }
             if (!await ActivateReservationAsync(
                 field, host, reservation).ConfigureAwait(false))
             {

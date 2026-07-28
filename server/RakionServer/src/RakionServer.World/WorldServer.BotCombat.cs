@@ -34,11 +34,12 @@ public sealed partial class WorldServer
         List<BotCombatOutcome> outcomes = [];
         List<BotHumanCombatOutcome> humanOutcomes = [];
         List<HumanRespawnOutcome> humanRespawns = [];
+        List<byte[]> botRespawnVitals = [];
         bool botsRespawned;
         lock (field.SyncRoot)
         {
             long now = Environment.TickCount64;
-            botsRespawned = RespawnDueBots(field, now);
+            botsRespawned = RespawnDueBots(field, now, botRespawnVitals);
             CaptureHumanRespawns(field, now, humanRespawns);
             foreach (PlayerRec attacker in field.Slots)
             {
@@ -59,6 +60,8 @@ public sealed partial class WorldServer
             PublishHumanCombatOutcome(field, outcome);
         foreach (HumanRespawnOutcome respawn in humanRespawns)
             PublishHumanRespawn(field, respawn);
+        foreach (byte[] vitals in botRespawnVitals)
+            PublishBotGameplay(field, vitals);
         if (botsRespawned || outcomes.Count > 0)
             Bots.PublishBotLifecycles(field);
     }
@@ -79,6 +82,32 @@ public sealed partial class WorldServer
             (byte)hit.BotRecord.Slot,
             ++bot.MoveSeq,
             (byte)attacker.Slot);
+        // O cliente desenha recuo e barra de vida do alvo a partir dos eventos tipados; sem eles
+        // o golpe no bot só produzia a animação e a vida parecia intacta.
+        BotVector direction =
+            (hit.BotRecord.Position - attacker.Position).Normalized();
+        byte[] damageEvent = ServerCombatDatagrams.Damage(
+            new ServerDamageEvent(
+                (byte)attacker.Slot,
+                (byte)hit.BotRecord.Slot,
+                ++bot.MoveSeq,
+                damage,
+                direction));
+        byte[] vitalsEvent = ServerCombatDatagrams.Vitals(
+            new ServerVitalsEvent(
+                (byte)attacker.Slot,
+                (byte)hit.BotRecord.Slot,
+                ++bot.MoveSeq),
+            bot.Health,
+            0);
+        byte[]? deathEvent = hit.Died
+            ? ServerCombatDatagrams.Death(
+                new ServerDeathEvent(
+                    (byte)attacker.Slot,
+                    (byte)hit.BotRecord.Slot,
+                    ++bot.MoveSeq,
+                    direction))
+            : null;
         byte[]? deathBody = hit.Died
             ? ResolveBotDeath(field, attacker, hit.BotRecord, bot, now)
             : null;
@@ -88,6 +117,9 @@ public sealed partial class WorldServer
             damage,
             bot.Health,
             damagePacket,
+            damageEvent,
+            vitalsEvent,
+            deathEvent,
             deathBody,
             hit.Died);
     }
@@ -194,7 +226,10 @@ public sealed partial class WorldServer
             result.ScoreB);
     }
 
-    private static bool RespawnDueBots(Field field, long now)
+    private static bool RespawnDueBots(
+        Field field,
+        long now,
+        List<byte[]> vitals)
     {
         if (field.State != 2 || field.Phase != MatchPhase.Playing)
             return false;
@@ -206,6 +241,14 @@ public sealed partial class WorldServer
             record.Dead = false;
             record.State = 4;
             changed = true;
+            // Sem republicar os vitais, a barra do bot fica vazia depois do respawn.
+            vitals.Add(ServerCombatDatagrams.Vitals(
+                new ServerVitalsEvent(
+                    (byte)record.Slot,
+                    (byte)record.Slot,
+                    ++record.Bot.MoveSeq),
+                record.Bot.Health,
+                0));
             Log.Ok(
                 "bot-combat",
                 "field={0} bot={1} respawn hp={2}/{3}",
@@ -254,6 +297,10 @@ public sealed partial class WorldServer
     private void PublishCombatOutcome(Field field, BotCombatOutcome outcome)
     {
         PublishBotGameplay(field, outcome.DamagePacket);
+        PublishBotGameplay(field, outcome.DamageEvent);
+        PublishBotGameplay(field, outcome.VitalsEvent);
+        if (outcome.DeathEvent != null)
+            PublishBotGameplay(field, outcome.DeathEvent);
         if (outcome.DeathBody != null)
         {
             field.BroadcastFieldPlaying(0x4f, outcome.DeathBody);
@@ -330,6 +377,9 @@ public sealed partial class WorldServer
         int Damage,
         int RemainingHealth,
         byte[] DamagePacket,
+        byte[] DamageEvent,
+        byte[] VitalsEvent,
+        byte[]? DeathEvent,
         byte[]? DeathBody,
         bool Died);
 

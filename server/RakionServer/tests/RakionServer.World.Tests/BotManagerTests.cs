@@ -59,7 +59,7 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
-        public void ReservationIsInvisibleUntilConfirmed()
+        public void SeatIsPublishedOnClickAndEngineOnlyOnConfirmation()
         {
             var (field, host) = GolemRoomWithHost();
             BotManager manager = NewManager();
@@ -70,8 +70,14 @@ namespace RakionServer.World.Tests
             Assert.True(reservation.Ok);
             Assert.Equal(1, field.BotCount);
             Assert.Equal((byte)0, field.Slots[reservation.Seat].State);
-            Assert.True(manager.ConfirmReservation(field, host, reservation));
+
+            // O assento aparece no roster no clique; a simulação só liga depois do host nativo.
+            Assert.True(manager.PublishReservation(field, host, reservation));
             Assert.Equal((byte)2, field.Slots[reservation.Seat].State);
+            Assert.False(reservation.Bot!.EngineAttached);
+
+            Assert.True(manager.ConfirmReservation(field, host, reservation));
+            Assert.True(reservation.Bot.EngineAttached);
         }
 
         [Fact]

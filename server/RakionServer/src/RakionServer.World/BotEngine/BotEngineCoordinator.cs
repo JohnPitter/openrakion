@@ -13,6 +13,7 @@ internal sealed class BotEngineCoordinator(WorldConfig.BotEngineConfig config) :
     private sealed class FieldSession(BotEngineWorker worker)
     {
         public BotEngineWorker Worker { get; } = worker;
+        public long LastTickMs { get; set; }
         public ConcurrentDictionary<byte, uint> BotIds { get; } = new();
         public ConcurrentDictionary<byte, uint> LifecycleSequences { get; } = new();
         public ConcurrentDictionary<byte, uint> DamageSequences { get; } = new();
@@ -100,7 +101,8 @@ internal sealed class BotEngineCoordinator(WorldConfig.BotEngineConfig config) :
                 field, session, cancellationToken).ConfigureAwait(false);
             await SynchronizeLifecyclesAsync(
                 field, session, cancellationToken).ConfigureAwait(false);
-            await session.Worker.TickAsync(1, cancellationToken).ConfigureAwait(false);
+            await session.Worker.TickAsync(
+                ResolveFrames(session), cancellationToken).ConfigureAwait(false);
             foreach (KeyValuePair<byte, uint> entry in session.BotIds)
             {
                 BotEnginePlayerSnapshot snapshot = await session.Worker.SnapshotAsync(
@@ -135,6 +137,23 @@ internal sealed class BotEngineCoordinator(WorldConfig.BotEngineConfig config) :
     {
         _sessions.Clear();
         await _supervisor.DisposeAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// A engine simula em quanta de 50 ms; o relógio da partida chama a cada ~150 ms. Avançar um
+    /// único frame por chamada faz o bot andar a 1/3 do tempo real e engasgar. O número de frames
+    /// acompanha o tempo real decorrido, com teto para não explodir depois de uma pausa.
+    /// </summary>
+    private static uint ResolveFrames(FieldSession session)
+    {
+        const long engineTickMs = 50;
+        const long maxFrames = 8;
+        long now = Environment.TickCount64;
+        long previous = session.LastTickMs;
+        session.LastTickMs = now;
+        if (previous == 0)
+            return 1;
+        return (uint)Math.Clamp((now - previous) / engineTickMs, 1, maxFrames);
     }
 
     private static void ApplySnapshot(

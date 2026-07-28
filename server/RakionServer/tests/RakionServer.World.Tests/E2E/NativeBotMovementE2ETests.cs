@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -260,10 +261,114 @@ public sealed class NativeBotMovementE2ETests
             "World não recebeu a posição autenticada do atacante");
     }
 
+    /// <summary>
+    /// O cliente original recebe gameplay pelo TÚNEL TCP (0x57), não por UDP direto. Este gate cobre
+    /// o combate por esse caminho: sem ele, um evento de combate que o túnel recusa passa despercebido
+    /// nos testes e some em jogo.
+    /// </summary>
+    [Fact]
+    [Trait("Requires", "BotEngineFixture")]
+    public async Task HumanHitReachesTunneledClientAsCombatEvents()
+    {
+        NativeMatch? setup = await StartNativeMatchAsync(
+            "native-tunnel-combat", tunneled: true);
+        if (setup == null)
+            return;
+        await using NativeMatch match = setup;
+        PlayerRec botRecord = match.BotRecord;
+        JourneyHelper.WaitUntil(
+            () => botRecord.Bot!.MoveSeq > 0,
+            "snapshot nativo inicial não chegou");
+        // O cliente real se registra como tunelado depois de entrar no stage — o start do match
+        // limpa a flag, então a presença tem que ser declarada aqui, como ele faz.
+        lock (match.Field.SyncRoot)
+            match.Field.RegisterTunnelingPresence(
+                (byte)match.HumanRecord.Slot, true);
+        Assert.True(match.HumanRecord.UsesTunneling);
+
+        // O túnel precisa estar vivo para esta sessão antes de cobrar o combate por ele.
+        match.Human.WaitFor(
+            frame => IsTunnelBody(
+                frame,
+                body => body.Length > 1 && body[0] == 0x0A && body[1] == 0x03),
+            JourneyHelper.Timeout);
+
+        PositionAttackerInFront(match);
+        int initialHealth = botRecord.Bot!.Health;
+
+        match.Human.SendBotTelemetryAttack(
+            match.Fixture.UdpPort2,
+            match.Session.FieldSeat);
+        JourneyHelper.WaitUntil(
+            () => botRecord.Bot.Health < initialHealth,
+            "ataque autenticado não reduziu o HP autoritativo do bot");
+
+        byte[] animation = match.Human.WaitFor(
+            frame => IsTunnelBody(
+                frame,
+                body => body.Length == 7 &&
+                    body[0] == 0x11 &&
+                    body[1] == 0x03 &&
+                    body[3] == (byte)PlayerAnimationKind.Damage),
+            JourneyHelper.Timeout);
+        Assert.Equal(0x57, animation[0]);
+        Assert.Equal(0x00, animation[1]);
+
+        // O HP do bot também precisa chegar: é dele que o cliente desenha a barra do inimigo.
+        byte[] botVitals = match.Human.WaitFor(
+            frame => IsTunnelBody(
+                frame,
+                body => body.Length > 8 &&
+                    body[0] == 0x0C &&
+                    body[1] == 0x83 &&
+                    BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(6)) ==
+                        GameplayPeerDatagramCodec.PlayerRemainHpEventId &&
+                    body[4] == botRecord.Slot),
+            JourneyHelper.Timeout);
+        Assert.Equal(0x57, botVitals[0]);
+
+        // Sentido bot → humano: aqui o contrato inclui os eventos tipados (dano e vitais), que
+        // precisam atravessar o mesmo túnel para o HP do jogador cair na tela.
+        lock (match.Field.SyncRoot)
+            match.HumanRecord.Vitals.Initialize(200, 0);
+        JourneyHelper.WaitUntil(
+            () => match.HumanRecord.Vitals.Hp < 200,
+            "bot não causou dano autoritativo no humano",
+            TimeSpan.FromSeconds(15));
+
+        byte[] damage = match.Human.WaitFor(
+            frame => IsTunnelBody(
+                frame,
+                body => body.Length > 8 &&
+                    body[0] == 0x0C &&
+                    body[1] == 0x83 &&
+                    // corpo = [tipo(2)][echo][rota][alvo][origem][eventId(4)]…
+                    BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(6)) ==
+                        GameplayPeerDatagramCodec.PlayerDamageEventId),
+            JourneyHelper.Timeout);
+        Assert.Equal(0x57, damage[0]);
+    }
+
+    /// <summary>
+    /// Frame do túnel: `[u16 opcode 0x0057][u16 len][corpo]`; corpo = tipo + bytes do offset 7 do
+    /// datagrama (a sequência é reinserida no cliente).
+    /// </summary>
+    private static bool IsTunnelBody(byte[] frame, Func<byte[], bool> predicate)
+    {
+        if (frame.Length < 4 ||
+            BinaryPrimitives.ReadUInt16LittleEndian(frame) != 0x0057)
+            return false;
+        int length = BinaryPrimitives.ReadUInt16LittleEndian(frame.AsSpan(2));
+        if (length <= 0 || frame.Length < 4 + length)
+            return false;
+        return predicate(frame[4..(4 + length)]);
+    }
+
     private static async Task<NativeMatch?> StartNativeMatchAsync(
         string roomName,
         int botCount = 1,
-        bool start = true)
+        bool start = true,
+        bool tunneled = false)
     {
         string? hostPath = Environment.GetEnvironmentVariable(
             "RAKION_BOT_ENGINE_HOST");
@@ -287,14 +392,16 @@ public sealed class NativeBotMovementE2ETests
             await fixture.DisposeAsync();
             return null;
         }
-        return await CreateNativeMatchAsync(fixture, roomName, botCount, start);
+        return await CreateNativeMatchAsync(
+            fixture, roomName, botCount, start, tunneled);
     }
 
     private static async Task<NativeMatch> CreateNativeMatchAsync(
         WorldServerFixture fixture,
         string roomName,
         int botCount,
-        bool start = true)
+        bool start = true,
+        bool tunneled = false)
     {
         WorldServer server = fixture.Server!;
         HeadlessWorldClient human = await HeadlessWorldClient.ConnectAsync(
@@ -324,7 +431,7 @@ public sealed class NativeBotMovementE2ETests
             "Host nativo não confirmou os bots",
             TimeSpan.FromSeconds(60));
         PlayerRec botRecord = field.BotSlots.First();
-        AuthenticateGameplay(human, fixture, session, field);
+        AuthenticateGameplay(human, fixture, session, field, tunneled);
         if (!start)
             return new NativeMatch(
                 fixture,
@@ -356,7 +463,8 @@ public sealed class NativeBotMovementE2ETests
         HeadlessWorldClient human,
         WorldServerFixture fixture,
         ClientSession session,
-        Field field)
+        Field field,
+        bool tunneled = false)
     {
         human.OpenUdp();
         human.UdpHandshake(fixture.UdpPort2, session.Slot, session.UdpKey);
@@ -368,7 +476,7 @@ public sealed class NativeBotMovementE2ETests
                 packet[0] == 0x01 &&
                 packet[1] == 0x02,
             JourneyHelper.Timeout);
-        field.Slots[session.FieldSeat].UsesTunneling = false;
+        field.Slots[session.FieldSeat].UsesTunneling = tunneled;
     }
 
     private sealed record NativeMatch(

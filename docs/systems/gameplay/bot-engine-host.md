@@ -497,6 +497,33 @@ de store, o que reforça que o preenchimento vem do sistema de modelos da `engin
 Fio solto para a próxima rodada: identificar quem preenche `CPlayerAnimator+0x16C` (provável API de
 modelo/animação da engine) e medir o custo de carregar esse pipeline sem display.
 
+## Marco 10: o combate chega ao cliente pelo túnel
+
+Três defeitos de apresentação, invisíveis para a suíte anterior porque todos os gates de combate
+rodavam com o cliente em UDP direto:
+
+1. **Assimetria de publicação.** O golpe humano → bot publicava só a animação de HIT. O cliente
+   desenha recuo e barra de vida do alvo a partir dos eventos tipados, então o bot apanhava em
+   silêncio. Agora esse sentido publica dano, vitais e morte, como o sentido oposto já fazia.
+2. **Respawn sem vitais.** A barra do bot ficava vazia depois que ele renascia; o respawn republica
+   `EPlayerRemainHP`.
+3. **Túnel sem cobertura.** O cliente original recebe gameplay por `0x57`, caminho que nenhum teste
+   exercitava — foi assim que o `BuildTunnelPayload` recusando evento de entidade passou despercebido.
+
+Contratos cravados nos gates:
+
+- corpo do túnel = `[u16 opcode][u16 len][tipo(2) + bytes do offset 7]`; a sequência é reinserida no
+  cliente;
+- `UsesTunneling` é **limpo no start da partida** — o cliente real se registra depois de entrar no
+  stage, e um teste que crave a flag antes está testando ficção;
+- `EPlayerDamage 0x0191000B` sai no layout da RE (40 B: `playerId`, `damageType`, `damageMotionType`,
+  `u16` reservado, dois escalares, dois `vec3f`), validado campo a campo.
+
+Em aberto: os dois escalares de `EPlayerDamage` não têm rótulo definitivo HP/AP na RE
+(`WorkReduce_HP_AP` perde a convenção de chamada no decompiler). O World preenche o primeiro e
+publica o snapshot autoritativo de HP logo em seguida, então a aproximação local do cliente é
+corrigida no mesmo tick.
+
 ## Gates restantes
 
 1. **validação visual no cliente gráfico** — deslocamento, HIT/queda/recuperação, morte, respawn
