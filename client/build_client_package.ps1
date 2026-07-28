@@ -112,12 +112,17 @@ $goldenBin = Join-Path $golden 'Bin'
 $pristineExe = Join-Path $goldenBin 'rakion.exe.orig'
 $patchedExe = Join-Path $goldenBin 'rakion.exe'
 $compatRoot = Join-Path $PSScriptRoot 'RakionClientCompat'
+$botHostRoot = Join-Path $PSScriptRoot 'RakionBotEngineHost'
 $launcherProject = Join-Path $PSScriptRoot 'RakionLauncher\RakionLauncher.csproj'
 $publishRoot = Join-Path $PSScriptRoot 'RakionLauncher\bin\package-publish'
 $staging = "$output.staging-$([Guid]::NewGuid().ToString('N'))"
 
 & (Join-Path $compatRoot 'build.ps1') -PatchedExe $patchedExe -OriginalExe $pristineExe
 if ($LASTEXITCODE -ne 0) { throw "build das DLLs falhou: $LASTEXITCODE" }
+# O Bot Engine Host mora no Bin do cliente: SE_InitEngine deriva o diretório de dados do
+# caminho do executável. Sem ele no pacote, a instalação limpa não tem bots.
+& (Join-Path $botHostRoot 'build.ps1')
+if ($LASTEXITCODE -ne 0) { throw "build do Bot Engine Host falhou: $LASTEXITCODE" }
 $dotnet = Find-DotNetSdk
 & $dotnet publish $launcherProject -c Release -r win-x64 --self-contained true `
     -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o $publishRoot
@@ -132,6 +137,8 @@ try {
     Copy-PackageFile (Join-Path $compatRoot 'bin\version.dll') 'Bin\version.dll' $staging
     Copy-PackageFile (Join-Path $compatRoot 'bin\RakionClientPatch.dll') `
         'Bin\RakionClientPatch.dll' $staging
+    Copy-PackageFile (Join-Path $botHostRoot 'bin\BotEngineHost.exe') `
+        'Bin\BotEngineHost.exe' $staging
     Copy-PackageFile (Join-Path $PSScriptRoot 'verify_client_package.ps1') `
         'verify-package.ps1' $staging
     Get-ChildItem -LiteralPath $publishRoot -File | Where-Object {

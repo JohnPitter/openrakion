@@ -12,6 +12,7 @@ if ($manifest.schema -ne 1 -or -not $manifest.files) { throw 'manifesto de pacot
 $required = @(
     'RakionLauncher.exe', 'launcher.settings.json', 'server.host', 'cash-shop.url',
     'Bin\rakion.exe', 'Bin\engine.dll', 'Bin\version.dll', 'Bin\RakionClientPatch.dll',
+    'Bin\BotEngineHost.exe',
     'DataSetup.xfs', 'Data\SeriousSam.gms'
 )
 $failures = [System.Collections.Generic.List[string]]::new()

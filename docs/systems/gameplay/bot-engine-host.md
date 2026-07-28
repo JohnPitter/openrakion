@@ -13,6 +13,9 @@ deve recusar os bots daquele field sem substituir o resultado por física aproxi
 
 ## Marco 1: bootstrap autônomo
 
+O `build_client_package.ps1` compila e empacota o host em `Bin\BotEngineHost.exe`, e o
+`verify_client_package.ps1` cobra o arquivo — sem ele a instalação limpa sobe sem bots.
+
 O projeto `client/RakionBotEngineHost` produz `BotEngineHost.exe` x86 e deve ser implantado no
 diretório `Bin` do cliente golden. Essa localização é parte da ABI: `SE_InitEngine` deriva o
 diretório de dados a partir do caminho do executável.
