@@ -90,33 +90,30 @@ public sealed partial class WorldServer
 
         BotPlayer bot = hit.BotRecord.Bot!;
         bot.BeginHitReaction(now);
-        byte[] damagePacket = BotMovement.SynthesizeDamage(
-            (byte)hit.BotRecord.Slot,
-            ++bot.MoveSeq,
-            (byte)attacker.Slot);
-        // O cliente desenha recuo e barra de vida do alvo a partir dos eventos tipados; sem eles
-        // o golpe no bot só produzia a animação e a vida parecia intacta.
-        BotVector direction =
-            (hit.BotRecord.Position - attacker.Position).Normalized();
-        byte[] damageEvent = ServerCombatDatagrams.Damage(
-            new ServerDamageEvent(
-                (byte)attacker.Slot,
-                (byte)hit.BotRecord.Slot,
-                ++bot.MoveSeq,
-                damage,
-                direction));
+        byte victimSeat = (byte)hit.BotRecord.Slot;
+        // Captura humano×humano: quem apanha publica sobre SI MESMO o `RemainHP` e, no mesmo
+        // instante, a reação `0x0311 kind=2`. `EPlayerDamage` NÃO aparece uma vez sequer numa
+        // partida completa entre dois clientes — o cliente resolve o próprio dano e só replica o
+        // resultado. Para o bot ser desenhado apanhando ele precisa falar esse par, não o evento
+        // de dano sintético, que o cliente ignora quando a entidade é remota.
         byte[] vitalsEvent = ServerCombatDatagrams.Vitals(
             new ServerVitalsEvent(
-                (byte)attacker.Slot,
-                (byte)hit.BotRecord.Slot,
+                victimSeat,
+                victimSeat,
                 ++bot.MoveSeq),
             bot.Health,
             0);
+        byte[] reactionPacket = BotMovement.SynthesizeDamage(
+            victimSeat,
+            ++bot.MoveSeq,
+            bot.NextDamageReaction(hit.Died));
+        BotVector direction =
+            (hit.BotRecord.Position - attacker.Position).Normalized();
         byte[]? deathEvent = hit.Died
             ? ServerCombatDatagrams.Death(
                 new ServerDeathEvent(
-                    (byte)attacker.Slot,
-                    (byte)hit.BotRecord.Slot,
+                    victimSeat,
+                    victimSeat,
                     ++bot.MoveSeq,
                     direction))
             : null;
@@ -125,12 +122,11 @@ public sealed partial class WorldServer
             : null;
         return new BotCombatOutcome(
             (byte)attacker.Slot,
-            (byte)hit.BotRecord.Slot,
+            victimSeat,
             damage,
             bot.Health,
-            damagePacket,
-            damageEvent,
             vitalsEvent,
+            reactionPacket,
             deathEvent,
             deathBody,
             hit.Died);
@@ -177,7 +173,7 @@ public sealed partial class WorldServer
         byte[] animation = BotMovement.SynthesizeDamage(
             (byte)victim.Slot,
             ++bot.MoveSeq,
-            (byte)attacker.Slot);
+            bot.NextDamageReaction(hit.Damage.Died));
         byte[] damageEvent = ServerCombatDatagrams.Damage(
             new ServerDamageEvent(
                 (byte)attacker.Slot,
@@ -308,9 +304,10 @@ public sealed partial class WorldServer
 
     private void PublishCombatOutcome(Field field, BotCombatOutcome outcome)
     {
-        PublishBotGameplay(field, outcome.DamagePacket);
-        PublishBotGameplay(field, outcome.DamageEvent);
+        // Ordem medida no fio da vítima humana: vitais primeiro, reação no mesmo instante, morte
+        // por último. Inverter faz o cliente desenhar o recuo antes de saber o HP novo.
         PublishBotGameplay(field, outcome.VitalsEvent);
+        PublishBotGameplay(field, outcome.ReactionPacket);
         if (outcome.DeathEvent != null)
             PublishBotGameplay(field, outcome.DeathEvent);
         if (outcome.DeathBody != null)
@@ -388,9 +385,8 @@ public sealed partial class WorldServer
         byte BotSeat,
         int Damage,
         int RemainingHealth,
-        byte[] DamagePacket,
-        byte[] DamageEvent,
         byte[] VitalsEvent,
+        byte[] ReactionPacket,
         byte[]? DeathEvent,
         byte[]? DeathBody,
         bool Died);

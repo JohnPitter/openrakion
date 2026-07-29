@@ -94,6 +94,7 @@ namespace RakionServer.World.Network
 
         public const ushort AttackType = 0x0311;
         public const int AttackSize = 10;
+        private const byte DamageReactionTerminator = 0x01;
 
         public static byte[] SynthesizeNormalAnimation(
             byte seat, uint sequence, PlayerNormalAnimation animation)
@@ -145,8 +146,15 @@ namespace RakionServer.World.Network
             return p;
         }
 
-        /// <summary>Reação visual de dano do bot (0x0311 kind=Damage, shape estendido de 12 bytes).</summary>
-        public static byte[] SynthesizeDamage(byte seat, uint sequence, byte attackerSeat)
+        /// <summary>
+        /// Reação visual de dano do bot (`0x0311 kind=Damage`, shape estendido de 12 bytes). A
+        /// vítima publica a reação sobre SI MESMA, pareada com o `RemainHP` no mesmo instante — é
+        /// assim que o cliente original desenha a queda de um jogador remoto. Os dois IDs e o
+        /// terminador saem da captura humano×humano; o terminador é `01` em todos os frames
+        /// medidos, nunca o assento de quem golpeou.
+        /// </summary>
+        public static byte[] SynthesizeDamage(
+            byte seat, uint sequence, BotDamageReaction reaction)
         {
             byte[] packet = new byte[GameplayActionDatagram.ExtendedAnimationSize];
             BinaryPrimitives.WriteUInt16LittleEndian(packet.AsSpan(0), AttackType);
@@ -154,9 +162,13 @@ namespace RakionServer.World.Network
             packet[6] = seat;
             packet[7] = seat;
             packet[8] = (byte)PlayerAnimationKind.Damage;
-            packet[9] = 0x0f;
-            packet[10] = 0x07;
-            packet[11] = attackerSeat;
+            (packet[9], packet[10]) = reaction switch
+            {
+                BotDamageReaction.StaggerA => ((byte)0x01, (byte)0x02),
+                BotDamageReaction.StaggerB => ((byte)0x02, (byte)0x01),
+                _ => ((byte)0x0f, (byte)0x07)
+            };
+            packet[11] = DamageReactionTerminator;
             return packet;
         }
 

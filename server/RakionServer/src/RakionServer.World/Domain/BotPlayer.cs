@@ -38,6 +38,7 @@ namespace RakionServer.World.Domain
         public long RespawnAtMs { get; private set; }
         private byte _attackVariant;
         private bool _isMoving;
+        private bool _staggerToggle;
         private BotControls _lastPublishedControls;
         private long _nextLocomotionRefreshMs;
         public bool IsMoving => _isMoving;
@@ -69,6 +70,19 @@ namespace RakionServer.World.Domain
             Alive = false;
             LifecycleSequence++;
             return true;
+        }
+
+        /// <summary>
+        /// Reação do golpe atual. Golpe que não derruba alterna as duas poses de recuo, como a
+        /// vítima humana faz na captura; o golpe fatal usa a queda.
+        /// </summary>
+        public BotDamageReaction NextDamageReaction(bool died)
+        {
+            if (died) return BotDamageReaction.Knockdown;
+            _staggerToggle = !_staggerToggle;
+            return _staggerToggle
+                ? BotDamageReaction.StaggerA
+                : BotDamageReaction.StaggerB;
         }
 
         public void BeginHitReaction(long nowMs)

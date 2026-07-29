@@ -268,6 +268,34 @@ bytes com `kind=1` também é aceita porque o receiver consome só o primeiro ar
 dois bytes finais. HP e morte não estão nesse pacote. A animação isolada não comprova hit: dano
 autoritativo ainda exige correlação com sequência, arma, posição, orientação, janela, alvo e match.
 
+#### Argumentos de `kind=2` medidos entre dois clientes
+
+Captura humano×humano de 28/07/2026 (dois clientes no field 1, seats 0 e 1, quatro mortes,
+26 frames `kind=2`) fecha os três argumentos de `ExecDamageAnim`:
+
+| `(arg0, arg1, arg2)` | contexto na captura |
+|---|---|
+| `(01, 02, 01)` / `(02, 01, 01)` | golpe melê que não derruba, **alternando** entre os dois |
+| `(08, 04, 01)` | golpe de outra classe de ataque |
+| `(0F, 07, 01)` | golpe que derruba, morte e frame de respawn |
+| `(00, 0A, 01)` | dano ambiental periódico (~1,1 s), morte com `cause=2` — não é melê |
+
+`arg2` é `01` em **todos** os 26 frames; não carrega o assento de quem golpeou. A alternância
+casa 1:1 com o ataque do agressor: `kind=1 arg=00` → `(01,02)`, `kind=1 arg=01` → `(02,01)`, e o
+combo `arg=19,18,0C` → `(0F,07)` seguido de `EPlayerDeath`.
+
+Duas consequências de arquitetura, e são o ponto principal desta seção:
+
+1. **Cada cliente é autoritativo sobre o próprio corpo.** Todo evento de entidade sai com
+   `sender == idxA`: a vítima publica sobre si mesma o `PlayerRemainHP 0x0191000C` e, no mesmo
+   milissegundo, a reação `0x0311 kind=2`. O atacante publica só `EShootWeapon 0x01910007`.
+   `ECollisionState 0x0191002A` é a única exceção — sai sobre a outra entidade.
+2. **`EPlayerDamage 0x0191000B` não aparece nenhuma vez** numa partida completa entre dois
+   clientes. O evento existe no binário e `ReceiveDamage` o consome, mas o trilho P2P do jogo não
+   o usa: o cliente resolve o próprio dano e replica só o resultado. Impor dano a uma entidade
+   **remota** por esse evento não desenha reação — é preciso falar o par
+   `RemainHP` + `0x0311 kind=2` sobre a própria entidade.
+
 A captura do produtor v258 fecha ainda dois contratos usados pelo bot sintético:
 
 - locomoção remota não nasce do `actionCode` de `0x030A`, que permaneceu zero; ela usa

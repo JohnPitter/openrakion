@@ -561,13 +561,71 @@ O World hoje emite `damageType=11` e `damageMotionType=4`, que são escolha, nã
 falta ler os dois bytes de um golpe real numa captura humano↔humano — é o que decide qual reação o
 cliente toca (recuo, queda, contador de HIT).
 
+## Marco 11: a captura humano×humano derruba o caminho do `EPlayerDamage`
+
+A captura de 28/07/2026 (dois clientes reais no mesmo field, quatro mortes) mostrou que o Marco 10
+resolveu o transporte mas escolheu o **evento errado**. O detalhe completo do dialeto está em
+[`combat-actions-status.md`](combat-actions-status.md#argumentos-de-kind2-medidos-entre-dois-clientes);
+o que importa para o bot:
+
+- **`EPlayerDamage 0x0191000B` não trafega** entre dois clientes. Nenhuma vez, em partida inteira.
+  O que o Marco 10 acrescentou ao sentido humano → bot era, portanto, invisível: o cliente não roda
+  reação de dano por evento imposto sobre entidade **remota**.
+- O jogo é **peer-autoritativo sobre o próprio corpo**: a vítima publica sobre si mesma
+  `PlayerRemainHP` e, no mesmo milissegundo, `0x0311 kind=2`; o atacante publica só `EShootWeapon`.
+- Os três argumentos do `kind=2` ficaram medidos: `(01,02,01)`/`(02,01,01)` alternando em golpe que
+  não derruba, `(0F,07,01)` no que derruba. O terceiro argumento é `01` em todos os frames — o World
+  mandava ali o assento do atacante.
+
+Correção aplicada no sentido humano → bot: publicar `RemainHP` + reação `kind=2` sobre o **próprio
+assento do bot**, na ordem medida, e **remover** o `EPlayerDamage`, que era código sem efeito. O
+sentido bot → humano mantém o `EPlayerDamage` sobre a entidade **local** do jogador, onde ele
+comprovadamente funciona e serve à autoridade do servidor.
+
+Isso também **reduz** a pendência de `damageType`/`damageMotionType` acima: eles pertencem ao evento
+que só é usado no sentido bot → humano.
+
+### Validação visual: aprovada em 29/07/2026
+
+Partida no cliente original, com o usuário confirmando na tela:
+
+- **humano → bot**: o bot **reage aos golpes — recuo e queda**, morre e renasce;
+- **bot → humano**: o personagem do jogador cai sob os golpes do bot;
+- barra de vida do bot acompanha o `RemainHP` autoritativo.
+
+O log da partida confirma o fio: reações `11030A02010201` / `11030A02020101` alternando,
+`11030A020F0701` na queda, `RemainHP` e `EPlayerDeath` com `sender == idxA == assento do bot`, e
+**nenhum** `EPlayerDamage` sobre o bot.
+
+**Em aberto — contador HIT×N.** Com a reação visível funcionando, o número flutuante continua
+ausente sobre o bot. Não é defeito de wire (os frames são byte a byte idênticos aos de um humano
+apanhando) e **não é teto arquitetural** — registro anterior nesse sentido está corrigido.
+
+O gate `[vítima+0x394]` de fato barra a contagem em entidade dirigida por rede, mas o
+`RakionClientPatch` já contorna isso: o cave em `0x351533e9` chama `AddHitCount` direto no jogador
+**local**, que é onde o contador vive. O canal é o arquivo `C:\temp\bot_lifecycle_<porta>.txt`, com
+oito campos — `seat gen seq dead dmgSeq attackerSeat attackerHitSeq moving`; a DLL só aplica o HIT
+quando `attackerSeat` está na faixa válida e `attackerHitSeq` cresce.
+
+Verificado em 29/07/2026, sem fechar o caso:
+
+- servidor produz o dado certo — `ConfirmHit` devolve `++ConfirmedHitSequence` (cresce a partir de
+  1) e `TakeDamage` grava assento e sequência do atacante;
+- a DLL lê o arquivo — provado pelo log dela, que aplicou `reacao de dano seat=10 seq=1..4` e as
+  transições de lifecycle na partida;
+- os binários deployados (`version.dll`, `RakionClientPatch.dll`) batem **hash** com o build desta
+  branch, então não há deploy defasado.
+
+Próximo passo: o ramo do HIT local exige `localPlayer() == player` — caminho distinto do da reação
+de dano, que age sobre a entidade do bot. Instrumentar esse ramo com log próprio (o padrão de
+`compat_log` já existe) crava se ele é alcançado e com que valores.
+
 ## Gates restantes
 
-1. **validação visual no cliente gráfico** — deslocamento, HIT/queda/recuperação, morte, respawn
-   (humano↔bot) e multi-bot sob carga nos mapas battle. É o único critério do goal ainda em aberto:
-   os testes cobrem o fio (945/945, 8/8 com Host real), não a apresentação;
+1. contador HIT×N (acima);
 2. substituir as políticas provisórias de dano pelas fórmulas por arma/equipamento;
-3. desativar os subsistemas de input e som não necessários ao worker.
+3. desativar os subsistemas de input e som não necessários ao worker;
+4. multi-bot sob carga nos mapas battle — coberto no fio, sem observação visual dedicada.
 
 ## Implantação
 

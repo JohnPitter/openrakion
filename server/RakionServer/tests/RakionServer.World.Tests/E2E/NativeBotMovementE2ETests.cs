@@ -315,6 +315,15 @@ public sealed class NativeBotMovementE2ETests
             JourneyHelper.Timeout);
         Assert.Equal(0x57, animation[0]);
         Assert.Equal(0x00, animation[1]);
+        // Corpo = [tipo(2)][assento][kind][a][b][terminador]. A reação tem que sair NO BOT e com
+        // o par de poses da captura humano×humano — foi o terminador com o assento do atacante e
+        // o par de queda em golpe não-fatal que deixavam o bot sem reagir na tela.
+        byte[] reaction = animation[4..(4 + 7)];
+        Assert.Equal(botRecord.Slot, reaction[2]);
+        Assert.Equal(0x01, reaction[6]);
+        Assert.Contains(
+            (reaction[4], reaction[5]),
+            new[] { ((byte)0x01, (byte)0x02), ((byte)0x02, (byte)0x01) });
 
         // O HP do bot também precisa chegar: é dele que o cliente desenha a barra do inimigo.
         byte[] botVitals = match.Human.WaitFor(

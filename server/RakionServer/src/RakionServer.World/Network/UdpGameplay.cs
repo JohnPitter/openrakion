@@ -222,10 +222,21 @@ namespace RakionServer.World.Network
             IPEndPoint from, ReadOnlySpan<byte> packet, bool headlessRelay)
         {
             ClientSession? sender = ResolveSender(from);
-            if (sender == null || !sender.InField ||
-                !TryValidateBotTelemetry(packet, sender.FieldSeat, out ushort type))
+            // Peer que saiu do field ainda tem datagramas em trânsito — é rede normal, não
+            // anomalia. Só quem está autenticado E em partida pode forjar telemetria, então o
+            // aviso de segurança fica restrito a esse caso; o resto é ruído em nível Debug.
+            if (sender == null || !sender.InField)
             {
-                Log.Warn("udp", "telemetria de bot inválida ou não autenticada de {0}", from);
+                Log.Debug("udp", "telemetria de bot fora de partida descartada de {0}", from);
+                return;
+            }
+            if (!TryValidateBotTelemetry(packet, sender.FieldSeat, out ushort type))
+            {
+                Log.Warn(
+                    "udp",
+                    "telemetria de bot inválida do slot {0} ({1})",
+                    sender.Slot,
+                    from);
                 return;
             }
             if (!_relayLimits.TryConsume(sender.Slot, sender.UdpKey, Environment.TickCount64)) return;

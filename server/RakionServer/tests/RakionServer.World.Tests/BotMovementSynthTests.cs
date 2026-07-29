@@ -131,10 +131,20 @@ namespace RakionServer.World.Tests
             Assert.False(BotMovement.TryReadPosition(notMove, out _));
         }
 
-        [Fact]
-        public void SynthesizeDamage_ProducesExtendedBotReaction()
+        /// <summary>
+        /// Golden da captura humano×humano (28/07/2026): a vítima publica `0x0311 kind=2` sobre si
+        /// mesma alternando `(01,02)` e `(02,01)` nos golpes que não derrubam, `(0F,07)` no que
+        /// derruba, e o terminador é `01` em TODOS os 26 frames medidos — nunca o assento de quem
+        /// golpeou, que era o valor que o servidor mandava antes.
+        /// </summary>
+        [Theory]
+        [InlineData(BotDamageReaction.StaggerA, 0x01, 0x02)]
+        [InlineData(BotDamageReaction.StaggerB, 0x02, 0x01)]
+        [InlineData(BotDamageReaction.Knockdown, 0x0f, 0x07)]
+        public void SynthesizeDamage_MatchesCapturedVictimReaction(
+            BotDamageReaction reaction, byte first, byte second)
         {
-            byte[] packet = BotMovement.SynthesizeDamage(10, 99, 1);
+            byte[] packet = BotMovement.SynthesizeDamage(10, 99, reaction);
 
             Assert.True(GameplayActionDatagram.TryParseAnimation(packet, out var action));
             Assert.Equal(10, action.Header.SourceSlot);
@@ -142,9 +152,29 @@ namespace RakionServer.World.Tests
             Assert.Equal(99u, action.Header.Sequence);
             Assert.Equal(PlayerAnimationKind.Damage, action.Kind);
             Assert.True(action.HasExtendedPayload);
-            Assert.Equal(0x0f, packet[9]);
-            Assert.Equal(0x07, packet[10]);
-            Assert.Equal(1, packet[11]);
+            Assert.Equal(first, packet[9]);
+            Assert.Equal(second, packet[10]);
+            Assert.Equal(0x01, packet[11]);
+        }
+
+        /// <summary>
+        /// Golden byte a byte contra a captura humano×humano de 28/07/2026. Os hex são corpos de
+        /// túnel `0x57` gravados do fio, dos dois jogadores reais apanhando — a síntese do domínio
+        /// tem que reproduzi-los exatamente. A captura é o oráculo do teste, nunca a implementação.
+        /// </summary>
+        [Theory]
+        [InlineData(1, BotDamageReaction.StaggerA, "1103" + "01" + "02" + "0102" + "01")]
+        [InlineData(1, BotDamageReaction.StaggerB, "1103" + "01" + "02" + "0201" + "01")]
+        [InlineData(1, BotDamageReaction.Knockdown, "1103" + "01" + "02" + "0F07" + "01")]
+        [InlineData(0, BotDamageReaction.Knockdown, "1103" + "00" + "02" + "0F07" + "01")]
+        public void SynthesizeDamage_ReproducesCapturedTunnelBody(
+            byte seat, BotDamageReaction reaction, string expectedHex)
+        {
+            byte[] datagram = BotMovement.SynthesizeDamage(seat, 4242, reaction);
+
+            byte[] body = GameplayActionDatagram.BuildTunnelPayload(datagram);
+
+            Assert.Equal(expectedHex, Convert.ToHexString(body));
         }
 
         [Theory]
