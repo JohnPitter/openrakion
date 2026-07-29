@@ -609,8 +609,21 @@ quando `attackerSeat` está na faixa válida e `attackerHitSeq` cresce.
 
 Verificado em 29/07/2026, sem fechar o caso:
 
-- servidor produz o dado certo — `ConfirmHit` devolve `++ConfirmedHitSequence` (cresce a partir de
-  1) e `TakeDamage` grava assento e sequência do atacante;
+- **servidor PROVADO correto por trace do arquivo durante partida real** — polling a 80 ms
+  registrou, a cada golpe, `attackerSeat=0` (o humano) e `attackerHitSeq` crescendo `1,2,3,4,5`,
+  com o reset esperado para `20/0` no respawn do bot:
+
+  ```
+  09:00:09.220  seat=10 gen=1 seq=1 dead=0 dmgSeq=1 attackerSeat=0  attackerHitSeq=1
+  09:00:15.249                            dmgSeq=2 attackerSeat=0  attackerHitSeq=2
+  09:00:15.876          seq=2 dead=1      dmgSeq=3 attackerSeat=0  attackerHitSeq=3
+  09:00:22.856          seq=3 dead=0      dmgSeq=3 attackerSeat=20 attackerHitSeq=0
+  09:00:28.736                            dmgSeq=4 attackerSeat=0  attackerHitSeq=4
+  09:00:29.376                            dmgSeq=5 attackerSeat=0  attackerHitSeq=5
+  ```
+
+  O contador não apareceu na tela nessa mesma partida ⇒ **o defeito está inteiramente na aplicação
+  do HIT pela DLL**, não na publicação;
 - a DLL lê o arquivo — provado pelo log dela, que aplicou `reacao de dano seat=10 seq=1..4` e as
   transições de lifecycle na partida;
 - os binários deployados (`version.dll`, `RakionClientPatch.dll`) batem **hash** com o build desta
