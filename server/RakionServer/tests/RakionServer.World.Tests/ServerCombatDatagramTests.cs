@@ -50,6 +50,24 @@ public sealed class ServerCombatDatagramTests
         Assert.Equal(direction.Z, BinaryPrimitives.ReadSingleLittleEndian(payload[36..]));
     }
 
+    /// <summary>
+    /// Envelope medido no fio do cliente original: `[u8 sender][u8 classe=1][u8 idxA][u8 idxB=0]
+    /// [u32 evento][u32 len][payload]`. O segundo índice é sempre zero — com o assento do atacante
+    /// ali o cliente não resolve a entidade e não roda a reação de dano (queda e contador).
+    /// </summary>
+    [Fact]
+    public void EventEnvelopeMatchesClientEntityIndexing()
+    {
+        byte[] packet = ServerCombatDatagrams.Damage(
+            new ServerDamageEvent(3, 10, 91, 52, new BotVector(0, 0, 1)));
+
+        Assert.Equal(3, packet[6]);
+        Assert.Equal(3, packet[7]);
+        Assert.Equal(1, packet[8]);    // classe: player
+        Assert.Equal(10, packet[9]);   // índice da entidade alvo
+        Assert.Equal(0, packet[10]);   // segundo índice: sempre zero
+    }
+
     [Fact]
     public void VitalsEventCarriesAuthoritativeHpAndArmor()
     {

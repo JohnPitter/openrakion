@@ -89,6 +89,12 @@ namespace RakionServer.World
             }
         }
 
+        /// <summary>
+        /// Liga a simulação no assento já publicado. Não recusa por partida em andamento: quem
+        /// barra bot novo no meio do jogo é <see cref="ReserveBot"/>. O assento vai ao roster no
+        /// clique e o host leva segundos para anexar — se o dono apertar Start nessa janela, o bot
+        /// já está no field e precisa ganhar a engine, não ser removido.
+        /// </summary>
         public bool ConfirmReservation(
             Field field, ClientSession host, AddBotResult reservation)
         {
@@ -98,9 +104,7 @@ namespace RakionServer.World
             {
                 PlayerRec? record = field.RecAt((byte)reservation.Seat);
                 if (record?.Bot != reservation.Bot ||
-                    field.FindRec(host) == null ||
-                    field.Phase == MatchPhase.Playing ||
-                    field.State == 2)
+                    field.FindRec(host) == null)
                     return false;
                 reservation.Bot.AttachEngine();
                 Log.Ok("bot", "[{0}] bot nativo '{1}' -> field {2} seat {3}",

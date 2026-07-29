@@ -121,6 +121,28 @@ namespace RakionServer.World.Tests
             Assert.False(mgr.AddBotToField(field, host, BotDifficulty.Normal).Ok);
         }
 
+        /// <summary>
+        /// O assento é publicado no clique e o host nativo leva segundos para anexar. Se o dono
+        /// aperta Start nessa janela, o bot já está no field: ele precisa ganhar a engine, não
+        /// sumir. Regressão vista em jogo — a admissão morria com "reserva expirou".
+        /// </summary>
+        [Fact]
+        public void ReservationStillAttachesWhenMatchStartsDuringBootstrap()
+        {
+            var (field, host) = GolemRoomWithHost();
+            BotManager manager = NewManager();
+            BotManager.AddBotResult reservation = manager.ReserveBot(
+                field, host, BotDifficulty.Normal);
+            Assert.True(manager.PublishReservation(field, host, reservation));
+
+            field.State = 2;
+            field.Phase = MatchPhase.Playing;
+
+            Assert.True(manager.ConfirmReservation(field, host, reservation));
+            Assert.True(reservation.Bot!.EngineAttached);
+            Assert.Equal(1, field.BotCount);
+        }
+
         [Fact]
         public void AddBot_InSoloStage_IsRejected()
         {

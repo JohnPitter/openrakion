@@ -309,9 +309,8 @@ namespace RakionServer.World.Network
                 return;
             }
             if (type == GameplayActionDatagram.AnimationType &&
-                GameplayActionDatagram.TryParseAnimation(packet, out var animation) &&
-                animation.Kind == PlayerAnimationKind.Attack)
-                _world.RegisterHumanBotAttack(sender, animation);
+                GameplayActionDatagram.TryParseAnimation(packet, out var animation))
+                _world.RegisterHumanAnimation(sender, animation);
         }
 
         private void UpdateHumanPose(ClientSession sender, BotVector position, float heading)

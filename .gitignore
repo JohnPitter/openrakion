@@ -43,3 +43,6 @@ artifacts/
 *.log.err
 .buddymark
 .logmark
+
+# Indice local do CodeGraph (SQLite, dezenas de MB) — reconstruido por `codegraph init`
+.codegraph/

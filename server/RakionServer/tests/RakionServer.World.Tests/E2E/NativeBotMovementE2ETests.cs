@@ -109,10 +109,12 @@ public sealed class NativeBotMovementE2ETests
         for (uint sequence = 2; botRecord.Bot.Alive && sequence < 20; ++sequence)
         {
             uint expectedDamageSequence = botRecord.Bot.DamageSequence + 1;
+            // Alterna a animação como um combo real: o servidor conta golpe na borda de subida.
             match.Human.SendBotTelemetryAttack(
                 match.Fixture.UdpPort2,
                 match.Session.FieldSeat,
-                sequence);
+                sequence,
+                (byte)(sequence % 2 == 0 ? 0x19 : 0x18));
             JourneyHelper.WaitUntil(
                 () => botRecord.Bot.DamageSequence >= expectedDamageSequence,
                 $"golpe {sequence} não foi confirmado");
@@ -319,8 +321,9 @@ public sealed class NativeBotMovementE2ETests
             frame => IsTunnelBody(
                 frame,
                 body => body.Length > 8 &&
+                    // tipo LÓGICO no túnel: o 0x8000 é do transporte UDP confiável
                     body[0] == 0x0C &&
-                    body[1] == 0x83 &&
+                    body[1] == 0x03 &&
                     BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(6)) ==
                         GameplayPeerDatagramCodec.PlayerRemainHpEventId &&
                     body[4] == botRecord.Slot),
@@ -340,8 +343,9 @@ public sealed class NativeBotMovementE2ETests
             frame => IsTunnelBody(
                 frame,
                 body => body.Length > 8 &&
+                    // tipo LÓGICO no túnel: o 0x8000 é do transporte UDP confiável
                     body[0] == 0x0C &&
-                    body[1] == 0x83 &&
+                    body[1] == 0x03 &&
                     // corpo = [tipo(2)][echo][rota][alvo][origem][eventId(4)]…
                     BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(6)) ==
                         GameplayPeerDatagramCodec.PlayerDamageEventId),

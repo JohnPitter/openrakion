@@ -161,10 +161,13 @@ namespace RakionServer.World.Tests
             Assert.Equal(expected, packet[9]);
         }
 
+        // IDs medidos no fio de uma partida real: o cliente original golpeia com 0x19, 0x18 e
+        // 0x0C. Os valores anteriores (0x1b/0x1a/0x12) existem no vocabulário mas eram os raros,
+        // e o bot golpeava sem desenhar nada na tela do outro jogador.
         [Theory]
-        [InlineData(BotAttackVariant.VariantA, 0x1b)]
-        [InlineData(BotAttackVariant.VariantB, 0x1a)]
-        [InlineData(BotAttackVariant.VariantC, 0x12)]
+        [InlineData(BotAttackVariant.VariantA, 0x19)]
+        [InlineData(BotAttackVariant.VariantB, 0x18)]
+        [InlineData(BotAttackVariant.VariantC, 0x0c)]
         public void SynthesizeAttack_UsesCapturedHumanAnimations(
             BotAttackVariant variant, byte expectedAnimation)
         {

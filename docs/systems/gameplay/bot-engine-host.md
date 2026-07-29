@@ -544,6 +544,23 @@ antes do call, e amarrar isso exige rastrear o `esp` pela função inteira. Enqu
 preenche o primeiro escalar e publica o snapshot autoritativo de HP logo em seguida, então a
 aproximação local do cliente é corrigida no mesmo tick.
 
+### `damageType` / `damageMotionType` são tabelados por arma × golpe
+
+`?GetDamageMotionType@CPlayerWeapons@@QAE?AW4DamageMotionType@@J@Z` (RVA `0x17B020`) valida o índice
+do golpe contra `0x17` (23 golpes por arma) e resolve o valor com
+
+```
+esi = byte[ esp + 0x28A + ((arma * 0x17 + golpe) * 0x50) ]
+```
+
+— registros de 80 bytes, um por par arma/golpe, carregados da tabela de armas. Índice fora da faixa
+devolve `0`. Ou seja: **não existe um valor único de melee**; o valor depende de qual golpe o
+personagem desferiu.
+
+O World hoje emite `damageType=11` e `damageMotionType=4`, que são escolha, não medição. Para cravar
+falta ler os dois bytes de um golpe real numa captura humano↔humano — é o que decide qual reação o
+cliente toca (recuo, queda, contador de HIT).
+
 ## Gates restantes
 
 1. **validação visual no cliente gráfico** — deslocamento, HIT/queda/recuperação, morte, respawn

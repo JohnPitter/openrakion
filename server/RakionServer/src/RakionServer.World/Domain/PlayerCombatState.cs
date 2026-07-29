@@ -15,11 +15,31 @@ public sealed class PlayerCombatState
     private uint _lastAcceptedSequence;
     private long _nextAttackAtMs;
     private PlayerAttackWindow? _pendingAttack;
+    private bool _attackAnimationHeld;
+    private byte _heldAttackAnimation;
 
     public uint ConfirmedHitSequence { get; private set; }
 
     public bool TryOpenAttack(uint sequence, long nowMs) =>
         TryOpenAttack(sequence, nowMs, ImpactDelayMs, ActiveDurationMs);
+
+    /// <summary>
+    /// Golpe é a BORDA de subida da animação de ataque. Segurar o botão faz o cliente repetir a
+    /// mesma animação com sequência crescente; sem essa regra cada repetição virava um acerto e o
+    /// alvo morria durante o carregamento, sem o golpe sair. Troca de animação conta como novo
+    /// golpe, preservando combo.
+    /// </summary>
+    public bool TryOpenAttack(uint sequence, long nowMs, byte animationId)
+    {
+        if (_attackAnimationHeld && animationId == _heldAttackAnimation)
+            return false;
+        _attackAnimationHeld = true;
+        _heldAttackAnimation = animationId;
+        return TryOpenAttack(sequence, nowMs);
+    }
+
+    /// <summary>Qualquer animação que não seja ataque encerra o golpe em curso.</summary>
+    public void ReleaseAttackAnimation() => _attackAnimationHeld = false;
 
     /// <summary>
     /// Abre janela com atraso/duração explícitos. Bots usam impacto imediato porque o Host

@@ -127,9 +127,14 @@ namespace RakionServer.World.Tests
             // O túnel transporta tipo + corpo a partir do offset 7; a sequência é reinserida
             // no destino. Sem isso o evento de dano estourava e o combate ficava invisível.
             Assert.Equal(datagram.Length - 5, payload.Length);
-            Assert.Equal(datagram[0], payload[0]);
-            Assert.Equal(datagram[1], payload[1]);
             Assert.Equal(datagram[7..], payload[2..]);
+
+            // O 0x8000 é do transporte UDP confiável; no túnel o cliente original usa o tipo
+            // lógico (0x030C). Mandar 0x830C aqui entrega um evento que ele não consome.
+            Assert.Equal(
+                (ushort)(System.Buffers.Binary.BinaryPrimitives
+                    .ReadUInt16LittleEndian(datagram) & 0x7FFF),
+                System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(payload));
         }
 
         [Fact]

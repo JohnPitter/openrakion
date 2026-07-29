@@ -10,9 +10,14 @@ public sealed partial class WorldServer
 {
     private const byte ServerConfirmedCombatCause = 8;
 
-    internal bool RegisterHumanBotAttack(
+    /// <summary>
+    /// Recebe TODA animação do humano: as de ataque abrem janela de golpe (na borda de subida) e
+    /// as demais encerram o golpe em curso. Sem ver as não-ataque o servidor não sabe quando o
+    /// jogador soltou o botão.
+    /// </summary>
+    internal bool RegisterHumanAnimation(
         ClientSession sender,
-        GameplayAnimationAction attack)
+        GameplayAnimationAction animation)
     {
         Field? field = GetField(sender.FieldId);
         if (field == null)
@@ -20,12 +25,19 @@ public sealed partial class WorldServer
         lock (field.SyncRoot)
         {
             PlayerRec? attacker = field.FindRec(sender);
-            return attacker != null &&
-                field.State == 2 &&
+            if (attacker == null)
+                return false;
+            if (animation.Kind != PlayerAnimationKind.Attack)
+            {
+                attacker.Combat.ReleaseAttackAnimation();
+                return false;
+            }
+            return field.State == 2 &&
                 field.Phase == MatchPhase.Playing &&
                 attacker.Combat.TryOpenAttack(
-                    attack.Header.Sequence,
-                    Environment.TickCount64);
+                    animation.Header.Sequence,
+                    Environment.TickCount64,
+                    animation.Argument0);
         }
     }
 

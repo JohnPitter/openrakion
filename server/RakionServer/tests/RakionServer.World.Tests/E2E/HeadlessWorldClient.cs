@@ -396,10 +396,15 @@ namespace RakionServer.World.Tests.E2E
             return p;
         }
 
+        /// <summary>
+        /// Golpe autenticado. O cliente original alterna a animação entre golpes de um combo e
+        /// intercala animações normais; o servidor conta golpe na BORDA de subida, então repetir a
+        /// mesma animação (botão segurado) não abre janela nova.
+        /// </summary>
         public byte[] SendBotTelemetryAttack(
-            int serverGamePort, byte sourceSeat, uint sequence)
+            int serverGamePort, byte sourceSeat, uint sequence, byte animationId = 0)
         {
-            byte[] packet = BuildAttack(sourceSeat, 1, 0, sequence);
+            byte[] packet = BuildAttack(sourceSeat, 1, animationId, sequence);
             _udp!.SendTo(
                 BotTelemetryDatagram.Wrap(packet),
                 new IPEndPoint(IPAddress.Loopback, serverGamePort));

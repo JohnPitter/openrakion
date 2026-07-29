@@ -154,6 +154,13 @@ namespace RakionServer.World.Network
         /// de player (0x030A/0x030F/0x0311) e para as mensagens confiáveis de peer (evento de
         /// entidade, NPC, tick), cuja forma canônica é validada por <see cref="GameplayPeerDatagram"/>.
         /// </summary>
+        /// <summary>
+        /// Bit que o transporte UDP confiável acrescenta ao tipo lógico (`0x030C` vira `0x830C` no
+        /// fio). O túnel TCP não é esse transporte: o cliente original coloca nele o tipo lógico, e
+        /// é isso que ele espera receber de volta.
+        /// </summary>
+        private const ushort ReliableTransportBit = 0x8000;
+
         public static byte[] BuildTunnelPayload(ReadOnlySpan<byte> datagram)
         {
             if (!TryParseHeader(datagram, out _) &&
@@ -163,6 +170,10 @@ namespace RakionServer.World.Network
             byte[] payload = new byte[datagram.Length - 5];
             datagram[..2].CopyTo(payload);
             datagram[7..].CopyTo(payload.AsSpan(2));
+            ushort type = BinaryPrimitives.ReadUInt16LittleEndian(payload);
+            if ((type & ReliableTransportBit) != 0)
+                BinaryPrimitives.WriteUInt16LittleEndian(
+                    payload, (ushort)(type & ~ReliableTransportBit));
             return payload;
         }
 

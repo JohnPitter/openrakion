@@ -6,6 +6,29 @@ namespace RakionServer.World.Tests;
 
 public sealed class BotCombatTests
 {
+    /// <summary>
+    /// Segurar o botão de ataque repete a mesma animação com sequência crescente. Sem contar a
+    /// borda de subida, cada repetição virava um golpe e o alvo morria durante o carregamento —
+    /// defeito visto em jogo.
+    /// </summary>
+    [Fact]
+    public void HeldAttackAnimationOpensASingleSwing()
+    {
+        var combat = new PlayerCombatState();
+        long now = 10_000;
+
+        Assert.True(combat.TryOpenAttack(1, now, animationId: 0x19));
+        Assert.False(combat.TryOpenAttack(2, now + 300, animationId: 0x19));
+        Assert.False(combat.TryOpenAttack(3, now + 600, animationId: 0x19));
+
+        // Troca de golpe (combo) conta como novo ataque.
+        Assert.True(combat.TryOpenAttack(4, now + 900, animationId: 0x18));
+
+        // Soltar o botão (animação que não é ataque) rearma o mesmo golpe.
+        combat.ReleaseAttackAnimation();
+        Assert.True(combat.TryOpenAttack(5, now + 1_200, animationId: 0x18));
+    }
+
     [Fact]
     public void AttackWindowRejectsDuplicateAndRateLimitedSequences()
     {

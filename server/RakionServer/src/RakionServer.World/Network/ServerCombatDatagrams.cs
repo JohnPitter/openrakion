@@ -110,7 +110,10 @@ public static class ServerCombatDatagrams
         packet[7] = envelope.SourceSeat;
         packet[8] = PlayerRoute;
         packet[9] = envelope.TargetSeat;
-        packet[10] = envelope.SourceSeat;
+        // O segundo índice da entidade é sempre 0 nos eventos do cliente original (medido no fio:
+        // `0C03 | sender | 01 | idxA | 00 | evento…`). Escrever o assento do atacante aqui entrega
+        // um alvo que o cliente não resolve, e a reação de dano — queda e contador — não roda.
+        packet[10] = 0;
         BinaryPrimitives.WriteUInt32LittleEndian(
             packet.AsSpan(11), envelope.EventId);
         BinaryPrimitives.WriteUInt32LittleEndian(

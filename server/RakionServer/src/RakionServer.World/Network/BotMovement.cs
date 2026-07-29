@@ -125,8 +125,12 @@ namespace RakionServer.World.Network
             };
         }
 
-        /// <summary>Sintetiza a animação de ataque do bot (0x0311, kind=Attack). Cosmético: o cliente
-        /// vê o bot golpear; o dano bot→humano é client-authoritative (teto RE), não server-side.</summary>
+        /// <summary>
+        /// Animação de ataque do bot (0x0311, kind=Attack). Os IDs são os que o cliente original
+        /// emite ao golpear — medidos no fio de uma partida real (`0x19`, `0x18` e `0x0C` são os
+        /// mais frequentes). Animação de ataque é específica de arma/classe: um ID fora do conjunto
+        /// que o modelo sabe tocar não desenha nada na tela do outro jogador.
+        /// </summary>
         public static byte[] SynthesizeAttack(
             byte seat, uint sequence, BotAttackVariant variant = BotAttackVariant.VariantA)
         {
@@ -134,9 +138,9 @@ namespace RakionServer.World.Network
             p[8] = 1;   // kind = Attack
             p[9] = variant switch
             {
-                BotAttackVariant.VariantA => 0x1b,
-                BotAttackVariant.VariantB => 0x1a,
-                _ => 0x12
+                BotAttackVariant.VariantA => 0x19,
+                BotAttackVariant.VariantB => 0x18,
+                _ => 0x0c
             };
             return p;
         }
