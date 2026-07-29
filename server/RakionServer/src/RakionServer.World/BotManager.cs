@@ -127,22 +127,6 @@ namespace RakionServer.World
             }
         }
 
-        /// <summary>
-        /// Adiciona um bot ao field do <paramref name="host"/> no time oposto. Só o dono da sala, e só
-        /// antes do início da partida. Sincroniza o roster do cliente humano com um member-join (0x38).
-        /// </summary>
-        public AddBotResult AddBotToField(Field field, ClientSession host, BotDifficulty difficulty)
-        {
-            AddBotResult reservation = ReserveBot(field, host, difficulty);
-            if (!reservation.Ok)
-                return reservation;
-            if (PublishReservation(field, host, reservation) &&
-                ConfirmReservation(field, host, reservation))
-                return reservation with { Message = "bot adicionado" };
-            RollbackReservation(field, reservation);
-            return new AddBotResult(false, "reserva do bot expirou", -1, null);
-        }
-
         private BotPlayer CreateBot(
             byte team, byte level, byte charClass, BotDifficulty difficulty)
         {

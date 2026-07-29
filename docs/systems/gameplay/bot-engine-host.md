@@ -597,9 +597,10 @@ O log da partida confirma o fio: reações `11030A02010201` / `11030A02020101` a
 `11030A020F0701` na queda, `RemainHP` e `EPlayerDeath` com `sender == idxA == assento do bot`, e
 **nenhum** `EPlayerDamage` sobre o bot.
 
-**Em aberto — contador HIT×N.** Com a reação visível funcionando, o número flutuante continua
-ausente sobre o bot. Não é defeito de wire (os frames são byte a byte idênticos aos de um humano
-apanhando) e **não é teto arquitetural** — registro anterior nesse sentido está corrigido.
+**Correção implementada; reteste visual pendente — contador HIT×N.** Com a reação visível
+funcionando, o número flutuante continuava ausente sobre o bot. Não era defeito de wire (os frames
+são byte a byte idênticos aos de um humano apanhando) e **não é teto arquitetural** — registro
+anterior nesse sentido está corrigido.
 
 O gate `[vítima+0x394]` de fato barra a contagem em entidade dirigida por rede, mas o
 `RakionClientPatch` já contorna isso: o cave em `0x351533e9` chama `AddHitCount` direto no jogador
@@ -607,7 +608,7 @@ O gate `[vítima+0x394]` de fato barra a contagem em entidade dirigida por rede,
 oito campos — `seat gen seq dead dmgSeq attackerSeat attackerHitSeq moving`; a DLL só aplica o HIT
 quando `attackerSeat` está na faixa válida e `attackerHitSeq` cresce.
 
-Verificado em 29/07/2026, sem fechar o caso:
+Verificado em 29/07/2026:
 
 - **servidor PROVADO correto por trace do arquivo durante partida real** — polling a 80 ms
   registrou, a cada golpe, `attackerSeat=0` (o humano) e `attackerHitSeq` crescendo `1,2,3,4,5`,
@@ -629,13 +630,22 @@ Verificado em 29/07/2026, sem fechar o caso:
 - os binários deployados (`version.dll`, `RakionClientPatch.dll`) batem **hash** com o build desta
   branch, então não há deploy defasado.
 
-Próximo passo: o ramo do HIT local exige `localPlayer() == player` — caminho distinto do da reação
-de dano, que age sobre a entidade do bot. Instrumentar esse ramo com log próprio (o padrão de
-`compat_log` já existe) crava se ele é alcançado e com que valores.
+A auditoria fechou o elo que faltava. O cave original executa:
+
+```text
+mov eax,[0x352b3630]
+call eax
+```
+
+Logo, `0x352b3630` armazena um **ponteiro de função**. A DLL convertia o próprio endereço
+`0x352b3630` em função e tentava executá-lo; a proteção `__except` absorvia a falha, motivo pelo qual
+nem `AddHitCount` nem o log `HIT local` apareciam. O hook agora desreferencia o ponteiro armazenado,
+chama a função real e só então compara o jogador local com a entidade atual. O build x86 passa com
+`/W4 /WX`; o gate restante deste item é a confirmação do número flutuante no cliente original.
 
 ## Gates restantes
 
-1. contador HIT×N (acima);
+1. reteste visual do contador HIT×N após a correção de indireção (acima);
 2. substituir as políticas provisórias de dano pelas fórmulas por arma/equipamento;
 3. desativar os subsistemas de input e som não necessários ao worker;
 4. multi-bot sob carga nos mapas battle — coberto no fio, sem observação visual dedicada.

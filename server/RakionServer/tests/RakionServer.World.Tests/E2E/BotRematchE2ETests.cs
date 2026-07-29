@@ -22,8 +22,8 @@ namespace RakionServer.World.Tests.E2E
             var (masterSession, joinerSession, field) = JourneyHelper.DriveToUdpReadyRoom(
                 server, master, joiner,
                 HeadlessWorldClient.RoomSpec.Deathmatch("bot-rematch"), fixture.UdpPort2);
-            BotManager.AddBotResult added = server.Bots.AddBotToField(
-                field, masterSession, BotDifficulty.Normal);
+            BotManager.AddBotResult added = TestBotAdmission.Add(
+                server.Bots, field, masterSession, BotDifficulty.Normal);
             Assert.True(added.Ok, added.Message);
             MatchRecordSnapshot masterBefore = await MatchRecordFixture.ReadAsync(
                 fixture.DbConnectionString, 1);

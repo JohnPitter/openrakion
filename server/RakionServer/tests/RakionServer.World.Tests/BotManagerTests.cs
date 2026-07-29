@@ -47,7 +47,8 @@ namespace RakionServer.World.Tests
             var (field, host) = GolemRoomWithHost();
             BotManager mgr = NewManager();
 
-            var result = mgr.AddBotToField(field, host, BotDifficulty.Normal);
+            var result = TestBotAdmission.Add(
+                mgr, field, host, BotDifficulty.Normal);
 
             Assert.True(result.Ok, result.Message);
             Assert.InRange(result.Seat, 10, 19);                 // host time 0 -> bot time 1
@@ -105,7 +106,8 @@ namespace RakionServer.World.Tests
             field.Add(intruder);
             BotManager mgr = NewManager();
 
-            var result = mgr.AddBotToField(field, intruder, BotDifficulty.Normal);
+            var result = TestBotAdmission.Add(
+                mgr, field, intruder, BotDifficulty.Normal);
 
             Assert.False(result.Ok);
             Assert.Equal(0, field.BotCount);
@@ -118,7 +120,8 @@ namespace RakionServer.World.Tests
             field.Phase = MatchPhase.Playing;
             BotManager mgr = NewManager();
 
-            Assert.False(mgr.AddBotToField(field, host, BotDifficulty.Normal).Ok);
+            Assert.False(TestBotAdmission.Add(
+                mgr, field, host, BotDifficulty.Normal).Ok);
         }
 
         /// <summary>
@@ -150,7 +153,8 @@ namespace RakionServer.World.Tests
             field.Mode = 0; // stage PvE
             BotManager mgr = NewManager();
 
-            Assert.False(mgr.AddBotToField(field, host, BotDifficulty.Normal).Ok);
+            Assert.False(TestBotAdmission.Add(
+                mgr, field, host, BotDifficulty.Normal).Ok);
         }
 
         [Fact]
@@ -158,8 +162,8 @@ namespace RakionServer.World.Tests
         {
             var (field, host) = GolemRoomWithHost();
             BotManager mgr = NewManager();
-            mgr.AddBotToField(field, host, BotDifficulty.Hard);
-            mgr.AddBotToField(field, host, BotDifficulty.Easy);
+            TestBotAdmission.Add(mgr, field, host, BotDifficulty.Hard);
+            TestBotAdmission.Add(mgr, field, host, BotDifficulty.Easy);
             Assert.Equal(2, field.BotCount);
 
             int removed = mgr.RemoveAllBots(field);
@@ -177,7 +181,9 @@ namespace RakionServer.World.Tests
             BotManager mgr = NewManager();
             int ok = 0;
             for (int i = 0; i < 12; i++)
-                if (mgr.AddBotToField(field, host, BotDifficulty.Normal).Ok) ok++;
+                if (TestBotAdmission.Add(
+                    mgr, field, host, BotDifficulty.Normal).Ok)
+                    ok++;
 
             Assert.Equal(10, ok);              // time oposto tem 10 assentos (10..19)
             Assert.Equal(10, field.BotCount);
@@ -195,8 +201,8 @@ namespace RakionServer.World.Tests
 
             try
             {
-                BotManager.AddBotResult added = manager.AddBotToField(
-                    field, host, BotDifficulty.Normal);
+                BotManager.AddBotResult added = TestBotAdmission.Add(
+                    manager, field, host, BotDifficulty.Normal);
                 Assert.True(added.Ok, added.Message);
                 BotPlayer bot = added.Bot!;
                 bot.TakeDamage(34, attackerSeat: 0, attackerHitSequence: 1);

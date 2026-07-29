@@ -5,7 +5,7 @@ namespace RakionServer.World.Network
 {
     public static class RoomRosterFrames
     {
-        private const int SyntheticBotPort = 1183;
+        private const int BotCompatibilityPort = 1183;
 
         public static byte[] SnapshotBody(Field field)
         {
@@ -57,12 +57,12 @@ namespace RakionServer.World.Network
             return writer.ToArray();
         }
 
-        /// <summary>Slot "de rede" sintético do bot (base alta p/ não colidir com slots de sessão real).</summary>
+        /// <summary>Slot virtual do Host (base alta para não colidir com slots de sessão real).</summary>
         private static ushort BotWireSlot(PlayerRec record) => (ushort)(0x0400 + record.Slot);
 
         /// <summary>
         /// Registro do bot no roster, no MESMO layout de <c>WriteRoomPlayerRecord</c>: nome, buddy vazio,
-        /// sem tunneling, endpoint loopback marcado (a DLL reconhece a entidade sintética pela porta),
+        /// sem tunneling, endpoint loopback marcado (a DLL reconhece o peer do Host pela porta),
         /// classe/level e quickslots vazios.
         /// </summary>
         private static void WriteBotRecord(PacketWriter writer, BotPlayer bot)
@@ -71,9 +71,9 @@ namespace RakionServer.World.Network
                 .WriteCString("")
                 .WriteByte(0)          // usesTunneling
                 .WriteInt32(0);        // groupId
-            NetworkEndpointCodec.WritePort(writer, SyntheticBotPort);
+            NetworkEndpointCodec.WritePort(writer, BotCompatibilityPort);
             writer.WriteBytes(new byte[] { 127, 0, 0, 1 });
-            NetworkEndpointCodec.WritePort(writer, SyntheticBotPort);
+            NetworkEndpointCodec.WritePort(writer, BotCompatibilityPort);
             writer.WriteByte(bot.CharClass)
                 .WriteByte(bot.Level)
                 .WriteByte(0);

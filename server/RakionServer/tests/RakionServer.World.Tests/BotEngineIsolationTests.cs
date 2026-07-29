@@ -62,6 +62,9 @@ public sealed class BotEngineIsolationTests
         Assert.False(File.Exists(Path.Combine(worldRoot, "Domain", "BotSteering.cs")));
         Assert.False(File.Exists(Path.Combine(
             worldRoot, "Domain", "BotNavigationPlanner.cs")));
+        string manager = File.ReadAllText(
+            Path.Combine(worldRoot, "BotManager.cs"));
+        Assert.DoesNotContain("AddBotToField", manager);
         string botEngine = File.ReadAllText(
             Path.Combine(worldRoot, "WorldServer.BotEngine.cs"));
         Assert.Contains("SyncNativeBotsAsync", botEngine);

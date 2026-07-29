@@ -193,7 +193,8 @@ void __stdcall ApplyLifecycleOnGameThread(void* player)
         if (desiredHit != 0 && desiredHit != appliedHit)
         {
             using LocalPlayerFn = void*(__cdecl*)();
-            auto localPlayer = reinterpret_cast<LocalPlayerFn>(LocalPlayerGetterAddress);
+            auto localPlayer =
+                *reinterpret_cast<LocalPlayerFn*>(LocalPlayerGetterAddress);
             if (localPlayer && localPlayer() == player)
             {
                 using AddHitCountFn = void(__thiscall*)(void*, int);

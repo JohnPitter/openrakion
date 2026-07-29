@@ -33,8 +33,8 @@ namespace RakionServer.World.Domain
         public byte Cause;               // ultima causa de morte
         public bool LobbyReady => State == 2;
         public bool UsesTunneling;         // user+0x1478: sem rota UDP direta confirmada
-        public BotPlayer? Bot;             // peer sintético server-side (assento ocupado por bot)
-        public BotVector Position;          // última posição observada (do 0x030A do humano / IA do bot) p/ mira do bot
+        public BotPlayer? Bot;             // peer client-real dirigido pelo Bot Engine Host x86
+        public BotVector Position;          // última posição observada do humano ou snapshot nativo do bot
         public float Heading;               // rumo observado do 0x030A humano, usado no cone de melee
         public PlayerCombatState Combat { get; } = new();
         public PlayerCombatVitals Vitals { get; } = new();

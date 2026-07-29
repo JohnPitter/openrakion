@@ -86,7 +86,7 @@ public sealed class NativeBotMovementE2ETests
                 packet[8] == (byte)PlayerAnimationKind.Damage,
             JourneyHelper.Timeout);
 
-        Assert.Equal(match.Session.FieldSeat, damage[11]);
+        Assert.Equal(0x01, damage[11]);
         Assert.Equal(match.Session.FieldSeat, botRecord.Bot.LastAttackerSeat);
         Assert.Equal(1u, botRecord.Bot.DamageSequence);
     }
