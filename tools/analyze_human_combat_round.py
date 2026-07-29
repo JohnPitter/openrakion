@@ -2,6 +2,7 @@ import argparse
 import json
 from collections import Counter, defaultdict
 from pathlib import Path
+from statistics import median
 
 
 ROUND_START = "0x004B"
@@ -54,6 +55,25 @@ def flush_combo(combo: list[int], counts: Counter) -> None:
         combo.clear()
 
 
+def transition_stats(
+    events: list[tuple[int, int]],
+) -> dict[tuple[int, int], dict[str, int]]:
+    samples = defaultdict(list)
+    for previous, current in zip(events, events[1:]):
+        elapsed = current[0] - previous[0]
+        if elapsed <= COMBO_GAP_MS:
+            samples[(previous[1], current[1])].append(elapsed)
+    return {
+        pair: {
+            "count": len(values),
+            "median_ms": int(median(values)),
+            "min_ms": min(values),
+            "max_ms": max(values),
+        }
+        for pair, values in samples.items()
+    }
+
+
 def analyze(path: Path) -> dict:
     start, end = round_window(path)
     attacks = defaultdict(Counter)
@@ -86,6 +106,7 @@ def analyze(path: Path) -> dict:
             damage[pid][arguments] += 1
 
     combos = {}
+    transitions = {}
     for pid, events in attack_events.items():
         counts = Counter()
         current = []
@@ -97,6 +118,7 @@ def analyze(path: Path) -> dict:
             previous = relative_ms
         flush_combo(current, counts)
         combos[pid] = counts
+        transitions[pid] = transition_stats(events)
 
     return {
         "start_ms": start,
@@ -107,6 +129,7 @@ def analyze(path: Path) -> dict:
         "normal_animations": dict(normal),
         "damage_animations": dict(damage),
         "attack_sequences": combos,
+        "attack_transitions": transitions,
     }
 
 
@@ -140,6 +163,10 @@ def write_report(directory: Path, result: dict) -> None:
         pid: {"-".join(map(str, key)): count for key, count in values.items()}
         for pid, values in result["attack_sequences"].items()
     }
+    serializable["attack_transitions"] = {
+        pid: {"-".join(map(str, key)): value for key, value in values.items()}
+        for pid, values in result["attack_transitions"].items()
+    }
     (directory / "round-analysis.json").write_text(
         json.dumps(serializable, indent=2, ensure_ascii=False),
         encoding="utf-8",
@@ -161,6 +188,10 @@ Sequências com intervalo máximo de {COMBO_GAP_MS} ms:
 Reações de dano:
 
 {top_lines(result["damage_animations"][pid], sequence_name)}
+
+Intervalos entre fases:
+
+{transition_lines(result["attack_transitions"][pid])}
 """
         )
     death_lines = "\n".join(
@@ -182,6 +213,21 @@ Reações de dano:
 {"".join(sections)}
 """
     (directory / "round-analysis.md").write_text(report, encoding="utf-8")
+
+
+def transition_lines(values: dict[tuple[int, int], dict[str, int]]) -> str:
+    if not values:
+        return "- nenhum"
+    ordered = sorted(
+        values.items(),
+        key=lambda item: (-item[1]["count"], item[0]),
+    )
+    return "\n".join(
+        f"- `{sequence_name(pair)}`: n={stats['count']}, "
+        f"mediana={stats['median_ms']} ms, "
+        f"faixa={stats['min_ms']}..{stats['max_ms']} ms"
+        for pair, stats in ordered[:20]
+    )
 
 
 def main() -> None:

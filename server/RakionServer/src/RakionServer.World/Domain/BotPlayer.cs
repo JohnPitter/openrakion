@@ -41,6 +41,7 @@ namespace RakionServer.World.Domain
         private bool _staggerToggle;
         private BotControls _lastPublishedControls;
         private bool _lastPublishedAttack;
+        private readonly BotAttackPresentation _attackPresentation = new();
         public bool IsMoving => _isMoving;
         public bool EngineAttached { get; private set; }
         public BotControls EngineControls { get; private set; }
@@ -95,6 +96,7 @@ namespace RakionServer.World.Domain
             EngineControls = BotControls.None;
             EngineAttacking = false;
             _lastPublishedAttack = false;
+            _attackPresentation.Reset();
         }
 
         public bool TryFinishHitReaction(long nowMs)
@@ -137,12 +139,21 @@ namespace RakionServer.World.Domain
             return true;
         }
 
-        public bool ShouldPublishAttack(bool attacking)
+        public void ObserveEngineAttack(long nowMs)
         {
-            bool started = attacking && !_lastPublishedAttack;
-            _lastPublishedAttack = attacking;
-            return started;
+            bool started = EngineAttacking && !_lastPublishedAttack;
+            _lastPublishedAttack = EngineAttacking;
+            if (started)
+                _attackPresentation.Start(
+                    CharClass,
+                    NextAttackVariant(),
+                    nowMs);
         }
+
+        public bool TryTakeAttackAnimation(
+            long nowMs,
+            out byte animationId) =>
+            _attackPresentation.TryTake(nowMs, out animationId);
 
         public void ScheduleRespawn(long nowMs, int delayMs)
         {
@@ -165,6 +176,7 @@ namespace RakionServer.World.Domain
             _isMoving = false;
             _lastPublishedControls = BotControls.None;
             _lastPublishedAttack = false;
+            _attackPresentation.Reset();
             LastAttackerSeat = Field.NoSeat;
             LastAttackerHitSequence = 0;
             EngineControls = BotControls.None;
@@ -192,6 +204,7 @@ namespace RakionServer.World.Domain
             _isMoving = false;
             _lastPublishedControls = BotControls.None;
             _lastPublishedAttack = false;
+            _attackPresentation.Reset();
             LastAttackerSeat = Field.NoSeat;
             LastAttackerHitSequence = 0;
             EngineControls = BotControls.None;
@@ -224,6 +237,7 @@ namespace RakionServer.World.Domain
             _isMoving = false;
             _lastPublishedControls = BotControls.None;
             _lastPublishedAttack = false;
+            _attackPresentation.Reset();
         }
 
         public bool ShouldRefreshEngineAim(byte targetSeat, BotVector target)

@@ -78,14 +78,66 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
-        public void AttackAnimationPublishesOnlyOnRisingEdge()
+        public void ArcherAttackAnimationPublishesCapturedMultiphaseProfile()
         {
-            var bot = new BotPlayer();
+            var bot = new BotPlayer { CharClass = 1 };
+            bot.SetEngineIntent(BotControls.None, true);
+            bot.ObserveEngineAttack(1000);
 
-            Assert.True(bot.ShouldPublishAttack(true));
-            Assert.False(bot.ShouldPublishAttack(true));
-            Assert.False(bot.ShouldPublishAttack(false));
-            Assert.True(bot.ShouldPublishAttack(true));
+            Assert.True(bot.TryTakeAttackAnimation(1000, out byte first));
+            Assert.Equal(25, first);
+            Assert.False(bot.TryTakeAttackAnimation(1546, out _));
+            Assert.True(bot.TryTakeAttackAnimation(1547, out byte second));
+            Assert.Equal(24, second);
+            Assert.True(bot.TryTakeAttackAnimation(1703, out byte third));
+            Assert.Equal(12, third);
+            Assert.False(bot.TryTakeAttackAnimation(2000, out _));
+        }
+
+        [Fact]
+        public void UncapturedClassKeepsSinglePhaseFallback()
+        {
+            var bot = new BotPlayer { CharClass = 2 };
+            bot.SetEngineIntent(BotControls.None, true);
+            bot.ObserveEngineAttack(1000);
+
+            Assert.True(bot.TryTakeAttackAnimation(1000, out byte animation));
+            Assert.Equal(25, animation);
+            Assert.False(bot.TryTakeAttackAnimation(2000, out _));
+        }
+
+        [Fact]
+        public void ArcherAttackCyclesAllCapturedProfiles()
+        {
+            var bot = new BotPlayer { CharClass = 1 };
+            StartAttack(bot, 1000);
+            Assert.True(bot.TryTakeAttackAnimation(1000, out _));
+
+            StartAttack(bot, 2000);
+            Assert.True(bot.TryTakeAttackAnimation(2000, out byte first));
+            Assert.Equal(27, first);
+            Assert.True(bot.TryTakeAttackAnimation(2297, out byte second));
+            Assert.Equal(26, second);
+            Assert.True(bot.TryTakeAttackAnimation(2407, out byte third));
+            Assert.Equal(18, third);
+
+            StartAttack(bot, 3000);
+            Assert.True(bot.TryTakeAttackAnimation(3000, out byte fourth));
+            Assert.Equal(0, fourth);
+            Assert.True(bot.TryTakeAttackAnimation(3554, out byte fifth));
+            Assert.Equal(1, fifth);
+        }
+
+        [Fact]
+        public void HitReactionCancelsPendingAttackPresentation()
+        {
+            var bot = new BotPlayer { CharClass = 1 };
+            StartAttack(bot, 1000);
+            Assert.True(bot.TryTakeAttackAnimation(1000, out _));
+
+            bot.BeginHitReaction(1100);
+
+            Assert.False(bot.TryTakeAttackAnimation(2000, out _));
         }
 
         [Fact]
@@ -94,7 +146,7 @@ namespace RakionServer.World.Tests
             var bot = new BotPlayer();
             bot.SetEngineIntent(BotControls.W, true);
             bot.ShouldPublishControls(BotControls.W);
-            bot.ShouldPublishAttack(true);
+            bot.ObserveEngineAttack(1000);
 
             bot.PauseEngine();
 
@@ -102,7 +154,7 @@ namespace RakionServer.World.Tests
             Assert.False(bot.EngineAttacking);
             Assert.False(bot.IsMoving);
             Assert.True(bot.ShouldPublishControls(BotControls.W));
-            Assert.True(bot.ShouldPublishAttack(true));
+            Assert.False(bot.TryTakeAttackAnimation(2000, out _));
         }
 
         [Fact]
@@ -218,20 +270,28 @@ namespace RakionServer.World.Tests
             Assert.Equal(expected, packet[9]);
         }
 
-        // IDs medidos no fio de uma partida real: o cliente original golpeia com 0x19, 0x18 e
-        // 0x0C. Os valores anteriores (0x1b/0x1a/0x12) existem no vocabulário mas eram os raros,
-        // e o bot golpeava sem desenhar nada na tela do outro jogador.
         [Theory]
-        [InlineData(BotAttackVariant.VariantA, 0x19)]
-        [InlineData(BotAttackVariant.VariantB, 0x18)]
-        [InlineData(BotAttackVariant.VariantC, 0x0c)]
-        public void SynthesizeAttack_UsesCapturedHumanAnimations(
-            BotAttackVariant variant, byte expectedAnimation)
+        [InlineData(0x19)]
+        [InlineData(0x18)]
+        [InlineData(0x0c)]
+        public void SynthesizeAttack_TransportsScheduledAnimation(
+            byte expectedAnimation)
         {
-            byte[] packet = BotMovement.SynthesizeAttack(10, 4, variant);
+            byte[] packet = BotMovement.SynthesizeAttack(
+                10,
+                4,
+                expectedAnimation);
 
             Assert.Equal((byte)PlayerAnimationKind.Attack, packet[8]);
             Assert.Equal(expectedAnimation, packet[9]);
+        }
+
+        private static void StartAttack(BotPlayer bot, long nowMs)
+        {
+            bot.SetEngineIntent(BotControls.None, false);
+            bot.ObserveEngineAttack(nowMs - 1);
+            bot.SetEngineIntent(BotControls.None, true);
+            bot.ObserveEngineAttack(nowMs);
         }
     }
 }

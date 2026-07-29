@@ -77,6 +77,16 @@ Os IDs não são ataques independentes. Sequências repetidas com intervalo máx
 O `+` existe porque cliques consecutivos concatenaram múltiplas ocorrências da sequência dentro da
 janela de agrupamento. A ordem interna permaneceu estável.
 
+Cadência medida entre fases:
+
+| transição | amostras | mediana | faixa |
+|---|---:|---:|---:|
+| `25 → 24` | 13 | `547 ms` | `531..547 ms` |
+| `24 → 12` | 13 | `140–156 ms` | `94..266 ms` |
+| `27 → 26` | 24 | `297 ms` | `266..343 ms` |
+| `26 → 18` | 24 | `109–110 ms` | `47..359 ms` |
+| `0 → 1` | 5 | `554–563 ms` | `547..563 ms` |
+
 ### Reações de dano observadas
 
 Argumentos de `0x0311 kind=Damage` no mesmo round:
@@ -211,8 +221,10 @@ precisam de capturas separadas; não é seguro reutilizar IDs da arma base.
 - O perfil agenda todas as fases observadas, preservando ordem e tempo.
 - Só a janela ativa pode consultar hitbox e aplicar dano.
 - Soltar o botão ou perder o alvo não pode converter fases antigas em um novo ataque.
-- O sequenciador atual que alterna `25`, `24` e `12` entre três ataques está incorreto: a captura
-  mostra `25 → 24 → 12` dentro do mesmo ataque.
+- Para Archer `class=1`, o sequenciador usa os perfis medidos `25 → 24 → 12`,
+  `27 → 26 → 18` e `0 → 1`, com offsets baseados nas medianas acima.
+- Classes e armas ainda não capturadas preservam uma única fase conservadora; não reutilizam o
+  perfil multifase da Archer.
 
 ### Dano e apresentação
 

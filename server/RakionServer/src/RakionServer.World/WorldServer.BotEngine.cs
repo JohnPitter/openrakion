@@ -128,7 +128,12 @@ public sealed partial class WorldServer
                 BotPlayer bot = record.Bot!;
                 if (!bot.EngineAttached)
                     continue;
-                foreach (byte[] packet in BuildNativePackets(field.Id, record, bot))
+                long nowMs = Environment.TickCount64;
+                foreach (byte[] packet in BuildNativePackets(
+                    field.Id,
+                    record,
+                    bot,
+                    nowMs))
                     foreach (PlayerRec human in humans)
                         deliveries.Add((human, packet));
             }
@@ -140,7 +145,8 @@ public sealed partial class WorldServer
     private static IEnumerable<byte[]> BuildNativePackets(
         int fieldId,
         PlayerRec record,
-        BotPlayer bot)
+        BotPlayer bot,
+        long nowMs)
     {
         if (!bot.Alive || bot.HitReactionUntilMs != 0)
             yield break;
@@ -166,17 +172,21 @@ public sealed partial class WorldServer
                 ++bot.MoveSeq,
                 animation);
         }
-        if (bot.ShouldPublishAttack(bot.EngineAttacking))
+        bot.ObserveEngineAttack(nowMs);
+        while (bot.TryTakeAttackAnimation(
+            nowMs,
+            out byte attackAnimation))
         {
-            BotAttackVariant variant = bot.NextAttackVariant();
             Log.Info(
                 "bot-entity",
                 "field={0} bot={1} wireAnimation=Attack/{2}",
                 fieldId,
                 record.Slot,
-                variant);
+                attackAnimation);
             yield return BotMovement.SynthesizeAttack(
-                (byte)record.Slot, ++bot.MoveSeq, variant);
+                (byte)record.Slot,
+                ++bot.MoveSeq,
+                attackAnimation);
         }
     }
 

@@ -34,6 +34,10 @@ class AnalyzeHumanCombatRoundTests(unittest.TestCase):
             self.assertNotIn(99, result["attacks"]["42"])
             self.assertEqual(1, result["attack_sequences"]["42"][(25, 24)])
             self.assertEqual(1, result["attack_sequences"]["42"][(10,)])
+            self.assertEqual(
+                390,
+                result["attack_transitions"]["42"][(25, 24)]["median_ms"],
+            )
             self.assertEqual(1, len(result["deaths"]))
             self.assertTrue((directory / "round-analysis.md").exists())
 

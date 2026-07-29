@@ -127,22 +127,17 @@ namespace RakionServer.World.Network
         }
 
         /// <summary>
-        /// Animação de ataque do bot (0x0311, kind=Attack). Os IDs são os que o cliente original
-        /// emite ao golpear — medidos no fio de uma partida real (`0x19`, `0x18` e `0x0C` são os
-        /// mais frequentes). Animação de ataque é específica de arma/classe: um ID fora do conjunto
-        /// que o modelo sabe tocar não desenha nada na tela do outro jogador.
+        /// Uma fase da animação de ataque do bot (`0x0311 kind=Attack`). O domínio escolhe e
+        /// agenda o perfil compatível com classe/arma; este codec só transporta o ID comprovado.
         /// </summary>
         public static byte[] SynthesizeAttack(
-            byte seat, uint sequence, BotAttackVariant variant = BotAttackVariant.VariantA)
+            byte seat,
+            uint sequence,
+            byte animationId)
         {
             byte[] p = CreateAnimationHeader(seat, sequence);
             p[8] = 1;   // kind = Attack
-            p[9] = variant switch
-            {
-                BotAttackVariant.VariantA => 0x19,
-                BotAttackVariant.VariantB => 0x18,
-                _ => 0x0c
-            };
+            p[9] = animationId;
             return p;
         }
 
