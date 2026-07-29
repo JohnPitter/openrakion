@@ -28,7 +28,7 @@ constexpr uintptr_t SetDeadAddress = 0x35135810;
 constexpr uintptr_t ExecDamageAnimAddress = 0x3514a6c0;
 constexpr uintptr_t ExecNormalAnimAddress = 0x3513e570;
 constexpr uintptr_t AddHitCountAddress = 0x35153ce0;
-constexpr uintptr_t LocalPlayerGetterAddress = 0x352b3630;
+constexpr char GetLocalPlayerSymbol[] = "?GetLocalPlayer@CPlayer@@QAEPAV1@XZ";
 // CEntity::FallDownToFloor @ engine.dll (base 0x36000000). void __thiscall(this): casta 4 raios p/ baixo
 // dos cantos da collision-box, acha o chão mais alto e ajusta SÓ o Y ao piso real (mantém X/Z) via
 // SetPlacement — sem tocar velocidade/eventos. É a geometry query do invariante #7 da golden capture,
@@ -53,6 +53,13 @@ volatile LONG AppliedMovingState[MaxPlayerSeats]{};
 volatile LONG LoggedLifecycleSequence[MaxPlayerSeats]{};
 volatile LONG LoggedDamageSequence[MaxPlayerSeats]{};
 volatile LONG LoggedLocalHitSequence[MaxPlayerSeats]{};
+volatile LONG LocalHitDiagnosticSequence{};
+volatile LONG LocalHitDiagnosticStage{};
+volatile LONG LocalHitDiagnosticPublishedSeat{-1};
+volatile LONG LocalHitDiagnosticFieldSeat{-1};
+volatile LONG LocalHitDiagnosticEntitySeat{-1};
+volatile LONG LocalHitDiagnosticException{};
+volatile LONG LoggedLocalHitDiagnosticKey{};
 uintptr_t PlayerUpdateContinue = PlayerUpdateContinueAddress;
 bool IsRakionProcess()
 {
@@ -180,28 +187,95 @@ void LogAppliedLifecycles()
     }
 }
 
-void ApplyLocalHit()
+void LogLocalHitDiagnostic()
 {
-    using LocalPlayerFn = void*(__cdecl*)();
-    auto localPlayer = *reinterpret_cast<LocalPlayerFn*>(LocalPlayerGetterAddress);
-    if (!localPlayer) return;
+    LONG sequence = InterlockedCompareExchange(&LocalHitDiagnosticSequence, 0, 0);
+    LONG stage = InterlockedCompareExchange(&LocalHitDiagnosticStage, 0, 0);
+    if (sequence == 0 || stage == 0) return;
 
-    void* player = localPlayer();
-    if (!player) return;
+    LONG key = sequence * 16 + stage;
+    if (InterlockedExchange(&LoggedLocalHitDiagnosticKey, key) == key) return;
 
-    int seat = *reinterpret_cast<BYTE*>(static_cast<BYTE*>(player) + 0x264);
-    if (seat < 0 || seat >= MaxPlayerSeats) return;
+    char message[192]{};
+    _snprintf_s(message, _countof(message), _TRUNCATE,
+        "HIT bridge seq=%ld publishedSeat=%ld fieldSeat=%ld entitySeat=%ld "
+        "stage=%ld exception=0x%08lX",
+        sequence,
+        InterlockedCompareExchange(&LocalHitDiagnosticPublishedSeat, 0, 0),
+        InterlockedCompareExchange(&LocalHitDiagnosticFieldSeat, 0, 0),
+        InterlockedCompareExchange(&LocalHitDiagnosticEntitySeat, 0, 0),
+        stage,
+        InterlockedCompareExchange(&LocalHitDiagnosticException, 0, 0));
+    CompatLog(message);
+}
 
-    LONG desired = InterlockedCompareExchange(&DesiredLocalHitSequence[seat], 0, 0);
-    LONG applied = InterlockedCompareExchange(&AppliedLocalHitSequence[seat], 0, 0);
-    if (desired == 0 || desired == applied) return;
+void ApplyLocalHit(void* contextPlayer)
+{
+    LONG publishedSequence{};
+    int publishedSeat = -1;
+    for (int seat = 0; seat < MaxPlayerSeats; ++seat)
+    {
+        LONG sequence = InterlockedCompareExchange(&DesiredLocalHitSequence[seat], 0, 0);
+        LONG applied = InterlockedCompareExchange(&AppliedLocalHitSequence[seat], 0, 0);
+        if (sequence == applied) continue;
+        if (sequence <= publishedSequence) continue;
+        publishedSequence = sequence;
+        publishedSeat = seat;
+    }
+    if (publishedSequence == 0) return;
+
+    InterlockedExchange(&LocalHitDiagnosticPublishedSeat, publishedSeat);
+    InterlockedExchange(&LocalHitDiagnosticSequence, publishedSequence);
+    InterlockedExchange(&LocalHitDiagnosticException, 0);
+    InterlockedExchange(&LocalHitDiagnosticStage, 1);
+
+    HMODULE entities = GetModuleHandleW(L"entitiesmp.dll");
+    using LocalPlayerFn = void*(__thiscall*)(void*);
+    auto localPlayer = entities
+        ? reinterpret_cast<LocalPlayerFn>(
+            GetProcAddress(entities, GetLocalPlayerSymbol))
+        : nullptr;
+    if (!localPlayer)
+    {
+        InterlockedExchange(&LocalHitDiagnosticStage, 2);
+        return;
+    }
+    InterlockedExchange(&LocalHitDiagnosticStage, 3);
+
+    void* player = localPlayer(contextPlayer);
+    if (!player)
+    {
+        InterlockedExchange(&LocalHitDiagnosticStage, 4);
+        return;
+    }
+
+    int entitySeat = *reinterpret_cast<BYTE*>(static_cast<BYTE*>(player) + 0x264);
+    InterlockedExchange(&LocalHitDiagnosticEntitySeat, entitySeat);
+    BYTE fieldSeat{};
+    if (!TryGetCurrentFieldSeat(fieldSeat))
+    {
+        InterlockedExchange(&LocalHitDiagnosticStage, 5);
+        return;
+    }
+    InterlockedExchange(&LocalHitDiagnosticFieldSeat, fieldSeat);
+
+    LONG desired = InterlockedCompareExchange(&DesiredLocalHitSequence[fieldSeat], 0, 0);
+    LONG applied = InterlockedCompareExchange(&AppliedLocalHitSequence[fieldSeat], 0, 0);
+    if (desired == 0)
+    {
+        InterlockedExchange(&LocalHitDiagnosticStage, 6);
+        return;
+    }
+    if (desired == applied) return;
 
     using AddHitCountFn = void(__thiscall*)(void*, int);
     int count = desired > applied ? desired - applied : 1;
     if (count > 8) count = 8;
+    InterlockedExchange(&LocalHitDiagnosticStage, 7);
     for (int index = 0; index < count; ++index)
         reinterpret_cast<AddHitCountFn>(AddHitCountAddress)(player, 1);
-    InterlockedExchange(&AppliedLocalHitSequence[seat], desired);
+    InterlockedExchange(&AppliedLocalHitSequence[fieldSeat], desired);
+    InterlockedExchange(&LocalHitDiagnosticStage, 9);
 }
 
 void __stdcall ApplyLifecycleOnGameThread(void* player)
@@ -209,7 +283,7 @@ void __stdcall ApplyLifecycleOnGameThread(void* player)
     __try
     {
         if (!player) return;
-        ApplyLocalHit();
+        ApplyLocalHit(player);
 
         int seat = *reinterpret_cast<BYTE*>(static_cast<BYTE*>(player) + 0x264);
         if (seat < 0 || seat >= MaxPlayerSeats) return;
@@ -263,6 +337,8 @@ void __stdcall ApplyLifecycleOnGameThread(void* player)
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
+        InterlockedExchange(&LocalHitDiagnosticException, GetExceptionCode());
+        InterlockedExchange(&LocalHitDiagnosticStage, 8);
     }
 }
 
@@ -398,6 +474,7 @@ DWORD WINAPI InstallCompatibility(void*)
         PollHeadlessEngineState();
         PollHeadlessWorldSession();
         LogAppliedLifecycles();
+        LogLocalHitDiagnostic();
         Sleep(10);
     }
 }

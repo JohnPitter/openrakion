@@ -597,10 +597,10 @@ O log da partida confirma o fio: reações `11030A02010201` / `11030A02020101` a
 `11030A020F0701` na queda, `RemainHP` e `EPlayerDeath` com `sender == idxA == assento do bot`, e
 **nenhum** `EPlayerDamage` sobre o bot.
 
-**Correção implementada; reteste visual pendente — contador HIT×N.** Com a reação visível
-funcionando, o número flutuante continuava ausente sobre o bot. Não era defeito de wire (os frames
-são byte a byte idênticos aos de um humano apanhando) e **não é teto arquitetural** — registro
-anterior nesse sentido está corrigido.
+**Aprovado visualmente em 29/07/2026 — contador HIT×N.** Com a reação visível funcionando, o
+número flutuante continuava ausente sobre o bot. Não era defeito de wire (os frames são byte a byte
+idênticos aos de um humano apanhando) e **não é teto arquitetural** — registro anterior nesse
+sentido está corrigido.
 
 O gate `[vítima+0x394]` de fato barra a contagem em entidade dirigida por rede, mas o
 `RakionClientPatch` já contorna isso: o cave em `0x351533e9` chama `AddHitCount` direto no jogador
@@ -630,32 +630,23 @@ Verificado em 29/07/2026:
 - os binários deployados (`version.dll`, `RakionClientPatch.dll`) batem **hash** com o build desta
   branch, então não há deploy defasado.
 
-A primeira auditoria corrigiu a indireção do getter local. O cave original executa:
+A auditoria dinâmica mostrou duas falhas independentes. Primeiro, o hook de `CPlayer::Update`
+visitava apenas a entidade remota do bot (`seat=10`), portanto não podia depender de a entidade
+atual ser também o atacante local (`seat=0`). Segundo, o endereço global inferido para localizar o
+player produzia `0xC0000005` antes da chamada de `AddHitCount`.
 
-```text
-mov eax,[0x352b3630]
-call eax
-```
-
-Logo, `0x352b3630` armazena um **ponteiro de função**. A DLL convertia o próprio endereço
-`0x352b3630` em função e tentava executá-lo; a proteção `__except` absorvia a falha.
-
-O reteste seguinte mostrou um segundo defeito: o `hitSequence=6` chegou para
-`attackerSeat=0`, enquanto o hook de `CPlayer::Update` visitou apenas a entidade remota do bot
-(`seat=10`). A implementação esperava que a entidade atual fosse também o jogador local, portanto
-`AddHitCount` continuava inalcançável. A ponte agora usa qualquer update remoto apenas como
-dispatcher da thread do jogo, resolve o jogador local pelo getter, lê o seat dele e aplica ali a
-diferença confirmada pelo servidor. O lifecycle do bot permanece isolado pelo seat remoto.
-
-O build x86 passa com `/W4 /WX`; o gate restante deste item é a confirmação do número flutuante no
-cliente original.
+A implementação final usa a entidade remota somente como dispatcher da game thread e chama o export
+nativo `CPlayer::GetLocalPlayer()` de `entitiesmp.dll`. Em seguida, cruza o seat do objeto com o seat
+canônico em `FieldInfo+0x470C`, consome a diferença de `attackerHitSeq` confirmada pelo servidor e
+chama `CPlayer::AddHitCount()` no jogador local. O lifecycle do bot permanece isolado pelo seat
+remoto. O trace terminou em `HIT local`, e o usuário confirmou o número flutuante na tela.
 
 ## Gates restantes
 
-1. reteste visual do contador HIT×N após a correção de indireção (acima);
-2. substituir as políticas provisórias de dano pelas fórmulas por arma/equipamento;
-3. desativar os subsistemas de input e som não necessários ao worker;
-4. multi-bot sob carga nos mapas battle — coberto no fio, sem observação visual dedicada.
+1. substituir as políticas provisórias de dano pelas fórmulas por arma/equipamento;
+2. desativar os subsistemas de input e som não necessários ao worker;
+3. multi-bot sob carga nos mapas battle — coberto no fio, sem observação visual dedicada;
+4. rastrear e alinhar estados de locomoção/ataque da entidade com os pacotes do peer humano.
 
 ## Implantação
 

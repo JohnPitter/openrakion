@@ -56,6 +56,24 @@ bool IsCurrentRoomBattle()
     return isBattleMap && isBattleMap(map) != 0;
 }
 
+bool ReadCurrentFieldSeat(uint8_t& seat)
+{
+    auto* image = reinterpret_cast<BYTE*>(GetModuleHandleW(nullptr));
+    if (!image) return false;
+
+    void* world = reinterpret_cast<WorldNetAccessor>(image + WorldNetAccessorRva)();
+    if (!world) return false;
+
+    const auto vtable = *reinterpret_cast<uintptr_t**>(world);
+    void* field = reinterpret_cast<GetFieldInfo>(vtable[2])(world);
+    if (!field) return false;
+
+    BYTE current = *(static_cast<BYTE*>(field) + 0x470c);
+    if (current >= 20) return false;
+    seat = current;
+    return true;
+}
+
 __declspec(naked) void AddBotCreateGate()
 {
     __asm
@@ -163,6 +181,18 @@ bool UsesWindowedDisplayMode()
     input >> mode;
     return mode == "windowed" || mode == "borderless";
 }
+}
+
+bool TryGetCurrentFieldSeat(uint8_t& seat)
+{
+    __try
+    {
+        return ReadCurrentFieldSeat(seat);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        return false;
+    }
 }
 
 bool ApplyFinalClientPatches()
