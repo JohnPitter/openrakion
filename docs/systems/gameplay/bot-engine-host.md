@@ -641,12 +641,45 @@ canônico em `FieldInfo+0x470C`, consome a diferença de `attackerHitSeq` confir
 chama `CPlayer::AddHitCount()` no jogador local. O lifecycle do bot permanece isolado pelo seat
 remoto. O trace terminou em `HIT local`, e o usuário confirmou o número flutuante na tela.
 
+## Marco 12: estado da entidade e sincronização visual
+
+O teste visual posterior ao HIT revelou três problemas que os testes de protocolo não detectavam:
+
+1. o Host recebia movimento ainda na fase `Pre`;
+2. o World republicava a animação de locomoção a cada 800 ms e reiniciava o ciclo visual;
+3. o dano bot → humano era resolvido no mesmo tick em que a intenção chegava ao Host, antes de a
+   engine executar e exibir o ataque.
+
+A correção separa intenção, apresentação e impacto:
+
+- fora de `MatchPhase.Playing`, o coordenador envia input neutro uma única vez, zera o relógio do
+  worker e não avança física, snapshot, publicação ou combate;
+- `0x0311 kind=Normal` passa a sair somente na transição de controles; `0x030A` e `0x030F`
+  continuam atualizando posição e keystate durante a caminhada;
+- `0x0311 kind=Attack` sai apenas na borda de subida do ataque;
+- a janela de impacto usa o mesmo atraso medido no ataque humano. Assim, o Host processa a ação no
+  tick seguinte antes que o dano autoritativo possa ser aplicado.
+
+Foi adicionado um rastreador de entidade por transição. A categoria `bot-entity` correlaciona fase,
+atividade (`Paused`, `Idle`, `Moving`, `Attacking`, `HitReaction`, `Dead`), controles, alvo,
+`nativeReady`, `nativeAlive`, vida do domínio, HP, posição e heading. A publicação esparsa de
+`Normal/<animação>` e `Attack/<variante>` usa a mesma categoria. Posição isolada não gera log por
+frame.
+
+O disconnect após o bot matar o humano tinha outra origem: depois da morte autoritativa, o cliente
+enviava um eco `0x4F` com `killer=0x14`. O handler agora aceita esse sentinela somente se a vítima já
+está morta e `LastDamageSourceSeat` aponta para um bot daquele field. Qualquer outro killer fora de
+`0..0x13` preserva o disconnect original `0x92`, e o eco aceito não duplica morte nem placar.
+
+Este marco possui cobertura automatizada, mas os três resultados visuais — início parado, ciclo
+completo de caminhada e animação anterior ao dano — ainda precisam de reteste no cliente.
+
 ## Gates restantes
 
 1. substituir as políticas provisórias de dano pelas fórmulas por arma/equipamento;
 2. desativar os subsistemas de input e som não necessários ao worker;
 3. multi-bot sob carga nos mapas battle — coberto no fio, sem observação visual dedicada;
-4. rastrear e alinhar estados de locomoção/ataque da entidade com os pacotes do peer humano.
+4. validar visualmente o alinhamento de locomoção/ataque registrado pelo trace `bot-entity`.
 
 ## Implantação
 

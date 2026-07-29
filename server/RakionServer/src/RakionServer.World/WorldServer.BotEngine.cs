@@ -119,6 +119,8 @@ public sealed partial class WorldServer
         var deliveries = new List<(PlayerRec Target, byte[] Packet)>();
         lock (field.SyncRoot)
         {
+            if (field.State != 2 || field.Phase != MatchPhase.Playing)
+                return;
             PlayerRec[] humans = Array.FindAll(
                 field.Slots, record => record.Session != null && record.Occupied);
             foreach (PlayerRec record in field.BotSlots)
@@ -126,7 +128,7 @@ public sealed partial class WorldServer
                 BotPlayer bot = record.Bot!;
                 if (!bot.EngineAttached)
                     continue;
-                foreach (byte[] packet in BuildNativePackets(record, bot))
+                foreach (byte[] packet in BuildNativePackets(field.Id, record, bot))
                     foreach (PlayerRec human in humans)
                         deliveries.Add((human, packet));
             }
@@ -136,6 +138,7 @@ public sealed partial class WorldServer
     }
 
     private static IEnumerable<byte[]> BuildNativePackets(
+        int fieldId,
         PlayerRec record,
         BotPlayer bot)
     {
@@ -147,14 +150,34 @@ public sealed partial class WorldServer
             (byte)record.Slot, bot.Position, bot.Heading, ++bot.MoveSeq);
         yield return BotMovement.SynthesizeKeystate(
             (byte)record.Slot, ++bot.MoveSeq, moving);
-        if (bot.ShouldPublishControls(bot.EngineControls, Environment.TickCount64))
+        if (bot.ShouldPublishControls(bot.EngineControls))
+        {
+            PlayerNormalAnimation animation =
+                BotMovement.AnimationForControls(bot.EngineControls);
+            Log.Info(
+                "bot-entity",
+                "field={0} bot={1} wireAnimation=Normal/{2} controls={3}",
+                fieldId,
+                record.Slot,
+                animation,
+                bot.EngineControls);
             yield return BotMovement.SynthesizeNormalAnimation(
                 (byte)record.Slot,
                 ++bot.MoveSeq,
-                BotMovement.AnimationForControls(bot.EngineControls));
-        if (bot.EngineAttacking)
+                animation);
+        }
+        if (bot.ShouldPublishAttack(bot.EngineAttacking))
+        {
+            BotAttackVariant variant = bot.NextAttackVariant();
+            Log.Info(
+                "bot-entity",
+                "field={0} bot={1} wireAnimation=Attack/{2}",
+                fieldId,
+                record.Slot,
+                variant);
             yield return BotMovement.SynthesizeAttack(
-                (byte)record.Slot, ++bot.MoveSeq, bot.NextAttackVariant());
+                (byte)record.Slot, ++bot.MoveSeq, variant);
+        }
     }
 
     private void StopNativeBots(int fieldId)

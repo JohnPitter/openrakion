@@ -40,7 +40,7 @@ namespace RakionServer.World.Domain
         private bool _isMoving;
         private bool _staggerToggle;
         private BotControls _lastPublishedControls;
-        private long _nextLocomotionRefreshMs;
+        private bool _lastPublishedAttack;
         public bool IsMoving => _isMoving;
         public bool EngineAttached { get; private set; }
         public BotControls EngineControls { get; private set; }
@@ -94,6 +94,7 @@ namespace RakionServer.World.Domain
             NextAttackReadyMs = Math.Max(NextAttackReadyMs, HitReactionUntilMs);
             EngineControls = BotControls.None;
             EngineAttacking = false;
+            _lastPublishedAttack = false;
         }
 
         public bool TryFinishHitReaction(long nowMs)
@@ -115,9 +116,7 @@ namespace RakionServer.World.Domain
             if (!Alive || nowMs < NextAttackReadyMs)
                 return false;
             NextAttackReadyMs = nowMs + Profile.AttackCooldownMs;
-            // Impacto imediato + janela larga: resolve no mesmo tick e tolera latência do Host.
-            return Combat.TryOpenAttack(
-                ++_attackSequence, nowMs, impactDelayMs: 0, activeDurationMs: 600);
+            return Combat.TryOpenAttack(++_attackSequence, nowMs);
         }
 
         public bool ShouldPublishLocomotion(bool moving)
@@ -127,21 +126,22 @@ namespace RakionServer.World.Domain
             return true;
         }
 
-        public bool ShouldPublishControls(BotControls controls, long nowMs)
+        public bool ShouldPublishControls(BotControls controls)
         {
-            const int LocomotionRefreshMilliseconds = 800;
             const BotControls movement = BotControls.W | BotControls.A |
                 BotControls.S | BotControls.D | BotControls.Space;
             BotControls current = controls & movement;
-            bool refresh = current != BotControls.None &&
-                nowMs >= _nextLocomotionRefreshMs;
-            if (_lastPublishedControls == current && !refresh) return false;
+            if (_lastPublishedControls == current) return false;
             _lastPublishedControls = current;
             _isMoving = (current & ~BotControls.Space) != 0;
-            _nextLocomotionRefreshMs = current == BotControls.None
-                ? 0
-                : nowMs + LocomotionRefreshMilliseconds;
             return true;
+        }
+
+        public bool ShouldPublishAttack(bool attacking)
+        {
+            bool started = attacking && !_lastPublishedAttack;
+            _lastPublishedAttack = attacking;
+            return started;
         }
 
         public void ScheduleRespawn(long nowMs, int delayMs)
@@ -164,6 +164,7 @@ namespace RakionServer.World.Domain
             Combat.Reset();
             _isMoving = false;
             _lastPublishedControls = BotControls.None;
+            _lastPublishedAttack = false;
             LastAttackerSeat = Field.NoSeat;
             LastAttackerHitSequence = 0;
             EngineControls = BotControls.None;
@@ -190,6 +191,7 @@ namespace RakionServer.World.Domain
             Combat.Reset();
             _isMoving = false;
             _lastPublishedControls = BotControls.None;
+            _lastPublishedAttack = false;
             LastAttackerSeat = Field.NoSeat;
             LastAttackerHitSequence = 0;
             EngineControls = BotControls.None;
@@ -212,6 +214,16 @@ namespace RakionServer.World.Domain
         {
             EngineControls = controls;
             EngineAttacking = attacking;
+        }
+
+        public void PauseEngine()
+        {
+            EngineControls = BotControls.None;
+            EngineAttacking = false;
+            TargetSeat = Field.NoSeat;
+            _isMoving = false;
+            _lastPublishedControls = BotControls.None;
+            _lastPublishedAttack = false;
         }
 
         public bool ShouldRefreshEngineAim(byte targetSeat, BotVector target)

@@ -45,9 +45,9 @@ golden source; este diretório é somente o ambiente de execução.
 | Refresh e filtros da Game List | aprovado em 21/07/2026 | usuário confirmou que a sala permanece visível após refresh; servidor limita ambas as bordas, e E2E cobre setas, cinco filtros, Available e Stage público |
 | Rematch e lista Available | reteste pendente em 21/07/2026 | E2E aprovou saída dos dois humanos, preservação do master, bot pronto, sala novamente listável e segunda partida no mesmo game room |
 | Ataque humano→bot | **aprovado em 29/07/2026** | usuário confirmou em partida que o bot **reage aos golpes — recuo e queda**. O que destravou foi trocar o `EPlayerDamage` sintético pelo par que a vítima humana publica sobre si mesma (`RemainHP` + `0x0311 kind=2`), com os argumentos medidos em captura de dois clientes |
-| Ataque bot→humano | **aprovado em 28/07/2026** | usuário confirmou queda do próprio personagem sob os golpes do bot |
+| Ataque bot→humano | **reteste pendente em 29/07/2026** | dano e queda já foram observados, mas um teste posterior mostrou dano ocasional antes da animação visível. A janela de impacto foi realinhada ao tick nativo e requer nova confirmação |
 | Contador HIT×N sobre o bot | **aprovado em 29/07/2026** | usuário confirmou o HIT visual. O trace final mostrou que o servidor publicou `attackerSeat=0/hitSequence`, a DLL resolveu o jogador local pelo export nativo `CPlayer::GetLocalPlayer()`, validou o seat canônico em `FieldInfo+0x470C` e aplicou `AddHitCount` na game thread. Launcher, recurso embutido e DLL instalada foram validados pelo mesmo SHA-256 |
-| HUD/animação final do bot | **aprovado em 29/07/2026** | reação, morte e respawn observados na tela; barra de vida acompanha o `RemainHP` autoritativo |
+| HUD/animação final do bot | **parcial em 29/07/2026** | reação, morte, respawn, barra de vida e HIT foram observados. Locomoção cortada, movimento antes do início e ataque sem animação consistente motivaram o trace de entidade e as correções do Marco 12; reteste pendente |
 
 Na captura de 18/07/2026, o primeiro uso da porta UDP exibiu o diálogo do Windows Firewall. Ele
 não é UAC nem falha do launcher; permitir acesso é necessário para P2P fora de localhost. A janela

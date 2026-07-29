@@ -42,9 +42,32 @@ namespace RakionServer.World.Network
             byte cause = ctx.P.CanRead(1) ? ctx.P.Byte() : (byte)0; // param_3[0]
             if (cause > 8) { u.Disconnect(0x91); return; }
             byte killer = ctx.P.CanRead(1) ? ctx.P.Byte() : (byte)0; // param_3[1]
-            if (killer > 0x13) { u.Disconnect(0x92); return; }
 
             var rec = ReconRec(ctx, out var field);
+            if (killer > 0x13)
+            {
+                if (field != null && rec != null)
+                {
+                    lock (field.SyncRoot)
+                    {
+                        if (BotAuthoritativeDeathPolicy.IsClientEcho(
+                            field, rec, killer))
+                        {
+                            Log.Info(
+                                "bot-combat",
+                                "field={0} vitima={1} eco 0x4f ignorado " +
+                                "killerReportado={2} killerAutoritativo={3}",
+                                field.Id,
+                                rec.Slot,
+                                killer,
+                                rec.Vitals.LastDamageSourceSeat);
+                            return;
+                        }
+                    }
+                }
+                u.Disconnect(0x92);
+                return;
+            }
             if (field == null || rec == null)
             {
                 Log.Warn("field", "[{0}] 0x4f Die sem field/seat", u.Slot);

@@ -17,6 +17,9 @@ internal sealed class BotEngineCoordinator(WorldConfig.BotEngineConfig config) :
         public ConcurrentDictionary<byte, uint> BotIds { get; } = new();
         public ConcurrentDictionary<byte, uint> LifecycleSequences { get; } = new();
         public ConcurrentDictionary<byte, uint> DamageSequences { get; } = new();
+        public ConcurrentDictionary<byte, BotEnginePlayerSnapshot> Snapshots { get; } = new();
+        public BotEntityTracker EntityTracker { get; } = new();
+        public bool Paused { get; set; }
     }
 
     private readonly WorldConfig.BotEngineConfig _config = config;
@@ -97,6 +100,15 @@ internal sealed class BotEngineCoordinator(WorldConfig.BotEngineConfig config) :
             return true;
         try
         {
+            if (!IsMatchPlaying(field))
+            {
+                await PauseFieldAsync(
+                    field, session, cancellationToken).ConfigureAwait(false);
+                session.EntityTracker.Trace(
+                    field, session.BotIds.Keys, session.Snapshots);
+                return true;
+            }
+            session.Paused = false;
             await SynchronizeDamageReactionsAsync(
                 field, session, cancellationToken).ConfigureAwait(false);
             await SynchronizeLifecyclesAsync(
@@ -107,10 +119,13 @@ internal sealed class BotEngineCoordinator(WorldConfig.BotEngineConfig config) :
             {
                 BotEnginePlayerSnapshot snapshot = await session.Worker.SnapshotAsync(
                     entry.Value, cancellationToken).ConfigureAwait(false);
+                session.Snapshots[entry.Key] = snapshot;
                 ApplySnapshot(field, entry.Key, snapshot);
             }
             await ApplyIntentsAsync(
                 field, session, cancellationToken).ConfigureAwait(false);
+            session.EntityTracker.Trace(
+                field, session.BotIds.Keys, session.Snapshots);
             return true;
         }
         catch (Exception exception) when (
@@ -154,6 +169,33 @@ internal sealed class BotEngineCoordinator(WorldConfig.BotEngineConfig config) :
         if (previous == 0)
             return 1;
         return (uint)Math.Clamp((now - previous) / engineTickMs, 1, maxFrames);
+    }
+
+    private static bool IsMatchPlaying(Field field)
+    {
+        lock (field.SyncRoot)
+            return field.State == 2 && field.Phase == MatchPhase.Playing;
+    }
+
+    private static async Task PauseFieldAsync(
+        Field field,
+        FieldSession session,
+        CancellationToken cancellationToken)
+    {
+        session.LastTickMs = 0;
+        if (session.Paused)
+            return;
+
+        lock (field.SyncRoot)
+            foreach (byte seat in session.BotIds.Keys)
+                field.RecAt(seat)?.Bot?.PauseEngine();
+
+        foreach (KeyValuePair<byte, uint> entry in session.BotIds)
+            await session.Worker.ApplyInputAsync(
+                entry.Value,
+                BotEngineInput.None,
+                cancellationToken).ConfigureAwait(false);
+        session.Paused = true;
     }
 
     private static void ApplySnapshot(
@@ -328,4 +370,5 @@ internal sealed class BotEngineCoordinator(WorldConfig.BotEngineConfig config) :
         uint BotId,
         uint Sequence,
         byte AttackerSeat);
+
 }

@@ -24,6 +24,8 @@ internal static class BotEngineBrain
         intent = default;
         lock (field.SyncRoot)
         {
+            if (field.State != 2 || field.Phase != MatchPhase.Playing)
+                return false;
             PlayerRec? botRecord = field.RecAt(botSeat);
             BotPlayer? bot = botRecord?.Bot;
             if (botRecord == null || bot == null || !bot.Alive)

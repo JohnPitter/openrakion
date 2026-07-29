@@ -135,14 +135,15 @@ public sealed class BotCombatTests
         attacker.Bot!.TargetSeat = 0;
         Assert.True(attacker.Bot.TryStartAttack(1_000));
 
-        // Janela de bot abre no mesmo tick (impacto imediato).
+        Assert.False(BotCombat.TryResolveBotAttack(
+            field, attacker, 1_000, 15, out _));
         Assert.True(BotCombat.TryResolveBotAttack(
-            field, attacker, 1_000, 15, out BotHumanCombatHit hit));
+            field, attacker, 1_120, 15, out BotHumanCombatHit hit));
         Assert.Equal(100, hit.Damage.RemainingHp);
         Assert.Equal(5, hit.Damage.RemainingAp);
         Assert.False(hit.Damage.Died);
         Assert.False(BotCombat.TryResolveBotAttack(
-            field, attacker, 1_001, 15, out _));
+            field, attacker, 1_121, 15, out _));
     }
 
     [Fact]
@@ -158,11 +159,11 @@ public sealed class BotCombatTests
         attacker.Bot.TryStartAttack(1_000);
 
         Assert.True(BotCombat.TryResolveBotAttack(
-            field, attacker, 1_000, 20, out BotHumanCombatHit hit));
+            field, attacker, 1_120, 20, out BotHumanCombatHit hit));
         Assert.True(hit.Damage.Died);
         Assert.Equal(0, target.Vitals.Hp);
         Assert.False(BotCombat.TryResolveBotAttack(
-            field, attacker, 1_001, 20, out _));
+            field, attacker, 1_121, 20, out _));
     }
 
     [Fact]

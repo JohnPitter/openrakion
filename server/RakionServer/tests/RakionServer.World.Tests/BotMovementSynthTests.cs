@@ -67,15 +67,42 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
-        public void LocomotionAnimation_RefreshesWithoutCuttingEveryTick()
+        public void LocomotionAnimationPublishesOnlyOnTransition()
         {
             var bot = new BotPlayer();
 
-            Assert.True(bot.ShouldPublishControls(BotControls.W, 1_000));
-            Assert.False(bot.ShouldPublishControls(BotControls.W, 1_150));
-            Assert.True(bot.ShouldPublishControls(BotControls.W, 1_800));
-            Assert.True(bot.ShouldPublishControls(BotControls.None, 1_950));
-            Assert.False(bot.ShouldPublishControls(BotControls.None, 2_100));
+            Assert.True(bot.ShouldPublishControls(BotControls.W));
+            Assert.False(bot.ShouldPublishControls(BotControls.W));
+            Assert.True(bot.ShouldPublishControls(BotControls.None));
+            Assert.False(bot.ShouldPublishControls(BotControls.None));
+        }
+
+        [Fact]
+        public void AttackAnimationPublishesOnlyOnRisingEdge()
+        {
+            var bot = new BotPlayer();
+
+            Assert.True(bot.ShouldPublishAttack(true));
+            Assert.False(bot.ShouldPublishAttack(true));
+            Assert.False(bot.ShouldPublishAttack(false));
+            Assert.True(bot.ShouldPublishAttack(true));
+        }
+
+        [Fact]
+        public void PauseClearsEngineAndPublishedActivity()
+        {
+            var bot = new BotPlayer();
+            bot.SetEngineIntent(BotControls.W, true);
+            bot.ShouldPublishControls(BotControls.W);
+            bot.ShouldPublishAttack(true);
+
+            bot.PauseEngine();
+
+            Assert.Equal(BotControls.None, bot.EngineControls);
+            Assert.False(bot.EngineAttacking);
+            Assert.False(bot.IsMoving);
+            Assert.True(bot.ShouldPublishControls(BotControls.W));
+            Assert.True(bot.ShouldPublishAttack(true));
         }
 
         [Fact]

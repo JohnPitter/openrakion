@@ -52,6 +52,22 @@ public sealed class BotEngineIsolationTests
     }
 
     [Fact]
+    public void PreMatchBotDoesNotPlanMovementOrAttack()
+    {
+        Field field = PlayingField();
+        field.Phase = MatchPhase.Pre;
+        PlayerRec bot = AddBot(field, 1, BotVector.Zero);
+        bot.Bot!.SetEngineIntent(BotControls.W, true);
+
+        Assert.False(BotEngineBrain.TryPlan(
+            field, (byte)bot.Slot, 1, 5_000, out _));
+
+        bot.Bot.PauseEngine();
+        Assert.Equal(BotControls.None, bot.Bot.EngineControls);
+        Assert.False(bot.Bot.EngineAttacking);
+    }
+
+    [Fact]
     public void ShippedSourcesDoNotContainSyntheticTickPath()
     {
         string worldRoot = Path.GetFullPath(Path.Combine(
