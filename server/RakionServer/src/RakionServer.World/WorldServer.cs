@@ -476,7 +476,7 @@ namespace RakionServer.World
 
             session.NotifyUdpReady(endpoint, handshake.AdvertisedEndpoint, endpointIndex);
             Domain.Field? field = GetField(session.FieldId);
-            if (field?.BotCount > 0) Bots.PublishBotLifecycles(field);
+            if (field != null) Bots.PublishBotLifecycles(field);
             if (endpointIndex == 0)
                 _ = _db.UpdateConnectionRealIpAsync(
                     session.ConnectionLogId, handshake.AdvertisedEndpoint.Address.ToString());

@@ -49,6 +49,7 @@ volatile LONG DesiredLocalHitSequence[MaxPlayerSeats]{};
 volatile LONG AppliedLifecycleSequence[MaxPlayerSeats]{};
 volatile LONG AppliedDamageSequence[MaxPlayerSeats]{};
 volatile LONG AppliedLocalHitSequence[MaxPlayerSeats]{};
+volatile LONG LocalHitSequenceInitialized[MaxPlayerSeats]{};
 volatile LONG AppliedMovingState[MaxPlayerSeats]{};
 volatile LONG LoggedLifecycleSequence[MaxPlayerSeats]{};
 volatile LONG LoggedDamageSequence[MaxPlayerSeats]{};
@@ -139,6 +140,11 @@ void LoadLifecycleSnapshot()
     }
     for (int index = 0; index < MaxPlayerSeats; ++index)
     {
+        if (InterlockedCompareExchange(&LocalHitSequenceInitialized[index], 1, 0) == 0)
+        {
+            InterlockedExchange(&AppliedLocalHitSequence[index], nextLocalHitSequence[index]);
+            InterlockedExchange(&LoggedLocalHitSequence[index], nextLocalHitSequence[index]);
+        }
         InterlockedExchange(&DesiredDeadState[index], nextDeadState[index]);
         InterlockedExchange(&DesiredLifecycleSequence[index], nextSequence[index]);
         InterlockedExchange(&DesiredDamageSequence[index], nextDamageSequence[index]);

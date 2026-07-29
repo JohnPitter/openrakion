@@ -6,7 +6,9 @@ Este documento separa o tráfego de ação em tempo real do controle de partida 
 ataque, movimento, hit, HP/AP/CP, morte, respawn, invencibilidade, velocidade e estado de rede.
 Modos e placar estão em [`pvp-modes-combat.md`](pvp-modes-combat.md); transporte em
 [`../core/udp-p2p-tunneling.md`](../core/udp-p2p-tunneling.md); células e NPCs em
-[`cells-creatures-npc.md`](cells-creatures-npc.md).
+[`cells-creatures-npc.md`](cells-creatures-npc.md). A captura integral de round, as sequências
+multifase e o catálogo de golpes por classe estão em
+[`human-combat-reference.md`](human-combat-reference.md).
 
 **Veredito:** o pipeline peer/engine foi fechado para `0x030A/0x030F/0x0311`, bad ping e eventos
 reliable de entidade `0x830C`. O cliente original calcula dano, reduz HP/AP, publica HP/AP, morte e
@@ -280,9 +282,12 @@ Captura humano×humano de 28/07/2026 (dois clientes no field 1, seats 0 e 1, qua
 | `(0F, 07, 01)` | golpe que derruba, morte e frame de respawn |
 | `(00, 0A, 01)` | dano ambiental periódico (~1,1 s), morte com `cause=2` — não é melê |
 
-`arg2` é `01` em **todos** os 26 frames; não carrega o assento de quem golpeou. A alternância
-casa 1:1 com o ataque do agressor: `kind=1 arg=00` → `(01,02)`, `kind=1 arg=01` → `(02,01)`, e o
-combo `arg=19,18,0C` → `(0F,07)` seguido de `EPlayerDeath`.
+Nessa primeira captura, `arg2` foi `01` nos 26 frames e não coincidiu com o assento de quem
+golpeou. A captura ampliada de 29/07/2026 também mediu variantes com `arg2=00`; veja
+[`human-combat-reference.md`](human-combat-reference.md). Portanto, `01` é o default comprovado
+para esse perfil, não uma constante global do protocolo. Na captura de 28/07, a alternância casa
+1:1 com o ataque do agressor: `kind=1 arg=00` → `(01,02)`, `kind=1 arg=01` → `(02,01)`, e o combo
+`arg=19,18,0C` → `(0F,07)` seguido de `EPlayerDeath`.
 
 Duas consequências de arquitetura, e são o ponto principal desta seção:
 

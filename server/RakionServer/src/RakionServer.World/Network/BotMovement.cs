@@ -150,8 +150,9 @@ namespace RakionServer.World.Network
         /// Reação visual de dano do bot (`0x0311 kind=Damage`, shape estendido de 12 bytes). A
         /// vítima publica a reação sobre SI MESMA, pareada com o `RemainHP` no mesmo instante — é
         /// assim que o cliente original desenha a queda de um jogador remoto. Os dois IDs e o
-        /// terminador saem da captura humano×humano; o terminador é `01` em todos os frames
-        /// medidos, nunca o assento de quem golpeou.
+        /// terminador saem da captura humano×humano. `01` é o default comprovado no perfil de
+        /// 28/07; a captura ampliada também observou `00`, ainda sem correlação suficiente para
+        /// selecionar a variante sem heurística.
         /// </summary>
         public static byte[] SynthesizeDamage(
             byte seat, uint sequence, BotDamageReaction reaction)

@@ -161,8 +161,8 @@ namespace RakionServer.World.Tests
         /// <summary>
         /// Golden da captura humano×humano (28/07/2026): a vítima publica `0x0311 kind=2` sobre si
         /// mesma alternando `(01,02)` e `(02,01)` nos golpes que não derrubam, `(0F,07)` no que
-        /// derruba, e o terminador é `01` em TODOS os 26 frames medidos — nunca o assento de quem
-        /// golpeou, que era o valor que o servidor mandava antes.
+        /// derruba. Nesse perfil, o terminador é `01` nos 26 frames medidos e nunca o assento de
+        /// quem golpeou; a captura posterior também encontrou `00`, ainda sem contexto fechado.
         /// </summary>
         [Theory]
         [InlineData(BotDamageReaction.StaggerA, 0x01, 0x02)]

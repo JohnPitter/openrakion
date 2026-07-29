@@ -222,5 +222,30 @@ namespace RakionServer.World.Tests
                 File.Delete(path);
             }
         }
+
+        [Fact]
+        public void LifecycleSnapshot_WithoutBots_ClearsStaleClientState()
+        {
+            var (field, host) = GolemRoomWithHost();
+            const int clientPort = 32124;
+            var endpoint = new IPEndPoint(IPAddress.Loopback, clientPort);
+            host.NotifyUdpReady(endpoint, endpoint, 1);
+            BotManager manager = NewManager();
+            string path = BotManager.ClientLifecyclePath(LifecycleBasePath, clientPort);
+
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, "10 9 12 0 4 0 8 1\n");
+
+                manager.PublishBotLifecycles(field);
+
+                Assert.Equal(string.Empty, File.ReadAllText(path));
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
     }
 }
