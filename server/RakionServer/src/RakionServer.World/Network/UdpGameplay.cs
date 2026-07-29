@@ -214,6 +214,7 @@ namespace RakionServer.World.Network
                 return;
             }
 
+            HumanMatchCapture.RecordUdp(sender, type, packet);
             ApplyBotInput(sender, type, packet);
             RelayToUdpPeers(sender, packet, type);
         }

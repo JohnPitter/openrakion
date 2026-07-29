@@ -9,36 +9,90 @@
 
 namespace
 {
+bool BuildMarkerPath(char (&path)[MAX_PATH])
+{
+    if (GetModuleFileNameA(nullptr, path, static_cast<DWORD>(sizeof(path))) == 0)
+        return false;
+    char* separator = std::strrchr(path, '\\');
+    if (!separator)
+        return false;
+    strcpy_s(separator + 1, MAX_PATH - static_cast<size_t>(separator + 1 - path),
+        "action.capture");
+    return true;
+}
+
 bool HasCaptureMarker()
 {
     char path[MAX_PATH]{};
-    if (GetModuleFileNameA(nullptr, path, static_cast<DWORD>(sizeof(path))) == 0) return false;
-    char* separator = std::strrchr(path, '\\');
-    if (!separator) return false;
-    strcpy_s(separator + 1, MAX_PATH - static_cast<size_t>(separator + 1 - path),
-        "action.capture");
-    return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
+    return BuildMarkerPath(path) &&
+        GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
 }
 
 bool CaptureEnabled()
 {
-    static const bool enabled = []
-    {
-        char value[8]{};
-        DWORD length = GetEnvironmentVariableA(
-            "OPENRAKION_CAPTURE_ACTIONS", value, static_cast<DWORD>(sizeof(value)));
-        return (length == 1 && value[0] == '1') || HasCaptureMarker();
-    }();
-    return enabled;
+    static volatile LONG enabled = -1;
+    static volatile LONG nextCheck = 0;
+    const LONG now = static_cast<LONG>(GetTickCount());
+    const LONG current = InterlockedCompareExchange(&enabled, -1, -1);
+    if (current >= 0 &&
+        static_cast<LONG>(now - InterlockedCompareExchange(
+            &nextCheck, 0, 0)) < 0)
+        return current != 0;
+
+    char value[8]{};
+    DWORD length = GetEnvironmentVariableA(
+        "OPENRAKION_CAPTURE_ACTIONS", value, static_cast<DWORD>(sizeof(value)));
+    const bool active = (length == 1 && value[0] == '1') ||
+        HasCaptureMarker();
+    InterlockedExchange(&enabled, active ? 1 : 0);
+    InterlockedExchange(&nextCheck, now + 250);
+    return active;
 }
 
-void BuildCapturePath(char (&path)[MAX_PATH])
+void ResolveCaptureDirectory(char (&directory)[MAX_PATH])
 {
-    char temporary[MAX_PATH]{};
-    DWORD length = GetTempPathA(static_cast<DWORD>(sizeof(temporary)), temporary);
-    if (length == 0 || length >= sizeof(temporary)) strcpy_s(temporary, ".\\");
+    char marker[MAX_PATH]{};
+    if (BuildMarkerPath(marker))
+    {
+        FILE* file{};
+        if (fopen_s(&file, marker, "rb") == 0 && file)
+        {
+            if (std::fgets(directory, static_cast<int>(sizeof(directory)), file))
+            {
+                directory[strcspn(directory, "\r\n")] = '\0';
+                std::fclose(file);
+                if (directory[0] != '\0' &&
+                    GetFileAttributesA(directory) != INVALID_FILE_ATTRIBUTES)
+                    return;
+            }
+            else
+            {
+                std::fclose(file);
+            }
+        }
+    }
+
+    DWORD length = GetTempPathA(
+        static_cast<DWORD>(sizeof(directory)), directory);
+    if (length == 0 || length >= sizeof(directory))
+        strcpy_s(directory, ".\\");
+}
+
+void BuildCapturePath(
+    char (&path)[MAX_PATH],
+    const char* streamName)
+{
+    char directory[MAX_PATH]{};
+    ResolveCaptureDirectory(directory);
+    const size_t length = std::strlen(directory);
+    const bool hasSeparator = length > 0 &&
+        (directory[length - 1] == '\\' || directory[length - 1] == '/');
     _snprintf_s(path, _countof(path), _TRUNCATE,
-        "%sopenrakion_action_capture_%lu.csv", temporary, GetCurrentProcessId());
+        "%s%s%s_%lu.csv",
+        directory,
+        hasSeparator ? "" : "\\",
+        streamName,
+        GetCurrentProcessId());
 }
 }
 
@@ -54,7 +108,7 @@ void CapturePeerAction(uint16_t type, const void* payload, uint16_t payloadLengt
         return;
 
     char path[MAX_PATH]{};
-    BuildCapturePath(path);
+    BuildCapturePath(path, "openrakion_action_capture");
     FILE* file{};
     if (fopen_s(&file, path, "ab") != 0 || !file) return;
 
@@ -68,15 +122,11 @@ void CapturePeerAction(uint16_t type, const void* payload, uint16_t payloadLengt
 
 void CapturePlayerAction(const void* source, const void* action)
 {
-    constexpr size_t ActionSize = 72;
+    constexpr size_t ActionSize = 76;
     if (!CaptureEnabled() || !source || !action) return;
 
     char path[MAX_PATH]{};
-    char temporary[MAX_PATH]{};
-    DWORD length = GetTempPathA(static_cast<DWORD>(sizeof(temporary)), temporary);
-    if (length == 0 || length >= sizeof(temporary)) strcpy_s(temporary, ".\\");
-    _snprintf_s(path, _countof(path), _TRUNCATE,
-        "%sopenrakion_player_action_%lu.csv", temporary, GetCurrentProcessId());
+    BuildCapturePath(path, "openrakion_player_action");
 
     FILE* file{};
     if (fopen_s(&file, path, "ab") != 0 || !file) return;
@@ -94,11 +144,7 @@ void CaptureRemotePlayerAction(const void* action)
     if (!CaptureEnabled() || !action) return;
 
     char path[MAX_PATH]{};
-    char temporary[MAX_PATH]{};
-    DWORD length = GetTempPathA(static_cast<DWORD>(sizeof(temporary)), temporary);
-    if (length == 0 || length >= sizeof(temporary)) strcpy_s(temporary, ".\\");
-    _snprintf_s(path, _countof(path), _TRUNCATE,
-        "%sopenrakion_remote_action_%lu.csv", temporary, GetCurrentProcessId());
+    BuildCapturePath(path, "openrakion_remote_action");
 
     FILE* file{};
     if (fopen_s(&file, path, "ab") != 0 || !file) return;
@@ -115,17 +161,13 @@ void CaptureProviderPacket(
 {
     const bool peerToPeer = targetPort >= 2300 && targetPort <= 2399;
     const bool provider = targetPort >= 10000 &&
-        targetPort != 40706 && targetPort != 40708 && targetPort != 40709;
+        targetPort != 40706 && targetPort != 40708;
     if (!CaptureEnabled() || (!peerToPeer && !provider) ||
         !payload || payloadLength == 0)
         return;
 
     char path[MAX_PATH]{};
-    char temporary[MAX_PATH]{};
-    DWORD length = GetTempPathA(static_cast<DWORD>(sizeof(temporary)), temporary);
-    if (length == 0 || length >= sizeof(temporary)) strcpy_s(temporary, ".\\");
-    _snprintf_s(path, _countof(path), _TRUNCATE,
-        "%sopenrakion_provider_send_%lu.csv", temporary, GetCurrentProcessId());
+    BuildCapturePath(path, "openrakion_provider_send");
 
     FILE* file{};
     if (fopen_s(&file, path, "ab") != 0 || !file) return;
@@ -147,11 +189,7 @@ void CaptureInboundPacket(
         return;
 
     char path[MAX_PATH]{};
-    char temporary[MAX_PATH]{};
-    DWORD length = GetTempPathA(static_cast<DWORD>(sizeof(temporary)), temporary);
-    if (length == 0 || length >= sizeof(temporary)) strcpy_s(temporary, ".\\");
-    _snprintf_s(path, _countof(path), _TRUNCATE,
-        "%sopenrakion_socket_receive_%lu.csv", temporary, GetCurrentProcessId());
+    BuildCapturePath(path, "openrakion_socket_receive");
 
     FILE* file{};
     if (fopen_s(&file, path, "ab") != 0 || !file) return;

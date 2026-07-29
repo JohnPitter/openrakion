@@ -23,6 +23,7 @@ EVENT_NAMES = {
     0x04690001: "EGoldGolemRebirth",
 }
 PLAYER_ACTION_STATES = ["Normal", "Attack", "Damage", "NoState"]
+PLAYER_ANIMATION_KINDS = ["Normal", "Attack", "Damage"]
 PLAYER_ACTION_CODES = [
     "None", "Stand", "Idle00", "Idle01", "Forward", "Backward", "Left", "Right",
     "ForwardLeft", "ForwardRight", "BackwardLeft", "BackwardRight", "Jump", "Land",
@@ -86,6 +87,27 @@ def decode_entity(logical_type: int, payload: bytes) -> dict:
         if action_code < len(PLAYER_ACTION_CODES):
             result["action_name"] = PLAYER_ACTION_CODES[action_code]
         return result
+    if logical_type == 0x030F and len(payload) == 7:
+        return {
+            "source_echo": payload[0],
+            "life_state": payload[1],
+            "player_value_a": payload[2],
+            "animator_value": payload[3],
+            "player_value_b": payload[4],
+            "control_mode": payload[5],
+            "control_detail": payload[6],
+        }
+    if logical_type == 0x0311 and len(payload) in {3, 5}:
+        kind = payload[1]
+        if kind >= len(PLAYER_ANIMATION_KINDS):
+            raise ValueError("kind de animação 0x0311 inválido")
+        if kind == 2 and len(payload) != 5:
+            raise ValueError("animação de dano 0x0311 truncada")
+        return {
+            "source_echo": payload[0],
+            "animation_kind": PLAYER_ANIMATION_KINDS[kind],
+            "arguments": list(payload[2:]),
+        }
     if logical_type in {0x0307, 0x0308, 0x0309} and len(payload) >= 28:
         return {
             "first_index": payload[0],

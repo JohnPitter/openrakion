@@ -321,6 +321,7 @@ namespace RakionServer.World.Network
 
         private void DispatchOpcode(ushort opcode, byte[] data)
         {
+            HumanMatchCapture.RecordClientFrame(this, opcode, data);
             // Sequencia de ENTRADA NO LOBBY/CAMPO (capturada do world ORIGINAL via MITM, ver
             // capture_field_entry/PROTOCOL_field_entry.md). Intercepta antes do dispatch generico.
             if (TryHandleLobbyEntry(opcode, data)) return;
@@ -354,6 +355,7 @@ namespace RakionServer.World.Network
         /// </summary>
         public void SendMessage(ushort msgType, byte[] data)
         {
+            HumanMatchCapture.RecordFieldMessage(this, msgType, data);
             // WIRE REAL (mitm_full_113423, TODOS os frames W->C): [u16 msgType][data] — msgType
             // PRIMEIRO, igual ao canal lobby. (A 1a leitura da RE punha [serverSeq][msgType]; o
             // cliente lia o serverSeq como opcode — ex.: seq 0x000E virava "OnRecvSuccessUDP,
@@ -378,6 +380,7 @@ namespace RakionServer.World.Network
         /// </summary>
         public void SendEncryptedFrame(byte[] plaintext)
         {
+            HumanMatchCapture.RecordServerFrame(this, plaintext);
             Log.Debug("tx", "[{0}] LOBBY frame {1}B: {2}", Slot, plaintext.Length, Convert.ToHexString(plaintext));
             byte[] body = Crypto.Enabled ? Crypto.Encrypt(plaintext) : plaintext;
             int size = body.Length + 2;

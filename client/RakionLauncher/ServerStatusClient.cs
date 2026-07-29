@@ -8,6 +8,10 @@ internal sealed record ServerStatusResponse(bool Online, int OnlinePlayers, int 
 internal sealed class ServerStatusClient
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(3) };
+    internal static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
     public async Task<ServerStatusResponse?> GetAsync(
         Uri baseUrl, CancellationToken cancellationToken = default)
@@ -15,7 +19,9 @@ internal sealed class ServerStatusClient
         try
         {
             return await Http.GetFromJsonAsync<ServerStatusResponse>(
-                new Uri(baseUrl, "api/v1/server-status"), cancellationToken);
+                new Uri(baseUrl, "api/v1/server-status"),
+                JsonOptions,
+                cancellationToken);
         }
         catch (HttpRequestException) { return null; }
         catch (TaskCanceledException) { return null; }

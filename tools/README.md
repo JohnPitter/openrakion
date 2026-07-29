@@ -759,6 +759,23 @@ tools\capture_gameplay_p2p.ps1 Stop
 
 Os artefatos ficam em `C:\temp\rakion-p2p\gameplay-p2p.pcapng` e `.txt`.
 
+`capture_human_match.ps1` correlaciona uma partida completa entre dois clientes gráficos sem
+capturar login ou senha. O marcador ativa os hooks já carregados pelo `RakionClientPatch`; o World
+registra os frames TCP decifrados somente depois de o personagem entrar em uma sala. O resultado
+contém ações locais, ações remotas, datagramas P2P/relay, posições, heading, controles, animações,
+eventos de arma, HP/AP, dano, morte e respawn:
+
+```powershell
+tools\capture_human_match.ps1 Start -ClientRoots '<cliente-a>','<cliente-b>'
+# jogar uma partida Battle completa
+tools\capture_human_match.ps1 Stop
+```
+
+Cada sessão fica em `C:\temp\openrakion-human-match\<data-hora>`, com `timeline.csv`,
+`timeline.jsonl`, `summary.md`, arquivos brutos e `manifest.json` com SHA-256. O `Start` exige que
+os processos `rakion.exe` estejam fechados para que os hooks de ação sejam instalados desde o
+bootstrap.
+
 ## Captura do servidor ORIGINAL (debug de compatibilidade)
 
 Quando o cliente offline diverge do nosso .NET, o jeito mais rápido de descobrir o comportamento correto é **rodar o servidor original** (binários do autor) com captura total e observar o que ele faz. Três scripts PowerShell automatizam o ciclo:

@@ -20,6 +20,18 @@ class DecodeGameplayP2PTests(unittest.TestCase):
         self.assertEqual("None", result["body"]["action_name"])
         self.assertEqual([350, 0, 2450], result["body"]["position"])
 
+    def test_decodes_player_sync_and_animation(self):
+        sync = bytes.fromhex("0F03010000000101080102030003")
+        animation = bytes.fromhex("1103020000000101020F0701")
+
+        sync_result = decode(sync)["body"]
+        animation_result = decode(animation)["body"]
+
+        self.assertEqual(1, sync_result["source_echo"])
+        self.assertEqual(2, sync_result["animator_value"])
+        self.assertEqual("Damage", animation_result["animation_kind"])
+        self.assertEqual([0x0F, 0x07, 0x01], animation_result["arguments"])
+
     def test_decodes_direct_reliable_entity(self):
         header = (0x8308).to_bytes(2, "little") + (1).to_bytes(4, "little") + bytes([4])
         body = bytes([4, 1]) + (7).to_bytes(2, "little") + bytes(24)

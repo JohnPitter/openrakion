@@ -674,12 +674,44 @@ está morta e `LastDamageSourceSeat` aponta para um bot daquele field. Qualquer 
 Este marco possui cobertura automatizada, mas os três resultados visuais — início parado, ciclo
 completo de caminhada e animação anterior ao dano — ainda precisam de reteste no cliente.
 
+## Marco 13: captura humano × humano correlacionada
+
+O diagnóstico visual do bot passa a usar uma partida real como fonte canônica. A captura combina
+três perspectivas sem registrar autenticação:
+
+- controles e estado local da entidade dentro da DLL (`W/A/S/D`, pulo, ataque, posição e ação);
+- datagramas enviados e recebidos pelo cliente, incluindo `0x030A`, `0x030F`, `0x0311` e eventos
+  de entidade;
+- frames TCP/UDP já autenticados e decifrados pelo World enquanto o jogador está em um field.
+
+O comando abaixo cria uma sessão isolada e ativa os marcadores nos dois clientes:
+
+```powershell
+.\tools\capture_human_match.ps1 Start -ClientRoots '<cliente-a>','<cliente-b>'
+```
+
+Depois da partida completa, o encerramento remove os marcadores e produz `timeline.jsonl`,
+`timeline.csv`, `summary.md` e `manifest.json`:
+
+```powershell
+.\tools\capture_human_match.ps1 Stop
+```
+
+A timeline correlaciona relógio nativo, relógio do World e UTC. Isso permite medir transições de
+locomoção, duração das animações, janela entre ataque e impacto, reação de dano, queda, morte e
+respawn sem inferir comportamento apenas pelo resultado visual. Os arquivos brutos permanecem na
+sessão para que qualquer contrato extraído possa ser revalidado.
+
+O pipeline e os decodificadores têm cobertura automatizada; a captura da partida de referência é o
+gate pendente deste marco.
+
 ## Gates restantes
 
 1. substituir as políticas provisórias de dano pelas fórmulas por arma/equipamento;
 2. desativar os subsistemas de input e som não necessários ao worker;
 3. multi-bot sob carga nos mapas battle — coberto no fio, sem observação visual dedicada;
-4. validar visualmente o alinhamento de locomoção/ataque registrado pelo trace `bot-entity`.
+4. capturar e analisar uma partida humano × humano completa;
+5. validar visualmente o alinhamento de locomoção/ataque registrado pelo trace `bot-entity`.
 
 ## Implantação
 
