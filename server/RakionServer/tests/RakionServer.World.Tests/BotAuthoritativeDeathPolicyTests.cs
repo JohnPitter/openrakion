@@ -17,29 +17,27 @@ public sealed class BotAuthoritativeDeathPolicyTests
             field, victim, Field.NoSeat));
     }
 
-    [Theory]
-    [InlineData(19)]
-    [InlineData(21)]
-    public void RejectsNonSentinelKiller(byte reportedKiller)
+    [Fact]
+    public void AcceptsLegacyInvalidKillerAfterServerConfirmedBotDeath()
     {
         (Field field, PlayerRec victim) = MatchWithBot();
         victim.Vitals.Initialize(10, 0);
         victim.Vitals.ApplyDamage(10, 10);
         victim.Dead = true;
 
-        Assert.False(BotAuthoritativeDeathPolicy.IsClientEcho(
-            field, victim, reportedKiller));
+        Assert.True(BotAuthoritativeDeathPolicy.IsClientEcho(
+            field, victim, 0x8D));
     }
 
     [Fact]
-    public void RejectsSentinelWithoutAuthoritativeBotDeath()
+    public void RejectsEchoWithoutAuthoritativeBotDeath()
     {
         (Field field, PlayerRec victim) = MatchWithBot();
         victim.Vitals.Initialize(10, 0);
         victim.Dead = true;
 
         Assert.False(BotAuthoritativeDeathPolicy.IsClientEcho(
-            field, victim, Field.NoSeat));
+            field, victim, 0x8D));
     }
 
     private static (Field Field, PlayerRec Victim) MatchWithBot()

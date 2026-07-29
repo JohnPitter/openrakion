@@ -27,16 +27,16 @@ public sealed partial class WorldServer
             PlayerRec? attacker = field.FindRec(sender);
             if (attacker == null)
                 return false;
+            long nowMs = Environment.TickCount64;
             if (animation.Kind != PlayerAnimationKind.Attack)
             {
                 attacker.Combat.ReleaseAttackAnimation();
                 return false;
             }
-            return field.State == 2 &&
-                field.Phase == MatchPhase.Playing &&
+            return field.IsCombatActive(nowMs) &&
                 attacker.Combat.TryOpenAttack(
                     animation.Header.Sequence,
-                    Environment.TickCount64,
+                    nowMs,
                     animation.Argument0);
         }
     }
@@ -239,7 +239,7 @@ public sealed partial class WorldServer
         long now,
         List<byte[]> vitals)
     {
-        if (field.State != 2 || field.Phase != MatchPhase.Playing)
+        if (!field.IsCombatActive(now))
             return false;
         bool changed = false;
         foreach (PlayerRec record in field.BotSlots)
@@ -273,7 +273,7 @@ public sealed partial class WorldServer
         long now,
         List<HumanRespawnOutcome> outcomes)
     {
-        if (field.State != 2 || field.Phase != MatchPhase.Playing)
+        if (!field.IsCombatActive(now))
             return;
         foreach (PlayerRec record in field.Slots)
         {

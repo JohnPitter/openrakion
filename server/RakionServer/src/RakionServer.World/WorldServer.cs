@@ -583,12 +583,14 @@ namespace RakionServer.World
                 {
                     case Domain.MatchLifecycleEvent.EngageStarted:
                         f.BroadcastLobby(f.Build0x48());
+                        Bots.PublishBotLifecycles(f);
                         break;
                     case Domain.MatchLifecycleEvent.RoundTimedOut:
                         f.BroadcastFieldPlaying(0x4a, f.Build0x4a());
                         break;
                     case Domain.MatchLifecycleEvent.NextRoundStarted:
                         f.BroadcastLobby(f.Build0x49());
+                        Bots.PublishBotLifecycles(f);
                         Log.Ok("field", "field {0} -> round {1}/{2} (w0={3} w1={4})",
                             f.Id, f.Round, f.MaxRounds, f.Wins0, f.Wins1);
                         break;
@@ -698,6 +700,7 @@ namespace RakionServer.World
                     case Domain.PlayerReadyTransition.Started:
                         _fieldStatusBeat[f.Id] = now;
                         f.BroadcastLobby(f.Build0x48());
+                        Bots.PublishBotLifecycles(f);
                         int replayed = 0;
                         foreach (Domain.PlayerRec record in f.Slots)
                             if (record.Playing && record.Session != null)

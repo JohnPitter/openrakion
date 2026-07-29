@@ -57,6 +57,25 @@ public sealed class BotCombatTests
     }
 
     [Fact]
+    public void HumanAttackCannotDamageBotDuringRoundFreeze()
+    {
+        (Field field, PlayerRec attacker) = Match();
+        PlayerRec target = AddBot(field, 1, new BotVector(0, 0, 2));
+        field.StartRound(1_000);
+        int initialHealth = target.Bot!.Health;
+        Assert.True(attacker.Combat.TryOpenAttack(1, 1_000));
+
+        Assert.False(BotCombat.TryResolveHumanAttack(
+            field, attacker, 1_120, 40, out _));
+        Assert.Equal(initialHealth, target.Bot.Health);
+
+        attacker.Combat.ReleaseAttackAnimation();
+        Assert.True(attacker.Combat.TryOpenAttack(2, 4_000));
+        Assert.True(BotCombat.TryResolveHumanAttack(
+            field, attacker, 4_120, 40, out _));
+    }
+
+    [Fact]
     public void ActiveWindowCanAcquireTargetBeforeItCloses()
     {
         (Field field, PlayerRec attacker) = Match();
@@ -144,6 +163,31 @@ public sealed class BotCombatTests
         Assert.False(hit.Damage.Died);
         Assert.False(BotCombat.TryResolveBotAttack(
             field, attacker, 1_121, 15, out _));
+    }
+
+    [Fact]
+    public void BotAttackCannotDamageHumanDuringRoundFreeze()
+    {
+        Field field = Match().Field;
+        PlayerRec target = field.Slots[0];
+        target.Position = new BotVector(0, 0, 2);
+        target.Vitals.Initialize(100, 0);
+        PlayerRec attacker = AddBot(
+            field, 1, new BotVector(0, 0, 0));
+        attacker.Bot!.TargetSeat = 0;
+        field.StartRound(1_000);
+        attacker.Bot.TargetSeat = 0;
+        Assert.True(attacker.Bot.TryStartAttack(1_000));
+
+        Assert.False(BotCombat.TryResolveBotAttack(
+            field, attacker, 1_120, 15, out _));
+        Assert.Equal(100, target.Vitals.Hp);
+
+        attacker.Bot.Combat.ReleaseAttackAnimation();
+        attacker.Bot.NextAttackReadyMs = 0;
+        Assert.True(attacker.Bot.TryStartAttack(4_000));
+        Assert.True(BotCombat.TryResolveBotAttack(
+            field, attacker, 4_120, 15, out _));
     }
 
     [Fact]

@@ -173,6 +173,7 @@ namespace RakionServer.World
         /// <summary>Sincroniza os bots com o cliente que acabou de concluir o próprio spawn.</summary>
         public void SendMatchSpawnsTo(ClientSession session, Field field)
         {
+            bool lifecycleChanged = false;
             lock (field.SyncRoot)
             {
                 foreach (PlayerRec record in field.BotSlots)
@@ -181,8 +182,12 @@ namespace RakionServer.World
                     record.Dead = false;
                     session.SendMessage(0x45,
                         FieldLifecycleFrames.Spawn((byte)record.Slot));
+                    record.Bot!.RefreshLifecycle();
+                    lifecycleChanged = true;
                 }
             }
+            if (lifecycleChanged)
+                PublishBotLifecycles(field);
         }
 
         /// <summary>

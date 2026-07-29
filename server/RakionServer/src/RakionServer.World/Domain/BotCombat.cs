@@ -26,7 +26,8 @@ public static class BotCombat
         out BotCombatHit hit)
     {
         hit = default;
-        if (!CanAttack(field, attacker, damage) ||
+        if (!field.IsCombatActive(nowMs) ||
+            !CanAttack(attacker, damage) ||
             !attacker.Combat.TryGetActiveAttack(nowMs, out PlayerAttackWindow attack))
             return false;
 
@@ -52,7 +53,8 @@ public static class BotCombat
     {
         hit = default;
         BotPlayer? bot = attacker.Bot;
-        if (!CanBotAttack(field, attacker, bot, damage) ||
+        if (!field.IsCombatActive(nowMs) ||
+            !CanBotAttack(attacker, bot, damage) ||
             !bot!.Combat.TryGetActiveAttack(
                 nowMs, out PlayerAttackWindow attack))
             return false;
@@ -71,21 +73,16 @@ public static class BotCombat
         return true;
     }
 
-    private static bool CanAttack(Field field, PlayerRec attacker, int damage) =>
-        field.State == 2 &&
-        field.Phase == MatchPhase.Playing &&
+    private static bool CanAttack(PlayerRec attacker, int damage) =>
         attacker.Playing &&
         !attacker.Dead &&
         attacker.Bot == null &&
         damage > 0;
 
     private static bool CanBotAttack(
-        Field field,
         PlayerRec attacker,
         BotPlayer? bot,
         int damage) =>
-        field.State == 2 &&
-        field.Phase == MatchPhase.Playing &&
         attacker.Playing &&
         !attacker.Dead &&
         bot?.EngineAttached == true &&

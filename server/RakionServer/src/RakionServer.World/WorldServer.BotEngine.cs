@@ -116,10 +116,11 @@ public sealed partial class WorldServer
     {
         if (_udpGame == null)
             return;
+        long nowMs = Environment.TickCount64;
         var deliveries = new List<(PlayerRec Target, byte[] Packet)>();
         lock (field.SyncRoot)
         {
-            if (field.State != 2 || field.Phase != MatchPhase.Playing)
+            if (!field.IsCombatActive(nowMs))
                 return;
             PlayerRec[] humans = Array.FindAll(
                 field.Slots, record => record.Session != null && record.Occupied);
@@ -128,7 +129,6 @@ public sealed partial class WorldServer
                 BotPlayer bot = record.Bot!;
                 if (!bot.EngineAttached)
                     continue;
-                long nowMs = Environment.TickCount64;
                 foreach (byte[] packet in BuildNativePackets(
                     field.Id,
                     record,

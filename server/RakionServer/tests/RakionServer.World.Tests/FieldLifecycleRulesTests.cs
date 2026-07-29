@@ -37,6 +37,11 @@ namespace RakionServer.World.Tests
             Assert.Equal(MatchLifecycleEvent.EngageStarted, transition.Event);
             Assert.Equal(MatchPhase.Playing, field.Phase);
             Assert.Equal((byte)3, field.Slots[10].State);
+            Assert.Equal(100 + Field.RoundFreezeDurationMs, field.CombatStartsAtMs);
+            Assert.False(field.IsCombatActive(
+                100 + Field.RoundFreezeDurationMs - 1));
+            Assert.True(field.IsCombatActive(
+                100 + Field.RoundFreezeDurationMs));
             Assert.Equal(100 + (field.RoundDurationSec + 3) * 1000L, field.DeadlineMs);
         }
 

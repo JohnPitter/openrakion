@@ -163,27 +163,13 @@ namespace RakionServer.World.Domain
         public bool TryRespawn(long nowMs)
         {
             if (Alive || RespawnAtMs == 0 || nowMs < RespawnAtMs) return false;
-            Health = MaxHealth;
-            Alive = true;
-            RespawnAtMs = 0;
-            Velocity = default;
-            TargetSeat = Field.NoSeat;
-            NextAttackReadyMs = 0;
-            HitReactionUntilMs = 0;
-            _attackVariant = 0;
-            _attackSequence = 0;
-            Combat.Reset();
-            _isMoving = false;
-            _lastPublishedControls = BotControls.None;
-            _lastPublishedAttack = false;
-            _attackPresentation.Reset();
-            LastAttackerSeat = Field.NoSeat;
-            LastAttackerHitSequence = 0;
-            EngineControls = BotControls.None;
-            EngineAttacking = false;
-            LifecycleSequence++;
+            ResetRoundState();
             return true;
         }
+
+        public void BeginRound() => ResetRoundState();
+
+        public void RefreshLifecycle() => LifecycleSequence++;
 
         public void ResetForLobby()
         {
@@ -210,6 +196,29 @@ namespace RakionServer.World.Domain
             EngineControls = BotControls.None;
             EngineAttacking = false;
             if (revive) LifecycleSequence++;
+        }
+
+        private void ResetRoundState()
+        {
+            Health = MaxHealth;
+            Alive = true;
+            RespawnAtMs = 0;
+            Velocity = BotVector.Zero;
+            TargetSeat = Field.NoSeat;
+            NextAttackReadyMs = 0;
+            HitReactionUntilMs = 0;
+            _attackVariant = 0;
+            _attackSequence = 0;
+            Combat.Reset();
+            _isMoving = false;
+            _lastPublishedControls = BotControls.None;
+            _lastPublishedAttack = false;
+            _attackPresentation.Reset();
+            LastAttackerSeat = Field.NoSeat;
+            LastAttackerHitSequence = 0;
+            EngineControls = BotControls.None;
+            EngineAttacking = false;
+            LifecycleSequence++;
         }
 
         public void ApplyEngineTransform(BotVector position, float heading)

@@ -70,6 +70,7 @@ namespace RakionServer.World.Domain
     public sealed partial class Field(int id)
     {
         public const byte NoSeat = 0x14;
+        public const int RoundFreezeDurationMs = 3000;
         private const ushort DefaultRoundDurationSec = 432; // +3s de countdown => 0x01B3, captura original que destrava o stage
 
         public int Id = id;
@@ -97,6 +98,7 @@ namespace RakionServer.World.Domain
         // ---- maquina de estado da partida (FUN_00409940) ----
         public MatchPhase Phase;        // +0x2b4
         public long DeadlineMs;         // +0x2b8 (Environment.TickCount64 alvo; RemainingSec = (Deadline-now)/1000)
+        public long CombatStartsAtMs { get; private set; }
         public byte Round;              // +0x2bc (1-based, round atual)
         public byte MaxRounds = 1;      // +0x11a
         public ushort RoundDurationSec = DefaultRoundDurationSec; // +0x11c (432 -> RemainingSec ~435, ground truth do original)
@@ -140,6 +142,11 @@ namespace RakionServer.World.Domain
         /// <summary>Gate exato de FUN_00424B60 para o reporte competitivo de pontos.</summary>
         public bool CanAcceptGamePoint() =>
             Mode != 0 && State == 2 && Phase == MatchPhase.RoundEnd;
+
+        public bool IsCombatActive(long nowMs) =>
+            State == 2 &&
+            Phase == MatchPhase.Playing &&
+            nowMs >= CombatStartsAtMs;
 
         /// <summary>Replica FUN_00405980: 1=win, 2=lose, 3=draw no snapshot do 0x50.</summary>
         public byte GamePointOutcome(byte seat, ushort resultMarker)
@@ -501,7 +508,8 @@ namespace RakionServer.World.Domain
             Phase = MatchPhase.Playing;
             State = 2;
             if (Round == 0) Round = 1;
-            DeadlineMs = now + (RoundDurationSec + 3) * 1000L;
+            CombatStartsAtMs = now + RoundFreezeDurationMs;
+            DeadlineMs = now + RoundDurationSec * 1000L + RoundFreezeDurationMs;
             Warned30 = 0;
             Score0 = 0; Score1 = 0;
             // reset por ROUND (nao por match): cada round do Golem/Boss comeca com os Master Golens
@@ -512,7 +520,11 @@ namespace RakionServer.World.Domain
             {
                 if (!record.Occupied) continue;
                 record.Dead = false;
-                InitializeHumanVitals(record);
+                record.Combat.Reset();
+                if (record.Bot != null)
+                    record.Bot.BeginRound();
+                else
+                    InitializeHumanVitals(record);
             }
             SelectBossLeaders();
             Log.Ok("field", "field {0} round {1} iniciado (dur={2}s mode={3})", Id, Round, RoundDurationSec, Mode);
@@ -526,6 +538,7 @@ namespace RakionServer.World.Domain
         public void ResetMatch()
         {
             MatchId = Guid.NewGuid();
+            CombatStartsAtMs = 0;
             Round = 0; Wins0 = 0; Wins1 = 0; Score0 = 0; Score1 = 0;
             LosingSideWire = 0; RoundEndReason = 0; Warned30 = 0;
             ObjectivePairA = 0; ObjectivePairB = 0; BossTargetA = 0; BossTargetB = 0;
@@ -611,6 +624,7 @@ namespace RakionServer.World.Domain
             ResetMatch();
             State = 2;
             Phase = MatchPhase.Pre;
+            CombatStartsAtMs = 0;
             DeadlineMs = now + 40000;
             foreach (var record in Slots)
             {
@@ -644,6 +658,7 @@ namespace RakionServer.World.Domain
         {
             State = 1;
             Phase = MatchPhase.Pre;
+            CombatStartsAtMs = 0;
             foreach (PlayerRec record in Slots)
             {
                 if (!record.Occupied) continue;

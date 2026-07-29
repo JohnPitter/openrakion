@@ -191,6 +191,7 @@ namespace RakionServer.World.Domain
         private void BeginRoundEndTimer(long now)
         {
             Phase = MatchPhase.RoundEnd;
+            CombatStartsAtMs = 0;
             DeadlineMs = now + 15000;
         }
 

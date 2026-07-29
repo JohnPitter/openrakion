@@ -174,7 +174,7 @@ internal sealed class BotEngineCoordinator(WorldConfig.BotEngineConfig config) :
     private static bool IsMatchPlaying(Field field)
     {
         lock (field.SyncRoot)
-            return field.State == 2 && field.Phase == MatchPhase.Playing;
+            return field.IsCombatActive(Environment.TickCount64);
     }
 
     private static async Task PauseFieldAsync(

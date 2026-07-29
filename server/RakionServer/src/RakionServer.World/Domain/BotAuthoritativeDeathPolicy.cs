@@ -7,8 +7,7 @@ public static class BotAuthoritativeDeathPolicy
         PlayerRec victim,
         byte reportedKiller)
     {
-        if (reportedKiller != Field.NoSeat ||
-            !victim.Dead ||
+        if (!victim.Dead ||
             field.State != 2 ||
             field.Phase is not (MatchPhase.Playing or MatchPhase.RoundEnd))
             return false;

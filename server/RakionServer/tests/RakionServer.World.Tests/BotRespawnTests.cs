@@ -31,6 +31,26 @@ namespace RakionServer.World.Tests
         }
 
         [Fact]
+        public void BeginRound_RevivesBotAndRefreshesLifecycle()
+        {
+            var bot = new BotPlayer { Name = "B" };
+            bot.InitHealth(10);
+            Assert.True(bot.TakeDamage(bot.MaxHealth));
+
+            bot.BeginRound();
+
+            Assert.True(bot.Alive);
+            Assert.Equal(bot.MaxHealth, bot.Health);
+            Assert.Equal(3u, bot.LifecycleSequence);
+
+            bot.RefreshLifecycle();
+
+            Assert.True(bot.Alive);
+            Assert.Equal(bot.MaxHealth, bot.Health);
+            Assert.Equal(4u, bot.LifecycleSequence);
+        }
+
+        [Fact]
         public void AttackPattern_CyclesVariantsAndHitReactionStopsBot()
         {
             var bot = new BotPlayer
