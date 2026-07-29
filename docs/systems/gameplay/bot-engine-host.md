@@ -630,7 +630,7 @@ Verificado em 29/07/2026:
 - os binários deployados (`version.dll`, `RakionClientPatch.dll`) batem **hash** com o build desta
   branch, então não há deploy defasado.
 
-A auditoria fechou o elo que faltava. O cave original executa:
+A primeira auditoria corrigiu a indireção do getter local. O cave original executa:
 
 ```text
 mov eax,[0x352b3630]
@@ -638,10 +638,17 @@ call eax
 ```
 
 Logo, `0x352b3630` armazena um **ponteiro de função**. A DLL convertia o próprio endereço
-`0x352b3630` em função e tentava executá-lo; a proteção `__except` absorvia a falha, motivo pelo qual
-nem `AddHitCount` nem o log `HIT local` apareciam. O hook agora desreferencia o ponteiro armazenado,
-chama a função real e só então compara o jogador local com a entidade atual. O build x86 passa com
-`/W4 /WX`; o gate restante deste item é a confirmação do número flutuante no cliente original.
+`0x352b3630` em função e tentava executá-lo; a proteção `__except` absorvia a falha.
+
+O reteste seguinte mostrou um segundo defeito: o `hitSequence=6` chegou para
+`attackerSeat=0`, enquanto o hook de `CPlayer::Update` visitou apenas a entidade remota do bot
+(`seat=10`). A implementação esperava que a entidade atual fosse também o jogador local, portanto
+`AddHitCount` continuava inalcançável. A ponte agora usa qualquer update remoto apenas como
+dispatcher da thread do jogo, resolve o jogador local pelo getter, lê o seat dele e aplica ali a
+diferença confirmada pelo servidor. O lifecycle do bot permanece isolado pelo seat remoto.
+
+O build x86 passa com `/W4 /WX`; o gate restante deste item é a confirmação do número flutuante no
+cliente original.
 
 ## Gates restantes
 

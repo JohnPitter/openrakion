@@ -180,31 +180,39 @@ void LogAppliedLifecycles()
     }
 }
 
+void ApplyLocalHit()
+{
+    using LocalPlayerFn = void*(__cdecl*)();
+    auto localPlayer = *reinterpret_cast<LocalPlayerFn*>(LocalPlayerGetterAddress);
+    if (!localPlayer) return;
+
+    void* player = localPlayer();
+    if (!player) return;
+
+    int seat = *reinterpret_cast<BYTE*>(static_cast<BYTE*>(player) + 0x264);
+    if (seat < 0 || seat >= MaxPlayerSeats) return;
+
+    LONG desired = InterlockedCompareExchange(&DesiredLocalHitSequence[seat], 0, 0);
+    LONG applied = InterlockedCompareExchange(&AppliedLocalHitSequence[seat], 0, 0);
+    if (desired == 0 || desired == applied) return;
+
+    using AddHitCountFn = void(__thiscall*)(void*, int);
+    int count = desired > applied ? desired - applied : 1;
+    if (count > 8) count = 8;
+    for (int index = 0; index < count; ++index)
+        reinterpret_cast<AddHitCountFn>(AddHitCountAddress)(player, 1);
+    InterlockedExchange(&AppliedLocalHitSequence[seat], desired);
+}
+
 void __stdcall ApplyLifecycleOnGameThread(void* player)
 {
     __try
     {
         if (!player) return;
+        ApplyLocalHit();
+
         int seat = *reinterpret_cast<BYTE*>(static_cast<BYTE*>(player) + 0x264);
         if (seat < 0 || seat >= MaxPlayerSeats) return;
-
-        LONG desiredHit = InterlockedCompareExchange(&DesiredLocalHitSequence[seat], 0, 0);
-        LONG appliedHit = InterlockedCompareExchange(&AppliedLocalHitSequence[seat], 0, 0);
-        if (desiredHit != 0 && desiredHit != appliedHit)
-        {
-            using LocalPlayerFn = void*(__cdecl*)();
-            auto localPlayer =
-                *reinterpret_cast<LocalPlayerFn*>(LocalPlayerGetterAddress);
-            if (localPlayer && localPlayer() == player)
-            {
-                using AddHitCountFn = void(__thiscall*)(void*, int);
-                int count = desiredHit > appliedHit ? desiredHit - appliedHit : 1;
-                if (count > 8) count = 8;
-                for (int index = 0; index < count; ++index)
-                    reinterpret_cast<AddHitCountFn>(AddHitCountAddress)(player, 1);
-                InterlockedExchange(&AppliedLocalHitSequence[seat], desiredHit);
-            }
-        }
 
         LONG desired = InterlockedCompareExchange(&DesiredLifecycleSequence[seat], 0, 0);
         if (desired == 0) return;   // seat sem lifecycle publicado = não é um bot: não tocar
