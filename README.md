@@ -15,7 +15,7 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
 
 - 🟢 **Servidor 100% próprio em .NET** (não usa os executáveis da SoftNyx). Serviços:
   - **Broker** (`RakionServer.Broker`) — lista de servidores/canais, anuncia o world (advertised IP) e faz a ponte de login.
-  - **World** (`RakionServer.World`) — login completo, lobby, lista de canais/salas, seleção de personagem, **inventário + armazém (box) persistente**, **loja (compra e venda) com saldo em tempo real**, **Power User** (compra + bônus configurável de XP/gold), chat, handshake **UDP de gameplay**, **motor de partida** (Golem/Deathmatch/TeamDeath/Boss com settlement persistido) e **bots PvP nativos** via **Bot Engine Host x86** (`/addbot`, sem fallback sintético).
+  - **World** (`RakionServer.World`) — login completo, lobby, lista de canais/salas, seleção de personagem, **inventário + armazém (box) persistente**, **loja (compra e venda) com saldo em tempo real**, **Power User** (compra + bônus configurável de XP/gold), chat, handshake **UDP de gameplay**, **motor de partida** (Golem/Deathmatch/TeamDeath/Boss com settlement persistido) e **bots PvP nativos em beta** via **Bot Engine Host x86** (`/addbot`, sem fallback sintético).
   - **Buddy** (`RakionServer.Buddy`) — serviço **canônico** de amigos/mensageiro (F9): login, adicionar/remover amigo, grupos, apelido, **presença** (amigo acende online), **SMS/PM** e **brokering de tunnel P2P** para convite/mensagem direta.
   - **LauncherWeb** (`RakionServer.LauncherWeb`) — autenticação por ticket, update assinado,
     página de compra de Cash e endpoint público de status/jogadores online.
@@ -47,7 +47,7 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
 | Stage PvE: criação, entrada, saída durante a partida e retorno à lista | ✅ validado no cliente |
 | Botão **Buy Cash** e página web de recarga | ✅ implementado com debounce; reabertura aguarda confirmação visual final |
 | Modos PvP (Golem/Deathmatch/TeamDeath/Boss) | ✅ motor de round server-side + **validado headless com 2 clientes no fio** (criar/entrar sala, ready/start, movimento e combate UDP, win/lose persistido no DB) |
-| **Bots PvP** (`Add Bot` somente em Battle) | ✅ fluxo, movimento, dano e morte cobertos headless; smoke visual continua sendo gate de lançamento |
+| **Bots PvP** (`Add Bot` somente em Battle) | 🧪 **beta**: fluxo, movimento, dano, morte, freeze e respawn cobertos no backend/headless; validação visual completa ainda é gate de lançamento |
 | **Buddy/Mensageiro (F9)**: amigos, grupos, presença, SMS/PM, tunnel P2P | ✅ serviço canônico do stack; persistência atômica de amigos/grupos e presença bidirecional |
 | **GameGuard** original | ❌ serviço externo offline; fluxo neutralizado pela DLL de compatibilidade |
 | Navegação inventário/loja ↔ lista de salas (botão **Previous**) | ✅ |
@@ -55,6 +55,17 @@ Servidores privados de Rakion existiam há mais de uma década, mas dependiam do
 > O GameGuard original não é recuperável porque depende de um serviço externo desativado. O pacote
 > atual usa a DLL de compatibilidade para neutralizar esse fluxo. Isso não deve ser confundido com
 > validação gráfica completa de todos os modos, que ainda precisa ser registrada por build.
+
+### Bot Engine — beta
+
+O Bot Engine usa um worker nativo x86 por field para reaproveitar a física, colisão, movimentação e
+animações da engine v258. O World continua autoritativo para roster, freeze, hitbox, dano, placar,
+morte e respawn. O caminho sintético foi removido e não é usado como fallback.
+
+O rótulo **beta** é intencional: os contratos de backend e os testes headless estão cobertos, mas a
+apresentação visual precisa ser validada em cliente real a cada build (spawn vivo antes do round,
+freeze invulnerável, animação de ataque/HIT, queda, morte e retorno ao room). Problemas observados no
+cliente devem ser tratados como bloqueadores de lançamento até serem reproduzidos e registrados.
 
 ### Engenharia reversa e validação
 

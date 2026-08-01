@@ -1,4 +1,7 @@
-# Subsistema de Bots — roster e lifecycle no World
+# Subsistema de Bots — beta
+
+> **Status:** beta. O fluxo nativo já é exercitado pelo World e pelos testes headless, mas a
+> apresentação completa no cliente real ainda precisa de validação por build antes do lançamento.
 
 > O caminho de lançamento e de simulação é exclusivamente o
 > [`Bot Engine Host`](bot-engine-host.md). Não existe fallback para peer sintético com física
